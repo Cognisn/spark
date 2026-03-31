@@ -139,6 +139,9 @@ class SparkTrayDaemon:
         self._runner_thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self._runner_thread.start()
 
+        # Fetch stats immediately so the menu is populated from the start
+        self._fetch_stats_once()
+
         # Start stats polling thread
         self._stats_thread = threading.Thread(target=self._poll_stats, daemon=True)
         self._stats_thread.start()
@@ -193,67 +196,70 @@ class SparkTrayDaemon:
         except Exception as e:
             logger.error("Failed to open Spark: %s", e)
 
+    def _fetch_stats_once(self) -> None:
+        """Read action stats from the database once."""
+        try:
+            from spark.core.application import _get_data_path
+            from spark.database.backends import SQLiteBackend
+            from spark.database.connection import DatabaseConnection
+
+            db_path = _get_data_path() / "spark.db"
+            if not db_path.exists():
+                return
+
+            backend = SQLiteBackend(str(db_path))
+            conn = DatabaseConnection(backend)
+            from spark.database.schema import initialise_schema
+
+            initialise_schema(conn)
+            try:
+                # Total enabled actions
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM autonomous_actions WHERE is_enabled = 1"
+                )
+                row = cursor.fetchone()
+                total = row[0] if row else 0
+                if total != self._action_stats.get("total"):
+                    logger.info("Action stats updated: %d enabled actions", total)
+                self._action_stats["total"] = total
+
+                # Last run time (most recent completed run)
+                cursor = conn.execute(
+                    "SELECT completed_at FROM action_runs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1"
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    self._action_stats["last_run"] = _utc_to_local(str(row[0]))
+                else:
+                    self._action_stats["last_run"] = None
+
+                # Next run time
+                cursor = conn.execute(
+                    "SELECT next_run_at FROM autonomous_actions WHERE is_enabled = 1 AND next_run_at IS NOT NULL ORDER BY next_run_at ASC LIMIT 1"
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    self._action_stats["next_run"] = _utc_to_local(str(row[0]))
+                else:
+                    self._action_stats["next_run"] = None
+
+            finally:
+                conn.close()
+
+            # Update tray icon title and refresh menu so stats are visible
+            if self._icon and not self._paused:
+                total = self._action_stats["total"]
+                self._icon.title = f"Spark Daemon — {total} action{'s' if total != 1 else ''}"
+            if self._icon:
+                self._icon.update_menu()
+
+        except Exception as e:
+            logger.debug("Stats fetch error: %s", e)
+
     def _poll_stats(self) -> None:
         """Periodically read action stats from the database."""
         while self._running:
-            try:
-                from spark.core.application import _get_config_path, _get_data_path
-                from spark.database.backends import SQLiteBackend
-                from spark.database.connection import DatabaseConnection
-
-                db_path = _get_data_path() / "spark.db"
-                if not db_path.exists():
-                    time.sleep(30)
-                    continue
-
-                backend = SQLiteBackend(str(db_path))
-                conn = DatabaseConnection(backend)
-                # Ensure schema exists (idempotent)
-                from spark.database.schema import initialise_schema
-
-                initialise_schema(conn)
-                try:
-                    # Total enabled actions
-                    cursor = conn.execute(
-                        "SELECT COUNT(*) FROM autonomous_actions WHERE is_enabled = 1"
-                    )
-                    row = cursor.fetchone()
-                    total = row[0] if row else 0
-                    if total != self._action_stats.get("total"):
-                        logger.info("Action stats updated: %d enabled actions", total)
-                    self._action_stats["total"] = total
-
-                    # Last run time (most recent completed run)
-                    cursor = conn.execute(
-                        "SELECT completed_at FROM action_runs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1"
-                    )
-                    row = cursor.fetchone()
-                    if row and row[0]:
-                        self._action_stats["last_run"] = _utc_to_local(str(row[0]))
-                    else:
-                        self._action_stats["last_run"] = None
-
-                    # Next run time
-                    cursor = conn.execute(
-                        "SELECT next_run_at FROM autonomous_actions WHERE is_enabled = 1 AND next_run_at IS NOT NULL ORDER BY next_run_at ASC LIMIT 1"
-                    )
-                    row = cursor.fetchone()
-                    if row and row[0]:
-                        self._action_stats["next_run"] = _utc_to_local(str(row[0]))
-                    else:
-                        self._action_stats["next_run"] = None
-
-                finally:
-                    conn.close()
-
-                # Update tray icon title with summary
-                if self._icon and not self._paused:
-                    total = self._action_stats["total"]
-                    self._icon.title = f"Spark Daemon — {total} action{'s' if total != 1 else ''}"
-
-            except Exception as e:
-                logger.debug("Stats poll error: %s", e)
-
+            self._fetch_stats_once()
             time.sleep(15)
 
     def _on_open_logs(self, icon: Any, item: Any) -> None:

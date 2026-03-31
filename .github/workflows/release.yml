@@ -58,7 +58,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: spark-windows-x86_64
-          # Note: Windows ARM64 requires special handling
 
     runs-on: ${{ matrix.os }}
 
@@ -151,6 +150,7 @@ jobs:
   create-macos-installer:
     needs: build-binaries
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
@@ -172,10 +172,11 @@ jobs:
           name: ${{ matrix.artifact }}
           path: binary/
 
-      - name: Generate icons
+      - name: Generate icons and installer assets
         run: |
           pip install Pillow
           python assets/generate_icons.py
+          python assets/generate_installer_assets.py
           mkdir -p spark.iconset
           for size in 16 32 64 128 256 512; do
             cp assets/icons/spark-${size}.png spark.iconset/icon_${size}x${size}.png
@@ -191,16 +192,133 @@ jobs:
           mkdir -p "${APP}/Contents/MacOS"
           mkdir -p "${APP}/Contents/Resources"
 
-          cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark"
+          # PyApp binary as the engine, launcher script as the main executable
+          cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
+          chmod +x "${APP}/Contents/MacOS/spark-engine"
+          cp assets/macos/launcher.sh "${APP}/Contents/MacOS/spark"
           chmod +x "${APP}/Contents/MacOS/spark"
-          cp spark.icns "${APP}/Contents/Resources/spark.icns"
 
+          cp spark.icns "${APP}/Contents/Resources/spark.icns"
           sed "s/VERSION/${VERSION}/g" assets/macos/Info.plist > "${APP}/Contents/Info.plist"
 
-      - name: Create DMG
+      - name: Import code signing certificate
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          hdiutil create -volname "Spark" -srcfolder Spark.app -ov -format UDZO \
-            "Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg"
+          # Decode certificate
+          echo "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > certificate.p12
+
+          # Create temporary keychain
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+
+          # Import certificate
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "${MACOS_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+
+          # Allow codesign access without prompts
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${KEYCHAIN_PASSWORD}" \
+            build.keychain
+
+          rm -f certificate.p12
+
+          # Verify certificate is available
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Code sign app bundle
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Find the Developer ID Application identity
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Signing with: ${IDENTITY}"
+
+          # Sign the engine binary first, then the launcher, then the bundle
+          /usr/bin/codesign --force --verify --verbose \
+            --sign "${IDENTITY}" \
+            --options runtime \
+            --entitlements assets/macos/entitlements.plist \
+            "Spark.app/Contents/MacOS/spark-engine"
+
+          /usr/bin/codesign --force --verify --verbose \
+            --sign "${IDENTITY}" \
+            --options runtime \
+            "Spark.app/Contents/MacOS/spark"
+
+          /usr/bin/codesign --force --verify --verbose \
+            --sign "${IDENTITY}" \
+            --options runtime \
+            --entitlements assets/macos/entitlements.plist \
+            "Spark.app"
+
+          # Verify
+          codesign -vvv --deep --strict "Spark.app"
+
+      - name: Create branded DMG
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          DMG_NAME: Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg
+        run: |
+          # Install create-dmg for proper DMG layout
+          brew install create-dmg
+
+          # create-dmg with custom background, icon positions, and Applications link
+          create-dmg \
+            --volname "Spark" \
+            --volicon "spark.icns" \
+            --background "assets/installer/dmg-background.png" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 80 \
+            --icon "Spark.app" 180 260 \
+            --hide-extension "Spark.app" \
+            --app-drop-link 480 260 \
+            --no-internet-enable \
+            "${DMG_NAME}" \
+            "Spark.app" \
+          || true
+
+          # Verify DMG was created
+          ls -la "${DMG_NAME}"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+          APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG_NAME="Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg"
+
+          # Store notarization credentials
+          xcrun notarytool store-credentials "AC_PASSWORD" \
+            --apple-id "${APPLE_ID_EMAIL}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_ID_APP_PASSWORD}"
+
+          # Submit for notarization and wait
+          xcrun notarytool submit "${DMG_NAME}" \
+            --keychain-profile "AC_PASSWORD" \
+            --wait
+
+          # Staple the notarization ticket to the DMG
+          xcrun stapler staple "${DMG_NAME}"
+
+          # Verify
+          spctl -a -v -t open --context context:primary-signature "${DMG_NAME}" || true
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          security default-keychain -s login.keychain || true
+          security delete-keychain build.keychain || true
 
       - name: Upload DMG
         uses: actions/upload-artifact@v5
@@ -226,10 +344,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate icons
+      - name: Generate icons and installer assets
         run: |
           pip install Pillow
           python assets/generate_icons.py
+          python assets/generate_installer_assets.py
 
       - name: Create NSIS installer script
         shell: bash
@@ -243,11 +362,28 @@ jobs:
           OutFile "Spark-${VERSION}-windows-x86_64-setup.exe"
           InstallDir "\$PROGRAMFILES64\\Cognisn\\Spark"
           RequestExecutionLevel admin
+          BrandingText "Spark by Cognisn"
 
           !define MUI_ICON "assets\\icons\\spark.ico"
           !define MUI_UNICON "assets\\icons\\spark.ico"
-          !define MUI_WELCOMEPAGE_TITLE "Spark Setup"
-          !define MUI_WELCOMEPAGE_TEXT "This will install Spark - Secure Personal AI Research Kit by Cognisn."
+
+          ; Custom branded images
+          !define MUI_HEADERIMAGE
+          !define MUI_HEADERIMAGE_BITMAP "assets\\installer\\nsis-header.bmp"
+          !define MUI_HEADERIMAGE_RIGHT
+          !define MUI_WELCOMEFINISHPAGE_BITMAP "assets\\installer\\nsis-welcome.bmp"
+          !define MUI_UNWELCOMEFINISHPAGE_BITMAP "assets\\installer\\nsis-welcome.bmp"
+
+          ; Colours — Cognisn navy background with light text
+          !define MUI_BGCOLOR "080E1E"
+          !define MUI_TEXTCOLOR "E8F0FA"
+
+          !define MUI_WELCOMEPAGE_TITLE "Welcome to Spark Setup"
+          !define MUI_WELCOMEPAGE_TEXT "This will install Spark — Secure Personal AI Research Kit by Cognisn.\$\\r\$\\n\$\\r\$\\nSpark provides a multi-provider LLM interface with MCP tool integration, autonomous actions, and a built-in security layer.\$\\r\$\\n\$\\r\$\\nClick Next to continue."
+          !define MUI_FINISHPAGE_TITLE "Spark Installation Complete"
+          !define MUI_FINISHPAGE_TEXT "Spark has been installed successfully.\$\\r\$\\n\$\\r\$\\nClick Finish to close the installer."
+          !define MUI_FINISHPAGE_RUN "\$INSTDIR\\spark.exe"
+          !define MUI_FINISHPAGE_RUN_TEXT "Launch Spark"
 
           !insertmacro MUI_PAGE_WELCOME
           !insertmacro MUI_PAGE_DIRECTORY
@@ -262,12 +398,19 @@ jobs:
           Section "Install"
             SetOutPath \$INSTDIR
             File "binary\\spark-windows-x86_64.exe"
-            Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark.exe"
+            Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark-engine.exe"
+            File "assets\\windows\\launcher.vbs"
             File "assets\\icons\\spark.ico"
 
+            ; Create a batch wrapper so shortcuts can launch via wscript
+            FileOpen \$0 "\$INSTDIR\\spark.bat" w
+            FileWrite \$0 '@echo off\$\\r\$\\n'
+            FileWrite \$0 'wscript.exe "\$INSTDIR\\launcher.vbs"\$\\r\$\\n'
+            FileClose \$0
+
             CreateDirectory "\$SMPROGRAMS\\Cognisn"
-            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "\$INSTDIR\\spark.exe" "" "\$INSTDIR\\spark.ico"
-            CreateShortCut "\$DESKTOP\\Spark.lnk" "\$INSTDIR\\spark.exe" "" "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$DESKTOP\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
 
             WriteUninstaller "\$INSTDIR\\Uninstall.exe"
 
@@ -278,7 +421,9 @@ jobs:
           SectionEnd
 
           Section "Uninstall"
-            Delete "\$INSTDIR\\spark.exe"
+            Delete "\$INSTDIR\\spark-engine.exe"
+            Delete "\$INSTDIR\\launcher.vbs"
+            Delete "\$INSTDIR\\spark.bat"
             Delete "\$INSTDIR\\spark.ico"
             Delete "\$INSTDIR\\Uninstall.exe"
             RMDir "\$INSTDIR"

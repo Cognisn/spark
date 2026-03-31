@@ -98,6 +98,43 @@ async def welcome(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "welcome.html")
 
 
+@router.get("/api/update-check")
+async def check_update(request: Request) -> JSONResponse:
+    """API: check for available updates."""
+    update_info = getattr(request.app.state, "update_info", None)
+    if update_info is None:
+        return JSONResponse({"available": False, "current_version": ""})
+    return JSONResponse(
+        {
+            "available": update_info.available,
+            "current_version": update_info.current_version,
+            "latest_version": update_info.latest_version,
+            "release_url": update_info.release_url,
+            "release_notes": update_info.release_notes,
+            "is_prerelease": update_info.is_prerelease,
+            "install_method": update_info.install_method,
+        }
+    )
+
+
+@router.post("/api/apply-update")
+async def apply_update(request: Request) -> JSONResponse:
+    """API: apply an available update."""
+    from spark.core.updater import apply_update
+
+    result = apply_update()
+    return JSONResponse(result)
+
+
+@router.post("/api/dismiss-update")
+async def dismiss_update(request: Request) -> JSONResponse:
+    """API: dismiss the update notification for this session."""
+    update_info = getattr(request.app.state, "update_info", None)
+    if update_info:
+        update_info.available = False
+    return JSONResponse({"status": "ok"})
+
+
 @router.get("/menu", response_class=HTMLResponse)
 async def main_menu(request: Request) -> HTMLResponse:
     """Main menu / dashboard."""

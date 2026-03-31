@@ -248,12 +248,36 @@
                                     {% endif %}
 
                                     {% for field in cat.extra_fields %}
-                                    <div class="mb-2 row align-items-center">
+                                    <div class="mb-2 row align-items-center{% if field.show_when %} tool-conditional-field{% endif %}"
+                                         {% if field.show_when %}data-show-when="{{ field.show_when }}" data-depends-on="embedded_tools.{{ cat.id }}.search_engine" style="display: none;"{% endif %}>
                                         <label class="col-sm-4 form-label mb-0" style="font-size: 0.8125rem;">
                                             {{ field.label }}
                                         </label>
                                         <div class="col-sm-8">
-                                            {% if field.type == 'number' %}
+                                            {% if field.type == 'select' %}
+                                            <select class="form-select form-select-sm setting-input"
+                                                    data-key="{{ field.key }}"
+                                                    id="field-{{ field.key | replace('.', '-') }}">
+                                                {% for opt in field.options %}
+                                                <option value="{{ opt.value }}" {% if field.value == opt.value %}selected{% endif %}>
+                                                    {{ opt.label }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            {% elif field.type == 'secret' %}
+                                            <div class="input-group input-group-sm">
+                                                <input type="password"
+                                                       class="form-control form-control-sm setting-input"
+                                                       data-key="{{ field.key }}"
+                                                       value="{{ field.value }}"
+                                                       autocomplete="off">
+                                                <button class="btn btn-outline-secondary" type="button"
+                                                        onclick="toggleSecretField(this)"
+                                                        title="Show/hide">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                            </div>
+                                            {% elif field.type == 'number' %}
                                             <input type="number"
                                                    class="form-control form-control-sm setting-input"
                                                    data-key="{{ field.key }}"
@@ -502,6 +526,18 @@
 
 {% block scripts %}
 <script>
+function toggleSecretField(btn) {
+    const input = btn.parentElement.querySelector('input');
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('bi-eye', 'bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.replace('bi-eye-slash', 'bi-eye');
+    }
+}
+
 function togglePasswordVisibility(btn) {
     const input = btn.parentElement.querySelector('input');
     const icon = btn.querySelector('i');
@@ -643,6 +679,31 @@ document.addEventListener('DOMContentLoaded', () => {
     updateToolCategories();
     document.querySelectorAll('.tool-category-toggle').forEach(toggle => {
         toggle.addEventListener('change', updateToolCategories);
+    });
+
+    // Track changes on tool API key (password) fields
+    document.querySelectorAll('.tool-conditional-field input[type="password"]').forEach(el => {
+        el.addEventListener('input', () => { el.dataset.secretChanged = 'true'; });
+    });
+
+    // Conditional field visibility (show_when depends on a select value)
+    function updateConditionalFields() {
+        document.querySelectorAll('.tool-conditional-field').forEach(row => {
+            const showWhen = row.dataset.showWhen;
+            const dependsOn = row.dataset.dependsOn;
+            if (!dependsOn) return;
+            const selectEl = document.querySelector(`[data-key="${dependsOn}"]`);
+            if (selectEl) {
+                row.style.display = selectEl.value === showWhen ? '' : 'none';
+                const inputs = row.querySelectorAll('input, select');
+                inputs.forEach(el => el.disabled = selectEl.value !== showWhen);
+            }
+        });
+    }
+    updateConditionalFields();
+    // Re-run when any select with a dependent changes
+    document.querySelectorAll('select.setting-input').forEach(sel => {
+        sel.addEventListener('change', updateConditionalFields);
     });
 
     const links = document.querySelectorAll('.col-md-3 .nav-link');

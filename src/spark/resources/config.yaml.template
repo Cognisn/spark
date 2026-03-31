@@ -171,8 +171,11 @@ embedded_tools:
 
   web:
     enabled: true
-    # search_provider: google
-    # safe_search: true
+    search_engine: duckduckgo        # duckduckgo, brave, google, bing, searxng
+    # brave_api_key: ""              # Brave Search API key (free tier at search.brave.com/api)
+    # google_api_key: ""             # SerpAPI key (serpapi.com)
+    # bing_api_key: ""               # Azure Cognitive Services Bing Search key
+    # searxng_url: ""                # SearXNG instance URL, e.g. https://search.example.com
 
 # -----------------------------------------------------------------------------
 # Default Model

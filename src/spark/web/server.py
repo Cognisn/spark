@@ -366,7 +366,23 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             status["ready"] = True
             logger.info("Background initialisation complete")
 
-            # Step 6: Start heartbeat monitor
+            # Step 6: Check for updates (non-blocking, after ready)
+            try:
+                from spark.core.updater import check_for_update
+
+                include_pre = "a" in spark.__version__ or "b" in spark.__version__
+                update_info = check_for_update(include_prereleases=include_pre)
+                app.state.update_info = update_info
+                if update_info.available:
+                    logger.info(
+                        "Update available: %s -> %s",
+                        update_info.current_version,
+                        update_info.latest_version,
+                    )
+            except Exception as e:
+                logger.debug("Update check failed (non-fatal): %s", e)
+
+            # Step 7: Start heartbeat monitor
             hb_enabled = ctx.settings.get("interface.browser_heartbeat.enabled", True)
             if hb_enabled:
                 hb_interval = int(

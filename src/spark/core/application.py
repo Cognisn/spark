@@ -131,6 +131,6 @@ def _default_settings() -> dict:
             "filesystem": {"enabled": True, "mode": "read", "allowed_paths": []},
             "documents": {"enabled": True, "mode": "read", "max_file_size_mb": 50},
             "archives": {"enabled": True, "mode": "list"},
-            "web": {"enabled": True},
+            "web": {"enabled": True, "search_engine": "duckduckgo"},
         },
     }
