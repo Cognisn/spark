@@ -1,0 +1,543 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - {{ conversation.name }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column" style="height: calc(100vh - var(--app-navbar-height) - 80px);">
+
+    <!-- Chat header -->
+    <div class="d-flex align-items-center justify-content-between px-3 py-2"
+         style="border-bottom: 1px solid var(--app-border);">
+        <div>
+            <a href="/conversations" class="btn btn-app-ghost btn-sm me-2"><i class="bi bi-arrow-left"></i></a>
+            <strong id="conv-display-name" style="cursor: pointer;" onclick="renameConversation()" title="Click to rename">{{ conversation.name }}</strong>
+            <button class="btn btn-app-ghost btn-sm ms-1" onclick="renameConversation()" title="Rename"><i class="bi bi-pencil" style="font-size: 0.7rem;"></i></button>
+            <span class="ms-1" style="font-size: 0.8125rem; color: var(--app-text-muted); cursor: pointer;" onclick="changeModel()" title="Click to change model" id="conv-display-model">{{ conversation.model_id }}</span>
+        </div>
+        <div class="d-flex gap-1">
+            <button class="btn btn-app-ghost btn-sm" id="btn-favourite" title="Favourite" onclick="toggleFavourite()"
+                    style="color: {% if conversation.is_favourite %}var(--app-warning){% else %}var(--app-text-muted){% endif %};">
+                <i class="bi {% if conversation.is_favourite %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+            </button>
+            <button class="btn btn-app-ghost btn-sm" title="Info" onclick="showInfoModal()"><i class="bi bi-info-circle"></i></button>
+            <button class="btn btn-app-ghost btn-sm" title="Settings" onclick="showSettingsModal()"><i class="bi bi-gear"></i></button>
+            <button class="btn btn-app-ghost btn-sm" title="Delete" onclick="confirmDeleteConversation()" style="color: var(--app-danger);"><i class="bi bi-trash"></i></button>
+        </div>
+    </div>
+
+    <!-- Messages area -->
+    <div id="chat-messages" class="flex-grow-1 overflow-auto px-3 chat-container"></div>
+
+    <!-- Input area -->
+    <div class="chat-input-container">
+        <form id="chat-form" onsubmit="handleSubmit(event)">
+            <div class="d-flex gap-2">
+                <textarea id="chat-input" class="form-control" rows="1" placeholder="Type a message..." onkeydown="handleKeydown(event)" style="resize: none;"></textarea>
+                <button type="submit" class="btn btn-app-primary" id="btn-send"><i class="bi bi-send"></i></button>
+            </div>
+        </form>
+        <div style="font-size: 0.6875rem; color: var(--app-text-muted); margin-top: 0.375rem; padding-left: 0.25rem;">
+            Tokens: <span id="tc-in">0</span> in / <span id="tc-out">0</span> out
+        </div>
+    </div>
+</div>
+
+<!-- Info Modal -->
+<div class="modal fade" id="infoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Conversation Information</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="info-content"><div class="text-center py-3"><div class="app-spinner mx-auto"></div></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Modal (two-panel) -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Conversation Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body p-0">
+                <div class="d-flex" style="min-height: 500px;">
+                    <!-- Sidebar -->
+                    <div class="settings-sidebar" style="width: 200px; border-right: 1px solid var(--app-border); padding: 1rem 0.5rem; flex-shrink: 0;">
+                        <nav class="nav flex-column">
+                            <a class="nav-link settings-tab-link active" href="#" data-tab="tab-instructions"><i class="bi bi-card-text me-2"></i>Instructions</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-context"><i class="bi bi-diagram-3 me-2"></i>Context</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-compaction"><i class="bi bi-layers me-2"></i>Compaction</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-tools"><i class="bi bi-tools me-2"></i>Tools</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-export"><i class="bi bi-download me-2"></i>Export</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-links"><i class="bi bi-link-45deg me-2"></i>Linked Conversations</a>
+                        </nav>
+                    </div>
+                    <!-- Content -->
+                    <div class="flex-grow-1 p-4" style="overflow-y: auto; max-height: 500px;">
+                        <!-- Instructions -->
+                        <div class="settings-tab-panel" id="tab-instructions">
+                            <h6 style="font-weight: 600;"><i class="bi bi-card-text me-1"></i> System Instructions</h6>
+                            <textarea class="form-control" id="conv-instructions" rows="8" placeholder="Custom system instructions..."></textarea>
+                            <div class="form-text">Sent as a system prompt with each message.</div>
+                        </div>
+                        <!-- Context -->
+                        <div class="settings-tab-panel" id="tab-context" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-diagram-3 me-1"></i> Context Management</h6>
+                            <div class="mb-3">
+                                <div class="form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="conv-rag-enabled" checked>
+                                    <label class="form-check-label" for="conv-rag-enabled">Enable RAG context retrieval</label>
+                                </div>
+                                <div class="form-text mb-3">Automatically retrieves relevant past messages using semantic search.</div>
+                                <div class="row g-3 mb-3" id="rag-settings">
+                                    <div class="col-md-6">
+                                        <label class="form-label" style="font-size: 0.8125rem;">Top K Results</label>
+                                        <input type="number" class="form-control form-control-sm" id="conv-rag-top-k" min="1" max="20" value="5">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" style="font-size: 0.8125rem;">Minimum Similarity</label>
+                                        <input type="number" class="form-control form-control-sm" id="conv-rag-threshold" min="0.1" max="1.0" step="0.05" value="0.4">
+                                    </div>
+                                </div>
+                                <div class="form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="conv-rag-tool">
+                                    <label class="form-check-label" for="conv-rag-tool">Allow LLM to search chat history via tool</label>
+                                </div>
+                            </div>
+                            <hr>
+                            <h6 class="mt-3" style="font-weight: 600;">Message History</h6>
+                            <div class="mb-3">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="historyMode" id="history-all" value="all" checked>
+                                    <label class="form-check-label" for="history-all">Send all messages (within compaction limits)</label>
+                                </div>
+                                <div class="form-check mb-2 d-flex align-items-center gap-2">
+                                    <input class="form-check-input" type="radio" name="historyMode" id="history-last" value="last">
+                                    <label class="form-check-label" for="history-last">Send last</label>
+                                    <input type="number" class="form-control form-control-sm" id="conv-max-messages" style="width: 80px;" min="2" max="200" value="20" disabled>
+                                    <span style="font-size: 0.8125rem;">messages</span>
+                                </div>
+                            </div>
+                            <div class="form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="conv-include-tools" checked>
+                                <label class="form-check-label" for="conv-include-tools">Include tool results in context</label>
+                            </div>
+                            <div class="form-switch">
+                                <input class="form-check-input" type="checkbox" id="conv-memory" checked>
+                                <label class="form-check-label" for="conv-memory">Enable persistent memory</label>
+                            </div>
+                        </div>
+                        <!-- Compaction -->
+                        <div class="settings-tab-panel" id="tab-compaction" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-layers me-1"></i> Context Compaction</h6>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label" style="font-size: 0.8125rem;">Compaction Threshold</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" id="conv-threshold" min="5" max="95" step="5" value="70">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" style="font-size: 0.8125rem;">Summary Ratio</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" id="conv-ratio" min="5" max="90" step="5" value="30">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="compaction-indicator" class="app-card p-3" style="font-size: 0.8125rem;">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span>Context usage</span>
+                                    <span id="ci-usage">0 / 0 tokens</span>
+                                </div>
+                                <div class="progress-app mb-2" style="height: 0.5rem; position: relative;">
+                                    <div class="progress-bar" id="ci-bar" style="width: 0%;"></div>
+                                    <div id="ci-threshold-marker" style="position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--app-warning); z-index: 1;"></div>
+                                </div>
+                                <div style="color: var(--app-text-muted); font-size: 0.75rem;">
+                                    Compaction triggers at <strong id="ci-trigger-tokens">0</strong> tokens
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Tools -->
+                        <div class="settings-tab-panel" id="tab-tools" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-tools me-1"></i> Tool Control</h6>
+                            <div id="tools-list"><div class="text-center py-3"><div class="app-spinner mx-auto"></div></div></div>
+                        </div>
+                        <!-- Export -->
+                        <div class="settings-tab-panel" id="tab-export" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-download me-1"></i> Export Conversation</h6>
+                            <p style="font-size: 0.875rem; color: var(--app-text-secondary);">Download the conversation in your preferred format.</p>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-app-outline" onclick="exportConversation('markdown')"><i class="bi bi-filetype-md me-1"></i>Markdown</button>
+                                <button class="btn btn-app-outline" onclick="exportConversation('html')"><i class="bi bi-filetype-html me-1"></i>HTML</button>
+                                <button class="btn btn-app-outline" onclick="exportConversation('csv')"><i class="bi bi-filetype-csv me-1"></i>CSV</button>
+                                <button class="btn btn-app-outline" onclick="exportConversation('json')"><i class="bi bi-filetype-json me-1"></i>JSON</button>
+                            </div>
+                        </div>
+                        <!-- Linked Conversations -->
+                        <div class="settings-tab-panel" id="tab-links" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-link-45deg me-1"></i> Linked Conversations</h6>
+                            <p style="font-size: 0.8125rem; color: var(--app-text-secondary);">Linking gives this conversation access to the context of another conversation.</p>
+                            <div id="links-content"><div class="text-center py-3"><div class="app-spinner mx-auto"></div></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-app-primary" onclick="saveConversationSettings()"><i class="bi bi-check-lg me-1"></i>Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-trash me-2" style="color: var(--app-danger);"></i>Delete Conversation</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong>{{ conversation.name }}</strong>?</p>
+                <p style="color: var(--app-text-muted); font-size: 0.875rem;">This action cannot be undone. All messages, files, and settings will be removed.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-app-danger" onclick="deleteConversation()"><i class="bi bi-trash me-1"></i>Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tool permission modal -->
+<div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-exclamation me-2"></i>Tool Permission</h5></div>
+            <div class="modal-body"><p id="permission-message"></p><div id="permission-details" style="font-size: 0.8125rem; color: var(--app-text-secondary);"></div></div>
+            <div class="modal-footer">
+                <button class="btn btn-app-ghost" onclick="respondPermission('denied')">Deny</button>
+                <button class="btn btn-app-outline" onclick="respondPermission('once')">Allow Once</button>
+                <button class="btn btn-app-primary" onclick="respondPermission('allowed')">Always Allow</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/main.js"></script>
+<script src="/static/js/chat.js"></script>
+<script src="/static/js/sse-client.js"></script>
+<script>
+const conversationId = {{ conversation.id }};
+const conversationName = "{{ conversation.name }}";
+
+document.addEventListener('DOMContentLoaded', async () => {
+    configureMarked();
+    initMermaid();
+    loadChatHistory(conversationId);
+
+    // Seed token counter from stored values
+    try {
+        const info = await fetch(`/chat/${conversationId}/api/info`).then(r => r.json());
+        totalTokensIn = info.tokens_sent || 0;
+        totalTokensOut = info.tokens_received || 0;
+        updateTokenDisplay(0, 0);
+    } catch (e) {}
+});
+
+// -- Settings sidebar tab switching --
+document.querySelectorAll('.settings-tab-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.settings-tab-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+        document.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = 'none');
+        document.getElementById(link.dataset.tab).style.display = '';
+    });
+});
+
+// History mode radio toggle
+document.getElementById('history-last')?.addEventListener('change', () => {
+    document.getElementById('conv-max-messages').disabled = false;
+});
+document.getElementById('history-all')?.addEventListener('change', () => {
+    document.getElementById('conv-max-messages').disabled = true;
+});
+
+// RAG toggle
+document.getElementById('conv-rag-enabled')?.addEventListener('change', (e) => {
+    const settings = document.getElementById('rag-settings');
+    settings.style.opacity = e.target.checked ? '1' : '0.35';
+    settings.style.pointerEvents = e.target.checked ? '' : 'none';
+});
+
+// -- Info Modal --
+async function showInfoModal() {
+    new bootstrap.Modal(document.getElementById('infoModal')).show();
+    const content = document.getElementById('info-content');
+    try {
+        const info = await fetch(`/chat/${conversationId}/api/info`).then(r => r.json());
+        const total = (info.tokens_sent || 0) + (info.tokens_received || 0);
+        const cw = info.context_window || 0;
+        const pct = cw > 0 ? Math.round((total / cw) * 100) : 0;
+        const cls = pct > 90 ? 'danger' : pct > 60 ? 'warning' : 'success';
+        content.innerHTML = `
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6"><div style="font-size:0.8125rem;color:var(--app-text-secondary);">Model</div><div style="font-weight:600;">${info.model_id||'N/A'}</div></div>
+                <div class="col-sm-6"><div style="font-size:0.8125rem;color:var(--app-text-secondary);">Created</div><div style="font-weight:600;">${info.created_at?new Date(info.created_at).toLocaleString():'N/A'}</div></div>
+            </div>
+            <div class="mb-3">
+                <div style="font-size:0.8125rem;color:var(--app-text-secondary);">Context Usage</div>
+                <div class="d-flex align-items-center gap-2 mt-1"><div class="progress-app flex-grow-1" style="height:0.5rem;"><div class="progress-bar ${cls}" style="width:${pct}%;"></div></div><span class="badge-app badge-app-${cls}" style="font-size:0.6875rem;">${pct}%</span></div>
+                <div style="font-size:0.75rem;color:var(--app-text-muted);margin-top:0.25rem;">${total.toLocaleString()} / ${cw.toLocaleString()} tokens</div>
+            </div>
+            <div class="row g-3">
+                <div class="col-sm-4"><div style="font-size:0.8125rem;color:var(--app-text-secondary);">Tokens In</div><div style="font-weight:600;">${(info.tokens_sent||0).toLocaleString()}</div></div>
+                <div class="col-sm-4"><div style="font-size:0.8125rem;color:var(--app-text-secondary);">Tokens Out</div><div style="font-weight:600;">${(info.tokens_received||0).toLocaleString()}</div></div>
+                <div class="col-sm-4"><div style="font-size:0.8125rem;color:var(--app-text-secondary);">Total</div><div style="font-weight:600;">${total.toLocaleString()}</div></div>
+            </div>`;
+    } catch (err) { content.innerHTML = '<div class="alert-app alert-app-danger">Failed to load info.</div>'; }
+}
+
+// -- Settings Modal --
+async function showSettingsModal() {
+    try {
+        const info = await fetch(`/chat/${conversationId}/api/info`).then(r => r.json());
+        document.getElementById('conv-instructions').value = info.instructions || '';
+        document.getElementById('conv-threshold').value = Math.round((info.compaction_threshold || 0.7) * 100);
+        document.getElementById('conv-ratio').value = Math.round((info.compaction_summary_ratio || 0.3) * 100);
+        document.getElementById('conv-memory').checked = info.memory_enabled !== false;
+        document.getElementById('conv-rag-enabled').checked = info.rag_enabled !== false;
+        document.getElementById('conv-rag-top-k').value = info.rag_top_k || 5;
+        document.getElementById('conv-rag-threshold').value = info.rag_threshold || 0.4;
+        document.getElementById('conv-rag-tool').checked = !!info.rag_tool_enabled;
+        document.getElementById('conv-include-tools').checked = info.include_tool_results !== false;
+
+        if (info.max_history_messages) {
+            document.getElementById('history-last').checked = true;
+            document.getElementById('conv-max-messages').value = info.max_history_messages;
+            document.getElementById('conv-max-messages').disabled = false;
+        } else {
+            document.getElementById('history-all').checked = true;
+            document.getElementById('conv-max-messages').disabled = true;
+        }
+
+        // Compaction indicator
+        const cw = info.context_window || 0;
+        const total = (info.tokens_sent || 0) + (info.tokens_received || 0);
+        const threshPct = parseInt(document.getElementById('conv-threshold').value);
+        document.getElementById('ci-usage').textContent = `${total.toLocaleString()} / ${cw.toLocaleString()} tokens`;
+        document.getElementById('ci-bar').style.width = (cw > 0 ? Math.round(total/cw*100) : 0) + '%';
+        document.getElementById('ci-threshold-marker').style.left = threshPct + '%';
+        document.getElementById('ci-trigger-tokens').textContent = Math.round(cw * threshPct / 100).toLocaleString();
+
+        // RAG settings visibility
+        const ragEl = document.getElementById('rag-settings');
+        const ragOn = document.getElementById('conv-rag-enabled').checked;
+        ragEl.style.opacity = ragOn ? '1' : '0.35';
+        ragEl.style.pointerEvents = ragOn ? '' : 'none';
+    } catch (err) {}
+    new bootstrap.Modal(document.getElementById('settingsModal')).show();
+    loadToolsTab();
+    loadLinksTab();
+}
+
+async function saveConversationSettings() {
+    const historyMode = document.querySelector('input[name="historyMode"]:checked')?.value;
+    const data = {
+        instructions: document.getElementById('conv-instructions').value || null,
+        compaction_threshold: parseInt(document.getElementById('conv-threshold').value) / 100,
+        compaction_summary_ratio: parseInt(document.getElementById('conv-ratio').value) / 100,
+        memory_enabled: document.getElementById('conv-memory').checked,
+        rag_enabled: document.getElementById('conv-rag-enabled').checked,
+        rag_top_k: parseInt(document.getElementById('conv-rag-top-k').value) || 5,
+        rag_threshold: parseFloat(document.getElementById('conv-rag-threshold').value) || 0.4,
+        rag_tool_enabled: document.getElementById('conv-rag-tool').checked,
+        include_tool_results: document.getElementById('conv-include-tools').checked,
+        max_history_messages: historyMode === 'last' ? parseInt(document.getElementById('conv-max-messages').value) || 20 : null,
+    };
+    try {
+        const resp = await fetch(`/chat/${conversationId}/api/settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+        if (resp.ok) { AppToast.success('Saved', 'Settings updated.'); bootstrap.Modal.getInstance(document.getElementById('settingsModal'))?.hide(); }
+        else { const err = await resp.json(); AppToast.danger('Error', err.detail || 'Failed.'); }
+    } catch (err) { AppToast.danger('Error', 'Network error.'); }
+}
+
+// -- Tools Tab --
+async function loadToolsTab() {
+    const container = document.getElementById('tools-list');
+    try {
+        const resp = await fetch(`/chat/${conversationId}/api/tools`);
+        const data = await resp.json();
+        let html = '';
+
+        // Embedded tools
+        if (data.embedded.length) {
+            html += '<div class="mb-3"><strong style="font-size:0.875rem;"><i class="bi bi-puzzle me-1" style="color:var(--app-accent);"></i>Embedded Tools</strong></div>';
+            data.embedded.forEach(t => {
+                html += `<div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1" style="font-size:0.8125rem; border-radius:0.375rem;">
+                    <span>${escapeHtml(t.name)}<span style="color:var(--app-text-muted); font-size:0.6875rem; margin-left:0.5rem;">${escapeHtml(t.description || '').substring(0, 60)}</span></span>
+                    <div class="form-switch"><input class="form-check-input" type="checkbox" ${t.enabled?'checked':''} onchange="toggleTool('embedded','${t.name}',this.checked)"></div>
+                </div>`;
+            });
+        }
+
+        // MCP servers
+        if (data.mcp_servers.length) {
+            data.mcp_servers.forEach(s => {
+                const serverId = 'mcp-srv-' + s.name.replace(/[^a-z0-9]/gi, '-');
+                html += `
+                    <div class="mt-4 mb-2" style="border:1px solid var(--app-border); border-radius:0.5rem; overflow:hidden;">
+                        <div class="d-flex align-items-center justify-content-between px-3 py-2" style="background:var(--app-bg-secondary);">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-hdd-network" style="color:var(--app-accent);"></i>
+                                <strong style="font-size:0.875rem;">${escapeHtml(s.name)}</strong>
+                                <span style="font-size:0.6875rem; color:var(--app-text-muted);">${s.tools.length} tools</span>
+                            </div>
+                            <div class="form-switch">
+                                <input class="form-check-input" type="checkbox" ${s.enabled?'checked':''}
+                                       onchange="toggleTool('mcp_server','${s.name}',this.checked); setTimeout(loadToolsTab, 500);"
+                                       title="Enable/disable entire server">
+                            </div>
+                        </div>
+                        <div style="padding:0.375rem 0.5rem; ${!s.enabled ? 'opacity:0.35; pointer-events:none;' : ''}">
+                            ${s.tools.map(t => `
+                                <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1" style="font-size:0.8125rem;">
+                                    <span>${escapeHtml(t.name)}<span style="color:var(--app-text-muted); font-size:0.6875rem; margin-left:0.5rem;">${escapeHtml(t.description || '').substring(0, 60)}</span></span>
+                                    <div class="form-switch"><input class="form-check-input" type="checkbox" ${t.enabled?'checked':''} onchange="toggleTool('embedded','${t.name}',this.checked)"></div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+            });
+        }
+
+        container.innerHTML = html || '<p style="color:var(--app-text-muted);">No tools available.</p>';
+    } catch (err) { container.innerHTML = '<div class="alert-app alert-app-danger">Failed to load tools.</div>'; }
+}
+
+async function toggleTool(type, name, enabled) {
+    await fetch(`/chat/${conversationId}/api/tools`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({type, name, enabled}) });
+}
+
+// -- Links Tab --
+async function loadLinksTab() {
+    const container = document.getElementById('links-content');
+    try {
+        const resp = await fetch(`/chat/${conversationId}/api/links`);
+        const data = await resp.json();
+        let html = '';
+        if (data.linked.length) {
+            html += '<div class="mb-3"><strong style="font-size:0.875rem;">Currently Linked</strong></div>';
+            data.linked.forEach(c => {
+                html += `<div class="d-flex align-items-center justify-content-between py-2 px-2 mb-1" style="font-size:0.8125rem; border: 1px solid var(--app-border); border-radius: 0.375rem;">
+                    <span>${escapeHtml(c.name)} <span style="color:var(--app-text-muted);">(${c.model_id||''})</span></span>
+                    <button class="btn btn-app-ghost btn-sm" onclick="unlinkConversation(${c.id})" style="color:var(--app-danger);"><i class="bi bi-x-lg"></i></button>
+                </div>`;
+            });
+        }
+        if (data.available.length) {
+            html += '<div class="mb-2 mt-3"><strong style="font-size:0.875rem;">Add Link</strong></div>';
+            html += '<div class="d-flex gap-2"><select class="form-select form-select-sm" id="link-target">';
+            data.available.forEach(c => { html += `<option value="${c.id}">${escapeHtml(c.name)}</option>`; });
+            html += '</select><button class="btn btn-app-primary btn-sm" onclick="linkConversation()"><i class="bi bi-plus-lg"></i></button></div>';
+        }
+        if (!data.linked.length && !data.available.length) html = '<p style="color:var(--app-text-muted);">No conversations available for linking.</p>';
+        container.innerHTML = html;
+    } catch (err) { container.innerHTML = '<div class="alert-app alert-app-danger">Failed to load links.</div>'; }
+}
+
+async function linkConversation() {
+    const target = document.getElementById('link-target')?.value;
+    if (!target) return;
+    await fetch(`/chat/${conversationId}/api/links`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_id: parseInt(target)}) });
+    loadLinksTab();
+}
+
+async function unlinkConversation(targetId) {
+    await fetch(`/chat/${conversationId}/api/links/${targetId}`, { method: 'DELETE' });
+    loadLinksTab();
+}
+
+// -- Export --
+function exportConversation(format) {
+    window.open(`/chat/${conversationId}/api/export?format=${format}`, '_blank');
+}
+
+// -- Delete --
+let isFavourite = {{ 'true' if conversation.is_favourite else 'false' }};
+async function toggleFavourite() {
+    isFavourite = !isFavourite;
+    try {
+        await fetch(`/conversations/api/${conversationId}/favourite`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ favourite: isFavourite }),
+        });
+        const btn = document.getElementById('btn-favourite');
+        const icon = btn.querySelector('i');
+        if (isFavourite) {
+            icon.className = 'bi bi-star-fill';
+            btn.style.color = 'var(--app-warning)';
+        } else {
+            icon.className = 'bi bi-star';
+            btn.style.color = 'var(--app-text-muted)';
+        }
+    } catch (err) { AppToast.danger('Error', 'Failed to update.'); }
+}
+
+async function renameConversation() {
+    const newName = prompt('Rename conversation:', document.getElementById('conv-display-name').textContent);
+    if (!newName || !newName.trim()) return;
+    try {
+        const resp = await fetch(`/conversations/api/${conversationId}/rename`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: newName.trim() }),
+        });
+        if (resp.ok) {
+            document.getElementById('conv-display-name').textContent = newName.trim();
+            document.title = `Spark - ${newName.trim()}`;
+        }
+    } catch (err) { AppToast.danger('Error', 'Failed to rename.'); }
+}
+
+async function changeModel() {
+    try {
+        const resp = await fetch('/conversations/api/models');
+        const data = await resp.json();
+        const models = data.models || [];
+        if (!models.length) { AppToast.warning('No models', 'No models available.'); return; }
+
+        const names = models.map(m => `${m.name} (${m.provider}) [${m.id}]`);
+        const choice = prompt('Select model ID:\\n' + names.join('\\n') + '\\n\\nEnter model ID:',
+            document.getElementById('conv-display-model').textContent);
+        if (!choice || !choice.trim()) return;
+
+        const modelId = choice.trim();
+        const r = await fetch(`/conversations/api/${conversationId}/model`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ model_id: modelId }),
+        });
+        if (r.ok) {
+            document.getElementById('conv-display-model').textContent = modelId;
+            AppToast.success('Model changed', `Now using ${modelId}`);
+        }
+    } catch (err) { AppToast.danger('Error', 'Failed to change model.'); }
+}
+
+function confirmDeleteConversation() { new bootstrap.Modal(document.getElementById('deleteModal')).show(); }
+async function deleteConversation() {
+    try {
+        await fetch(`/conversations/api/${conversationId}`, { method: 'DELETE' });
+        window.location.href = '/conversations';
+    } catch (err) { AppToast.danger('Error', 'Failed to delete.'); }
+}
+</script>
+{% endblock %}

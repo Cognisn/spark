@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Spark - User Guide{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <div class="mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">User Guide</h4>
+        <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+            Search for help on any topic or browse the guide below.
+        </p>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-4">
+        <div style="position: relative;">
+            <i class="bi bi-search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--app-text-muted); pointer-events: none;"></i>
+            <input type="text" class="form-control" id="help-search" placeholder="Search help topics..."
+                   style="padding-left: 2.25rem;" oninput="searchHelp(this.value)">
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Topic Nav -->
+        <div class="col-md-3">
+            <div style="position: sticky; top: calc(var(--app-navbar-height) + 1.5rem);">
+                <div class="app-card">
+                    <div class="card-body p-2">
+                        <nav class="nav flex-column" id="help-nav">
+                            {% for topic in topics %}
+                            <a class="nav-link px-3 py-2 rounded {% if loop.first %}active{% endif %}"
+                               href="#" data-topic="{{ topic.id }}" onclick="showTopic('{{ topic.id }}', event)"
+                               style="font-size: 0.8125rem; color: var(--app-text-secondary);">
+                                {{ topic.title }}
+                            </a>
+                            {% endfor %}
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="col-md-9">
+            <div class="app-card">
+                <div class="card-body" id="help-content">
+                    <!-- Rendered by JS on page load -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const helpTopics = {{ topics | tojson }};
+let currentTopicId = helpTopics.length ? helpTopics[0].id : null;
+
+function _renderMd(text) {
+    if (typeof marked !== 'undefined') {
+        try { return marked.parse(text); } catch (e) {}
+    }
+    return text.replace(/\n/g, '<br>');
+}
+
+function showTopic(topicId, event) {
+    if (event) event.preventDefault();
+    currentTopicId = topicId;
+    const topic = helpTopics.find(t => t.id === topicId);
+    if (!topic) return;
+
+    document.getElementById('help-content').innerHTML =
+        `<div class="markdown-content">${_renderMd(topic.content)}</div>`;
+
+    // Update active nav
+    document.querySelectorAll('#help-nav .nav-link').forEach(l => {
+        l.classList.toggle('active', l.dataset.topic === topicId);
+        l.style.color = l.dataset.topic === topicId ? 'var(--app-accent)' : 'var(--app-text-secondary)';
+        l.style.background = l.dataset.topic === topicId ? 'var(--app-active-bg)' : '';
+    });
+}
+
+let _searchDebounce = null;
+function searchHelp(query) {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(async () => {
+        if (!query.trim()) {
+            // Reset nav to show all topics
+            document.querySelectorAll('#help-nav .nav-link').forEach(l => l.style.display = '');
+            return;
+        }
+        try {
+            const resp = await fetch(`/help/api/search?q=${encodeURIComponent(query)}`);
+            const results = await resp.json();
+            const matchIds = new Set(results.map(r => r.id));
+
+            // Show/hide nav items
+            document.querySelectorAll('#help-nav .nav-link').forEach(l => {
+                l.style.display = matchIds.has(l.dataset.topic) ? '' : 'none';
+            });
+
+            // Show first match
+            if (results.length) showTopic(results[0].id);
+        } catch (err) {}
+    }, 300);
+}
+
+// Show first topic on load
+document.addEventListener('DOMContentLoaded', () => {
+    if (currentTopicId) showTopic(currentTopicId);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,197 @@
+# =============================================================================
+# Spark Configuration
+# =============================================================================
+# Copy this file to config.yaml and customise for your environment.
+# Secrets can be referenced using secret:// URIs, e.g.:
+#   api_key: secret://anthropic_api_key
+# Environment variables override settings using the SPARK__ prefix, e.g.:
+#   SPARK__DATABASE__HOST=localhost
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+logging:
+  level: INFO                    # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: text                   # text or json
+  retention_runs: 10             # Number of historical log directories to keep
+  max_file_size_mb: 50           # Rotate log file at this size
+  max_files_per_run: 3           # Rotated files per run directory
+  console_output: auto           # auto, stderr, or none
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+database:
+  type: sqlite                   # sqlite, mysql, postgresql, mssql
+  path: spark.db                 # SQLite file path (relative to working dir)
+  # host: localhost
+  # port: 5432
+  # name: spark
+  # user: spark
+  # password: secret://db_password
+
+# -----------------------------------------------------------------------------
+# Web Interface
+# -----------------------------------------------------------------------------
+interface:
+  host: 127.0.0.1
+  # port is randomly chosen on each startup
+  ssl:
+    enabled: false
+    # cert_file: /path/to/cert.pem
+    # key_file: /path/to/key.pem
+    # auto_generate: true          # Generate self-signed cert if none provided
+  session_timeout_minutes: 60
+  browser_heartbeat:
+    enabled: true
+    interval_seconds: 30
+    miss_threshold: 3              # Shutdown after N missed heartbeats
+
+# -----------------------------------------------------------------------------
+# LLM Providers
+# -----------------------------------------------------------------------------
+providers:
+  anthropic:
+    enabled: false
+    api_key: secret://anthropic_api_key
+    # rate_limit_retry: true
+    # max_retries: 3
+
+  aws_bedrock:
+    enabled: false
+    region: us-east-1
+    # auth_method: sso              # sso, iam, session
+    # profile: default
+    # cost_tracking: true
+
+  ollama:
+    enabled: false
+    base_url: http://localhost:11434
+    # timeout: 120
+    # verify_ssl: true
+
+  google_gemini:
+    enabled: false
+    api_key: secret://google_gemini_api_key
+    # web_search_grounding: false
+
+  xai:
+    enabled: false
+    api_key: secret://xai_api_key
+
+# -----------------------------------------------------------------------------
+# Conversation Settings
+# -----------------------------------------------------------------------------
+conversation:
+  # Context compaction
+  rollup_threshold: 0.3           # Compact at 30% of context window
+  rollup_summary_ratio: 0.3       # Compress to 30% of original
+  emergency_rollup_threshold: 0.95 # Force compaction at 95%
+
+  # Tool execution
+  max_tool_iterations: 25
+  max_tool_selections: 30
+  max_tool_result_tokens: 4000
+
+  # Web search (Anthropic models)
+  web_search:
+    enabled: false
+
+  # Global system instructions (prepended to all conversations)
+  # global_instructions: |
+  #   You are a helpful AI assistant.
+
+# -----------------------------------------------------------------------------
+# Model Context Limits
+# -----------------------------------------------------------------------------
+# Override or add context window sizes for specific models.
+# Format: model_id_or_pattern: {context_window: N, max_output: M}
+context_limits:
+  # Anthropic
+  claude-sonnet-4-20250514: {context_window: 200000, max_output: 16384}
+  claude-opus-4-20250514: {context_window: 200000, max_output: 16384}
+  claude-3-5-sonnet-20241022: {context_window: 200000, max_output: 8192}
+  claude-3-5-haiku-20241022: {context_window: 200000, max_output: 8192}
+  # Ollama defaults
+  llama3: {context_window: 8192, max_output: 4096}
+  mistral: {context_window: 32768, max_output: 8192}
+
+# -----------------------------------------------------------------------------
+# Token Management
+# -----------------------------------------------------------------------------
+token_management:
+  # enabled: false
+  # limit: 1000000                  # Max tokens per rolling window
+  # window_hours: 24                # Rolling window duration
+
+# -----------------------------------------------------------------------------
+# Security — Prompt Inspection
+# -----------------------------------------------------------------------------
+prompt_inspection:
+  enabled: false
+  # level: standard                 # basic, standard, strict
+  # action: warn                    # block, warn, sanitize, log_only
+
+# -----------------------------------------------------------------------------
+# Tool Permissions
+# -----------------------------------------------------------------------------
+tool_permissions:
+  auto_approve: false               # Prompt user for each new tool
+
+# -----------------------------------------------------------------------------
+# MCP Servers
+# -----------------------------------------------------------------------------
+# mcp:
+#   servers:
+#     - name: example-server
+#       transport: stdio
+#       command: npx
+#       args: ["-y", "@example/mcp-server"]
+#       # env:
+#       #   API_KEY: secret://example_api_key
+
+# -----------------------------------------------------------------------------
+# Embedded Tools
+# -----------------------------------------------------------------------------
+embedded_tools:
+  filesystem:
+    enabled: true
+    mode: read                     # read or read_write
+    allowed_paths: []              # Empty = working directory only
+
+  documents:
+    enabled: true
+    mode: read                     # read or read_write
+    max_file_size_mb: 50
+
+  archives:
+    enabled: true
+    mode: list                     # list or extract
+
+  web:
+    enabled: true
+    # search_provider: google
+    # safe_search: true
+
+# -----------------------------------------------------------------------------
+# Default Model
+# -----------------------------------------------------------------------------
+# default_model:
+#   model_id: gemini-2.5-flash         # Model ID to pre-select for new conversations
+#   mode: default                       # default = pre-selected, mandatory = locked
+
+# -----------------------------------------------------------------------------
+# Autonomous Actions
+# -----------------------------------------------------------------------------
+autonomous_actions:
+  enabled: false
+  # max_concurrent: 3
+
+# -----------------------------------------------------------------------------
+# Daemon
+# -----------------------------------------------------------------------------
+daemon:
+  enabled: false
+  # pid_file: spark_daemon.pid
+  # heartbeat_interval: 30

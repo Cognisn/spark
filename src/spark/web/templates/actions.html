@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+{% block title %}Spark - Actions{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Autonomous Actions</h4>
+            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">Schedule AI tasks to run automatically.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-app-outline" onclick="showAICreate()"><i class="bi bi-robot me-1"></i>Create with AI</button>
+            <button class="btn btn-app-primary" onclick="showCreateAction()"><i class="bi bi-plus-lg me-1"></i>New Action</button>
+        </div>
+    </div>
+    <div id="action-list"></div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div class="modal fade" id="actionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="actionModalTitle">New Action</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="act-edit-id">
+                <div class="row g-3">
+                    <div class="col-md-6 mb-3"><label class="form-label">Name</label><input type="text" class="form-control" id="act-name"></div>
+                    <div class="col-md-6 mb-3"><label class="form-label">Model</label><input type="text" class="form-control" id="act-model" placeholder="e.g. gemini-2.5-flash-preview-05-20"></div>
+                </div>
+                <div class="mb-3"><label class="form-label">Description</label><input type="text" class="form-control" id="act-description"></div>
+                <div class="mb-3"><label class="form-label">Action Prompt</label><textarea class="form-control" id="act-prompt" rows="5" placeholder="The instructions for the AI to execute..."></textarea></div>
+                <div class="row g-3">
+                    <div class="col-md-4 mb-3"><label class="form-label">Schedule Type</label>
+                        <select class="form-select" id="act-schedule-type"><option value="one_off">One-off</option><option value="recurring">Recurring</option></select></div>
+                    <div class="col-md-4 mb-3"><label class="form-label">Schedule Config</label><input type="text" class="form-control" id="act-schedule-config" placeholder='{"cron": "0 8 * * 1-5"}'></div>
+                    <div class="col-md-4 mb-3"><label class="form-label">Context Mode</label>
+                        <select class="form-select" id="act-context-mode"><option value="fresh">Fresh each run</option><option value="cumulative">Cumulative</option></select></div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6 mb-3"><label class="form-label">Max Failures</label><input type="number" class="form-control" id="act-max-failures" value="3" min="1" max="100"></div>
+                    <div class="col-md-6 mb-3"><label class="form-label">Max Tokens</label><input type="number" class="form-control" id="act-max-tokens" value="8192" min="256"></div>
+                </div>
+
+                <!-- Tools section (only visible when editing) -->
+                <div id="act-tools-section" style="display: none;">
+                    <hr>
+                    <h6 class="mb-3" style="font-weight: 600;"><i class="bi bi-tools me-1"></i>Tools</h6>
+                    <p style="font-size: 0.8125rem; color: var(--app-text-secondary);">Enable or disable tools available to this action.</p>
+                    <div id="act-tools-list" style="max-height: 250px; overflow-y: auto;"></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button><button class="btn btn-app-primary" onclick="saveAction()"><i class="bi bi-check-lg me-1"></i>Save</button></div>
+        </div>
+    </div>
+</div>
+
+<!-- Runs Modal -->
+<div class="modal fade" id="runsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Run History</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="runs-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Creation Assistant Modal -->
+<div class="modal fade" id="aiCreateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-robot me-2"></i>Create Action with AI</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <!-- Step 1: Name and Model selection -->
+                <div id="ai-setup-step" style="padding: 1.5rem;">
+                    <p style="color: var(--app-text-secondary); font-size: 0.875rem; margin-bottom: 1.25rem;">
+                        Choose a name and model for this action. The model will be used both to help build the action and to execute it.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label">Action Name</label>
+                        <input type="text" class="form-control" id="ai-action-name" placeholder="e.g. Daily Security Report">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Model</label>
+                        <select class="form-select" id="ai-action-model">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
+                    <div class="text-end">
+                        <button class="btn btn-app-primary" onclick="startAIChat()">
+                            <i class="bi bi-arrow-right me-1"></i> Continue
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Chat interface (hidden initially) -->
+                <div id="ai-chat-step" style="display: none;">
+                    <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--app-border); font-size: 0.8125rem; color: var(--app-text-muted); display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="bi bi-tag"></i> <strong id="ai-chat-name" style="color: var(--app-text-primary);"></strong>
+                        <span>&middot;</span>
+                        <span id="ai-chat-model"></span>
+                    </div>
+                    <div id="ai-chat-messages" style="height: 370px; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column;">
+                    </div>
+                    <div style="border-top: 1px solid var(--app-border); padding: 0.75rem;">
+                        <form onsubmit="sendAIMessage(event)">
+                            <div class="d-flex gap-2">
+                                <input type="text" class="form-control form-control-sm" id="ai-input" placeholder="Describe what this action should do..." autocomplete="off">
+                                <button type="submit" class="btn btn-app-primary btn-sm" id="ai-send-btn"><i class="bi bi-send"></i></button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadActions);
+
+async function loadActions() {
+    const resp = await fetch('/actions/api/list');
+    const actions = await resp.json();
+    const el = document.getElementById('action-list');
+    if (!actions.length) { el.innerHTML = '<div class="text-center py-5" style="color:var(--app-text-muted);"><i class="bi bi-play-circle" style="font-size:2.5rem;"></i><p class="mt-2">No actions configured.</p></div>'; return; }
+    el.innerHTML = actions.map(a => `
+        <div class="action-list-card mb-2">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center gap-2">
+                        <strong style="font-size:0.9375rem;">${escapeHtml(a.name)}</strong>
+                        <span class="badge-app badge-app-${a.is_enabled ? 'success' : 'danger'}" style="font-size:0.625rem;">${a.is_enabled ? 'Enabled' : 'Disabled'}</span>
+                        <span class="badge-app badge-app-primary" style="font-size:0.625rem;">${a.schedule_type}</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--app-text-muted); margin-top:0.25rem;">
+                        ${a.description || ''} &middot; ${a.model_id}
+                        ${a.last_run_at ? ' &middot; Last run: ' + new Date(a.last_run_at).toLocaleString() : ''}
+                    </div>
+                </div>
+                <div class="d-flex gap-1">
+                    <div class="form-switch"><input class="form-check-input" type="checkbox" ${a.is_enabled?'checked':''} onchange="toggleAction(${a.id}, this.checked)"></div>
+                    <button class="btn btn-app-ghost btn-sm" onclick="showRuns(${a.id})" title="Run history"><i class="bi bi-clock-history"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" onclick="editAction(${JSON.stringify(a).replace(/"/g, '&quot;')})" title="Edit"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteAction(${a.id}, '${escapeHtml(a.name)}')" title="Delete"><i class="bi bi-trash"></i></button>
+                </div>
+            </div>
+        </div>`).join('');
+}
+
+function showCreateAction() {
+    document.getElementById('actionModalTitle').textContent = 'New Action';
+    document.getElementById('act-edit-id').value = '';
+    ['act-name','act-model','act-description','act-prompt','act-schedule-config'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('act-schedule-type').value = 'one_off';
+    document.getElementById('act-context-mode').value = 'fresh';
+    document.getElementById('act-max-failures').value = 3;
+    document.getElementById('act-max-tokens').value = 8192;
+    document.getElementById('act-tools-section').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('actionModal')).show();
+}
+
+function editAction(a) {
+    document.getElementById('actionModalTitle').textContent = 'Edit Action';
+    document.getElementById('act-edit-id').value = a.id;
+    document.getElementById('act-name').value = a.name || '';
+    document.getElementById('act-model').value = a.model_id || '';
+    document.getElementById('act-description').value = a.description || '';
+    document.getElementById('act-prompt').value = a.action_prompt || '';
+    document.getElementById('act-schedule-type').value = a.schedule_type || 'one_off';
+    document.getElementById('act-schedule-config').value = a.schedule_config || '';
+    document.getElementById('act-context-mode').value = a.context_mode || 'fresh';
+    document.getElementById('act-max-failures').value = a.max_failures || 3;
+    document.getElementById('act-max-tokens').value = a.max_tokens || 8192;
+
+    // Show and load tools for existing actions
+    document.getElementById('act-tools-section').style.display = '';
+    loadActionTools(a.id);
+
+    new bootstrap.Modal(document.getElementById('actionModal')).show();
+}
+
+async function saveAction() {
+    const id = document.getElementById('act-edit-id').value;
+    const data = {
+        name: document.getElementById('act-name').value,
+        model_id: document.getElementById('act-model').value,
+        description: document.getElementById('act-description').value,
+        prompt: document.getElementById('act-prompt').value,
+        schedule_type: document.getElementById('act-schedule-type').value,
+        schedule_config: document.getElementById('act-schedule-config').value || null,
+        context_mode: document.getElementById('act-context-mode').value,
+        max_failures: parseInt(document.getElementById('act-max-failures').value),
+        max_tokens: parseInt(document.getElementById('act-max-tokens').value),
+    };
+    const url = id ? `/actions/api/${id}` : '/actions/api/create';
+    const method = id ? 'PUT' : 'POST';
+    const resp = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    if (resp.ok) { bootstrap.Modal.getInstance(document.getElementById('actionModal'))?.hide(); loadActions(); AppToast.success('Saved', id ? 'Action updated.' : 'Action created.'); }
+    else { const err = await resp.json(); AppToast.danger('Error', err.error || 'Failed.'); }
+}
+
+async function toggleAction(id, enabled) {
+    await fetch(`/actions/api/${id}/toggle`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled}) });
+    loadActions();
+}
+
+async function deleteAction(id, name) {
+    if (!confirm(`Delete action "${name}"?`)) return;
+    await fetch(`/actions/api/${id}`, { method: 'DELETE' });
+    loadActions();
+}
+
+async function showRuns(actionId) {
+    new bootstrap.Modal(document.getElementById('runsModal')).show();
+    const content = document.getElementById('runs-content');
+    content.innerHTML = '<div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>';
+    const resp = await fetch(`/actions/api/${actionId}/runs`);
+    const runs = await resp.json();
+    if (!runs.length) { content.innerHTML = '<p style="color:var(--app-text-muted);">No runs yet.</p>'; return; }
+    content.innerHTML = runs.map(r => `
+        <div class="app-card mb-2 p-3">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge-app badge-app-${r.status==='completed'?'success':r.status==='failed'?'danger':'warning'}" style="font-size:0.6875rem;">${r.status}</span>
+                <span style="font-size:0.75rem; color:var(--app-text-muted);">${r.started_at ? new Date(r.started_at).toLocaleString() : ''}</span>
+                <span style="font-size:0.75rem; color:var(--app-text-muted);">${r.input_tokens||0} in / ${r.output_tokens||0} out</span>
+            </div>
+            ${r.result_text ? `<div class="markdown-content" style="font-size:0.8125rem; max-height:250px; overflow:auto; margin:0; padding:0.5rem; background:var(--app-bg-deep); border-radius:0.375rem;">${_renderMd(r.result_text)}</div>` : ''}
+            ${r.error_message ? `<div style="color:var(--app-danger); font-size:0.8125rem;">${escapeHtml(r.error_message)}</div>` : ''}
+        </div>`).join('');
+}
+
+async function loadActionTools(actionId) {
+    const container = document.getElementById('act-tools-list');
+    container.innerHTML = '<div class="text-center py-2"><div class="app-spinner mx-auto" style="width:1.5rem;height:1.5rem;"></div></div>';
+    try {
+        const resp = await fetch(`/actions/api/${actionId}/tools`);
+        const data = await resp.json();
+        if (!data.tools || !data.tools.length) {
+            container.innerHTML = '<p style="color:var(--app-text-muted); font-size:0.8125rem;">No tools available.</p>';
+            return;
+        }
+        container.innerHTML = data.tools.map(t => `
+            <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1" style="font-size:0.8125rem; border-radius:0.375rem;">
+                <span>
+                    ${escapeHtml(t.name)}
+                    <span style="color:var(--app-text-muted); font-size:0.6875rem; margin-left:0.375rem;">${escapeHtml(t.description || '')}</span>
+                </span>
+                <div class="form-switch">
+                    <input class="form-check-input" type="checkbox" ${t.enabled ? 'checked' : ''}
+                           onchange="toggleActionTool(${actionId}, '${escapeHtml(t.name)}', this.checked)">
+                </div>
+            </div>`).join('');
+    } catch (err) {
+        container.innerHTML = '<div class="alert-app alert-app-danger" style="font-size:0.8125rem;">Failed to load tools.</div>';
+    }
+}
+
+async function toggleActionTool(actionId, toolName, enabled) {
+    try {
+        await fetch(`/actions/api/${actionId}/tools`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: toolName, enabled }),
+        });
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to update tool.');
+    }
+}
+
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+function _renderMd(text) {
+    if (typeof marked !== 'undefined') {
+        try { return marked.parse(text); } catch (e) {}
+    }
+    return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+// -- AI Action Creation Assistant --
+
+let aiHistory = [];
+let aiActionName = '';
+let aiActionModel = '';
+
+async function showAICreate() {
+    aiHistory = [];
+    aiActionName = '';
+    aiActionModel = '';
+
+    // Show setup step, hide chat step
+    document.getElementById('ai-setup-step').style.display = '';
+    document.getElementById('ai-chat-step').style.display = 'none';
+    document.getElementById('ai-action-name').value = '';
+
+    // Load available models
+    try {
+        const resp = await fetch('/conversations/api/models');
+        const data = await resp.json();
+        const models = data.models || data;
+        const select = document.getElementById('ai-action-model');
+        if (models.length) {
+            select.innerHTML = models.map(m =>
+                `<option value="${m.id}" ${m.id === (data.default_model||'') ? 'selected' : ''}>${m.name} (${m.provider})</option>`
+            ).join('');
+        } else {
+            select.innerHTML = '<option value="">No models available</option>';
+        }
+    } catch (err) {}
+
+    new bootstrap.Modal(document.getElementById('aiCreateModal')).show();
+    setTimeout(() => document.getElementById('ai-action-name').focus(), 300);
+}
+
+function startAIChat() {
+    aiActionName = document.getElementById('ai-action-name').value.trim();
+    aiActionModel = document.getElementById('ai-action-model').value;
+
+    if (!aiActionName) {
+        AppToast.warning('Required', 'Please enter an action name.');
+        return;
+    }
+    if (!aiActionModel) {
+        AppToast.warning('Required', 'Please select a model.');
+        return;
+    }
+
+    // Switch to chat step
+    document.getElementById('ai-setup-step').style.display = 'none';
+    document.getElementById('ai-chat-step').style.display = '';
+    document.getElementById('ai-chat-name').textContent = aiActionName;
+    document.getElementById('ai-chat-model').textContent = aiActionModel;
+
+    // Clear and show welcome
+    const container = document.getElementById('ai-chat-messages');
+    container.innerHTML = '';
+    _appendAIChatBubble('assistant',
+        `I'll help you create the "${aiActionName}" action using ${aiActionModel}.\n\nDescribe what this action should do — I'll help you configure the schedule, tools, and prompt.`
+    );
+
+    setTimeout(() => document.getElementById('ai-input').focus(), 100);
+}
+
+function _appendAIChatBubble(role, text) {
+    const container = document.getElementById('ai-chat-messages');
+    // Remove placeholder
+    const placeholder = container.querySelector('.text-center');
+    if (placeholder) placeholder.remove();
+
+    const isUser = role === 'user';
+    const icon = isUser ? '<i class="bi bi-person"></i>' : '<i class="bi bi-robot" style="color: var(--app-accent);"></i>';
+    const label = isUser ? 'You' : 'Spark';
+    const bgClass = isUser ? 'var(--app-accent-subtle)' : 'var(--app-card-bg)';
+    const borderClass = isUser ? 'var(--app-accent-border)' : 'var(--app-card-border)';
+    const align = isUser ? 'flex-end' : 'flex-start';
+
+    const div = document.createElement('div');
+    div.style.cssText = `align-self:${align}; max-width:85%; margin-bottom:0.75rem;`;
+    div.innerHTML = `
+        <div style="background:${bgClass}; border:1px solid ${borderClass}; border-radius:0.75rem; padding:0.75rem 1rem;">
+            <div style="font-size:0.75rem; margin-bottom:0.375rem; display:flex; align-items:center; gap:0.375rem;">
+                ${icon} <strong>${label}</strong>
+            </div>
+            <div class="markdown-content" style="font-size:0.875rem; line-height:1.5;">${isUser ? escapeHtml(text) : _renderMd(text)}</div>
+        </div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function _appendAIToolCall(toolCalls) {
+    if (!toolCalls.length) return;
+    const container = document.getElementById('ai-chat-messages');
+    toolCalls.forEach(tc => {
+        const div = document.createElement('div');
+        div.style.cssText = 'margin-bottom:0.5rem; max-width:85%;';
+        div.innerHTML = `
+            <div style="background:var(--app-bg-secondary); border:1px solid var(--app-border); border-radius:0.5rem; padding:0.5rem 0.75rem; font-size:0.8125rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <i class="bi bi-gear" style="color:var(--app-accent);"></i>
+                    <strong>${escapeHtml(tc.name)}</strong>
+                    <i class="bi bi-check-circle-fill" style="color:var(--app-success); margin-left:auto;"></i>
+                </div>
+                ${tc.result ? `<div style="font-size:0.75rem; color:var(--app-text-muted); margin-top:0.375rem; max-height:100px; overflow:auto; white-space:pre-wrap;">${escapeHtml(tc.result.substring(0, 300))}</div>` : ''}
+            </div>`;
+        container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+}
+
+function _appendConfirmButtons() {
+    const container = document.getElementById('ai-chat-messages');
+    const div = document.createElement('div');
+    div.style.cssText = 'align-self:center; margin-bottom:0.75rem;';
+    div.innerHTML = `
+        <div class="d-flex gap-2 justify-content-center">
+            <button class="btn btn-app-primary btn-sm" onclick="sendAIConfirmation(this, true)">
+                <i class="bi bi-check-lg me-1"></i>Yes, create it
+            </button>
+            <button class="btn btn-app-ghost btn-sm" onclick="sendAIConfirmation(this, false)">
+                <i class="bi bi-x-lg me-1"></i>No, cancel
+            </button>
+        </div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function sendAIConfirmation(btn, confirmed) {
+    // Remove the buttons
+    btn.closest('div[style]').remove();
+    // Send the response as a message
+    const message = confirmed ? 'Yes, create the action now.' : 'Cancel, do not create it.';
+    document.getElementById('ai-input').value = message;
+    document.getElementById('ai-input').form.dispatchEvent(new Event('submit'));
+}
+
+async function sendAIMessage(event) {
+    event.preventDefault();
+    const input = document.getElementById('ai-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    _appendAIChatBubble('user', message);
+    input.value = '';
+
+    const btn = document.getElementById('ai-send-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="app-spinner" style="width:0.875rem;height:0.875rem;border-width:2px;"></span>';
+
+    try {
+        const resp = await fetch('/actions/api/ai-create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ message, history: aiHistory, action_name: aiActionName, model_id: aiActionModel }),
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            _appendAIChatBubble('assistant', 'Error: ' + data.error);
+        } else {
+            if (data.tool_calls && data.tool_calls.length) {
+                _appendAIToolCall(data.tool_calls);
+            }
+            _appendAIChatBubble('assistant', data.response);
+            aiHistory = data.history || [];
+
+            // Detect confirmation question and show buttons
+            const responseText = (data.response || '').toLowerCase();
+            const isConfirmation = responseText.includes('confirm') ||
+                responseText.includes('shall i create') ||
+                responseText.includes('do you want to create') ||
+                responseText.includes('yes** or **no') ||
+                responseText.includes('proceed with creation');
+            const wasCreated = data.tool_calls && data.tool_calls.some(
+                tc => tc.name === 'create_autonomous_action' && tc.result && tc.result.includes('successfully')
+            );
+
+            if (isConfirmation && !wasCreated) {
+                _appendConfirmButtons();
+            }
+
+            // If an action was created, refresh the list
+            if (wasCreated) {
+                loadActions();
+            }
+        }
+    } catch (err) {
+        _appendAIChatBubble('assistant', 'Network error. Please try again.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send"></i>';
+    }
+}
+</script>
+{% endblock %}

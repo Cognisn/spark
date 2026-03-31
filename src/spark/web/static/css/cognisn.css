@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Cognisn Theme — Navy / Azure Blue / Cyan
+   Drop this file into css/theme.css to activate
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Custom Fonts
+   -------------------------------------------------------------------------- */
+
+@font-face {
+    font-family: 'Nesobrite';
+    src: url('../fonts/Nesobrite-Regular.woff2') format('woff2'),
+         url('../fonts/Nesobrite-Regular.woff') format('woff'),
+         url('../fonts/Nesobrite-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+
+/* --------------------------------------------------------------------------
+   Dark Mode (Default)
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-bs-theme="dark"] {
+    /* Fonts */
+    --app-font-body: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --app-font-heading: 'Syne', sans-serif;
+    --app-font-brand: 'Syne', sans-serif;
+    --app-font-product: 'Nesobrite', 'DM Sans', sans-serif;
+
+    /* Core palette */
+    --app-bg-deep: #080e1e;
+    --app-bg-primary: #0c1428;
+    --app-bg-secondary: #111c35;
+    --app-bg-tertiary: #162240;
+    --app-bg-elevated: rgba(12, 20, 40, 0.85);
+
+    /* Body background */
+    --app-body-bg: linear-gradient(135deg, #080e1e 0%, #0c1428 50%, #080e1e 100%);
+
+    /* Accent: Azure Blue */
+    --app-accent: #5aaae8;
+    --app-accent-light: #7ac0f8;
+    --app-accent-dark: #3a78c4;
+    --app-accent-glow: rgba(90, 170, 232, 0.3);
+    --app-accent-subtle: rgba(90, 170, 232, 0.1);
+    --app-accent-border: rgba(90, 170, 232, 0.25);
+
+    /* Text */
+    --app-text-primary: #e8f0fa;
+    --app-text-secondary: rgba(232, 240, 250, 0.7);
+    --app-text-muted: rgba(232, 240, 250, 0.4);
+    --app-text-on-accent: #080e1e;
+
+    /* Borders & Surfaces */
+    --app-border: rgba(90, 170, 232, 0.1);
+    --app-border-strong: rgba(90, 170, 232, 0.2);
+    --app-card-bg: rgba(12, 20, 40, 0.85);
+    --app-card-border: rgba(90, 170, 232, 0.2);
+    --app-hover-bg: rgba(90, 170, 232, 0.08);
+    --app-active-bg: rgba(90, 170, 232, 0.15);
+
+    /* Navigation */
+    --app-nav-bg: rgba(8, 14, 30, 0.95);
+    --app-nav-border: rgba(90, 170, 232, 0.15);
+    --app-sidebar-bg: #080e1e;
+    --app-sidebar-width: 260px;
+    --app-navbar-height: 64px;
+
+    /* Semantic colours */
+    --app-success: #48bb78;
+    --app-success-bg: rgba(72, 187, 120, 0.15);
+    --app-success-border: rgba(72, 187, 120, 0.3);
+
+    --app-warning: #ecc94b;
+    --app-warning-bg: rgba(236, 201, 75, 0.15);
+    --app-warning-border: rgba(236, 201, 75, 0.3);
+
+    --app-danger: #fc8181;
+    --app-danger-bg: rgba(252, 129, 129, 0.15);
+    --app-danger-border: rgba(252, 129, 129, 0.3);
+
+    --app-info: #a0d8ff;
+    --app-info-bg: rgba(160, 216, 255, 0.15);
+    --app-info-border: rgba(160, 216, 255, 0.3);
+
+    /* Scrollbar */
+    --app-scrollbar-track: rgba(0, 0, 0, 0.15);
+    --app-scrollbar-thumb: rgba(90, 170, 232, 0.2);
+    --app-scrollbar-thumb-hover: rgba(90, 170, 232, 0.35);
+
+    /* Shadows */
+    --app-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --app-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    --app-shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.45);
+    --app-shadow-glow: 0 0 20px rgba(90, 170, 232, 0.15);
+
+    /* Chart colours */
+    --app-chart-1: #5aaae8;
+    --app-chart-2: #48bb78;
+    --app-chart-3: #ecc94b;
+    --app-chart-4: #fc8181;
+    --app-chart-5: #b794f4;
+    --app-chart-6: #7ac0f8;
+    --app-chart-grid: rgba(90, 170, 232, 0.08);
+    --app-chart-text: rgba(232, 240, 250, 0.55);
+
+    /* Transitions */
+    --app-transition: all 0.3s ease;
+    --app-transition-fast: all 0.15s ease;
+
+    /* Loading overlay */
+    --app-loading-overlay: rgba(8, 14, 30, 0.8);
+
+    /* Accordion arrow filter — dark mode (invert to white) */
+    --app-accordion-arrow: brightness(0) saturate(100%) invert(1) opacity(0.5);
+    --app-accordion-arrow-active: brightness(0) saturate(100%) invert(62%) sepia(60%) saturate(500%) hue-rotate(183deg) brightness(95%) contrast(90%);
+}
+
+
+/* --------------------------------------------------------------------------
+   Light Mode
+   -------------------------------------------------------------------------- */
+
+[data-bs-theme="light"] {
+    /* Core palette */
+    --app-bg-deep: #f0f4fc;
+    --app-bg-primary: #ffffff;
+    --app-bg-secondary: #f4f7fd;
+    --app-bg-tertiary: #e8eef8;
+    --app-bg-elevated: rgba(255, 255, 255, 0.95);
+
+    /* Body background */
+    --app-body-bg: #f0f4fc;
+
+    /* Accent: Deeper blue for contrast on light */
+    --app-accent: #1a5fb4;
+    --app-accent-light: #3a78c4;
+    --app-accent-dark: #0d3a7a;
+    --app-accent-glow: rgba(26, 95, 180, 0.2);
+    --app-accent-subtle: rgba(26, 95, 180, 0.06);
+    --app-accent-border: rgba(26, 95, 180, 0.2);
+
+    /* Text */
+    --app-text-primary: #0c1428;
+    --app-text-secondary: rgba(12, 20, 40, 0.7);
+    --app-text-muted: rgba(12, 20, 40, 0.4);
+    --app-text-on-accent: #ffffff;
+
+    /* Borders & Surfaces */
+    --app-border: rgba(26, 95, 180, 0.08);
+    --app-border-strong: rgba(26, 95, 180, 0.15);
+    --app-card-bg: #ffffff;
+    --app-card-border: rgba(26, 95, 180, 0.15);
+    --app-hover-bg: rgba(26, 95, 180, 0.05);
+    --app-active-bg: rgba(26, 95, 180, 0.1);
+
+    /* Navigation */
+    --app-nav-bg: rgba(255, 255, 255, 0.95);
+    --app-nav-border: rgba(26, 95, 180, 0.12);
+    --app-sidebar-bg: #ffffff;
+
+    /* Semantic colours */
+    --app-success: #38a169;
+    --app-success-bg: rgba(56, 161, 105, 0.1);
+    --app-success-border: rgba(56, 161, 105, 0.25);
+
+    --app-warning: #d69e2e;
+    --app-warning-bg: rgba(214, 158, 46, 0.1);
+    --app-warning-border: rgba(214, 158, 46, 0.25);
+
+    --app-danger: #e53e3e;
+    --app-danger-bg: rgba(229, 62, 62, 0.08);
+    --app-danger-border: rgba(229, 62, 62, 0.2);
+
+    --app-info: #1a5fb4;
+    --app-info-bg: rgba(26, 95, 180, 0.08);
+    --app-info-border: rgba(26, 95, 180, 0.2);
+
+    /* Scrollbar */
+    --app-scrollbar-track: rgba(0, 0, 0, 0.03);
+    --app-scrollbar-thumb: rgba(26, 95, 180, 0.15);
+    --app-scrollbar-thumb-hover: rgba(26, 95, 180, 0.3);
+
+    /* Shadows */
+    --app-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.06);
+    --app-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    --app-shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.1);
+    --app-shadow-glow: 0 0 15px rgba(26, 95, 180, 0.08);
+
+    /* Chart colours */
+    --app-chart-1: #1a5fb4;
+    --app-chart-2: #38a169;
+    --app-chart-3: #d69e2e;
+    --app-chart-4: #e53e3e;
+    --app-chart-5: #805ad5;
+    --app-chart-6: #0d3a7a;
+    --app-chart-grid: rgba(0, 0, 0, 0.06);
+    --app-chart-text: rgba(12, 20, 40, 0.5);
+
+    /* Loading overlay */
+    --app-loading-overlay: rgba(255, 255, 255, 0.8);
+
+    /* Accordion arrow filter — light mode */
+    --app-accordion-arrow: brightness(0) saturate(100%);
+    --app-accordion-arrow-active: brightness(0) saturate(100%) invert(62%) sepia(60%) saturate(500%) hue-rotate(183deg) brightness(95%) contrast(90%);
+}

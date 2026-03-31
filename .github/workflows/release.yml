@@ -1,0 +1,404 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  PYAPP_VERSION: "0.24.0"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # Step 1: Build the Python wheel
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel
+        run: python -m build
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v5
+        with:
+          name: wheel
+          path: dist/*.whl
+
+  # Step 2: Build PyApp binaries for all platforms
+  build-binaries:
+    needs: build-wheel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+            name: spark-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-14
+            name: spark-macos-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: spark-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: spark-linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: spark-windows-x86_64
+          # Note: Windows ARM64 requires special handling
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download wheel
+        uses: actions/download-artifact@v5
+        with:
+          name: wheel
+          path: dist/
+
+      - name: Get wheel filename
+        id: wheel
+        shell: bash
+        run: echo "filename=$(ls dist/*.whl | head -1)" >> $GITHUB_OUTPUT
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}
+
+      - name: Download PyApp source
+        shell: bash
+        run: |
+          curl -LO "https://github.com/ofek/pyapp/releases/download/v${PYAPP_VERSION}/source.tar.gz"
+          tar xzf source.tar.gz
+          mv pyapp-v${PYAPP_VERSION} pyapp-src
+
+      - name: Build PyApp binary
+        shell: bash
+        env:
+          PYAPP_PROJECT_NAME: cognisn-spark
+          PYAPP_PROJECT_VERSION: ${{ github.event.release.tag_name }}
+          PYAPP_PROJECT_PATH: ${{ github.workspace }}/${{ steps.wheel.outputs.filename }}
+          PYAPP_EXEC_SPEC: spark.launch:main
+          PYAPP_PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PYAPP_DISTRIBUTION_EMBED: "1"
+          PYAPP_IS_GUI: "1"
+          PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
+        run: |
+          cd pyapp-src
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Prepare binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p release
+          cp pyapp-src/target/${{ matrix.target }}/release/pyapp release/${{ matrix.name }}
+          chmod +x release/${{ matrix.name }}
+
+      - name: Prepare binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p release
+          cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.name }}
+          path: release/
+
+  # Step 3: Create macOS .app bundles and DMG installers
+  create-macos-installer:
+    needs: build-binaries
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            artifact: spark-macos-x86_64
+          - arch: arm64
+            artifact: spark-macos-arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download binary
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
+          path: binary/
+
+      - name: Generate icons
+        run: |
+          pip3 install Pillow
+          python3 assets/generate_icons.py
+          mkdir -p spark.iconset
+          for size in 16 32 64 128 256 512; do
+            cp assets/icons/spark-${size}.png spark.iconset/icon_${size}x${size}.png
+          done
+          cp assets/icons/spark-1024.png spark.iconset/icon_512x512@2x.png
+          iconutil -c icns spark.iconset -o spark.icns
+
+      - name: Create .app bundle
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          APP="Spark.app"
+          mkdir -p "${APP}/Contents/MacOS"
+          mkdir -p "${APP}/Contents/Resources"
+
+          cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark"
+          chmod +x "${APP}/Contents/MacOS/spark"
+          cp spark.icns "${APP}/Contents/Resources/spark.icns"
+
+          sed "s/VERSION/${VERSION}/g" assets/macos/Info.plist > "${APP}/Contents/Info.plist"
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Spark" -srcfolder Spark.app -ov -format UDZO \
+            "Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v5
+        with:
+          name: spark-dmg-${{ matrix.arch }}
+          path: "*.dmg"
+
+  # Step 4: Create Windows installer
+  create-windows-installer:
+    needs: build-binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download binary
+        uses: actions/download-artifact@v5
+        with:
+          name: spark-windows-x86_64
+          path: binary/
+
+      - name: Set up Python for icon generation
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate icons
+        run: |
+          pip install Pillow
+          python assets/generate_icons.py
+
+      - name: Create NSIS installer script
+        shell: bash
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          cat > installer.nsi << 'NSIEOF'
+          !include "MUI2.nsh"
+
+          Name "Spark"
+          OutFile "Spark-${VERSION}-windows-x86_64-setup.exe"
+          InstallDir "$PROGRAMFILES64\Cognisn\Spark"
+          RequestExecutionLevel admin
+
+          !define MUI_ICON "assets\icons\spark.ico"
+          !define MUI_UNICON "assets\icons\spark.ico"
+          !define MUI_WELCOMEPAGE_TITLE "Spark Setup"
+          !define MUI_WELCOMEPAGE_TEXT "This will install Spark - Secure Personal AI Research Kit by Cognisn."
+
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+            SetOutPath $INSTDIR
+            File "binary\spark-windows-x86_64.exe"
+            Rename "$INSTDIR\spark-windows-x86_64.exe" "$INSTDIR\spark.exe"
+            File "assets\icons\spark.ico"
+
+            CreateDirectory "$SMPROGRAMS\Cognisn"
+            CreateShortCut "$SMPROGRAMS\Cognisn\Spark.lnk" "$INSTDIR\spark.exe" "" "$INSTDIR\spark.ico"
+            CreateShortCut "$DESKTOP\Spark.lnk" "$INSTDIR\spark.exe" "" "$INSTDIR\spark.ico"
+
+            WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "DisplayName" "Spark"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "UninstallString" "$INSTDIR\Uninstall.exe"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "Publisher" "Cognisn"
+            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "DisplayIcon" "$INSTDIR\spark.ico"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "$INSTDIR\spark.exe"
+            Delete "$INSTDIR\spark.ico"
+            Delete "$INSTDIR\Uninstall.exe"
+            RMDir "$INSTDIR"
+            Delete "$SMPROGRAMS\Cognisn\Spark.lnk"
+            Delete "$DESKTOP\Spark.lnk"
+            RMDir "$SMPROGRAMS\Cognisn"
+            DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark"
+          SectionEnd
+          NSIEOF
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Build installer
+        run: makensis installer.nsi
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v5
+        with:
+          name: spark-windows-installer
+          path: "*-setup.exe"
+
+  # Step 5: Create Linux AppImage
+  create-linux-installer:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download binary
+        uses: actions/download-artifact@v5
+        with:
+          name: spark-linux-x86_64
+          path: binary/
+
+      - name: Set up Python for icon generation
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate icons
+        run: |
+          pip install Pillow
+          python assets/generate_icons.py
+
+      - name: Create AppImage structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/applications
+
+          cp binary/spark-linux-x86_64 AppDir/usr/bin/spark
+          chmod +x AppDir/usr/bin/spark
+          cp assets/icons/spark-256.png AppDir/usr/share/icons/hicolor/256x256/apps/spark.png
+          cp assets/icons/spark-256.png AppDir/spark.png
+
+          cat > AppDir/spark.desktop << EOF
+          [Desktop Entry]
+          Name=Spark
+          Comment=Secure Personal AI Research Kit
+          Exec=spark
+          Icon=spark
+          Type=Application
+          Categories=Development;Science;
+          EOF
+
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          exec "${HERE}/usr/bin/spark" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+      - name: Download appimagetool
+        run: |
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Build AppImage
+        run: |
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir \
+            "Spark-${{ github.event.release.tag_name }}-linux-x86_64.AppImage"
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v5
+        with:
+          name: spark-linux-appimage
+          path: "*.AppImage"
+
+  # Step 6: Publish to PyPI
+  publish-pypi:
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - name: Download wheel
+        uses: actions/download-artifact@v5
+        with:
+          name: wheel
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Step 7: Attach all artifacts to the GitHub Release
+  attach-release:
+    needs:
+      - build-binaries
+      - create-macos-installer
+      - create-windows-installer
+      - create-linux-installer
+      - publish-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts/
+
+      - name: List artifacts
+        run: find artifacts/ -type f | sort
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/spark-macos-x86_64/*
+            artifacts/spark-macos-arm64/*
+            artifacts/spark-linux-x86_64/*
+            artifacts/spark-linux-arm64/*
+            artifacts/spark-windows-x86_64/*
+            artifacts/spark-dmg-x86_64/*.dmg
+            artifacts/spark-dmg-arm64/*.dmg
+            artifacts/spark-windows-installer/*-setup.exe
+            artifacts/spark-linux-appimage/*.AppImage
+            artifacts/wheel/*.whl

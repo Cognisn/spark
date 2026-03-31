@@ -1,0 +1,1424 @@
+/* ==========================================================================
+   Base UI Components — Brand-agnostic
+   Requires a theme file (theme.css) defining --app-* CSS custom properties
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Base / Global Styles
+   -------------------------------------------------------------------------- */
+
+body {
+    background-color: var(--app-bg-deep);
+    color: var(--app-text-primary);
+    font-family: var(--app-font-body);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+[data-bs-theme="dark"] body {
+    background: var(--app-body-bg);
+    background-attachment: fixed;
+}
+
+[data-bs-theme="light"] body {
+    background: var(--app-body-bg);
+}
+
+::selection {
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+}
+
+a {
+    color: var(--app-accent);
+    text-decoration: none;
+    transition: var(--app-transition-fast);
+}
+
+a:hover {
+    color: var(--app-accent-light);
+    text-decoration: underline;
+}
+
+hr {
+    border-color: var(--app-border);
+    opacity: 1;
+}
+
+
+/* --------------------------------------------------------------------------
+   2. Scrollbar
+   -------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--app-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar-thumb);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--app-scrollbar-thumb-hover);
+}
+
+
+/* --------------------------------------------------------------------------
+   3. Layout — Navbar
+   -------------------------------------------------------------------------- */
+
+.app-navbar {
+    background: var(--app-nav-bg);
+    border-bottom: 1px solid var(--app-nav-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--app-shadow-sm);
+    height: var(--app-navbar-height);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1030;
+    transition: var(--app-transition);
+}
+
+.app-navbar .navbar-brand {
+    font-family: var(--app-font-brand);
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--app-text-primary);
+    letter-spacing: 0.02em;
+    transition: var(--app-transition-fast);
+}
+
+.app-navbar .navbar-brand:hover {
+    color: var(--app-accent);
+}
+
+.app-navbar .navbar-brand .brand-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 0.5rem;
+}
+
+/* Product name separator and label */
+.app-navbar .brand-separator {
+    color: var(--app-accent);
+    margin: 0 0.625rem;
+    font-weight: 300;
+    font-size: 1.25rem;
+    opacity: 0.4;
+    user-select: none;
+}
+
+.app-navbar .brand-product {
+    font-family: var(--app-font-product);
+    font-weight: 400;
+    font-size: 1.125rem;
+    color: var(--app-text-secondary);
+    letter-spacing: 0.01em;
+    transition: var(--app-transition-fast);
+}
+
+.app-navbar .navbar-brand:hover .brand-product {
+    color: var(--app-text-primary);
+}
+
+.app-navbar .brand-version {
+    font-family: var(--app-font-product);
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--app-text-muted);
+    margin-left: 0.375rem;
+    letter-spacing: 0.02em;
+}
+
+.app-navbar .nav-link {
+    color: var(--app-text-secondary);
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    transition: var(--app-transition-fast);
+}
+
+.app-navbar .nav-link:hover {
+    color: var(--app-text-primary);
+    background: var(--app-hover-bg);
+}
+
+.app-navbar .nav-link.active {
+    color: var(--app-accent);
+    background: var(--app-active-bg);
+}
+
+
+/* --------------------------------------------------------------------------
+   4. Layout — Sidebar
+   -------------------------------------------------------------------------- */
+
+.app-sidebar {
+    position: fixed;
+    top: var(--app-navbar-height);
+    left: 0;
+    bottom: 0;
+    width: var(--app-sidebar-width);
+    background: var(--app-sidebar-bg);
+    border-right: 1px solid var(--app-nav-border);
+    overflow-y: auto;
+    z-index: 1020;
+    transition: transform 0.3s ease;
+}
+
+.app-sidebar .sidebar-header {
+    padding: 1.25rem 1rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--app-text-muted);
+}
+
+.app-sidebar .nav-item {
+    margin: 1px 0.5rem;
+}
+
+.app-sidebar .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    color: var(--app-text-secondary);
+    border-radius: 0.5rem;
+    border-left: 3px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: var(--app-transition);
+}
+
+.app-sidebar .nav-link:hover {
+    color: var(--app-text-primary);
+    background: var(--app-hover-bg);
+    border-left-color: var(--app-accent-border);
+}
+
+.app-sidebar .nav-link.active {
+    color: var(--app-accent);
+    background: var(--app-active-bg);
+    border-left-color: var(--app-accent);
+}
+
+.app-sidebar .nav-link .nav-icon {
+    font-size: 1.125rem;
+    width: 1.5rem;
+    text-align: center;
+    transition: var(--app-transition-fast);
+}
+
+.app-sidebar .nav-link:hover .nav-icon {
+    transform: scale(1.1);
+    color: var(--app-accent);
+}
+
+.app-sidebar .sidebar-footer {
+    padding: 1rem;
+    border-top: 1px solid var(--app-border);
+    margin-top: auto;
+}
+
+/* Sidebar overlay for mobile */
+.app-sidebar-overlay {
+    position: fixed;
+    top: var(--app-navbar-height);
+    left: 0;
+    width: 100%;
+    height: calc(100vh - var(--app-navbar-height));
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1010;
+    display: none;
+    backdrop-filter: blur(2px);
+}
+
+.app-sidebar-overlay.show {
+    display: block;
+}
+
+
+/* --------------------------------------------------------------------------
+   5. Layout — Main Content
+   -------------------------------------------------------------------------- */
+
+.app-main {
+    margin-top: var(--app-navbar-height);
+    margin-left: var(--app-sidebar-width);
+    padding: 1.5rem;
+    min-height: calc(100vh - var(--app-navbar-height));
+    transition: margin-left 0.3s ease;
+}
+
+.app-main.no-sidebar {
+    margin-left: 0;
+}
+
+
+/* --------------------------------------------------------------------------
+   6. Layout — Footer
+   -------------------------------------------------------------------------- */
+
+.app-footer {
+    background: var(--app-nav-bg);
+    border-top: 1px solid var(--app-nav-border);
+    padding: 1rem 1.5rem;
+    font-size: 0.8125rem;
+    color: var(--app-text-muted);
+    backdrop-filter: blur(12px);
+}
+
+.app-footer a {
+    color: var(--app-text-secondary);
+}
+
+.app-footer a:hover {
+    color: var(--app-accent);
+}
+
+
+/* --------------------------------------------------------------------------
+   7. Cards
+   -------------------------------------------------------------------------- */
+
+.app-card {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--app-shadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: var(--app-transition);
+    position: relative;
+}
+
+/* Elevate card above siblings when a dropdown is open inside it */
+.app-card:has(.dropdown-menu.show) {
+    z-index: 2;
+}
+
+.app-card:hover {
+    box-shadow: var(--app-shadow), var(--app-shadow-glow);
+    border-color: var(--app-accent);
+    transform: translateY(-2px);
+}
+
+.app-card .card-header {
+    background: var(--app-accent-subtle);
+    border-bottom: 1px solid var(--app-card-border);
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+}
+
+.app-card .card-body {
+    padding: 1.25rem;
+}
+
+.app-card .card-footer {
+    background: var(--app-hover-bg);
+    border-top: 1px solid var(--app-card-border);
+    padding: 0.75rem 1.25rem;
+}
+
+/* Stat cards */
+.app-stat-card {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--app-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: var(--app-transition);
+}
+
+.app-stat-card:hover {
+    border-color: var(--app-accent-border);
+    box-shadow: var(--app-shadow);
+}
+
+.app-stat-card .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 0.625rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.375rem;
+    background: var(--app-accent-subtle);
+    color: var(--app-accent);
+    flex-shrink: 0;
+}
+
+.app-stat-card .stat-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.app-stat-card .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--app-text-primary);
+    line-height: 1.2;
+}
+
+.app-stat-card .stat-label {
+    font-size: 0.75rem;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.125rem;
+}
+
+.app-stat-card .stat-change {
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+}
+
+.app-stat-card .stat-change.positive {
+    color: var(--app-success);
+}
+
+.app-stat-card .stat-change.negative {
+    color: var(--app-danger);
+}
+
+
+/* --------------------------------------------------------------------------
+   8. Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+    font-weight: 500;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    transition: var(--app-transition);
+    font-size: 0.875rem;
+}
+
+/* Primary */
+.btn-app-primary {
+    background: linear-gradient(135deg, var(--app-accent) 0%, var(--app-accent-dark) 100%);
+    color: var(--app-text-on-accent);
+    border: 1px solid transparent;
+    box-shadow: 0 2px 8px var(--app-accent-glow);
+}
+
+.btn-app-primary:hover {
+    background: linear-gradient(135deg, var(--app-accent-light) 0%, var(--app-accent) 100%);
+    color: var(--app-text-on-accent);
+    box-shadow: 0 4px 16px var(--app-accent-glow);
+    transform: translateY(-1px);
+}
+
+.btn-app-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px var(--app-accent-glow);
+}
+
+/* Outline */
+.btn-app-outline {
+    background: transparent;
+    color: var(--app-accent);
+    border: 1px solid var(--app-accent-border);
+}
+
+.btn-app-outline:hover {
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+    border-color: var(--app-accent);
+    box-shadow: 0 0 12px var(--app-accent-glow);
+}
+
+/* Secondary */
+.btn-app-secondary {
+    background: var(--app-bg-tertiary);
+    color: var(--app-text-primary);
+    border: 1px solid var(--app-border-strong);
+}
+
+.btn-app-secondary:hover {
+    background: var(--app-bg-secondary);
+    color: var(--app-text-primary);
+    border-color: var(--app-accent-border);
+}
+
+/* Ghost */
+.btn-app-ghost {
+    background: transparent;
+    color: var(--app-text-secondary);
+    border: 1px solid transparent;
+}
+
+.btn-app-ghost:hover {
+    background: var(--app-hover-bg);
+    color: var(--app-text-primary);
+}
+
+/* Danger */
+.btn-app-danger {
+    background: linear-gradient(135deg, #fc8181 0%, #e53e3e 100%);
+    color: #fff;
+    border: 1px solid transparent;
+}
+
+.btn-app-danger:hover {
+    background: linear-gradient(135deg, #feb2b2 0%, #fc8181 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(229, 62, 62, 0.3);
+    transform: translateY(-1px);
+}
+
+/* Success */
+.btn-app-success {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: #fff;
+    border: 1px solid transparent;
+}
+
+.btn-app-success:hover {
+    background: linear-gradient(135deg, #68d391 0%, #48bb78 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(72, 187, 120, 0.3);
+    transform: translateY(-1px);
+}
+
+/* Button sizes */
+.btn-sm {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 0.375rem;
+}
+
+.btn-lg {
+    padding: 0.75rem 1.75rem;
+    font-size: 1rem;
+    border-radius: 0.625rem;
+}
+
+.btn-group-app {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+
+/* --------------------------------------------------------------------------
+   9. Tables
+   -------------------------------------------------------------------------- */
+
+.app-table-wrapper {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: var(--app-shadow);
+    backdrop-filter: blur(10px);
+}
+
+.app-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--app-border);
+    flex-wrap: wrap;
+}
+
+.app-table-toolbar .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.app-table-toolbar .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.app-table-search {
+    position: relative;
+}
+
+.app-table-search .search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--app-text-muted);
+    pointer-events: none;
+}
+
+.app-table-search input {
+    padding-left: 2.25rem;
+    min-width: 220px;
+}
+
+.app-table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--app-text-primary);
+}
+
+.app-table thead th {
+    background: var(--app-accent-subtle);
+    color: var(--app-accent);
+    font-weight: 600;
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.875rem 1rem;
+    border-bottom: 2px solid var(--app-card-border);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.app-table thead th.sortable {
+    cursor: pointer;
+    position: relative;
+    padding-right: 1.75rem;
+}
+
+.app-table thead th.sortable:hover {
+    background: var(--app-active-bg);
+    color: var(--app-accent-light);
+}
+
+.app-table thead th.sortable::after {
+    content: '\21C5';
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    opacity: 0.3;
+    transition: var(--app-transition-fast);
+}
+
+.app-table thead th.sortable:hover::after {
+    opacity: 0.6;
+}
+
+.app-table thead th.sort-asc::after {
+    content: '\2191';
+    opacity: 1;
+    color: var(--app-accent);
+}
+
+.app-table thead th.sort-desc::after {
+    content: '\2193';
+    opacity: 1;
+    color: var(--app-accent);
+}
+
+.app-table tbody td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--app-border);
+    font-size: 0.875rem;
+    vertical-align: middle;
+}
+
+.app-table tbody tr {
+    transition: var(--app-transition-fast);
+}
+
+.app-table tbody tr:hover {
+    background: var(--app-hover-bg);
+}
+
+.app-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.app-table-striped tbody tr:nth-child(even) {
+    background: var(--app-accent-subtle);
+}
+
+.app-table-striped tbody tr:nth-child(even):hover {
+    background: var(--app-hover-bg);
+}
+
+.app-table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--app-border);
+    font-size: 0.8125rem;
+    color: var(--app-text-muted);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.app-pagination {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.app-pagination .page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--app-border);
+    background: transparent;
+    color: var(--app-text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--app-transition-fast);
+}
+
+.app-pagination .page-btn:hover {
+    background: var(--app-hover-bg);
+    border-color: var(--app-accent-border);
+    color: var(--app-text-primary);
+}
+
+.app-pagination .page-btn.active {
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+    border-color: var(--app-accent);
+}
+
+.app-pagination .page-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+
+/* --------------------------------------------------------------------------
+   10. Forms
+   -------------------------------------------------------------------------- */
+
+.form-control,
+.form-select {
+    background-color: var(--app-bg-tertiary);
+    border: 1px solid var(--app-border-strong);
+    color: var(--app-text-primary);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    transition: var(--app-transition-fast);
+}
+
+.form-select {
+    padding-right: 2.25rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--app-bg-tertiary);
+    border-color: var(--app-accent);
+    color: var(--app-text-primary);
+    box-shadow: 0 0 0 3px var(--app-accent-glow);
+    outline: none;
+}
+
+.form-control::placeholder {
+    color: var(--app-text-muted);
+}
+
+.form-label {
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--app-text-secondary);
+    margin-bottom: 0.375rem;
+}
+
+.form-text {
+    color: var(--app-text-muted);
+    font-size: 0.8125rem;
+}
+
+.form-check-input {
+    background-color: var(--app-bg-tertiary);
+    border: 2px solid var(--app-border-strong);
+    width: 1.125rem;
+    height: 1.125rem;
+    transition: var(--app-transition-fast);
+}
+
+.form-check-input:checked {
+    background-color: var(--app-accent);
+    border-color: var(--app-accent);
+    box-shadow: 0 0 8px var(--app-accent-glow);
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 3px var(--app-accent-glow);
+    border-color: var(--app-accent);
+}
+
+.form-switch .form-check-input {
+    width: 2.75rem;
+    height: 1.375rem;
+    border-radius: 1rem;
+}
+
+.form-switch .form-check-input:checked {
+    background-color: var(--app-accent);
+}
+
+.form-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 0;
+}
+
+.form-switch .form-check-input {
+    margin-left: 0;
+    margin-top: 0;
+    flex-shrink: 0;
+}
+
+.form-switch .form-check-label {
+    margin-bottom: 0;
+}
+
+.form-control.is-valid {
+    border-color: var(--app-success);
+}
+
+.form-control.is-valid:focus {
+    box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.25);
+}
+
+.form-control.is-invalid {
+    border-color: var(--app-danger);
+}
+
+.form-control.is-invalid:focus {
+    box-shadow: 0 0 0 3px rgba(252, 129, 129, 0.25);
+}
+
+.valid-feedback {
+    color: var(--app-success);
+}
+
+.invalid-feedback {
+    color: var(--app-danger);
+}
+
+.input-group-text {
+    background-color: var(--app-bg-secondary);
+    border: 1px solid var(--app-border-strong);
+    color: var(--app-text-muted);
+}
+
+
+/* --------------------------------------------------------------------------
+   11. Dropdowns
+   -------------------------------------------------------------------------- */
+
+.dropdown-menu {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.5rem;
+    box-shadow: var(--app-shadow-lg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 0.375rem;
+    animation: app-dropdown-in 0.2s ease;
+}
+
+@keyframes app-dropdown-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-item {
+    color: var(--app-text-secondary);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    transition: var(--app-transition-fast);
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: var(--app-hover-bg);
+    color: var(--app-text-primary);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background: var(--app-active-bg);
+    color: var(--app-accent);
+}
+
+.dropdown-divider {
+    border-color: var(--app-border);
+    margin: 0.25rem 0;
+}
+
+.dropdown-header {
+    color: var(--app-text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 0.875rem 0.25rem;
+}
+
+
+/* --------------------------------------------------------------------------
+   12. Accordions
+   -------------------------------------------------------------------------- */
+
+.app-accordion .accordion-item {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.5rem !important;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.app-accordion .accordion-button {
+    background: transparent;
+    color: var(--app-text-primary);
+    font-weight: 600;
+    font-size: 0.9375rem;
+    padding: 1rem 1.25rem;
+    box-shadow: none;
+    transition: var(--app-transition);
+}
+
+.app-accordion .accordion-button:not(.collapsed) {
+    background: var(--app-accent-subtle);
+    color: var(--app-accent);
+    box-shadow: none;
+}
+
+.app-accordion .accordion-button::after {
+    filter: var(--app-accordion-arrow);
+    transition: var(--app-transition);
+}
+
+.app-accordion .accordion-button:not(.collapsed)::after {
+    filter: var(--app-accordion-arrow-active);
+}
+
+.app-accordion .accordion-button:focus {
+    box-shadow: 0 0 0 3px var(--app-accent-glow);
+    border-color: var(--app-accent);
+}
+
+.app-accordion .accordion-body {
+    padding: 1rem 1.25rem;
+    color: var(--app-text-secondary);
+    border-top: 1px solid var(--app-border);
+}
+
+
+/* --------------------------------------------------------------------------
+   13. Badges & Pills
+   -------------------------------------------------------------------------- */
+
+.badge-app {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.625rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.badge-app-primary {
+    background: var(--app-accent-subtle);
+    color: var(--app-accent);
+    border: 1px solid var(--app-accent-border);
+}
+
+.badge-app-success {
+    background: var(--app-success-bg);
+    color: var(--app-success);
+    border: 1px solid var(--app-success-border);
+}
+
+.badge-app-warning {
+    background: var(--app-warning-bg);
+    color: var(--app-warning);
+    border: 1px solid var(--app-warning-border);
+}
+
+.badge-app-danger {
+    background: var(--app-danger-bg);
+    color: var(--app-danger);
+    border: 1px solid var(--app-danger-border);
+}
+
+.badge-app-info {
+    background: var(--app-info-bg);
+    color: var(--app-info);
+    border: 1px solid var(--app-info-border);
+}
+
+/* Status dot indicator */
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.375rem;
+}
+
+.status-dot.online { background: var(--app-success); box-shadow: 0 0 6px rgba(72, 187, 120, 0.5); }
+.status-dot.offline { background: var(--app-text-muted); }
+.status-dot.warning { background: var(--app-warning); box-shadow: 0 0 6px rgba(236, 201, 75, 0.5); }
+.status-dot.error { background: var(--app-danger); box-shadow: 0 0 6px rgba(252, 129, 129, 0.5); }
+
+.status-dot.online {
+    animation: app-pulse 2s infinite;
+}
+
+@keyframes app-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.5); }
+    70% { box-shadow: 0 0 0 6px rgba(72, 187, 120, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0); }
+}
+
+
+/* --------------------------------------------------------------------------
+   14. Alerts
+   -------------------------------------------------------------------------- */
+
+.alert-app {
+    border-radius: 0.5rem;
+    border: 1px solid;
+    padding: 0.875rem 1.25rem;
+    font-size: 0.875rem;
+    backdrop-filter: blur(10px);
+}
+
+.alert-app-info {
+    background: var(--app-info-bg);
+    border-color: var(--app-info-border);
+    color: var(--app-info);
+}
+
+.alert-app-success {
+    background: var(--app-success-bg);
+    border-color: var(--app-success-border);
+    color: var(--app-success);
+}
+
+.alert-app-warning {
+    background: var(--app-warning-bg);
+    border-color: var(--app-warning-border);
+    color: var(--app-warning);
+}
+
+.alert-app-danger {
+    background: var(--app-danger-bg);
+    border-color: var(--app-danger-border);
+    color: var(--app-danger);
+}
+
+
+/* --------------------------------------------------------------------------
+   15. Modals
+   -------------------------------------------------------------------------- */
+
+.modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    backdrop-filter: blur(12px);
+    box-shadow: var(--app-shadow-lg), var(--app-shadow-glow);
+    animation: app-modal-in 0.3s ease;
+}
+
+@keyframes app-modal-in {
+    from { transform: translateY(-40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+    background: var(--app-accent-subtle);
+    border-bottom: 1px solid var(--app-card-border);
+    padding: 1rem 1.25rem;
+}
+
+.modal-title {
+    font-weight: 600;
+    font-size: 1.0625rem;
+    color: var(--app-text-primary);
+}
+
+.modal-body {
+    padding: 1.25rem;
+    color: var(--app-text-secondary);
+}
+
+.modal-footer {
+    background: var(--app-hover-bg);
+    border-top: 1px solid var(--app-card-border);
+    padding: 0.875rem 1.25rem;
+}
+
+.btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+    opacity: 0.5;
+    transition: var(--app-transition-fast);
+}
+
+[data-bs-theme="light"] .btn-close {
+    filter: none;
+}
+
+.btn-close:hover {
+    opacity: 1;
+}
+
+
+/* --------------------------------------------------------------------------
+   16. Toasts / Notifications
+   -------------------------------------------------------------------------- */
+
+.app-toast-container {
+    position: fixed;
+    top: calc(var(--app-navbar-height) + 1rem);
+    right: 1rem;
+    z-index: 1090;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 400px;
+}
+
+.app-toast {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-left-width: 4px;
+    border-radius: 0.5rem;
+    backdrop-filter: blur(12px);
+    box-shadow: var(--app-shadow-lg);
+    padding: 0.875rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    animation: app-toast-in 0.3s ease;
+    min-width: 300px;
+}
+
+@keyframes app-toast-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.app-toast.toast-success { border-left-color: var(--app-success); }
+.app-toast.toast-warning { border-left-color: var(--app-warning); }
+.app-toast.toast-danger { border-left-color: var(--app-danger); }
+.app-toast.toast-info { border-left-color: var(--app-info); }
+
+.app-toast .toast-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.app-toast.toast-success .toast-icon { color: var(--app-success); }
+.app-toast.toast-warning .toast-icon { color: var(--app-warning); }
+.app-toast.toast-danger .toast-icon { color: var(--app-danger); }
+.app-toast.toast-info .toast-icon { color: var(--app-info); }
+
+.app-toast .toast-body {
+    flex: 1;
+}
+
+.app-toast .toast-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--app-text-primary);
+}
+
+.app-toast .toast-message {
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+    margin-top: 0.125rem;
+}
+
+.app-toast .toast-close {
+    background: none;
+    border: none;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 1rem;
+    line-height: 1;
+    transition: var(--app-transition-fast);
+}
+
+.app-toast .toast-close:hover {
+    color: var(--app-text-primary);
+}
+
+
+/* --------------------------------------------------------------------------
+   17. Tabs
+   -------------------------------------------------------------------------- */
+
+.app-tabs .nav-tabs {
+    border-bottom: 2px solid var(--app-border);
+}
+
+.app-tabs .nav-link {
+    color: var(--app-text-muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    padding: 0.75rem 1.25rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: var(--app-transition-fast);
+}
+
+.app-tabs .nav-link:hover {
+    color: var(--app-text-primary);
+    border-bottom-color: var(--app-accent-border);
+}
+
+.app-tabs .nav-link.active {
+    color: var(--app-accent);
+    border-bottom-color: var(--app-accent);
+    background: transparent;
+}
+
+
+/* --------------------------------------------------------------------------
+   18. Progress Bars
+   -------------------------------------------------------------------------- */
+
+.progress-app {
+    background-color: var(--app-bg-tertiary);
+    border-radius: 0.5rem;
+    height: 0.5rem;
+    overflow: hidden;
+}
+
+.progress-app .progress-bar {
+    background: linear-gradient(90deg, var(--app-accent-dark), var(--app-accent));
+    border-radius: 0.5rem;
+    transition: width 0.6s ease;
+}
+
+.progress-app .progress-bar.success {
+    background: linear-gradient(90deg, #38a169, #48bb78);
+}
+
+.progress-app .progress-bar.danger {
+    background: linear-gradient(90deg, #e53e3e, #fc8181);
+}
+
+
+/* --------------------------------------------------------------------------
+   19. Charts
+   -------------------------------------------------------------------------- */
+
+.app-chart-container {
+    position: relative;
+    padding: 1rem;
+}
+
+.app-chart-container canvas {
+    max-width: 100%;
+}
+
+.app-chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.app-chart-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--app-text-primary);
+}
+
+.app-chart-legend {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.app-chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+}
+
+.app-chart-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+
+/* --------------------------------------------------------------------------
+   20. Theme Switcher
+   -------------------------------------------------------------------------- */
+
+.app-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--app-bg-tertiary);
+    border: 1px solid var(--app-border-strong);
+    border-radius: 2rem;
+    padding: 0.25rem;
+    cursor: pointer;
+    transition: var(--app-transition);
+}
+
+.app-theme-toggle .theme-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    font-size: 1rem;
+    transition: var(--app-transition-fast);
+    color: var(--app-text-muted);
+}
+
+.app-theme-toggle .theme-option.active {
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+    box-shadow: 0 0 8px var(--app-accent-glow);
+}
+
+
+/* --------------------------------------------------------------------------
+   21. Loading / Spinner
+   -------------------------------------------------------------------------- */
+
+.app-spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid var(--app-border);
+    border-top-color: var(--app-accent);
+    border-radius: 50%;
+    animation: app-spin 0.75s linear infinite;
+}
+
+@keyframes app-spin {
+    to { transform: rotate(360deg); }
+}
+
+.app-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--app-loading-overlay);
+    backdrop-filter: blur(4px);
+    z-index: 10;
+    border-radius: inherit;
+}
+
+
+/* --------------------------------------------------------------------------
+   22. Utility Classes
+   -------------------------------------------------------------------------- */
+
+.text-accent { color: var(--app-accent) !important; }
+.text-muted-app { color: var(--app-text-muted) !important; }
+.bg-elevated { background: var(--app-bg-elevated) !important; }
+.border-accent { border-color: var(--app-accent-border) !important; }
+
+.glow-accent {
+    box-shadow: var(--app-shadow-glow);
+}
+
+.backdrop-blur {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+
+/* --------------------------------------------------------------------------
+   23. Responsive
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 991.98px) {
+    .app-sidebar {
+        transform: translateX(-100%);
+    }
+
+    .app-sidebar.show {
+        transform: translateX(0);
+    }
+
+    .app-main {
+        margin-left: 0;
+    }
+
+    .app-table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .app-table-toolbar .toolbar-left,
+    .app-table-toolbar .toolbar-right {
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .app-toast-container {
+        left: 1rem;
+        right: 1rem;
+        max-width: 100%;
+    }
+
+    .app-toast {
+        min-width: 100%;
+    }
+
+    .app-stat-card .stat-value {
+        font-size: 1.5rem;
+    }
+
+    .app-pagination .page-btn {
+        width: 1.75rem;
+        height: 1.75rem;
+        font-size: 0.75rem;
+    }
+}

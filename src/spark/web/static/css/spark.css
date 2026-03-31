@@ -1,0 +1,535 @@
+/* ==========================================================================
+   Spark — Application-specific styles
+   Built on top of base.css + cognisn.css from ui-styleguide
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   Chat Messages
+   -------------------------------------------------------------------------- */
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+}
+
+.chat-message-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 85%;
+    position: relative;
+}
+
+.chat-message-wrapper.user {
+    align-self: flex-end;
+}
+
+.chat-message-wrapper.assistant {
+    align-self: flex-start;
+}
+
+.chat-message {
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.625rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    position: relative;
+}
+
+.message-timestamp {
+    font-size: 0.625rem;
+    color: var(--app-text-muted);
+    margin-top: 0.25rem;
+    padding: 0 0.25rem;
+}
+
+.chat-message-wrapper.user .message-timestamp {
+    text-align: right;
+}
+
+.chat-message-wrapper.assistant .message-timestamp {
+    text-align: left;
+}
+
+.chat-message.user {
+    background: var(--app-accent-subtle);
+    border: 1px solid var(--app-accent-border);
+    color: var(--app-text-primary);
+}
+
+.chat-message.assistant {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    color: var(--app-text-primary);
+}
+
+.chat-message.system {
+    align-self: center;
+    background: var(--app-info-bg);
+    border: 1px solid var(--app-info-border);
+    color: var(--app-info);
+    font-size: 0.8125rem;
+    text-align: center;
+    max-width: 70%;
+}
+
+.chat-message.error {
+    align-self: center;
+    background: var(--app-danger-bg);
+    border: 1px solid var(--app-danger-border);
+    color: var(--app-danger);
+    font-size: 0.8125rem;
+}
+
+.chat-message .message-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+
+.chat-message .message-actions {
+    position: absolute;
+    top: 0.375rem;
+    right: 0.375rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.chat-message:hover .message-actions {
+    opacity: 1;
+}
+
+
+/* --------------------------------------------------------------------------
+   Tool Call Display (Termograph-style)
+   -------------------------------------------------------------------------- */
+
+.tool-call-group {
+    background: var(--app-bg-secondary);
+    border: 1px solid var(--app-border-strong);
+    border-radius: 0.625rem;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    max-width: 85%;
+}
+
+.tool-call-group .group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    transition: var(--app-transition-fast);
+}
+
+.tool-call-group .group-header:hover {
+    background: var(--app-hover-bg);
+}
+
+.tool-call-group .group-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+}
+
+.tool-call-group .group-summary .tool-count {
+    font-weight: 600;
+    color: var(--app-text-primary);
+}
+
+.tool-call-group .status-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.tool-call-group .status-dots .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.tool-call-group .status-dots .dot.success {
+    background: var(--app-success);
+    box-shadow: 0 0 4px rgba(72, 187, 120, 0.4);
+}
+
+.tool-call-group .status-dots .dot.error {
+    background: var(--app-danger);
+    box-shadow: 0 0 4px rgba(252, 129, 129, 0.4);
+}
+
+.tool-call-group .status-dots .dot.running {
+    background: var(--app-accent);
+    animation: app-pulse 1.5s infinite;
+}
+
+.tool-call-group .group-body {
+    padding: 0.5rem 0.75rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+
+/* Action Card — individual tool call */
+
+.action-card {
+    background: var(--app-bg-tertiary);
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: var(--app-transition-fast);
+}
+
+.action-card .action-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: var(--app-transition-fast);
+}
+
+.action-card .action-header:hover {
+    background: var(--app-hover-bg);
+}
+
+.action-card .action-header .tool-icon {
+    font-size: 1rem;
+    color: var(--app-accent);
+    flex-shrink: 0;
+    width: 1.25rem;
+    text-align: center;
+}
+
+.action-card .action-header .tool-name {
+    font-weight: 600;
+    color: var(--app-text-primary);
+    flex: 1;
+}
+
+.action-card .action-header .tool-status {
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.action-card .action-header .tool-status.running {
+    color: var(--app-accent);
+    animation: app-spin 0.75s linear infinite;
+}
+
+.action-card .action-header .tool-status.success {
+    color: var(--app-success);
+}
+
+.action-card .action-header .tool-status.error {
+    color: var(--app-danger);
+}
+
+.action-card .action-header .chevron-icon {
+    font-size: 0.75rem;
+    color: var(--app-text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.action-card .action-detail {
+    padding: 0;
+}
+
+.action-card .action-detail-label {
+    padding: 0.5rem 0.875rem 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.action-card .action-detail-code {
+    margin: 0 0.625rem 0.625rem;
+    padding: 0.75rem;
+    font-size: 0.75rem;
+    font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--app-bg-deep);
+    border: 1px solid var(--app-border);
+    border-radius: 0.375rem;
+    color: var(--app-text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+}
+
+
+/* Approval Card — mutation approval */
+
+.approval-card {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-warning-border);
+    border-left: 4px solid var(--app-warning);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0.5rem 0;
+}
+
+.approval-card .approval-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--app-warning);
+    margin-bottom: 0.75rem;
+}
+
+.approval-card .approval-detail {
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.approval-card .approval-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+
+/* --------------------------------------------------------------------------
+   Markdown Content (in chat messages)
+   -------------------------------------------------------------------------- */
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    font-family: var(--app-font-heading);
+    color: var(--app-text-primary);
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.markdown-content p {
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content code {
+    background: var(--app-bg-tertiary);
+    color: var(--app-accent);
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.85em;
+}
+
+.markdown-content pre {
+    background: var(--app-bg-deep);
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+
+.markdown-content pre code {
+    background: transparent;
+    color: var(--app-text-primary);
+    padding: 0;
+}
+
+.markdown-content blockquote {
+    border-left: 3px solid var(--app-accent);
+    padding-left: 1rem;
+    color: var(--app-text-secondary);
+    margin: 0.75rem 0;
+}
+
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+}
+
+.markdown-content table th,
+.markdown-content table td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--app-border);
+    font-size: 0.875rem;
+}
+
+.markdown-content table th {
+    background: var(--app-accent-subtle);
+    color: var(--app-accent);
+    font-weight: 600;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content li {
+    margin-bottom: 0.25rem;
+}
+
+.markdown-content img {
+    max-width: 100%;
+    border-radius: 0.5rem;
+}
+
+
+/* --------------------------------------------------------------------------
+   Chat Input
+   -------------------------------------------------------------------------- */
+
+.chat-input-container {
+    position: sticky;
+    bottom: 0;
+    background: var(--app-bg-primary);
+    border-top: 1px solid var(--app-border);
+    padding: 1rem;
+    backdrop-filter: blur(12px);
+}
+
+.chat-input-container textarea {
+    resize: none;
+    min-height: 2.5rem;
+    max-height: 200px;
+}
+
+
+/* --------------------------------------------------------------------------
+   SSE Streaming Indicator
+   -------------------------------------------------------------------------- */
+
+.streaming-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--app-text-muted);
+}
+
+.streaming-indicator .dot-pulse {
+    display: flex;
+    gap: 4px;
+}
+
+.streaming-indicator .dot-pulse span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--app-accent);
+    animation: dotPulse 1.4s infinite;
+}
+
+.streaming-indicator .dot-pulse span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.streaming-indicator .dot-pulse span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes dotPulse {
+    0%, 80%, 100% {
+        transform: scale(0.5);
+        opacity: 0.3;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+
+/* --------------------------------------------------------------------------
+   Settings Page Extras
+   -------------------------------------------------------------------------- */
+
+.col-md-3 .nav-link.active {
+    color: var(--app-accent) !important;
+    background: var(--app-active-bg);
+}
+
+
+/* --------------------------------------------------------------------------
+   Conversation Settings Modal Sidebar
+   -------------------------------------------------------------------------- */
+
+.settings-sidebar .nav-link {
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    transition: var(--app-transition-fast);
+}
+
+.settings-sidebar .nav-link:hover {
+    background: var(--app-hover-bg);
+    color: var(--app-text-primary);
+}
+
+.settings-sidebar .nav-link.active {
+    color: var(--app-accent);
+    background: var(--app-active-bg);
+    font-weight: 600;
+}
+
+
+/* --------------------------------------------------------------------------
+   Memory Cards
+   -------------------------------------------------------------------------- */
+
+.memory-card {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    transition: var(--app-transition-fast);
+}
+
+.memory-card:hover {
+    border-color: var(--app-accent-border);
+}
+
+.memory-card .importance-bar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--app-bg-tertiary);
+    margin-top: 0.5rem;
+}
+
+.memory-card .importance-bar .fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--app-accent);
+}
+
+
+/* --------------------------------------------------------------------------
+   Action Cards
+   -------------------------------------------------------------------------- */
+
+.action-list-card {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    transition: var(--app-transition-fast);
+}
+
+.action-list-card:hover {
+    border-color: var(--app-accent-border);
+}

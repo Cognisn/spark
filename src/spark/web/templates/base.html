@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>document.documentElement.setAttribute('data-bs-theme', localStorage.getItem('app-theme') || 'dark');</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Spark{% endblock %}</title>
+
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Cognisn Theme + Base Components -->
+    <link href="/static/css/cognisn.css" rel="stylesheet">
+    <link href="/static/css/base.css" rel="stylesheet">
+    <link href="/static/css/spark.css" rel="stylesheet">
+
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="app-navbar navbar navbar-expand-lg">
+        <div class="container-fluid px-3">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <!-- Cognisn icon -->
+                <svg width="32" height="32" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg" class="me-2" style="flex-shrink: 0;">
+                    <defs>
+                        <linearGradient id="nav-arc" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="var(--app-accent-dark)"/>
+                            <stop offset="50%" stop-color="var(--app-accent)"/>
+                            <stop offset="100%" stop-color="var(--app-accent-dark)"/>
+                        </linearGradient>
+                        <radialGradient id="nav-dot" cx="40%" cy="35%" r="60%">
+                            <stop offset="0%" stop-color="var(--app-accent-light)"/>
+                            <stop offset="100%" stop-color="var(--app-accent)"/>
+                        </radialGradient>
+                    </defs>
+                    <g transform="translate(65,65)">
+                        <line x1="-65" y1="0" x2="-46" y2="0" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.28"/>
+                        <line x1="46" y1="0" x2="65" y2="0" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.14"/>
+                        <line x1="0" y1="0" x2="33" y2="-42" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.2"/>
+                        <line x1="0" y1="0" x2="33" y2="42" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.2"/>
+                        <path d="M32 -48 A48 48 0 1 0 32 48" stroke="url(#nav-arc)" stroke-width="4" fill="none" stroke-linecap="round"/>
+                        <circle cx="32" cy="-48" r="5" fill="var(--app-accent-light)"/>
+                        <circle cx="32" cy="48" r="5" fill="var(--app-accent)" opacity="0.85"/>
+                        <circle cx="12" cy="0" r="9" fill="url(#nav-dot)"/>
+                        <circle cx="12" cy="0" r="4.5" fill="var(--app-accent-light)" opacity="0.9"/>
+                    </g>
+                </svg>
+                <span style="display: inline-flex; align-items: baseline;">
+                    <span>Cognisn</span>
+                    <span class="brand-separator">|</span>
+                    <span class="brand-product">
+                        <i class="bi bi-lightning-charge-fill" style="font-size: 0.875rem;"></i>
+                        Spark
+                    </span>
+                    <span class="brand-version">v{{ version }}</span>
+                </span>
+            </a>
+
+            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <i class="bi bi-list" style="color: var(--app-text-primary); font-size: 1.5rem;"></i>
+            </button>
+
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto align-items-center gap-1">
+                    {% block nav_items %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="bi bi-house me-1"></i> Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/conversations"><i class="bi bi-chat-dots me-1"></i> Conversations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/memories"><i class="bi bi-lightbulb me-1"></i> Memories</a>
+                    </li>
+                    {% if actions_enabled() %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/actions"><i class="bi bi-play-circle me-1"></i> Actions</a>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/settings"><i class="bi bi-gear me-1"></i> Settings</a>
+                    </li>
+                    {% endblock %}
+                    <li class="nav-item dropdown ms-1">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Help">
+                            <i class="bi bi-question-circle"></i>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="/help"><i class="bi bi-book me-2"></i>User Guide</a></li>
+                            <li><a class="dropdown-item" href="/help#shortcuts" onclick="localStorage.setItem('help-topic','shortcuts')"><i class="bi bi-keyboard me-2"></i>Keyboard Shortcuts</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="openLogFolder()"><i class="bi bi-folder2-open me-2"></i>Open Log Folder</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="openDataFolder()"><i class="bi bi-folder me-2"></i>Open Data Folder</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><span class="dropdown-item-text" style="font-size: 0.75rem; color: var(--app-text-muted);">Spark v{{ version }}</span></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item ms-1">
+                        <div class="app-theme-toggle">
+                            <span class="theme-option" data-theme="light" title="Light mode">
+                                <i class="bi bi-sun-fill"></i>
+                            </span>
+                            <span class="theme-option" data-theme="dark" title="Dark mode">
+                                <i class="bi bi-moon-fill"></i>
+                            </span>
+                        </div>
+                    </li>
+                    <li class="nav-item ms-2">
+                        <a class="nav-link" href="#" title="Quit Spark" onclick="showQuitModal(event)">
+                            <i class="bi bi-power"></i>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="app-main no-sidebar">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer text-center" style="margin-left: 0;">
+        <span>Spark v{{ version }}</span>
+        <span class="mx-2">&middot;</span>
+        <span style="color: var(--app-text-muted);">Secure Personal AI Research Kit</span>
+    </footer>
+
+    <!-- Quit Confirmation Modal -->
+    <div class="modal fade" id="quitModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-power me-2"></i>Quit Spark</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will shut down the Spark web server and close the application.</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="quit-skip-confirm">
+                        <label class="form-check-label" for="quit-skip-confirm" style="font-size: 0.875rem;">
+                            Don't ask next time
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-app-danger" onclick="confirmQuit()">
+                        <i class="bi bi-power me-1"></i>Quit
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- UI Library -->
+    <script src="/static/js/ui.js"></script>
+
+    <script>
+    function showQuitModal(event) {
+        event.preventDefault();
+        if (localStorage.getItem('spark-skip-quit-confirm') === 'true') {
+            confirmQuit();
+            return;
+        }
+        new bootstrap.Modal(document.getElementById('quitModal')).show();
+    }
+
+    async function confirmQuit() {
+        if (document.getElementById('quit-skip-confirm')?.checked) {
+            localStorage.setItem('spark-skip-quit-confirm', 'true');
+        }
+        try {
+            bootstrap.Modal.getInstance(document.getElementById('quitModal'))?.hide();
+        } catch (e) {}
+
+        try {
+            await fetch('/api/quit', { method: 'POST' });
+        } catch (e) {}
+
+        // Show goodbye message
+        document.body.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--app-bg-deep); color:var(--app-text-primary); font-family:var(--app-font-body);">
+                <div style="text-align:center; max-width:400px;">
+                    <i class="bi bi-check-circle" style="font-size:3rem; color:var(--app-success);"></i>
+                    <h4 style="font-family:var(--app-font-heading); font-weight:700; margin-top:1rem;">Spark has quit</h4>
+                    <p style="color:var(--app-text-secondary); font-size:0.875rem;">The application has been shut down. You can close this browser window.</p>
+                </div>
+            </div>`;
+    }
+
+    async function openLogFolder() {
+        try { await fetch('/api/open-folder?type=logs', { method: 'POST' }); } catch (e) {}
+    }
+    async function openDataFolder() {
+        try { await fetch('/api/open-folder?type=data', { method: 'POST' }); } catch (e) {}
+    }
+
+    // Browser heartbeat — sends a ping every 30s so the server knows we're alive
+    setInterval(() => {
+        fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    }, 30000);
+    // Send initial heartbeat
+    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Cmd/Ctrl+K — focus search or open conversations
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            window.location.href = '/conversations';
+        }
+        // Cmd/Ctrl+N — new conversation
+        if ((e.metaKey || e.ctrlKey) && e.key === 'n' && !e.shiftKey) {
+            // Only if not in a text input
+            if (!['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+                e.preventDefault();
+                window.location.href = '/conversations';
+            }
+        }
+        // Cmd/Ctrl+, — settings
+        if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+            e.preventDefault();
+            window.location.href = '/settings';
+        }
+        // Escape — close modals
+        // (handled by Bootstrap)
+    });
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

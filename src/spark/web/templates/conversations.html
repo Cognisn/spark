@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - Conversations{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="max-width: 900px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Conversations</h4>
+        <button class="btn btn-app-primary" onclick="showNewConversation()">
+            <i class="bi bi-plus-lg me-1"></i> New Conversation
+        </button>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-3">
+        <div class="app-table-search" style="position: relative;">
+            <i class="bi bi-search" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--app-text-muted); pointer-events: none;"></i>
+            <input type="text" class="form-control form-control-sm" id="conv-search" placeholder="Search conversations..."
+                   style="padding-left: 2.25rem;" oninput="searchConversations(this.value)">
+        </div>
+    </div>
+
+    <!-- Conversation list -->
+    <div id="conversation-list">
+        <div class="text-center py-5" style="color: var(--app-text-muted);">
+            <div class="app-spinner mx-auto mb-3"></div>
+            Loading conversations...
+        </div>
+    </div>
+
+    <!-- New conversation modal -->
+    <div class="modal fade" id="newConvModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>New Conversation</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="conv-name" placeholder="e.g. Python Help">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Model</label>
+                        <select class="form-select" id="conv-model">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Instructions (optional)</label>
+                        <textarea class="form-control" id="conv-instructions" rows="3"
+                                  placeholder="Custom system instructions for this conversation"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-app-primary" onclick="createConversation()">
+                        <i class="bi bi-check-lg me-1"></i> Create
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadConversations);
+
+async function loadConversations() {
+    try {
+        const resp = await fetch('/conversations/api/list');
+        const convs = await resp.json();
+        const container = document.getElementById('conversation-list');
+
+        if (!convs.length) {
+            container.innerHTML = `
+                <div class="app-card text-center py-5">
+                    <div class="card-body">
+                        <i class="bi bi-chat-square-text" style="font-size: 3rem; color: var(--app-text-muted);"></i>
+                        <p class="mt-3" style="color: var(--app-text-secondary);">No conversations yet.</p>
+                        <button class="btn btn-app-primary" onclick="showNewConversation()">
+                            <i class="bi bi-plus-lg me-1"></i> Create your first conversation
+                        </button>
+                    </div>
+                </div>`;
+            return;
+        }
+
+        // Sort: favourites first, then by last_updated
+        convs.sort((a, b) => (b.is_favourite || 0) - (a.is_favourite || 0));
+
+        container.innerHTML = convs.map(c => {
+            const isFav = c.is_favourite;
+            const starIcon = isFav ? 'bi-star-fill' : 'bi-star';
+            const starColor = isFav ? 'color: var(--app-warning);' : 'color: var(--app-text-muted);';
+            return `
+            <div class="app-card d-flex align-items-center p-3 mb-2">
+                <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${starColor}">
+                    <i class="bi ${starIcon}"></i>
+                </button>
+                <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
+                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}</div>
+                    <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
+                        ${c.model_id || 'No model'} &middot; ${c.total_tokens || 0} tokens
+                        ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
+                    </div>
+                </a>
+                <button class="btn btn-app-ghost btn-sm ms-2" style="color: var(--app-danger);" onclick="deleteConversation(${c.id}, '${escapeHtml(c.name)}')" title="Delete">
+                    <i class="bi bi-trash"></i>
+                </button>
+                <a href="/chat/${c.id}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        document.getElementById('conversation-list').innerHTML =
+            `<div class="alert-app alert-app-danger">Failed to load conversations.</div>`;
+    }
+}
+
+async function showNewConversation() {
+    // Load models
+    try {
+        const resp = await fetch('/conversations/api/models');
+        const data = await resp.json();
+        const models = data.models || data;  // Handle both old [] and new {models, default_model} format
+        const defaultModel = data.default_model || null;
+        const mandatory = data.mandatory || false;
+        const select = document.getElementById('conv-model');
+
+        if (!models.length) {
+            select.innerHTML = '<option value="">No models available — configure a provider first</option>';
+        } else {
+            select.innerHTML = models.map(m =>
+                `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.provider})</option>`
+            ).join('');
+        }
+
+        // If mandatory, disable the select
+        select.disabled = mandatory;
+        if (mandatory) {
+            select.title = 'Model is locked by administrator settings';
+        } else {
+            select.title = '';
+        }
+    } catch (err) {
+        // Ignore
+    }
+    new bootstrap.Modal(document.getElementById('newConvModal')).show();
+}
+
+async function createConversation() {
+    const name = document.getElementById('conv-name').value.trim() || 'New Conversation';
+    const model = document.getElementById('conv-model').value;
+    const instructions = document.getElementById('conv-instructions').value.trim() || null;
+
+    if (!model) {
+        AppToast.warning('No model', 'Please select a model.');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/conversations/api/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, model_id: model, instructions }),
+        });
+        const data = await resp.json();
+        if (data.id) {
+            window.location.href = `/chat/${data.id}`;
+        } else {
+            AppToast.danger('Error', data.error || 'Failed to create conversation.');
+        }
+    } catch (err) {
+        AppToast.danger('Error', 'Network error.');
+    }
+}
+
+async function toggleFavourite(id, favourite) {
+    try {
+        await fetch(`/conversations/api/${id}/favourite`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ favourite }),
+        });
+        loadConversations();
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to update.');
+    }
+}
+
+let _searchDebounce = null;
+function searchConversations(query) {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(async () => {
+        if (!query.trim()) { loadConversations(); return; }
+        try {
+            const resp = await fetch(`/conversations/api/search?q=${encodeURIComponent(query)}`);
+            const results = await resp.json();
+            const container = document.getElementById('conversation-list');
+            if (!results.length) {
+                container.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted);">No matches found.</div>';
+                return;
+            }
+            container.innerHTML = results.map(c => `
+                <div class="app-card d-flex align-items-center p-3 mb-2">
+                    <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none">
+                        <div style="font-weight:600; color:var(--app-text-primary);">${escapeHtml(c.name)}</div>
+                        <div style="font-size:0.8125rem; color:var(--app-text-muted);">${c.model_id || ''}</div>
+                    </a>
+                    <a href="/chat/${c.id}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                </div>`).join('');
+        } catch (err) {}
+    }, 300);
+}
+
+async function deleteConversation(id, name) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+        await fetch(`/conversations/api/${id}`, { method: 'DELETE' });
+        loadConversations();
+        AppToast.success('Deleted', `"${name}" has been deleted.`);
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to delete.');
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

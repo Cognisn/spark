@@ -1,0 +1,956 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - Settings{% endblock %}
+
+{% block content %}
+<!-- Lock overlay -->
+{% if is_locked %}
+<div id="settings-lock-overlay" style="position: fixed; inset: 0; z-index: 2000; background: var(--app-loading-overlay); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;">
+    <div class="app-card" style="width: 100%; max-width: 380px;">
+        <div class="card-body p-4 text-center">
+            <i class="bi bi-lock-fill mb-3" style="font-size: 2.5rem; color: var(--app-accent);"></i>
+            <h5 style="font-family: var(--app-font-heading); font-weight: 700;">Settings Locked</h5>
+            <p style="color: var(--app-text-secondary); font-size: 0.875rem;">Enter the password to access settings.</p>
+            <div id="unlock-error" style="display: none;" class="alert-app alert-app-danger mb-3"></div>
+            <input type="password" class="form-control mb-3" id="unlock-password" placeholder="Password" autofocus
+                   onkeydown="if(event.key==='Enter') unlockSettings()">
+            <button class="btn btn-app-primary w-100" onclick="unlockSettings()">
+                <i class="bi bi-unlock me-1"></i> Unlock
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="container-fluid" style="max-width: 1000px;">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Settings</h4>
+            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+                Configure providers, database, and application behaviour.
+                Changes are saved to <code>config.yaml</code>.
+            </p>
+        </div>
+        <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock/unlock settings">
+            <i class="bi bi-lock{% if is_locked %}-fill{% endif %}" id="lock-icon"></i>
+        </button>
+    </div>
+
+    <div class="row g-4">
+        <!-- Section Nav -->
+        <div class="col-md-3">
+          <div style="position: sticky; top: calc(var(--app-navbar-height) + 1.5rem);">
+            <div class="app-card mb-3">
+                <div class="card-body p-2">
+                    <nav class="nav flex-column">
+                        {% for section in sections %}
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded {% if loop.first %}active{% endif %}"
+                           href="#section-{{ section.id }}"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi {{ section.icon }}"></i>
+                            {{ section.title }}
+                        </a>
+                        {% endfor %}
+                    </nav>
+                </div>
+            </div>
+            <div class="app-card">
+                <div class="card-header d-flex align-items-center gap-2" style="font-size: 0.875rem;">
+                    <i class="bi bi-tools"></i> Tools
+                </div>
+                <div class="card-body p-2">
+                    <nav class="nav flex-column">
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
+                           href="#section-embedded-tools"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi bi-puzzle"></i>
+                            Embedded Tools
+                        </a>
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
+                           href="#section-mcp-servers"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi bi-hdd-network"></i>
+                            MCP Servers
+                        </a>
+                    </nav>
+                </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Content -->
+        <div class="col-md-9">
+            {% for section in sections %}
+            <div id="section-{{ section.id }}" class="mb-4">
+                <div class="app-card">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi {{ section.icon }}"></i>
+                        {{ section.title }}
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-4">
+                            {{ section.description }}
+                        </p>
+
+                        {% for group in section.groups %}
+                        {% if section.groups|length > 1 %}
+                        <h6 class="mb-3 mt-4" style="font-weight: 600; color: var(--app-text-primary);">
+                            {{ group.title }}
+                        </h6>
+                        {% endif %}
+
+                        {% for field in group.fields %}
+                        <div class="mb-3 row align-items-center"
+                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}>
+                            <label class="col-sm-4 form-label mb-0" for="field-{{ field.key|replace('.', '-') }}">
+                                {{ field.label }}
+                            </label>
+                            <div class="col-sm-8">
+                                {% if field.type == 'toggle' %}
+                                <div class="form-switch">
+                                    <input class="form-check-input setting-input"
+                                           type="checkbox"
+                                           role="switch"
+                                           id="field-{{ field.key|replace('.', '-') }}"
+                                           data-key="{{ field.key }}"
+                                           {% if field.value %}checked{% endif %}>
+                                </div>
+
+                                {% elif field.type == 'select' %}
+                                <select class="form-select form-select-sm setting-input"
+                                        id="field-{{ field.key|replace('.', '-') }}"
+                                        data-key="{{ field.key }}">
+                                    {% for opt in field.options %}
+                                    <option value="{{ opt }}" {% if field.value == opt %}selected{% endif %}>{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+
+                                {% elif field.type == 'model_select' %}
+                                <select class="form-select form-select-sm setting-input"
+                                        id="field-{{ field.key|replace('.', '-') }}"
+                                        data-key="{{ field.key }}">
+                                    <option value="">None (no default)</option>
+                                    {% for model in available_models %}
+                                    <option value="{{ model.id }}" {% if field.value == model.id %}selected{% endif %}>
+                                        {{ model.name }} ({{ model.provider }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+
+                                {% elif field.type == 'secret' %}
+                                <div class="input-group input-group-sm">
+                                    <input type="password"
+                                           class="form-control setting-input"
+                                           id="field-{{ field.key|replace('.', '-') }}"
+                                           data-key="{{ field.key }}"
+                                           data-is-secret="true"
+                                           {% if field.has_value %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
+                                           placeholder="{% if field.has_value %}{% else %}Enter value{% endif %}">
+                                    <button class="btn btn-app-ghost" type="button"
+                                            onclick="togglePasswordVisibility(this)">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+
+                                {% elif field.type == 'number' %}
+                                <input type="number"
+                                       class="form-control form-control-sm setting-input"
+                                       id="field-{{ field.key|replace('.', '-') }}"
+                                       data-key="{{ field.key }}"
+                                       value="{{ field.value }}"
+                                       step="any">
+
+                                {% else %}
+                                <input type="text"
+                                       class="form-control form-control-sm setting-input"
+                                       id="field-{{ field.key|replace('.', '-') }}"
+                                       data-key="{{ field.key }}"
+                                       value="{{ field.value }}">
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- Embedded Tools -->
+            <div id="section-embedded-tools" class="mb-4">
+                <div class="app-card">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-puzzle"></i>
+                        Embedded Tools
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-4">
+                            Built-in tools available to the AI during conversations. Enable or disable each category and configure access modes.
+                        </p>
+
+                        {% for cat in tool_categories %}
+                        <div class="app-card mb-3" style="border-left: 3px solid var(--app-accent-border);">
+                            <div class="card-body py-3 px-3">
+                                <!-- Category header with toggle -->
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <i class="bi {{ cat.icon }}" style="font-size: 1.125rem; color: var(--app-accent);"></i>
+                                        <strong style="font-size: 0.9375rem;">{{ cat.title }}</strong>
+                                    </div>
+                                    <div class="form-switch">
+                                        <input class="form-check-input setting-input tool-category-toggle"
+                                               type="checkbox"
+                                               role="switch"
+                                               id="tool-{{ cat.id }}-enabled"
+                                               data-key="embedded_tools.{{ cat.id }}.enabled"
+                                               data-tool-category="{{ cat.id }}"
+                                               {% if cat.enabled %}checked{% endif %}>
+                                    </div>
+                                </div>
+                                <p style="color: var(--app-text-secondary); font-size: 0.8125rem; margin-bottom: 0.75rem;">
+                                    {{ cat.description }}
+                                </p>
+
+                                <!-- Category body (greyed out when disabled) -->
+                                <div class="tool-category-body" data-tool-category-body="{{ cat.id }}">
+                                    {% if cat.mode_options %}
+                                    <!-- Mode selector -->
+                                    <div class="mb-2 row align-items-center">
+                                        <label class="col-sm-4 form-label mb-0" style="font-size: 0.8125rem;">
+                                            Access Mode
+                                        </label>
+                                        <div class="col-sm-8">
+                                            <div class="d-flex gap-2">
+                                                {% for mode in cat.mode_options %}
+                                                <label class="d-flex align-items-center gap-1"
+                                                       style="font-size: 0.8125rem; cursor: pointer; color: var(--app-text-secondary);">
+                                                    <input type="radio"
+                                                           class="form-check-input setting-input"
+                                                           name="tool-{{ cat.id }}-mode"
+                                                           data-key="embedded_tools.{{ cat.id }}.mode"
+                                                           value="{{ mode }}"
+                                                           {% if cat.mode == mode %}checked{% endif %}
+                                                           style="margin-top: 0;">
+                                                    {{ mode }}
+                                                </label>
+                                                {% endfor %}
+                                            </div>
+                                            {% if cat.mode and cat.mode_descriptions.get(cat.mode) %}
+                                            <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;"
+                                                 id="tool-{{ cat.id }}-mode-desc">
+                                                {{ cat.mode_descriptions[cat.mode] }}
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endif %}
+
+                                    {% for field in cat.extra_fields %}
+                                    <div class="mb-2 row align-items-center">
+                                        <label class="col-sm-4 form-label mb-0" style="font-size: 0.8125rem;">
+                                            {{ field.label }}
+                                        </label>
+                                        <div class="col-sm-8">
+                                            {% if field.type == 'number' %}
+                                            <input type="number"
+                                                   class="form-control form-control-sm setting-input"
+                                                   data-key="{{ field.key }}"
+                                                   value="{{ field.value }}"
+                                                   step="any">
+                                            {% else %}
+                                            <input type="text"
+                                                   class="form-control form-control-sm setting-input"
+                                                   data-key="{{ field.key }}"
+                                                   value="{{ field.value }}">
+                                            {% endif %}
+                                            {% if field.help %}
+                                            <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                                {{ field.help }}
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+
+                                    <!-- Tool list -->
+                                    <div style="margin-top: 0.5rem;">
+                                        <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-bottom: 0.375rem;">
+                                            Available tools:
+                                        </div>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            {% for tool in cat.tools %}
+                                            <span class="badge-app badge-app-primary" style="font-size: 0.6875rem;">
+                                                {{ tool }}
+                                            </span>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- MCP Servers -->
+            <div id="section-mcp-servers" class="mb-4">
+                <div class="app-card">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <span><i class="bi bi-hdd-network me-2"></i>MCP Servers</span>
+                        <button class="btn btn-app-primary btn-sm" onclick="showAddMCPServer()">
+                            <i class="bi bi-plus-lg me-1"></i>Add Server
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-3">
+                            Connect external tool servers via the Model Context Protocol. Supports stdio, HTTP, and SSE transports.
+                        </p>
+                        <div id="mcp-server-list">
+                            <div class="text-center py-3" style="color: var(--app-text-muted); font-size: 0.875rem;">
+                                No MCP servers configured.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MCP Server Modal -->
+            <div class="modal fade" id="mcpServerModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="mcpModalTitle"><i class="bi bi-hdd-network me-2"></i>Add MCP Server</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row g-3">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Server Name</label>
+                                    <input type="text" class="form-control" id="mcp-name" placeholder="e.g. my-server">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Transport</label>
+                                    <select class="form-select" id="mcp-transport" onchange="updateMCPTransportFields()">
+                                        <option value="stdio">Stdio</option>
+                                        <option value="http">HTTP (Streamable)</option>
+                                        <option value="sse">SSE</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Stdio fields -->
+                            <div id="mcp-stdio-fields">
+                                <div class="mb-3">
+                                    <label class="form-label">Command</label>
+                                    <input type="text" class="form-control" id="mcp-command" placeholder="e.g. npx">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Arguments</label>
+                                    <input type="text" class="form-control" id="mcp-args" placeholder='e.g. -y, @example/mcp-server (comma-separated)'>
+                                    <div class="form-text">Comma-separated list of arguments.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Environment Variables</label>
+                                    <textarea class="form-control" id="mcp-env" rows="2" placeholder='{"API_KEY": "value"}'></textarea>
+                                    <div class="form-text">JSON object of environment variables.</div>
+                                </div>
+                            </div>
+
+                            <!-- HTTP/SSE fields -->
+                            <div id="mcp-url-fields" style="display: none;">
+                                <div class="mb-3">
+                                    <label class="form-label">URL</label>
+                                    <input type="text" class="form-control" id="mcp-url" placeholder="https://example.com/mcp">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Custom Headers</label>
+                                    <textarea class="form-control" id="mcp-custom-headers" rows="2" placeholder='{"X-Custom": "value"}'></textarea>
+                                    <div class="form-text">JSON object of additional HTTP headers to send with each request.</div>
+                                </div>
+                            </div>
+
+                            <!-- Auth -->
+                            <hr>
+                            <h6 class="mb-3" style="font-weight: 600;">Authentication</h6>
+                            <div class="row g-3">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Auth Type</label>
+                                    <select class="form-select" id="mcp-auth-type" onchange="updateMCPAuthFields()">
+                                        <option value="none">None</option>
+                                        <option value="bearer">Bearer Token</option>
+                                        <option value="api_key">API Key</option>
+                                        <option value="basic">Basic Auth</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-8 mb-3" id="mcp-auth-token-group" style="display: none;">
+                                    <label class="form-label">Token / Key</label>
+                                    <input type="password" class="form-control" id="mcp-auth-token">
+                                </div>
+                            </div>
+                            <div class="row g-3" id="mcp-auth-apikey-group" style="display: none;">
+                                <div class="col-md-12 mb-3">
+                                    <label class="form-label">Header Name</label>
+                                    <input type="text" class="form-control" id="mcp-auth-header" value="X-API-Key">
+                                </div>
+                            </div>
+                            <div class="row g-3" id="mcp-auth-basic-group" style="display: none;">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Username</label>
+                                    <input type="text" class="form-control" id="mcp-basic-user">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="mcp-basic-pass">
+                                </div>
+                            </div>
+
+                            <!-- Connection settings -->
+                            <hr>
+                            <div class="row g-3">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Timeout (seconds)</label>
+                                    <input type="number" class="form-control" id="mcp-timeout" value="30" min="5" max="300">
+                                </div>
+                                <div class="col-md-6 mb-3 d-flex align-items-end">
+                                    <div class="form-switch">
+                                        <input class="form-check-input" type="checkbox" id="mcp-ssl-verify" checked>
+                                        <label class="form-check-label" for="mcp-ssl-verify">Verify SSL</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Test result -->
+                            <div id="mcp-test-result" style="display: none;" class="mt-3"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-app-outline" onclick="testMCPConnection()">
+                                <i class="bi bi-plug me-1"></i>Test Connection
+                            </button>
+                            <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                            <button class="btn btn-app-primary" onclick="saveMCPServer()">
+                                <i class="bi bi-check-lg me-1"></i>Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MCP Server Tools Modal -->
+            <div class="modal fade" id="mcpToolsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-hdd-network me-2"></i><span id="mcpToolsServerName"></span> — Tools</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" id="mcpToolsContent">
+                            <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lock Settings Modal -->
+            <div class="modal fade" id="lockSettingsModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-lock me-2"></i>Lock Settings</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="lock-current-group" style="display: none;" class="mb-3">
+                                <label class="form-label">Current Password</label>
+                                <input type="password" class="form-control" id="lock-current-password">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">New Password</label>
+                                <input type="password" class="form-control" id="lock-new-password" placeholder="Leave empty to remove lock">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Confirm Password</label>
+                                <input type="password" class="form-control" id="lock-confirm-password">
+                            </div>
+                            <div id="lock-error" style="display: none;" class="alert-app alert-app-danger"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                            <button class="btn btn-app-primary" onclick="saveLockPassword()">
+                                <i class="bi bi-check-lg me-1"></i>Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Save -->
+            <div class="text-end mb-5">
+                <button class="btn btn-app-secondary me-2" onclick="window.location.reload()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
+                </button>
+                <button class="btn btn-app-primary" id="btn-save" onclick="saveSettings()">
+                    <i class="bi bi-check-lg me-1"></i> Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePasswordVisibility(btn) {
+    const input = btn.parentElement.querySelector('input');
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('bi-eye', 'bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.replace('bi-eye-slash', 'bi-eye');
+    }
+}
+
+function collectSettings() {
+    const settings = {};
+    document.querySelectorAll('.setting-input').forEach(el => {
+        const key = el.dataset.key;
+        let value;
+        if (el.type === 'checkbox') {
+            value = el.checked;
+        } else if (el.type === 'number') {
+            value = el.value !== '' ? Number(el.value) : null;
+        } else if (el.type === 'password') {
+            // Only include secrets that were actually changed by the user
+            if (el.value === '' || !el.dataset.secretChanged) return;
+            value = el.value;
+        } else {
+            value = el.value;
+        }
+        settings[key] = value;
+    });
+    return settings;
+}
+
+async function saveSettings() {
+    const btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="app-spinner" style="width:1rem;height:1rem;border-width:2px;"></span> Saving...';
+
+    try {
+        const resp = await fetch('/settings/api/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(collectSettings()),
+        });
+        if (resp.ok) {
+            AppToast.success('Settings saved', 'Configuration updated. Some changes may require a restart.');
+        } else {
+            const data = await resp.json();
+            AppToast.danger('Error', data.detail || 'Failed to save settings.');
+        }
+    } catch (err) {
+        AppToast.danger('Error', 'Network error while saving settings.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save Settings';
+    }
+}
+
+// Database type field toggling
+function updateDatabaseFields() {
+    const typeSelect = document.getElementById('field-database-type');
+    if (!typeSelect) return;
+    const dbType = typeSelect.value;
+    const isSQLite = dbType === 'sqlite';
+
+    document.querySelectorAll('[data-db-requires]').forEach(row => {
+        const requires = row.dataset.dbRequires;
+        const shouldShow = (requires === 'sqlite' && isSQLite) || (requires === 'remote' && !isSQLite);
+        const inputs = row.querySelectorAll('input, select, button');
+
+        if (shouldShow) {
+            row.style.opacity = '1';
+            row.style.pointerEvents = '';
+            inputs.forEach(el => el.disabled = false);
+        } else {
+            row.style.opacity = '0.35';
+            row.style.pointerEvents = 'none';
+            inputs.forEach(el => el.disabled = true);
+        }
+    });
+}
+
+// Tool category enable/disable toggling
+function updateToolCategories() {
+    document.querySelectorAll('.tool-category-toggle').forEach(toggle => {
+        const catId = toggle.dataset.toolCategory;
+        const body = document.querySelector(`[data-tool-category-body="${catId}"]`);
+        if (!body) return;
+        const inputs = body.querySelectorAll('input, select, button');
+        if (toggle.checked) {
+            body.style.opacity = '1';
+            body.style.pointerEvents = '';
+            inputs.forEach(el => el.disabled = false);
+        } else {
+            body.style.opacity = '0.35';
+            body.style.pointerEvents = 'none';
+            inputs.forEach(el => el.disabled = true);
+        }
+    });
+}
+
+// Handle radio buttons for collectSettings (standard inputs only collect the checked one)
+const origCollect = collectSettings;
+collectSettings = function() {
+    const settings = origCollect();
+    // Radio buttons: find checked radios and add their values
+    document.querySelectorAll('input[type="radio"].setting-input:checked').forEach(el => {
+        settings[el.dataset.key] = el.value;
+    });
+    return settings;
+};
+
+// Highlight active section nav on scroll
+document.addEventListener('DOMContentLoaded', () => {
+    // Init database field visibility
+    updateDatabaseFields();
+    const dbTypeEl = document.getElementById('field-database-type');
+    if (dbTypeEl) dbTypeEl.addEventListener('change', updateDatabaseFields);
+
+    // Secret fields: clear mask on focus, track if user changed the value
+    document.querySelectorAll('input[data-is-secret]').forEach(el => {
+        const mask = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+        el.addEventListener('focus', () => {
+            if (el.value === mask) {
+                el.value = '';
+            }
+        });
+        el.addEventListener('blur', () => {
+            if (el.value === '' && !el.dataset.secretChanged) {
+                el.value = mask;
+            }
+        });
+        el.addEventListener('input', () => {
+            el.dataset.secretChanged = 'true';
+        });
+    });
+
+    // Init tool category toggling
+    updateToolCategories();
+    document.querySelectorAll('.tool-category-toggle').forEach(toggle => {
+        toggle.addEventListener('change', updateToolCategories);
+    });
+
+    const links = document.querySelectorAll('.col-md-3 .nav-link');
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                links.forEach(l => l.classList.remove('active'));
+                const id = entry.target.id;
+                const active = document.querySelector(`.col-md-3 a[href="#${id}"]`);
+                if (active) active.classList.add('active');
+            }
+        });
+    }, {rootMargin: '-30% 0px -60% 0px'});
+
+    document.querySelectorAll('[id^="section-"]').forEach(el => observer.observe(el));
+
+    // Load MCP servers
+    loadMCPServers();
+});
+
+// -- MCP Server Management --
+
+async function loadMCPServers() {
+    const container = document.getElementById('mcp-server-list');
+    try {
+        const resp = await fetch('/settings/mcp/api/list');
+        const servers = await resp.json();
+        if (!servers.length) {
+            container.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted);font-size:0.875rem;">No MCP servers configured.</div>';
+            return;
+        }
+        container.innerHTML = servers.map(s => `
+            <div class="d-flex align-items-center justify-content-between py-2 px-3 mb-2" style="border:1px solid var(--app-border); border-radius:0.5rem;">
+                <div class="flex-grow-1" style="cursor: pointer;" onclick="showMCPServerTools('${escapeHtml(s.name)}')">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-hdd-network" style="color:var(--app-accent);"></i>
+                        <strong style="font-size:0.875rem;">${escapeHtml(s.name)}</strong>
+                        <span class="badge-app badge-app-primary" style="font-size:0.6rem;">${s.transport}</span>
+                        ${s.connected
+                            ? '<span class="status-dot online"></span>'
+                            : s.enabled === false
+                                ? '<span class="badge-app badge-app-danger" style="font-size:0.55rem;">Disabled</span>'
+                                : '<span class="status-dot offline"></span>'}
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--app-text-muted); margin-top:0.125rem;">
+                        ${s.connected ? s.tool_count + ' tools — click to view' : s.enabled === false ? 'Disabled' : 'Disconnected'}
+                        ${s.url ? ' · ' + escapeHtml(s.url) : ''}
+                        ${s.command ? ' · ' + escapeHtml(s.command) : ''}
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <div class="form-switch">
+                        <input class="form-check-input" type="checkbox" ${s.enabled !== false ? 'checked' : ''}
+                               onchange="toggleMCPServer('${escapeHtml(s.name)}', this.checked)" title="Enable/disable">
+                    </div>
+                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteMCPServer('${escapeHtml(s.name)}')" title="Remove">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>`).join('');
+    } catch (err) {
+        container.innerHTML = '<div class="alert-app alert-app-danger">Failed to load servers.</div>';
+    }
+}
+
+function showAddMCPServer() {
+    document.getElementById('mcpModalTitle').innerHTML = '<i class="bi bi-hdd-network me-2"></i>Add MCP Server';
+    document.getElementById('mcp-name').value = '';
+    document.getElementById('mcp-transport').value = 'stdio';
+    document.getElementById('mcp-command').value = '';
+    document.getElementById('mcp-args').value = '';
+    document.getElementById('mcp-env').value = '';
+    document.getElementById('mcp-url').value = '';
+    document.getElementById('mcp-custom-headers').value = '';
+    document.getElementById('mcp-auth-type').value = 'none';
+    document.getElementById('mcp-auth-token').value = '';
+    document.getElementById('mcp-basic-user').value = '';
+    document.getElementById('mcp-basic-pass').value = '';
+    document.getElementById('mcp-timeout').value = '30';
+    document.getElementById('mcp-ssl-verify').checked = true;
+    document.getElementById('mcp-test-result').style.display = 'none';
+    updateMCPTransportFields();
+    updateMCPAuthFields();
+    new bootstrap.Modal(document.getElementById('mcpServerModal')).show();
+}
+
+function updateMCPTransportFields() {
+    const transport = document.getElementById('mcp-transport').value;
+    document.getElementById('mcp-stdio-fields').style.display = transport === 'stdio' ? '' : 'none';
+    document.getElementById('mcp-url-fields').style.display = transport !== 'stdio' ? '' : 'none';
+}
+
+function updateMCPAuthFields() {
+    const auth = document.getElementById('mcp-auth-type').value;
+    document.getElementById('mcp-auth-token-group').style.display = (auth === 'bearer' || auth === 'api_key') ? '' : 'none';
+    document.getElementById('mcp-auth-apikey-group').style.display = auth === 'api_key' ? '' : 'none';
+    document.getElementById('mcp-auth-basic-group').style.display = auth === 'basic' ? '' : 'none';
+}
+
+function _collectMCPConfig() {
+    const transport = document.getElementById('mcp-transport').value;
+    const data = {
+        name: document.getElementById('mcp-name').value.trim(),
+        transport: transport,
+        auth_type: document.getElementById('mcp-auth-type').value,
+        auth_token: document.getElementById('mcp-auth-token').value,
+        auth_header_name: document.getElementById('mcp-auth-header')?.value || 'X-API-Key',
+        basic_username: document.getElementById('mcp-basic-user').value,
+        basic_password: document.getElementById('mcp-basic-pass').value,
+        timeout: parseInt(document.getElementById('mcp-timeout').value) || 30,
+        ssl_verify: document.getElementById('mcp-ssl-verify').checked,
+    };
+    if (transport === 'stdio') {
+        data.command = document.getElementById('mcp-command').value.trim();
+        const argsStr = document.getElementById('mcp-args').value.trim();
+        data.args = argsStr ? argsStr.split(',').map(a => a.trim()).filter(Boolean) : [];
+        const envStr = document.getElementById('mcp-env').value.trim();
+        try { data.env = envStr ? JSON.parse(envStr) : {}; } catch (e) { data.env = {}; }
+    } else {
+        data.url = document.getElementById('mcp-url').value.trim();
+        const customHdrStr = document.getElementById('mcp-custom-headers').value.trim();
+        try { data.custom_headers = customHdrStr ? JSON.parse(customHdrStr) : {}; } catch (e) { data.custom_headers = {}; }
+    }
+    return data;
+}
+
+async function testMCPConnection() {
+    const data = _collectMCPConfig();
+    if (!data.name) { AppToast.warning('Required', 'Enter a server name.'); return; }
+
+    const resultDiv = document.getElementById('mcp-test-result');
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert-app alert-app-info mt-3';
+    resultDiv.innerHTML = '<i class="bi bi-plug me-1"></i>Testing connection...';
+
+    try {
+        const resp = await fetch('/settings/mcp/api/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        const result = await resp.json();
+        if (result.status === 'ok') {
+            resultDiv.className = 'alert-app alert-app-success mt-3';
+            resultDiv.innerHTML = `<i class="bi bi-check-circle me-1"></i>${escapeHtml(result.message)}`;
+            if (result.tools && result.tools.length) {
+                resultDiv.innerHTML += `<div style="font-size:0.75rem;margin-top:0.375rem;color:var(--app-text-secondary);">Tools: ${result.tools.map(escapeHtml).join(', ')}</div>`;
+            }
+        } else {
+            resultDiv.className = 'alert-app alert-app-danger mt-3';
+            resultDiv.innerHTML = `<i class="bi bi-x-circle me-1"></i>${escapeHtml(result.message)}`;
+        }
+    } catch (err) {
+        resultDiv.className = 'alert-app alert-app-danger mt-3';
+        resultDiv.innerHTML = '<i class="bi bi-x-circle me-1"></i>Network error during test.';
+    }
+}
+
+async function saveMCPServer() {
+    const data = _collectMCPConfig();
+    if (!data.name) { AppToast.warning('Required', 'Enter a server name.'); return; }
+
+    try {
+        const resp = await fetch('/settings/mcp/api/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        const result = await resp.json();
+        if (result.status === 'ok') {
+            bootstrap.Modal.getInstance(document.getElementById('mcpServerModal'))?.hide();
+            AppToast.success('Saved', `Server "${data.name}" saved and connected.`);
+            loadMCPServers();
+        } else {
+            AppToast.danger('Error', result.error || 'Failed to save.');
+        }
+    } catch (err) {
+        AppToast.danger('Error', 'Network error.');
+    }
+}
+
+async function showMCPServerTools(name) {
+    document.getElementById('mcpToolsServerName').textContent = name;
+    const content = document.getElementById('mcpToolsContent');
+    content.innerHTML = '<div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>';
+    new bootstrap.Modal(document.getElementById('mcpToolsModal')).show();
+
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/tools`);
+        const data = await resp.json();
+        if (!data.tools || !data.tools.length) {
+            content.innerHTML = '<p style="color:var(--app-text-muted);">No tools available from this server.</p>';
+            return;
+        }
+        content.innerHTML = `
+            <p style="font-size:0.8125rem; color:var(--app-text-secondary); margin-bottom:1rem;">
+                ${data.tools.length} tool${data.tools.length !== 1 ? 's' : ''} available
+            </p>
+            ${data.tools.map(t => `
+                <div style="border:1px solid var(--app-border); border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-wrench" style="color:var(--app-accent);"></i>
+                        <strong style="font-size:0.875rem;">${escapeHtml(t.name)}</strong>
+                    </div>
+                    ${t.description ? `<div style="font-size:0.8125rem; color:var(--app-text-secondary); margin-top:0.375rem;">${escapeHtml(t.description)}</div>` : ''}
+                </div>
+            `).join('')}
+        `;
+    } catch (err) {
+        content.innerHTML = '<div class="alert-app alert-app-danger">Failed to load tools.</div>';
+    }
+}
+
+async function toggleMCPServer(name, enabled) {
+    try {
+        await fetch(`/settings/mcp/api/toggle`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, enabled }),
+        });
+        loadMCPServers();
+        AppToast.success(enabled ? 'Enabled' : 'Disabled', `Server "${name}" ${enabled ? 'enabled and connecting...' : 'disabled and disconnected.'}`);
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to toggle server.');
+    }
+}
+
+async function deleteMCPServer(name) {
+    if (!confirm(`Remove MCP server "${name}"?`)) return;
+    try {
+        await fetch(`/settings/mcp/api/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        loadMCPServers();
+        AppToast.success('Removed', `Server "${name}" removed.`);
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to remove.');
+    }
+}
+
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// -- Settings Lock --
+
+async function unlockSettings() {
+    const password = document.getElementById('unlock-password').value;
+    const errorDiv = document.getElementById('unlock-error');
+    try {
+        const resp = await fetch('/settings/api/unlock', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ password }),
+        });
+        if (resp.ok) {
+            document.getElementById('settings-lock-overlay')?.remove();
+        } else {
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = 'Incorrect password.';
+        }
+    } catch (err) {
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = 'Network error.';
+    }
+}
+
+function showLockSettings() {
+    const isLocked = {{ 'true' if is_locked else 'false' }};
+    document.getElementById('lock-current-group').style.display = isLocked ? '' : 'none';
+    document.getElementById('lock-current-password').value = '';
+    document.getElementById('lock-new-password').value = '';
+    document.getElementById('lock-confirm-password').value = '';
+    document.getElementById('lock-error').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('lockSettingsModal')).show();
+}
+
+async function saveLockPassword() {
+    const currentPassword = document.getElementById('lock-current-password').value;
+    const newPassword = document.getElementById('lock-new-password').value;
+    const confirmPassword = document.getElementById('lock-confirm-password').value;
+    const errorDiv = document.getElementById('lock-error');
+
+    if (newPassword && newPassword !== confirmPassword) {
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = 'Passwords do not match.';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/settings/api/lock', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('lockSettingsModal'))?.hide();
+            const icon = document.getElementById('lock-icon');
+            if (data.locked) {
+                icon.className = 'bi bi-lock-fill';
+                AppToast.success('Locked', 'Settings are now password protected.');
+            } else {
+                icon.className = 'bi bi-lock';
+                AppToast.success('Unlocked', 'Settings lock removed.');
+            }
+        } else {
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = data.error || 'Failed to update lock.';
+        }
+    } catch (err) {
+        errorDiv.style.display = 'block';
+        errorDiv.textContent = 'Network error.';
+    }
+}
+</script>
+{% endblock %}

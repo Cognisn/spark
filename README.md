@@ -1,0 +1,130 @@
+# Spark
+
+[![License: MIT + Commons Clause](https://img.shields.io/badge/License-MIT%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/cognisn-spark.svg)](https://pypi.org/project/cognisn-spark/)
+[![CI](https://github.com/Cognisn/spark/actions/workflows/ci.yml/badge.svg)](https://github.com/Cognisn/spark/actions/workflows/ci.yml)
+
+**Spark** is a secure, multi-provider AI research kit with a modern web interface. It connects to AI models from Anthropic, AWS Bedrock, Google Gemini, Ollama, and X.AI, with features like MCP tool integration, intelligent context management, persistent memory, and autonomous scheduled actions.
+
+## Features
+
+### Conversations
+- **Multi-Provider LLM Support** — Claude, Gemini, Grok, Llama, Mistral, and more
+- **Real-Time Streaming** — Server-Sent Events for token-by-token responses
+- **Dark/Light Theme** — Cognisn design system with theme persistence
+- **Context Compaction** — LLM-driven summarisation when approaching context limits
+- **Conversation Linking** — Share context between related conversations
+- **Favourites** — Star conversations for quick access
+
+### Tools
+- **MCP Integration** — Connect external tool servers via stdio, HTTP, or SSE
+- **Built-in Tools** — Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
+- **Memory Tools** — Persistent semantic memory across conversations
+- **Per-Conversation Control** — Enable/disable tools at the server or individual level
+- **Tool Approval** — Permission prompts for first-use with allow once/always/deny
+
+### Memory
+- **Persistent Storage** — Facts, preferences, projects, instructions, relationships
+- **Semantic Search** — Vector embeddings for relevant recall
+- **Auto-Retrieval** — Relevant memories silently injected into context
+- **Import/Export** — JSON format for backup and sharing
+
+### Autonomous Actions
+- **Scheduled Tasks** — Cron or one-off schedules via APScheduler
+- **AI-Assisted Creation** — Describe what you want and the AI builds the action
+- **Background Daemon** — System tray icon (macOS/Windows) runs actions independently
+- **Run History** — Track execution status, results, and token usage
+
+### Security
+- **Prompt Inspection** — Pattern and keyword-based threat detection
+- **Secret Management** — API keys stored in OS keychain, never in config files
+- **Settings Lock** — Password-protect the settings page
+- **Tool Permissions** — Per-conversation, per-tool approval system
+
+## Installation
+
+```bash
+pip install cognisn-spark
+```
+
+### Optional database drivers
+
+```bash
+pip install cognisn-spark[postgresql]   # PostgreSQL
+pip install cognisn-spark[mysql]        # MySQL
+pip install cognisn-spark[mssql]        # SQL Server
+pip install cognisn-spark[all-databases] # All drivers
+```
+
+## Quick Start
+
+```bash
+spark
+```
+
+On first launch, Spark creates a configuration file, starts the web server on a random port, and opens your browser. Follow the welcome page to configure an LLM provider and start chatting.
+
+### Configuration
+
+Spark stores its configuration in platform-standard locations:
+
+| Platform | Config | Data | Logs |
+|----------|--------|------|------|
+| macOS | ~/Library/Application Support/spark/ | ~/Library/Application Support/spark/ | ~/Library/Logs/spark/ |
+| Linux | ~/.config/spark/ | ~/.local/share/spark/ | ~/.local/state/spark/logs/ |
+| Windows | %APPDATA%/spark/ | %APPDATA%/spark/ | %LOCALAPPDATA%/spark/logs/ |
+
+API keys are stored in the OS keychain (macOS Keychain, Windows Credential Locker, Linux Secret Service) via the [cognisn-konfig](https://pypi.org/project/cognisn-konfig/) library.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Web Interface                       │
+│           FastAPI + SSE + Bootstrap 5 (Cognisn)         │
+├─────────────────────────────────────────────────────────┤
+│                  Conversation Manager                   │
+│    Context compaction · Memory · RAG · Tool routing     │
+├──────────────┬──────────────┬───────────────────────────┤
+│  LLM Providers              │  Tools                    │
+│  Bedrock · Anthropic        │  MCP servers              │
+│  Ollama · Gemini · X.AI     │  Built-in + Memory        │
+├──────────────┴──────────────┴───────────────────────────┤
+│                     cognisn-konfig                      │
+│          Settings · Secrets · Logging                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl/Cmd + K | Go to Conversations |
+| Ctrl/Cmd + N | New Conversation |
+| Ctrl/Cmd + , | Open Settings |
+| Enter | Send message |
+| Shift + Enter | New line |
+
+## Development
+
+```bash
+git clone https://github.com/Cognisn/spark.git
+cd spark
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest
+```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## Licence
+
+MIT License with Commons Clause — free for personal and educational use. Commercial use requires a licence from the author. See [LICENSE](LICENSE).
+
+## Author
+
+Matthew Westwood-Hill / [Cognisn](https://github.com/Cognisn)

@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Spark - Memories{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Memories</h4>
+        <div class="d-flex gap-2">
+            <button class="btn btn-app-ghost btn-sm" onclick="exportMemories()"><i class="bi bi-download me-1"></i>Export</button>
+            <button class="btn btn-app-ghost btn-sm" onclick="document.getElementById('import-file').click()"><i class="bi bi-upload me-1"></i>Import</button>
+            <input type="file" id="import-file" accept=".json" style="display:none" onchange="importMemories(this)">
+            <button class="btn btn-app-primary btn-sm" onclick="showAddMemory()"><i class="bi bi-plus-lg me-1"></i>Add Memory</button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="row g-3 mb-4" id="memory-stats"></div>
+
+    <!-- Filter -->
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <select class="form-select form-select-sm" id="category-filter" style="width: 180px;" onchange="loadMemories()">
+            <option value="">All categories</option>
+            <option value="preferences">Preferences</option>
+            <option value="facts">Facts</option>
+            <option value="projects">Projects</option>
+            <option value="instructions">Instructions</option>
+            <option value="relationships">Relationships</option>
+        </select>
+        <button class="btn btn-app-ghost btn-sm ms-auto" style="color: var(--app-danger);" onclick="confirmDeleteAll()"><i class="bi bi-trash me-1"></i>Delete All</button>
+    </div>
+
+    <!-- Memory List -->
+    <div id="memory-list"></div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="memoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="memoryModalTitle">Add Memory</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="mem-edit-id">
+                <div class="mb-3"><label class="form-label">Content</label><textarea class="form-control" id="mem-content" rows="4"></textarea></div>
+                <div class="mb-3"><label class="form-label">Category</label>
+                    <select class="form-select" id="mem-category">
+                        <option value="facts">Facts</option>
+                        <option value="preferences">Preferences</option>
+                        <option value="projects">Projects</option>
+                        <option value="instructions">Instructions</option>
+                        <option value="relationships">Relationships</option>
+                    </select>
+                </div>
+                <div class="mb-3"><label class="form-label">Importance: <span id="mem-imp-val">0.5</span></label>
+                    <input type="range" class="form-range" id="mem-importance" min="0" max="1" step="0.1" value="0.5" oninput="document.getElementById('mem-imp-val').textContent=this.value">
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button><button class="btn btn-app-primary" onclick="saveMemory()"><i class="bi bi-check-lg me-1"></i>Save</button></div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete All Modal -->
+<div class="modal fade" id="deleteAllModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" style="color: var(--app-danger);"><i class="bi bi-exclamation-triangle me-2"></i>Delete All Memories</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p>This will permanently delete all memories. Type <strong>DELETE_ALL</strong> to confirm.</p>
+                <input type="text" class="form-control" id="delete-all-confirm" placeholder="DELETE_ALL">
+            </div>
+            <div class="modal-footer"><button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button><button class="btn btn-app-danger" onclick="deleteAllMemories()">Delete All</button></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const catColors = {preferences:'primary',facts:'info',projects:'warning',instructions:'success',relationships:'danger'};
+
+document.addEventListener('DOMContentLoaded', () => { loadStats(); loadMemories(); });
+
+async function loadStats() {
+    const resp = await fetch('/memories/api/stats');
+    const s = await resp.json();
+    const el = document.getElementById('memory-stats');
+    el.innerHTML = `
+        <div class="col-sm-4"><div class="app-stat-card"><div class="stat-icon"><i class="bi bi-lightbulb"></i></div><div class="stat-content"><div class="stat-value">${s.total}</div><div class="stat-label">Total Memories</div></div></div></div>
+        <div class="col-sm-4"><div class="app-stat-card"><div class="stat-icon"><i class="bi bi-tags"></i></div><div class="stat-content"><div class="stat-value">${Object.keys(s.by_category).length}</div><div class="stat-label">Categories Used</div></div></div></div>
+        <div class="col-sm-4"><div class="app-stat-card"><div class="stat-icon"><i class="bi bi-bar-chart"></i></div><div class="stat-content"><div class="stat-value">${s.avg_importance}</div><div class="stat-label">Avg Importance</div></div></div></div>`;
+}
+
+async function loadMemories() {
+    const cat = document.getElementById('category-filter').value;
+    const url = cat ? `/memories/api/list?category=${cat}` : '/memories/api/list';
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const el = document.getElementById('memory-list');
+    if (!data.memories.length) { el.innerHTML = '<div class="text-center py-5" style="color:var(--app-text-muted);"><i class="bi bi-lightbulb" style="font-size:2.5rem;"></i><p class="mt-2">No memories stored.</p></div>'; return; }
+    el.innerHTML = data.memories.map(m => `
+        <div class="memory-card mb-2">
+            <div class="d-flex align-items-start justify-content-between">
+                <div class="flex-grow-1">
+                    <span class="badge-app badge-app-${catColors[m.category]||'primary'}" style="font-size:0.6875rem;">${m.category}</span>
+                    <p class="mt-2 mb-1" style="font-size:0.875rem;">${escapeHtml(m.content)}</p>
+                    <div style="font-size:0.6875rem; color:var(--app-text-muted);">${m.created_at ? new Date(m.created_at).toLocaleDateString() : ''}</div>
+                </div>
+                <div class="d-flex gap-1 ms-2 flex-shrink-0">
+                    <button class="btn btn-app-ghost btn-sm" onclick="showEditMemory(${m.id}, '${escapeAttr(m.content)}', '${m.category}', ${m.importance||0.5})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteMemory(${m.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </div>
+            <div class="importance-bar"><div class="fill" style="width:${(m.importance||0.5)*100}%;"></div></div>
+        </div>`).join('');
+}
+
+function escapeAttr(s) { return (s||'').replace(/'/g,"\\'").replace(/\n/g,'\\n'); }
+
+function showAddMemory() {
+    document.getElementById('memoryModalTitle').textContent = 'Add Memory';
+    document.getElementById('mem-edit-id').value = '';
+    document.getElementById('mem-content').value = '';
+    document.getElementById('mem-category').value = 'facts';
+    document.getElementById('mem-importance').value = 0.5;
+    document.getElementById('mem-imp-val').textContent = '0.5';
+    new bootstrap.Modal(document.getElementById('memoryModal')).show();
+}
+
+function showEditMemory(id, content, category, importance) {
+    document.getElementById('memoryModalTitle').textContent = 'Edit Memory';
+    document.getElementById('mem-edit-id').value = id;
+    document.getElementById('mem-content').value = content.replace(/\\n/g, '\n');
+    document.getElementById('mem-category').value = category;
+    document.getElementById('mem-importance').value = importance;
+    document.getElementById('mem-imp-val').textContent = importance;
+    new bootstrap.Modal(document.getElementById('memoryModal')).show();
+}
+
+async function saveMemory() {
+    const id = document.getElementById('mem-edit-id').value;
+    const data = { content: document.getElementById('mem-content').value, category: document.getElementById('mem-category').value, importance: parseFloat(document.getElementById('mem-importance').value) };
+    const url = id ? `/memories/api/${id}` : '/memories/api/create';
+    const method = id ? 'PUT' : 'POST';
+    const resp = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    if (resp.ok) { bootstrap.Modal.getInstance(document.getElementById('memoryModal'))?.hide(); loadMemories(); loadStats(); AppToast.success('Saved', id ? 'Memory updated.' : 'Memory created.'); }
+    else { const err = await resp.json(); AppToast.danger('Error', err.error || 'Failed.'); }
+}
+
+async function deleteMemory(id) {
+    if (!confirm('Delete this memory?')) return;
+    await fetch(`/memories/api/${id}`, { method: 'DELETE' });
+    loadMemories(); loadStats();
+}
+
+function confirmDeleteAll() { document.getElementById('delete-all-confirm').value = ''; new bootstrap.Modal(document.getElementById('deleteAllModal')).show(); }
+
+async function deleteAllMemories() {
+    const confirm = document.getElementById('delete-all-confirm').value;
+    if (confirm !== 'DELETE_ALL') { AppToast.warning('Confirmation', 'Type DELETE_ALL to confirm.'); return; }
+    await fetch('/memories/api/all', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({confirm: 'DELETE_ALL'}) });
+    bootstrap.Modal.getInstance(document.getElementById('deleteAllModal'))?.hide();
+    loadMemories(); loadStats();
+}
+
+function exportMemories() { window.open('/memories/api/export', '_blank'); }
+
+async function importMemories(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const text = await file.text();
+    try {
+        const data = JSON.parse(text);
+        const resp = await fetch('/memories/api/import', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        const result = await resp.json();
+        AppToast.success('Imported', `${result.imported} imported, ${result.skipped} skipped.`);
+        loadMemories(); loadStats();
+    } catch (err) { AppToast.danger('Error', 'Invalid JSON file.'); }
+    input.value = '';
+}
+
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+</script>
+{% endblock %}
