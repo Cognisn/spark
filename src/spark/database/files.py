@@ -30,8 +30,16 @@ def add_file(
              content_base64, mime_type, token_count, tags, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            conversation_id, filename, file_type, file_size, content_text,
-            content_base64, mime_type, token_count, tags, user_guid,
+            conversation_id,
+            filename,
+            file_type,
+            file_size,
+            content_text,
+            content_base64,
+            mime_type,
+            token_count,
+            tags,
+            user_guid,
         ),
     )
     db.commit()

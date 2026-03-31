@@ -31,13 +31,21 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
         conversation = conv_mgr.get_conversation(conversation_id, user_guid)
 
     if not conversation:
-        return templates.TemplateResponse(request, "chat.html", {
-            "conversation": {"id": conversation_id, "name": "Unknown", "model_id": ""},
-        })
+        return templates.TemplateResponse(
+            request,
+            "chat.html",
+            {
+                "conversation": {"id": conversation_id, "name": "Unknown", "model_id": ""},
+            },
+        )
 
-    return templates.TemplateResponse(request, "chat.html", {
-        "conversation": conversation,
-    })
+    return templates.TemplateResponse(
+        request,
+        "chat.html",
+        {
+            "conversation": conversation,
+        },
+    )
 
 
 # -- Message API --------------------------------------------------------------
@@ -97,26 +105,28 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     model_id = conv.get("model_id", "")
     context_window = resolver.get_context_window(model_id)
 
-    return JSONResponse({
-        "id": conv.get("id"),
-        "name": conv.get("name"),
-        "model_id": model_id,
-        "created_at": conv.get("created_at"),
-        "tokens_sent": conv.get("tokens_sent", 0),
-        "tokens_received": conv.get("tokens_received", 0),
-        "total_tokens": conv.get("total_tokens", 0),
-        "context_window": context_window,
-        "instructions": conv.get("instructions"),
-        "compaction_threshold": conv.get("compaction_threshold"),
-        "compaction_summary_ratio": conv.get("compaction_summary_ratio"),
-        "memory_enabled": bool(conv.get("memory_enabled", True)),
-        "rag_enabled": bool(conv.get("rag_enabled", True)),
-        "rag_top_k": conv.get("rag_top_k", 5),
-        "rag_threshold": conv.get("rag_threshold", 0.4),
-        "rag_tool_enabled": bool(conv.get("rag_tool_enabled", False)),
-        "max_history_messages": conv.get("max_history_messages"),
-        "include_tool_results": bool(conv.get("include_tool_results", True)),
-    })
+    return JSONResponse(
+        {
+            "id": conv.get("id"),
+            "name": conv.get("name"),
+            "model_id": model_id,
+            "created_at": conv.get("created_at"),
+            "tokens_sent": conv.get("tokens_sent", 0),
+            "tokens_received": conv.get("tokens_received", 0),
+            "total_tokens": conv.get("total_tokens", 0),
+            "context_window": context_window,
+            "instructions": conv.get("instructions"),
+            "compaction_threshold": conv.get("compaction_threshold"),
+            "compaction_summary_ratio": conv.get("compaction_summary_ratio"),
+            "memory_enabled": bool(conv.get("memory_enabled", True)),
+            "rag_enabled": bool(conv.get("rag_enabled", True)),
+            "rag_top_k": conv.get("rag_top_k", 5),
+            "rag_threshold": conv.get("rag_threshold", 0.4),
+            "rag_tool_enabled": bool(conv.get("rag_tool_enabled", False)),
+            "max_history_messages": conv.get("max_history_messages"),
+            "include_tool_results": bool(conv.get("include_tool_results", True)),
+        }
+    )
 
 
 @router.post("/{conversation_id}/api/settings")
@@ -132,12 +142,22 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
     from spark.database import conversations
 
     _ALLOWED_FIELDS = {
-        "instructions", "compaction_threshold", "compaction_summary_ratio",
-        "memory_enabled", "rag_enabled", "rag_top_k", "rag_threshold",
-        "rag_tool_enabled", "max_history_messages", "include_tool_results",
+        "instructions",
+        "compaction_threshold",
+        "compaction_summary_ratio",
+        "memory_enabled",
+        "rag_enabled",
+        "rag_top_k",
+        "rag_threshold",
+        "rag_tool_enabled",
+        "max_history_messages",
+        "include_tool_results",
     }
     _BOOL_FIELDS = {
-        "memory_enabled", "rag_enabled", "rag_tool_enabled", "include_tool_results",
+        "memory_enabled",
+        "rag_enabled",
+        "rag_tool_enabled",
+        "include_tool_results",
     }
 
     updates: dict[str, Any] = {}
@@ -149,9 +169,7 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
             updates[key] = val
 
     try:
-        conversations.update_conversation(
-            conv_mgr._db, conversation_id, user_guid, **updates
-        )
+        conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, **updates)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logger.error("Failed to update conversation settings: %s", e)
@@ -178,7 +196,9 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     embedded = []
     for t in all_builtin:
         enabled = mcp_ops.is_embedded_tool_enabled(conv_mgr._db, conversation_id, t["name"])
-        embedded.append({"name": t["name"], "description": t.get("description", ""), "enabled": enabled})
+        embedded.append(
+            {"name": t["name"], "description": t.get("description", ""), "enabled": enabled}
+        )
 
     # MCP servers
     mcp_servers: list[dict] = []
@@ -188,21 +208,29 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
         for server_name, client in mcp_mgr.servers.items():
             if not client.connected:
                 continue
-            server_enabled = mcp_ops.is_mcp_server_enabled(conv_mgr._db, conversation_id, server_name)
+            server_enabled = mcp_ops.is_mcp_server_enabled(
+                conv_mgr._db, conversation_id, server_name
+            )
             server_tools = []
             for t in tools_cache:
                 if t.get("server") == server_name:
-                    tool_enabled = mcp_ops.is_embedded_tool_enabled(conv_mgr._db, conversation_id, t["name"])
-                    server_tools.append({
-                        "name": t["name"],
-                        "description": t.get("description", ""),
-                        "enabled": tool_enabled,
-                    })
-            mcp_servers.append({
-                "name": server_name,
-                "enabled": server_enabled,
-                "tools": server_tools,
-            })
+                    tool_enabled = mcp_ops.is_embedded_tool_enabled(
+                        conv_mgr._db, conversation_id, t["name"]
+                    )
+                    server_tools.append(
+                        {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "enabled": tool_enabled,
+                        }
+                    )
+            mcp_servers.append(
+                {
+                    "name": server_name,
+                    "enabled": server_enabled,
+                    "tools": server_tools,
+                }
+            )
 
     return JSONResponse({"embedded": embedded, "mcp_servers": mcp_servers})
 
@@ -245,7 +273,9 @@ async def get_links(request: Request, conversation_id: int) -> JSONResponse:
     from spark.database import conversation_links
 
     linked = conversation_links.get_links(conv_mgr._db, conversation_id, user_guid)
-    available = conversation_links.get_linkable_conversations(conv_mgr._db, conversation_id, user_guid)
+    available = conversation_links.get_linkable_conversations(
+        conv_mgr._db, conversation_id, user_guid
+    )
 
     return JSONResponse({"linked": linked, "available": available})
 

@@ -2,10 +2,9 @@
 
 import pytest
 
-from spark.database import Database
+from spark.database import Database, conversation_links, conversations
 from spark.database.backends import SQLiteBackend
 from spark.database.connection import DatabaseConnection
-from spark.database import conversations, conversation_links
 
 USER = "test-user"
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from spark.index.embeddings import EmbeddingModel
 
@@ -58,7 +58,11 @@ class MemoryIndex:
 
         embedding = self._embedder.encode(content)
         return memories.add_memory(
-            self._db, self._user_guid, content, category, embedding,
+            self._db,
+            self._user_guid,
+            content,
+            category,
+            embedding,
             importance=importance,
             source_conversation_id=source_conversation_id,
             metadata_json=metadata,
@@ -83,16 +87,23 @@ class MemoryIndex:
                 if cat in VALID_CATEGORIES:
                     results.extend(
                         memories.search_memories(
-                            self._db, self._user_guid, query_embedding,
-                            top_k=top_k, threshold=threshold, category=cat,
+                            self._db,
+                            self._user_guid,
+                            query_embedding,
+                            top_k=top_k,
+                            threshold=threshold,
+                            category=cat,
                         )
                     )
             results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
             results = results[:top_k]
         else:
             results = memories.search_memories(
-                self._db, self._user_guid, query_embedding,
-                top_k=top_k, threshold=threshold,
+                self._db,
+                self._user_guid,
+                query_embedding,
+                top_k=top_k,
+                threshold=threshold,
             )
 
         # Update access timestamps
@@ -200,9 +211,7 @@ class MemoryIndex:
         memories.delete_memory(self._db, memory_id, self._user_guid)
         return True
 
-    def list_all(
-        self, *, category: str | None = None, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    def list_all(self, *, category: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         """List all memories, optionally filtered by category."""
         from spark.database import memories
 

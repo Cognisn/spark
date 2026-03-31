@@ -77,11 +77,18 @@ CREATION_TOOLS = [
             "properties": {
                 "name": {"type": "string", "description": "Action name (unique)."},
                 "description": {"type": "string", "description": "Brief description."},
-                "action_prompt": {"type": "string", "description": "The full prompt for the AI to execute."},
+                "action_prompt": {
+                    "type": "string",
+                    "description": "The full prompt for the AI to execute.",
+                },
                 "model_id": {"type": "string", "description": "Model to use."},
                 "schedule_type": {"type": "string", "enum": ["one_off", "recurring"]},
                 "schedule_value": {"type": "string", "description": "Schedule expression."},
-                "context_mode": {"type": "string", "enum": ["fresh", "cumulative"], "description": "Default: fresh."},
+                "context_mode": {
+                    "type": "string",
+                    "enum": ["fresh", "cumulative"],
+                    "description": "Default: fresh.",
+                },
                 "max_failures": {"type": "integer", "description": "Default: 3."},
                 "max_tokens": {"type": "integer", "description": "Default: 8192."},
             },
@@ -154,8 +161,11 @@ def _validate_recurring(value: str) -> str:
         from apscheduler.triggers.cron import CronTrigger
 
         trigger = CronTrigger(
-            minute=parts[0], hour=parts[1], day=parts[2],
-            month=parts[3], day_of_week=parts[4],
+            minute=parts[0],
+            hour=parts[1],
+            day=parts[2],
+            month=parts[3],
+            day_of_week=parts[4],
         )
         next_fire = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
         human = _cron_to_human(parts)
@@ -172,11 +182,23 @@ def _cron_to_human(parts: list[str]) -> str:
     time_str = f"{hour.zfill(2)}:{minute.zfill(2)}" if hour != "*" and minute != "*" else ""
 
     dow_map = {
-        "1-5": "Weekdays", "0-6": "Every day", "MON-FRI": "Weekdays",
-        "0": "Sunday", "1": "Monday", "2": "Tuesday", "3": "Wednesday",
-        "4": "Thursday", "5": "Friday", "6": "Saturday",
-        "MON": "Monday", "TUE": "Tuesday", "WED": "Wednesday",
-        "THU": "Thursday", "FRI": "Friday", "SAT": "Saturday", "SUN": "Sunday",
+        "1-5": "Weekdays",
+        "0-6": "Every day",
+        "MON-FRI": "Weekdays",
+        "0": "Sunday",
+        "1": "Monday",
+        "2": "Tuesday",
+        "3": "Wednesday",
+        "4": "Thursday",
+        "5": "Friday",
+        "6": "Saturday",
+        "MON": "Monday",
+        "TUE": "Tuesday",
+        "WED": "Wednesday",
+        "THU": "Thursday",
+        "FRI": "Friday",
+        "SAT": "Saturday",
+        "SUN": "Sunday",
     }
 
     if dow != "*" and dow in dow_map:
@@ -191,13 +213,23 @@ def _cron_to_human(parts: list[str]) -> str:
         return f"Every {interval} hours"
 
     if day != "*":
-        suffix = "th" if day not in ("1", "2", "3", "21", "22", "23", "31") else {"1": "st", "2": "nd", "3": "rd"}.get(day[-1], "th")
-        return f"{day}{suffix} of every month at {time_str}" if time_str else f"{day}{suffix} of every month"
+        suffix = (
+            "th"
+            if day not in ("1", "2", "3", "21", "22", "23", "31")
+            else {"1": "st", "2": "nd", "3": "rd"}.get(day[-1], "th")
+        )
+        return (
+            f"{day}{suffix} of every month at {time_str}"
+            if time_str
+            else f"{day}{suffix} of every month"
+        )
 
     return f"At {time_str}" if time_str else " ".join(parts)
 
 
-def _create_action(tool_input: dict[str, Any], db_connection: Any, config: dict[str, Any] | None = None) -> str:
+def _create_action(
+    tool_input: dict[str, Any], db_connection: Any, config: dict[str, Any] | None = None
+) -> str:
     """Create the action in the database."""
     from spark.database import autonomous_actions
 

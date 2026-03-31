@@ -3,10 +3,10 @@
 from unittest.mock import MagicMock
 
 from spark.web.endpoints.main_menu import (
-    _get_provider_summary,
     _get_embedded_tool_summary,
-    _get_mcp_stats,
     _get_mcp_server_list,
+    _get_mcp_stats,
+    _get_provider_summary,
 )
 
 

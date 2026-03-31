@@ -11,13 +11,48 @@ from spark.llm.base import LLMService
 logger = logging.getLogger(__name__)
 
 _MODELS = [
-    {"id": "claude-opus-4-20250514", "name": "Claude Opus 4", "context_length": 200_000, "max_output": 32_000},
-    {"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "context_length": 200_000, "max_output": 32_000},
-    {"id": "claude-3-7-sonnet-20250219", "name": "Claude 3.7 Sonnet", "context_length": 200_000, "max_output": 32_000},
-    {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "context_length": 200_000, "max_output": 8_192},
-    {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "context_length": 200_000, "max_output": 8_192},
-    {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "context_length": 200_000, "max_output": 4_096},
-    {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "context_length": 200_000, "max_output": 4_096},
+    {
+        "id": "claude-opus-4-20250514",
+        "name": "Claude Opus 4",
+        "context_length": 200_000,
+        "max_output": 32_000,
+    },
+    {
+        "id": "claude-sonnet-4-20250514",
+        "name": "Claude Sonnet 4",
+        "context_length": 200_000,
+        "max_output": 32_000,
+    },
+    {
+        "id": "claude-3-7-sonnet-20250219",
+        "name": "Claude 3.7 Sonnet",
+        "context_length": 200_000,
+        "max_output": 32_000,
+    },
+    {
+        "id": "claude-3-5-sonnet-20241022",
+        "name": "Claude 3.5 Sonnet",
+        "context_length": 200_000,
+        "max_output": 8_192,
+    },
+    {
+        "id": "claude-3-5-haiku-20241022",
+        "name": "Claude 3.5 Haiku",
+        "context_length": 200_000,
+        "max_output": 8_192,
+    },
+    {
+        "id": "claude-3-opus-20240229",
+        "name": "Claude 3 Opus",
+        "context_length": 200_000,
+        "max_output": 4_096,
+    },
+    {
+        "id": "claude-3-haiku-20240307",
+        "name": "Claude 3 Haiku",
+        "context_length": 200_000,
+        "max_output": 4_096,
+    },
 ]
 
 
@@ -45,10 +80,7 @@ class AnthropicDirectProvider(LLMService):
         return "Direct API (api.anthropic.com)"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        return [
-            {**m, "provider": "Anthropic", "supports_tools": True}
-            for m in _MODELS
-        ]
+        return [{**m, "provider": "Anthropic", "supports_tools": True} for m in _MODELS]
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -109,14 +141,23 @@ class AnthropicDirectProvider(LLMService):
                         delay = self._base_delay ** (attempt + 1)
                         logger.warning(
                             "Rate limited (attempt %d/%d), retrying in %.1fs",
-                            attempt + 1, self._max_retries, delay,
+                            attempt + 1,
+                            self._max_retries,
+                            delay,
                         )
                         time.sleep(delay)
                         continue
                 raise
 
-        return {"content": "", "stop_reason": "error", "usage": {"input_tokens": 0, "output_tokens": 0},
-                "tool_use": None, "content_blocks": [], "error": True, "error_message": "Max retries exceeded"}
+        return {
+            "content": "",
+            "stop_reason": "error",
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+            "tool_use": None,
+            "content_blocks": [],
+            "error": True,
+            "error_message": "Max retries exceeded",
+        }
 
     def _invoke_sync(self, req: dict[str, Any]) -> dict[str, Any]:
         response = self._client.messages.create(**req)
@@ -136,12 +177,14 @@ class AnthropicDirectProvider(LLMService):
                 if event_type == "content_block_start":
                     block = event.content_block
                     if hasattr(block, "type") and block.type == "tool_use":
-                        tool_blocks.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": {},
-                        })
+                        tool_blocks.append(
+                            {
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": {},
+                            }
+                        )
 
                 elif event_type == "content_block_delta":
                     delta = event.delta
@@ -229,11 +272,13 @@ def _convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         schema = tool.get("inputSchema") or tool.get("input_schema", {})
         if "type" not in schema:
             schema["type"] = "object"
-        converted.append({
-            "name": tool["name"],
-            "description": tool.get("description", ""),
-            "input_schema": schema,
-        })
+        converted.append(
+            {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "input_schema": schema,
+            }
+        )
     return converted
 
 

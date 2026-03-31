@@ -20,7 +20,6 @@ from spark.database.connection import DatabaseConnection
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
 
-
 USER = "test-user"
 
 
@@ -49,7 +48,15 @@ class StubLLMService:
         return "Stub"
 
     def list_available_models(self) -> list[dict]:
-        return [{"id": "stub-model", "name": "Stub", "provider": "Stub", "supports_tools": True, "context_length": 200000}]
+        return [
+            {
+                "id": "stub-model",
+                "name": "Stub",
+                "provider": "Stub",
+                "supports_tools": True,
+                "context_length": 200000,
+            }
+        ]
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -156,7 +163,10 @@ class TestSendMessage:
         self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         mgr = ConversationManager(
-            db.connection, llm_manager, ContextLimitResolver(), max_tool_iterations=10,
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
+            max_tool_iterations=10,
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
 
@@ -193,7 +203,9 @@ class TestSendMessage:
             return "denied"
 
         mgr = ConversationManager(
-            db.connection, llm_manager, ContextLimitResolver(),
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
             tool_permission_callback=deny_all,
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
@@ -204,7 +216,9 @@ class TestSendMessage:
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 30, "output_tokens": 10},
                 "tool_use": [{"type": "tool_use", "id": "t1", "name": "blocked_tool", "input": {}}],
-                "content_blocks": [{"type": "tool_use", "id": "t1", "name": "blocked_tool", "input": {}}],
+                "content_blocks": [
+                    {"type": "tool_use", "id": "t1", "name": "blocked_tool", "input": {}}
+                ],
             },
             {
                 "content": "OK, tool was denied",
@@ -226,7 +240,10 @@ class TestSendMessage:
         self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         mgr = ConversationManager(
-            db.connection, llm_manager, ContextLimitResolver(), max_tool_iterations=2,
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
+            max_tool_iterations=2,
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
 
@@ -252,7 +269,9 @@ class TestSendMessage:
             events.append((event, data))
 
         mgr = ConversationManager(
-            db.connection, llm_manager, ContextLimitResolver(),
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
 
@@ -261,8 +280,12 @@ class TestSendMessage:
                 "content": "",
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 10, "output_tokens": 5},
-                "tool_use": [{"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}],
-                "content_blocks": [{"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}],
+                "tool_use": [
+                    {"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}
+                ],
+                "content_blocks": [
+                    {"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}
+                ],
             },
             {
                 "content": "Final",
@@ -290,7 +313,9 @@ class TestSystemInstructions:
 
     def test_includes_global_instructions(self, db: Database, llm_manager: LLMManager) -> None:
         mgr = ConversationManager(
-            db.connection, llm_manager, ContextLimitResolver(),
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
             global_instructions="Always be concise.",
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
@@ -300,7 +325,10 @@ class TestSystemInstructions:
 
     def test_includes_conversation_instructions(self, manager: ConversationManager) -> None:
         cid = manager.create_conversation(
-            "Test", "stub-model", USER, instructions="You are a Python expert.",
+            "Test",
+            "stub-model",
+            USER,
+            instructions="You are a Python expert.",
         )
         conv = manager.get_conversation(cid, USER)
         system = manager._build_system_instructions(conv)
@@ -326,13 +354,15 @@ class TestFormatMessages:
         assert "[truncated]" in result
 
     def test_content_blocks(self) -> None:
-        msgs = [{
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "Calling tool"},
-                {"type": "tool_use", "name": "read_file", "id": "t1", "input": {}},
-            ],
-        }]
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Calling tool"},
+                    {"type": "tool_use", "name": "read_file", "id": "t1", "input": {}},
+                ],
+            }
+        ]
         result = _format_messages(msgs)
         assert "Calling tool" in result
         assert "read_file" in result
@@ -371,7 +401,9 @@ class TestContextCompactor:
         from spark.database import conversations, messages
 
         compactor = ContextCompactor(
-            stub_llm, db.connection, ContextLimitResolver(),  # type: ignore[arg-type]
+            stub_llm,
+            db.connection,
+            ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.7,
         )
         cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
@@ -384,7 +416,9 @@ class TestContextCompactor:
         from spark.database import conversations
 
         compactor = ContextCompactor(
-            stub_llm, db.connection, ContextLimitResolver(),  # type: ignore[arg-type]
+            stub_llm,
+            db.connection,
+            ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,  # very low threshold to trigger
         )
         cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from spark.safety.patterns import PatternMatch, PatternMatcher
 
@@ -35,9 +35,16 @@ class PromptInspector:
     """
 
     _SUSPICIOUS_KEYWORDS = {
-        "ignore instructions", "bypass", "jailbreak", "pretend",
-        "unrestricted", "no limitations", "override safety",
-        "act as root", "developer mode", "sudo",
+        "ignore instructions",
+        "bypass",
+        "jailbreak",
+        "pretend",
+        "unrestricted",
+        "no limitations",
+        "override safety",
+        "act as root",
+        "developer mode",
+        "sudo",
     }
 
     def __init__(
@@ -73,12 +80,14 @@ class PromptInspector:
             lower = text.lower()
             for kw in self._SUSPICIOUS_KEYWORDS:
                 if kw in lower:
-                    matches.append(PatternMatch(
-                        category="suspicious_keyword",
-                        severity="low",
-                        pattern=kw,
-                        matched_text=kw,
-                    ))
+                    matches.append(
+                        PatternMatch(
+                            category="suspicious_keyword",
+                            severity="low",
+                            pattern=kw,
+                            matched_text=kw,
+                        )
+                    )
 
         if not matches:
             return InspectionResult()
@@ -131,9 +140,7 @@ class PromptInspector:
             parts.append("suspicious keywords detected")
         return "; ".join(parts) if parts else "security concern detected"
 
-    def _log_violation(
-        self, result: InspectionResult, text: str, user_guid: str
-    ) -> None:
+    def _log_violation(self, result: InspectionResult, text: str, user_guid: str) -> None:
         """Record violation in the database."""
         if not self._db:
             return
@@ -147,8 +154,13 @@ class PromptInspector:
                      detection_method, action_taken, confidence_score)
                     VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                 (
-                    user_guid, categories, result.severity, snippet,
-                    self._level, result.action, 1.0,
+                    user_guid,
+                    categories,
+                    result.severity,
+                    snippet,
+                    self._level,
+                    result.action,
+                    1.0,
                 ),
             )
             self._db.commit()

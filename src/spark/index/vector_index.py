@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -66,8 +66,12 @@ class ConversationVectorIndex:
         metadata_json = json.dumps(metadata) if metadata else None
 
         result = context_index.add_index_element(
-            self._db, self._conversation_id, element_type,
-            content, embedding, self._user_guid,
+            self._db,
+            self._conversation_id,
+            element_type,
+            content,
+            embedding,
+            self._user_guid,
             metadata_json=metadata_json,
         )
         if result is not None:
@@ -162,8 +166,12 @@ class ConversationVectorIndex:
 
         query_embedding = self._embedder.encode(query)
         return context_index.search_context(
-            self._db, [self._conversation_id], query_embedding,
-            top_k=top_k, threshold=threshold, element_type=element_types[0] if element_types and len(element_types) == 1 else None,
+            self._db,
+            [self._conversation_id],
+            query_embedding,
+            top_k=top_k,
+            threshold=threshold,
+            element_type=element_types[0] if element_types and len(element_types) == 1 else None,
         )
 
     def search_multi(
@@ -179,8 +187,11 @@ class ConversationVectorIndex:
 
         query_embedding = self._embedder.encode(query)
         return context_index.search_context(
-            self._db, conversation_ids, query_embedding,
-            top_k=top_k, threshold=threshold,
+            self._db,
+            conversation_ids,
+            query_embedding,
+            top_k=top_k,
+            threshold=threshold,
         )
 
     def clear(self) -> None:

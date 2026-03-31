@@ -20,6 +20,7 @@ from spark.web.session import SessionManager
 
 if TYPE_CHECKING:
     from konfig import AppContext
+
     from spark.llm.manager import LLMManager
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,11 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     app.state.user_guid = get_user_guid(ctx)
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     templates.env.globals["version"] = spark.__version__
-    templates.env.globals["actions_enabled"] = lambda: bool(
-        app.state.ctx.settings.get("autonomous_actions.enabled", False)
-    ) if hasattr(app.state, "ctx") and app.state.ctx else False
+    templates.env.globals["actions_enabled"] = lambda: (
+        bool(app.state.ctx.settings.get("autonomous_actions.enabled", False))
+        if hasattr(app.state, "ctx") and app.state.ctx
+        else False
+    )
     app.state.templates = templates
 
     # -- Static files ---------------------------------------------------------
@@ -164,9 +167,7 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             logger.warning("Failed to init X.AI provider: %s", e)
 
     if mgr.providers:
-        logger.info(
-            "LLM providers ready: %s", ", ".join(mgr.providers.keys())
-        )
+        logger.info("LLM providers ready: %s", ", ".join(mgr.providers.keys()))
     else:
         logger.warning("No LLM providers configured")
 
@@ -197,9 +198,7 @@ def _start_tray_daemon_if_needed() -> None:
 
     kwargs: dict = {}
     if sys.platform == "win32":
-        kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-        )
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     else:
         kwargs["start_new_session"] = True
 
@@ -255,17 +254,23 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             # Pass prompt inspection settings into the config
             if ctx.settings.get("prompt_inspection.enabled"):
                 embedded_tools_config["_prompt_inspection_enabled"] = True
-                embedded_tools_config["_prompt_inspection_level"] = ctx.settings.get("prompt_inspection.level", "standard")
-                embedded_tools_config["_prompt_inspection_action"] = ctx.settings.get("prompt_inspection.action", "warn")
+                embedded_tools_config["_prompt_inspection_level"] = ctx.settings.get(
+                    "prompt_inspection.level", "standard"
+                )
+                embedded_tools_config["_prompt_inspection_action"] = ctx.settings.get(
+                    "prompt_inspection.action", "warn"
+                )
 
             # Step 3b: Connect saved MCP servers
             status["stage"] = "Connecting MCP servers..."
             mcp_manager = None
             try:
-                from spark.mcp_integration.manager import MCPManager
                 import asyncio as _asyncio
+
                 import yaml as _yaml
+
                 from spark.core.application import _get_config_path
+                from spark.mcp_integration.manager import MCPManager
 
                 config_path = _get_config_path()
                 if config_path.exists():
@@ -302,12 +307,36 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 llm_manager,
                 context_limits,
                 global_instructions=ctx.settings.get("conversation.global_instructions"),
-                max_tool_iterations=conv_settings.get("max_tool_iterations", 25) if isinstance(conv_settings, dict) else 25,
-                max_tool_selections=conv_settings.get("max_tool_selections", 30) if isinstance(conv_settings, dict) else 30,
-                max_tool_result_tokens=conv_settings.get("max_tool_result_tokens", 4000) if isinstance(conv_settings, dict) else 4000,
-                rollup_threshold=conv_settings.get("rollup_threshold", 0.3) if isinstance(conv_settings, dict) else 0.3,
-                rollup_summary_ratio=conv_settings.get("rollup_summary_ratio", 0.3) if isinstance(conv_settings, dict) else 0.3,
-                emergency_rollup_threshold=conv_settings.get("emergency_rollup_threshold", 0.95) if isinstance(conv_settings, dict) else 0.95,
+                max_tool_iterations=(
+                    conv_settings.get("max_tool_iterations", 25)
+                    if isinstance(conv_settings, dict)
+                    else 25
+                ),
+                max_tool_selections=(
+                    conv_settings.get("max_tool_selections", 30)
+                    if isinstance(conv_settings, dict)
+                    else 30
+                ),
+                max_tool_result_tokens=(
+                    conv_settings.get("max_tool_result_tokens", 4000)
+                    if isinstance(conv_settings, dict)
+                    else 4000
+                ),
+                rollup_threshold=(
+                    conv_settings.get("rollup_threshold", 0.3)
+                    if isinstance(conv_settings, dict)
+                    else 0.3
+                ),
+                rollup_summary_ratio=(
+                    conv_settings.get("rollup_summary_ratio", 0.3)
+                    if isinstance(conv_settings, dict)
+                    else 0.3
+                ),
+                emergency_rollup_threshold=(
+                    conv_settings.get("emergency_rollup_threshold", 0.95)
+                    if isinstance(conv_settings, dict)
+                    else 0.95
+                ),
                 embedded_tools_config=embedded_tools_config,
                 mcp_manager=mcp_manager,
             )
@@ -324,8 +353,9 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 logger.warning("Embedding model warmup failed (non-fatal): %s", e)
 
             # Step 5: Start daemon tray if enabled
-            if (ctx.settings.get("autonomous_actions.enabled")
-                    and ctx.settings.get("daemon.enabled")):
+            if ctx.settings.get("autonomous_actions.enabled") and ctx.settings.get(
+                "daemon.enabled"
+            ):
                 status["stage"] = "Starting autonomous action daemon..."
                 try:
                     _start_tray_daemon_if_needed()
@@ -339,8 +369,12 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             # Step 6: Start heartbeat monitor
             hb_enabled = ctx.settings.get("interface.browser_heartbeat.enabled", True)
             if hb_enabled:
-                hb_interval = int(ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30) or 30)
-                hb_misses = int(ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3) or 3)
+                hb_interval = int(
+                    ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30) or 30
+                )
+                hb_misses = int(
+                    ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3) or 3
+                )
                 _start_heartbeat_monitor(app, hb_interval, hb_misses)
 
         except Exception as e:
@@ -368,7 +402,8 @@ def _start_heartbeat_monitor(app: FastAPI, interval: int, max_misses: int) -> No
             if missed >= max_misses:
                 logger.info(
                     "Browser heartbeat missed %d times (threshold %d) — shutting down",
-                    missed, max_misses,
+                    missed,
+                    max_misses,
                 )
                 os.kill(os.getpid(), signal.SIGINT)
                 break

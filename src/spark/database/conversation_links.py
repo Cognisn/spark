@@ -9,9 +9,7 @@ if TYPE_CHECKING:
     from spark.database.connection import DatabaseConnection
 
 
-def add_link(
-    db: DatabaseConnection, source_id: int, target_id: int, user_guid: str
-) -> bool:
+def add_link(db: DatabaseConnection, source_id: int, target_id: int, user_guid: str) -> bool:
     """Link source conversation to target (one-directional). Returns True on success."""
     if source_id == target_id:
         return False
@@ -30,9 +28,7 @@ def add_link(
         return False
 
 
-def remove_link(
-    db: DatabaseConnection, source_id: int, target_id: int, user_guid: str
-) -> None:
+def remove_link(db: DatabaseConnection, source_id: int, target_id: int, user_guid: str) -> None:
     """Remove a conversation link."""
     ph = db.placeholder
     db.execute(

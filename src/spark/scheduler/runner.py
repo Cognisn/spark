@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -52,13 +52,16 @@ class ActionRunner:
         from spark.core.user_guid import get_user_guid
 
         uid = get_user_guid(self._ctx)
-        logger.info("Action runner starting (user_guid=%s)", uid[:8] + "..." if len(uid) > 8 else uid)
+        logger.info(
+            "Action runner starting (user_guid=%s)", uid[:8] + "..." if len(uid) > 8 else uid
+        )
 
         self._scheduler.start()
         self._running = True
 
         # Small delay to ensure scheduler is fully started
         import time as _time
+
         _time.sleep(0.5)
 
         self._reload_all()
@@ -107,8 +110,10 @@ class ActionRunner:
                     schedule_info = action.get("schedule_config", "")
                     logger.info(
                         "  - '%s' (id=%d, type=%s, config=%s, model=%s)",
-                        action.get("name"), action.get("id"),
-                        action.get("schedule_type"), schedule_info,
+                        action.get("name"),
+                        action.get("id"),
+                        action.get("schedule_type"),
+                        schedule_info,
                         action.get("model_id"),
                     )
 
@@ -123,7 +128,11 @@ class ActionRunner:
                     # Log existing scheduled jobs
                     job = self._scheduler.get_job(job_id)
                     if job and job.next_run_time:
-                        logger.debug("  '%s' already scheduled, next: %s", action.get("name"), job.next_run_time)
+                        logger.debug(
+                            "  '%s' already scheduled, next: %s",
+                            action.get("name"),
+                            job.next_run_time,
+                        )
 
             # Remove jobs for actions that no longer exist or are disabled
             for job in self._scheduler.get_jobs():
@@ -151,7 +160,11 @@ class ActionRunner:
             return
 
         try:
-            config = json.loads(schedule_config_raw) if isinstance(schedule_config_raw, str) else schedule_config_raw
+            config = (
+                json.loads(schedule_config_raw)
+                if isinstance(schedule_config_raw, str)
+                else schedule_config_raw
+            )
         except json.JSONDecodeError as e:
             logger.error("Invalid schedule_config JSON for '%s': %s", action.get("name"), e)
             return
@@ -160,12 +173,19 @@ class ActionRunner:
             if schedule_type == "recurring":
                 cron = config.get("cron", "")
                 if not cron:
-                    logger.error("Action '%s' recurring schedule missing 'cron' field", action.get("name"))
+                    logger.error(
+                        "Action '%s' recurring schedule missing 'cron' field", action.get("name")
+                    )
                     return
 
                 parts = cron.split()
                 if len(parts) < 5:
-                    logger.error("Action '%s' cron '%s' needs 5 fields, got %d", action.get("name"), cron, len(parts))
+                    logger.error(
+                        "Action '%s' cron '%s' needs 5 fields, got %d",
+                        action.get("name"),
+                        cron,
+                        len(parts),
+                    )
                     return
 
                 trigger = CronTrigger(
@@ -188,18 +208,23 @@ class ActionRunner:
                 if next_fire:
                     from spark.database import autonomous_actions as aa
 
-                    aa.update_action(self._get_db(), action["id"], user_guid, next_run_at=next_fire.isoformat())
+                    aa.update_action(
+                        self._get_db(), action["id"], user_guid, next_run_at=next_fire.isoformat()
+                    )
 
                 logger.info(
                     "Scheduled recurring action: '%s' (cron: %s, next: %s)",
-                    action["name"], cron,
+                    action["name"],
+                    cron,
                     next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A",
                 )
 
             elif schedule_type == "one_off":
                 run_at = config.get("run_at")
                 if not run_at:
-                    logger.error("Action '%s' one-off schedule missing 'run_at'", action.get("name"))
+                    logger.error(
+                        "Action '%s' one-off schedule missing 'run_at'", action.get("name")
+                    )
                     return
 
                 trigger = DateTrigger(run_date=run_at)
@@ -218,7 +243,9 @@ class ActionRunner:
                 logger.info("Scheduled one-off action: '%s' at %s", action["name"], run_at)
 
             else:
-                logger.warning("Unknown schedule_type '%s' for action '%s'", schedule_type, action.get("name"))
+                logger.warning(
+                    "Unknown schedule_type '%s' for action '%s'", schedule_type, action.get("name")
+                )
 
         except Exception as e:
             logger.error("Failed to schedule action '%s': %s", action.get("name"), e)
@@ -240,7 +267,9 @@ class ActionRunner:
             job = self._scheduler.get_job(f"action_{action_id}")
             if job and job.next_run_time:
                 aa.update_action(
-                    self._get_db(), action_id, user_guid,
+                    self._get_db(),
+                    action_id,
+                    user_guid,
                     next_run_at=job.next_run_time.isoformat(),
                 )
                 logger.info("Next run for action %d: %s", action_id, job.next_run_time)

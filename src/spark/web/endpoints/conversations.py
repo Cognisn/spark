@@ -44,7 +44,9 @@ async def create_conversation(request: Request) -> JSONResponse:
 
     try:
         cid = conv_mgr.create_conversation(
-            name, model_id, user_guid,
+            name,
+            model_id,
+            user_guid,
             instructions=instructions,
             web_search_enabled=web_search,
         )
@@ -134,7 +136,9 @@ async def toggle_favourite(request: Request, conversation_id: int) -> JSONRespon
 
     from spark.database import conversations
 
-    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, is_favourite=is_favourite)
+    conversations.update_conversation(
+        conv_mgr._db, conversation_id, user_guid, is_favourite=is_favourite
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -157,10 +161,16 @@ async def list_models(request: Request) -> JSONResponse:
         filtered = [m for m in all_models if m["id"] == default_model_id]
         if not filtered:
             # Model not found in available models — still return it so user sees something
-            filtered = [{"id": default_model_id, "name": default_model_id, "provider": "configured"}]
-        return JSONResponse({"models": filtered, "default_model": default_model_id, "mandatory": True})
+            filtered = [
+                {"id": default_model_id, "name": default_model_id, "provider": "configured"}
+            ]
+        return JSONResponse(
+            {"models": filtered, "default_model": default_model_id, "mandatory": True}
+        )
 
-    return JSONResponse({"models": all_models, "default_model": default_model_id or None, "mandatory": False})
+    return JSONResponse(
+        {"models": all_models, "default_model": default_model_id or None, "mandatory": False}
+    )
 
 
 def _get_user_guid(request: Request) -> str:

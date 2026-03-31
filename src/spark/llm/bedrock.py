@@ -44,13 +44,15 @@ class BedrockProvider(LLMService):
             models = []
             for m in resp.get("modelSummaries", []):
                 model_id = m.get("modelId", "")
-                models.append({
-                    "id": model_id,
-                    "name": m.get("modelName", model_id),
-                    "provider": "AWS Bedrock",
-                    "supports_tools": "anthropic" in model_id.lower(),
-                    "context_length": 200_000 if "claude" in model_id.lower() else 8_192,
-                })
+                models.append(
+                    {
+                        "id": model_id,
+                        "name": m.get("modelName", model_id),
+                        "provider": "AWS Bedrock",
+                        "supports_tools": "anthropic" in model_id.lower(),
+                        "context_length": 200_000 if "claude" in model_id.lower() else 8_192,
+                    }
+                )
             return models
         except Exception as e:
             logger.error("Failed to list Bedrock models: %s", e)
@@ -65,6 +67,7 @@ class BedrockProvider(LLMService):
     def count_tokens(self, text: str) -> int:
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
         except Exception:
@@ -150,7 +153,9 @@ class BedrockProvider(LLMService):
             elif "contentBlockStop" in event:
                 if current_tool:
                     try:
-                        current_tool["input"] = json.loads(tool_input_json) if tool_input_json else {}
+                        current_tool["input"] = (
+                            json.loads(tool_input_json) if tool_input_json else {}
+                        )
                     except json.JSONDecodeError:
                         current_tool["input"] = {}
                     tool_blocks.append(current_tool)
@@ -232,13 +237,15 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 elif block.get("type") == "text":
                     blocks.append({"text": block["text"]})
                 elif block.get("type") == "tool_use":
-                    blocks.append({
-                        "toolUse": {
-                            "toolUseId": block["id"],
-                            "name": block["name"],
-                            "input": block.get("input", {}),
+                    blocks.append(
+                        {
+                            "toolUse": {
+                                "toolUseId": block["id"],
+                                "name": block["name"],
+                                "input": block.get("input", {}),
+                            }
                         }
-                    })
+                    )
                 elif block.get("type") == "tool_result":
                     result_content = block.get("content", "")
                     if isinstance(result_content, list):
@@ -247,12 +254,14 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         )
                     else:
                         result_text = str(result_content)
-                    blocks.append({
-                        "toolResult": {
-                            "toolUseId": block["tool_use_id"],
-                            "content": [{"text": result_text}],
+                    blocks.append(
+                        {
+                            "toolResult": {
+                                "toolUseId": block["tool_use_id"],
+                                "content": [{"text": result_text}],
+                            }
                         }
-                    })
+                    )
                 else:
                     blocks.append({"text": str(block)})
             if blocks:
@@ -270,13 +279,15 @@ def _convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         schema = tool.get("inputSchema") or tool.get("input_schema", {})
         if "type" not in schema:
             schema["type"] = "object"
-        converted.append({
-            "toolSpec": {
-                "name": tool["name"],
-                "description": tool.get("description", ""),
-                "inputSchema": {"json": schema},
+        converted.append(
+            {
+                "toolSpec": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "inputSchema": {"json": schema},
+                }
             }
-        })
+        )
     return converted
 
 

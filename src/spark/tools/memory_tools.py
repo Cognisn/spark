@@ -101,7 +101,9 @@ def execute(
         lines = [f"Found {len(results)} relevant memories:\n"]
         for r in results:
             sim = r.get("similarity", 0)
-            lines.append(f"- [{r.get('category', '?')}] (ID:{r.get('id', '?')}, relevance:{sim:.2f}) {r.get('content', '')}")
+            lines.append(
+                f"- [{r.get('category', '?')}] (ID:{r.get('id', '?')}, relevance:{sim:.2f}) {r.get('content', '')}"
+            )
         return "\n".join(lines)
 
     elif tool_name == "list_memories":
@@ -111,7 +113,9 @@ def execute(
             return "No memories stored." + (f" (category: {category})" if category else "")
         lines = [f"{len(memories)} memories:\n"]
         for m in memories:
-            lines.append(f"- [{m.get('category', '?')}] (ID:{m.get('id', '?')}) {m.get('content', '')}")
+            lines.append(
+                f"- [{m.get('category', '?')}] (ID:{m.get('id', '?')}) {m.get('content', '')}"
+            )
         return "\n".join(lines)
 
     elif tool_name == "delete_memory":

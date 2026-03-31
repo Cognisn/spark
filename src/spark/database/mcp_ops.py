@@ -33,9 +33,17 @@ def record_transaction(
              transaction_timestamp, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            conversation_id, message_id, user_prompt, tool_name, tool_server,
-            tool_input, tool_response, int(is_error), execution_time_ms,
-            now, user_guid,
+            conversation_id,
+            message_id,
+            user_prompt,
+            tool_name,
+            tool_server,
+            tool_input,
+            tool_response,
+            int(is_error),
+            execution_time_ms,
+            now,
+            user_guid,
         ),
     )
     db.commit()
@@ -82,9 +90,7 @@ def set_mcp_server_enabled(
     db.commit()
 
 
-def is_mcp_server_enabled(
-    db: DatabaseConnection, conversation_id: int, server_name: str
-) -> bool:
+def is_mcp_server_enabled(db: DatabaseConnection, conversation_id: int, server_name: str) -> bool:
     """Check if an MCP server is enabled for a conversation. Default: True."""
     ph = db.placeholder
     cursor = db.execute(
@@ -113,9 +119,7 @@ def set_embedded_tool_enabled(
     db.commit()
 
 
-def is_embedded_tool_enabled(
-    db: DatabaseConnection, conversation_id: int, tool_name: str
-) -> bool:
+def is_embedded_tool_enabled(db: DatabaseConnection, conversation_id: int, tool_name: str) -> bool:
     """Check if an embedded tool is enabled. Default: True."""
     ph = db.placeholder
     cursor = db.execute(

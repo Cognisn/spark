@@ -41,8 +41,13 @@ def add_index_element(
              embedding, metadata_json, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            conversation_id, element_type, content_hash, content_text,
-            embedding_bytes, metadata_json, user_guid,
+            conversation_id,
+            element_type,
+            content_hash,
+            content_text,
+            embedding_bytes,
+            metadata_json,
+            user_guid,
         ),
     )
     db.commit()

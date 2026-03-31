@@ -46,13 +46,23 @@ class TestExpandedChatSettings:
         cookies = _auth(client)
         mock_mgr = MagicMock()
         mock_mgr.get_conversation.return_value = {
-            "id": 1, "name": "Test", "model_id": "m1",
-            "tokens_sent": 100, "tokens_received": 50, "total_tokens": 150,
-            "instructions": None, "compaction_threshold": 0.7,
-            "compaction_summary_ratio": 0.3, "memory_enabled": 1,
-            "rag_enabled": 1, "rag_top_k": 5, "rag_threshold": 0.4,
-            "rag_tool_enabled": 0, "max_history_messages": None,
-            "include_tool_results": 1, "created_at": "2026-01-01",
+            "id": 1,
+            "name": "Test",
+            "model_id": "m1",
+            "tokens_sent": 100,
+            "tokens_received": 50,
+            "total_tokens": 150,
+            "instructions": None,
+            "compaction_threshold": 0.7,
+            "compaction_summary_ratio": 0.3,
+            "memory_enabled": 1,
+            "rag_enabled": 1,
+            "rag_top_k": 5,
+            "rag_threshold": 0.4,
+            "rag_tool_enabled": 0,
+            "max_history_messages": None,
+            "include_tool_results": 1,
+            "created_at": "2026-01-01",
         }
         client.app.state.conversation_manager = mock_mgr
         resp = client.get("/chat/1/api/info", cookies=cookies)
@@ -69,15 +79,21 @@ class TestExpandedChatSettings:
         client.app.state.conversation_manager = mock_mgr
 
         import spark.database.conversations as conv_mod
+
         original = conv_mod.update_conversation
         calls = []
+
         def mock_update(db, cid, uid, **kwargs):
             calls.append(kwargs)
+
         conv_mod.update_conversation = mock_update
 
         try:
-            resp = client.post("/chat/1/api/settings", cookies=cookies,
-                json={"rag_enabled": False, "rag_top_k": 3, "max_history_messages": 20})
+            resp = client.post(
+                "/chat/1/api/settings",
+                cookies=cookies,
+                json={"rag_enabled": False, "rag_top_k": 3, "max_history_messages": 20},
+            )
             assert resp.status_code == 200
             assert calls[0]["rag_enabled"] == 0
             assert calls[0]["rag_top_k"] == 3
@@ -165,8 +181,7 @@ class TestActionsPage:
         cookies = _auth(client)
         # Enable actions in settings
         client.app.state.ctx.settings.get = lambda key, default=None, **kw: (
-            True if key == "autonomous_actions.enabled" else
-            _mock_settings_get(key, default, **kw)
+            True if key == "autonomous_actions.enabled" else _mock_settings_get(key, default, **kw)
         )
         resp = client.get("/actions", cookies=cookies)
         assert resp.status_code == 200

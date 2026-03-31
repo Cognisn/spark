@@ -17,7 +17,6 @@ from spark.tools.filesystem import get_tools as fs_tools
 from spark.tools.registry import execute_builtin_tool, get_builtin_tools
 from spark.tools.web import get_tools as web_tools
 
-
 # -- Registry -----------------------------------------------------------------
 
 
@@ -94,7 +93,9 @@ class TestRegistry:
         assert "Current date/time" in result
 
     def test_execute_filesystem_without_paths(self) -> None:
-        result, is_error = execute_builtin_tool("read_file", {"path": "/tmp/x"}, {"embedded_tools": {}})
+        result, is_error = execute_builtin_tool(
+            "read_file", {"path": "/tmp/x"}, {"embedded_tools": {}}
+        )
         assert is_error is True
         assert "allowed_paths" in result
 
@@ -134,7 +135,10 @@ class TestDatetime:
     def test_human_format(self) -> None:
         result = dt_execute({"format": "human"})
         # Human format includes day name
-        assert any(d in result for d in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+        assert any(
+            d in result
+            for d in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        )
 
     def test_invalid_timezone_falls_back(self) -> None:
         result = dt_execute({"timezone": "Invalid/Zone"})
@@ -163,26 +167,36 @@ class TestFilesystem:
         assert "hello world" in result
 
     def test_read_file_not_found(self, tmp_path: Path) -> None:
-        result = fs_execute("read_file", {"path": str(tmp_path / "nope.txt")}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "read_file", {"path": str(tmp_path / "nope.txt")}, allowed_paths=[str(tmp_path)]
+        )
         assert "not found" in result.lower()
 
     def test_read_file_max_lines(self, tmp_path: Path) -> None:
         f = tmp_path / "long.txt"
         f.write_text("\n".join(f"line {i}" for i in range(100)))
-        result = fs_execute("read_file", {"path": str(f), "max_lines": 5}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "read_file", {"path": str(f), "max_lines": 5}, allowed_paths=[str(tmp_path)]
+        )
         assert "showing first 5" in result.lower()
 
     def test_list_directory(self, tmp_path: Path) -> None:
         (tmp_path / "a.txt").touch()
         (tmp_path / "subdir").mkdir()
-        result = fs_execute("list_directory", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "list_directory", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)]
+        )
         assert "a.txt" in result
         assert "subdir" in result
 
     def test_search_files(self, tmp_path: Path) -> None:
         (tmp_path / "test.py").touch()
         (tmp_path / "test.txt").touch()
-        result = fs_execute("search_files", {"path": str(tmp_path), "pattern": "*.py"}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "search_files",
+            {"path": str(tmp_path), "pattern": "*.py"},
+            allowed_paths=[str(tmp_path)],
+        )
         assert "test.py" in result
         assert "test.txt" not in result
 
@@ -196,25 +210,39 @@ class TestFilesystem:
     def test_find_in_file(self, tmp_path: Path) -> None:
         f = tmp_path / "search.txt"
         f.write_text("Hello World\nFoo Bar\nHello Again\n")
-        result = fs_execute("find_in_file", {"path": str(f), "query": "Hello"}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "find_in_file", {"path": str(f), "query": "Hello"}, allowed_paths=[str(tmp_path)]
+        )
         assert "2 match" in result
 
     def test_directory_tree(self, tmp_path: Path) -> None:
         (tmp_path / "subdir").mkdir()
         (tmp_path / "subdir" / "file.txt").touch()
-        result = fs_execute("get_directory_tree", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)])
+        result = fs_execute(
+            "get_directory_tree", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)]
+        )
         assert "subdir" in result
         assert "file.txt" in result
 
     def test_write_file(self, tmp_path: Path) -> None:
         f = tmp_path / "out.txt"
-        result = fs_execute("write_file", {"path": str(f), "content": "new content"}, allowed_paths=[str(tmp_path)], mode="read_write")
+        result = fs_execute(
+            "write_file",
+            {"path": str(f), "content": "new content"},
+            allowed_paths=[str(tmp_path)],
+            mode="read_write",
+        )
         assert "Written" in result
         assert f.read_text() == "new content"
 
     def test_write_file_denied(self, tmp_path: Path) -> None:
         f = tmp_path / "out.txt"
-        result = fs_execute("write_file", {"path": str(f), "content": "x"}, allowed_paths=[str(tmp_path)], mode="read")
+        result = fs_execute(
+            "write_file",
+            {"path": str(f), "content": "x"},
+            allowed_paths=[str(tmp_path)],
+            mode="read",
+        )
         assert "not enabled" in result.lower()
 
     def test_path_outside_allowed(self, tmp_path: Path) -> None:
@@ -280,7 +308,9 @@ class TestArchives:
 
         from spark.tools.archives import execute
 
-        result = execute("extract_archive", {"path": str(zp), "destination": str(tmp_path / "out")}, mode="list")
+        result = execute(
+            "extract_archive", {"path": str(zp), "destination": str(tmp_path / "out")}, mode="list"
+        )
         assert "not enabled" in result.lower()
 
 

@@ -44,10 +44,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15
             name: spark-macos-x86_64
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-15
             name: spark-macos-arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
@@ -100,12 +100,20 @@ jobs:
           tar xzf source.tar.gz
           mv pyapp-v${PYAPP_VERSION} pyapp-src
 
+      - name: Copy wheel into build context
+        shell: bash
+        run: |
+          WHEEL_NAME=$(basename ${{ steps.wheel.outputs.filename }})
+          cp ${{ steps.wheel.outputs.filename }} pyapp-src/${WHEEL_NAME}
+          echo "wheel_name=${WHEEL_NAME}" >> $GITHUB_OUTPUT
+        id: copy_wheel
+
       - name: Build PyApp binary
         shell: bash
         env:
           PYAPP_PROJECT_NAME: cognisn-spark
           PYAPP_PROJECT_VERSION: ${{ github.event.release.tag_name }}
-          PYAPP_PROJECT_PATH: ${{ github.workspace }}/${{ steps.wheel.outputs.filename }}
+          PYAPP_PROJECT_PATH: ${{ github.workspace }}/pyapp-src/${{ steps.copy_wheel.outputs.wheel_name }}
           PYAPP_EXEC_SPEC: spark.launch:main
           PYAPP_PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
           PYAPP_DISTRIBUTION_EMBED: "1"

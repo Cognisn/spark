@@ -5,10 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.responses import Response
-
-from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
@@ -29,6 +27,7 @@ async def open_folder(request: Request) -> JSONResponse:
     folder_type = request.query_params.get("type", "logs")
 
     from konfig.paths import log_dir
+
     from spark.core.application import _get_data_path
 
     if folder_type == "logs":
@@ -54,9 +53,9 @@ async def open_folder(request: Request) -> JSONResponse:
 async def quit_app(request: Request) -> JSONResponse:
     """Shut down the Spark application."""
     import asyncio
+    import logging
     import os
     import signal
-    import logging
 
     logger = logging.getLogger(__name__)
     logger.info("Quit requested via web UI — shutting down")
@@ -119,14 +118,18 @@ def _render_dashboard(request: Request) -> Response:
     recent_conversations = _get_recent_conversations(request)
     favourite_conversations = _get_favourite_conversations(request)
 
-    return templates.TemplateResponse(request, "main_menu.html", {
-        "providers": providers,
-        "tools": embedded_tools,
-        "mcp_stats": mcp_stats,
-        "mcp_servers": mcp_servers,
-        "recent_conversations": recent_conversations,
-        "favourite_conversations": favourite_conversations,
-    })
+    return templates.TemplateResponse(
+        request,
+        "main_menu.html",
+        {
+            "providers": providers,
+            "tools": embedded_tools,
+            "mcp_stats": mcp_stats,
+            "mcp_servers": mcp_servers,
+            "recent_conversations": recent_conversations,
+            "favourite_conversations": favourite_conversations,
+        },
+    )
 
 
 def _get_provider_summary(ctx: object, llm_manager: Any | None) -> list[dict]:
@@ -161,12 +164,14 @@ def _get_provider_summary(ctx: object, llm_manager: Any | None) -> list[dict]:
         enabled = bool(settings.get(f"providers.{key}.enabled", False))
         display_name = key_to_display[key]
         count = model_counts.get(display_name, 0)
-        providers.append({
-            "key": key,
-            "enabled": enabled,
-            "model_count": count,
-            **meta,
-        })
+        providers.append(
+            {
+                "key": key,
+                "enabled": enabled,
+                "model_count": count,
+                **meta,
+            }
+        )
     return providers
 
 
@@ -175,7 +180,12 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
     settings = ctx.settings  # type: ignore[union-attr]
     categories = [
         {"key": "filesystem", "name": "Filesystem", "icon": "bi-folder2-open", "has_mode": True},
-        {"key": "documents", "name": "Documents", "icon": "bi-file-earmark-richtext", "has_mode": True},
+        {
+            "key": "documents",
+            "name": "Documents",
+            "icon": "bi-file-earmark-richtext",
+            "has_mode": True,
+        },
         {"key": "archives", "name": "Archives", "icon": "bi-file-zip", "has_mode": True},
         {"key": "web", "name": "Web", "icon": "bi-globe2", "has_mode": False},
     ]
@@ -187,17 +197,23 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
     for cat in categories:
         cat_config: dict[str, Any] = {
             "enabled": bool(settings.get(f"embedded_tools.{cat['key']}.enabled", True)),
-            "mode": settings.get(f"embedded_tools.{cat['key']}.mode", "read") if cat["has_mode"] else None,
+            "mode": (
+                settings.get(f"embedded_tools.{cat['key']}.mode", "read")
+                if cat["has_mode"]
+                else None
+            ),
         }
         if cat["key"] == "filesystem":
-            cat_config["allowed_paths"] = settings.get("embedded_tools.filesystem.allowed_paths", []) or []
+            cat_config["allowed_paths"] = (
+                settings.get("embedded_tools.filesystem.allowed_paths", []) or []
+            )
         config["embedded_tools"][cat["key"]] = cat_config
     all_tools = get_builtin_tools(config)
 
     # Map tool names to categories for counting
-    from spark.tools.filesystem import get_tools as fs_tools
-    from spark.tools.documents import get_tools as doc_tools
     from spark.tools.archives import get_tools as arc_tools
+    from spark.tools.documents import get_tools as doc_tools
+    from spark.tools.filesystem import get_tools as fs_tools
     from spark.tools.web import get_tools as web_tools
 
     cat_tool_names = {
@@ -212,17 +228,21 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
         enabled = bool(settings.get(f"embedded_tools.{cat['key']}.enabled", True))
         mode = settings.get(f"embedded_tools.{cat['key']}.mode", None) if cat["has_mode"] else None
         # Count active tools for this category
-        active_count = sum(1 for t in all_tools if t["name"] in cat_tool_names.get(cat["key"], set()))
+        active_count = sum(
+            1 for t in all_tools if t["name"] in cat_tool_names.get(cat["key"], set())
+        )
         total_count = len(cat_tool_names.get(cat["key"], set()))
-        tools.append({
-            "key": cat["key"],
-            "name": cat["name"],
-            "icon": cat["icon"],
-            "enabled": enabled,
-            "mode": mode,
-            "tool_count": active_count if enabled else 0,
-            "total_tool_count": total_count,
-        })
+        tools.append(
+            {
+                "key": cat["key"],
+                "name": cat["name"],
+                "icon": cat["icon"],
+                "enabled": enabled,
+                "mode": mode,
+                "tool_count": active_count if enabled else 0,
+                "total_tool_count": total_count,
+            }
+        )
     return tools
 
 
@@ -251,35 +271,41 @@ def _get_mcp_stats(ctx: object, embedded_tools: list[dict], mcp_manager: Any = N
     }
 
 
-def _get_mcp_server_list(ctx: object, embedded_tools: list[dict], mcp_manager: Any = None) -> list[dict]:
+def _get_mcp_server_list(
+    ctx: object, embedded_tools: list[dict], mcp_manager: Any = None
+) -> list[dict]:
     """Build the list of MCP server cards (including embedded)."""
     servers = []
 
     # Embedded tools as a virtual server
     embedded_tool_count = sum(t["tool_count"] for t in embedded_tools)
     if any(t["enabled"] for t in embedded_tools):
-        servers.append({
-            "name": "Embedded Tools",
-            "icon": "bi-puzzle",
-            "type": "embedded",
-            "connected": True,
-            "tool_count": embedded_tool_count,
-            "settings_url": "/settings#section-embedded-tools",
-        })
+        servers.append(
+            {
+                "name": "Embedded Tools",
+                "icon": "bi-puzzle",
+                "type": "embedded",
+                "connected": True,
+                "tool_count": embedded_tool_count,
+                "settings_url": "/settings#section-embedded-tools",
+            }
+        )
 
     # Real MCP servers
     if mcp_manager:
         tools_cache = mcp_manager._tools_cache or []
         for name, client in mcp_manager.servers.items():
             tool_count = sum(1 for t in tools_cache if t.get("server") == name)
-            servers.append({
-                "name": name,
-                "icon": "bi-hdd-network",
-                "type": "mcp",
-                "connected": client.connected,
-                "tool_count": tool_count,
-                "settings_url": "/settings#section-mcp-servers",
-            })
+            servers.append(
+                {
+                    "name": name,
+                    "icon": "bi-hdd-network",
+                    "type": "mcp",
+                    "connected": client.connected,
+                    "tool_count": tool_count,
+                    "settings_url": "/settings#section-mcp-servers",
+                }
+            )
 
     return servers
 

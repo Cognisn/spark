@@ -11,7 +11,6 @@ from spark.llm.base import LLMService
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
 
-
 # -- Concrete stub for testing ------------------------------------------------
 
 
@@ -21,8 +20,20 @@ class StubProvider(LLMService):
     def __init__(self, name: str = "Stub", models: list[dict] | None = None) -> None:
         self._name = name
         self._models = models or [
-            {"id": "stub-1", "name": "Stub Model 1", "provider": name, "supports_tools": True, "context_length": 8192},
-            {"id": "stub-2", "name": "Stub Model 2", "provider": name, "supports_tools": False, "context_length": 4096},
+            {
+                "id": "stub-1",
+                "name": "Stub Model 1",
+                "provider": name,
+                "supports_tools": True,
+                "context_length": 8192,
+            },
+            {
+                "id": "stub-2",
+                "name": "Stub Model 2",
+                "provider": name,
+                "supports_tools": False,
+                "context_length": 4096,
+            },
         ]
         self._model_id: str | None = None
         self._invoke_response: dict[str, Any] = {
@@ -82,8 +93,30 @@ class TestLLMManager:
 
     def test_set_model_auto_discover(self) -> None:
         mgr = LLMManager()
-        p1 = StubProvider("P1", [{"id": "model-a", "name": "A", "provider": "P1", "supports_tools": True, "context_length": 8192}])
-        p2 = StubProvider("P2", [{"id": "model-b", "name": "B", "provider": "P2", "supports_tools": True, "context_length": 8192}])
+        p1 = StubProvider(
+            "P1",
+            [
+                {
+                    "id": "model-a",
+                    "name": "A",
+                    "provider": "P1",
+                    "supports_tools": True,
+                    "context_length": 8192,
+                }
+            ],
+        )
+        p2 = StubProvider(
+            "P2",
+            [
+                {
+                    "id": "model-b",
+                    "name": "B",
+                    "provider": "P2",
+                    "supports_tools": True,
+                    "context_length": 8192,
+                }
+            ],
+        )
         mgr.register_provider(p1)
         mgr.register_provider(p2)
         mgr.set_model("model-b")
@@ -102,8 +135,34 @@ class TestLLMManager:
 
     def test_list_all_models(self) -> None:
         mgr = LLMManager()
-        mgr.register_provider(StubProvider("A", [{"id": "a1", "name": "A1", "provider": "A", "supports_tools": True, "context_length": 8192}]))
-        mgr.register_provider(StubProvider("B", [{"id": "b1", "name": "B1", "provider": "B", "supports_tools": True, "context_length": 8192}]))
+        mgr.register_provider(
+            StubProvider(
+                "A",
+                [
+                    {
+                        "id": "a1",
+                        "name": "A1",
+                        "provider": "A",
+                        "supports_tools": True,
+                        "context_length": 8192,
+                    }
+                ],
+            )
+        )
+        mgr.register_provider(
+            StubProvider(
+                "B",
+                [
+                    {
+                        "id": "b1",
+                        "name": "B1",
+                        "provider": "B",
+                        "supports_tools": True,
+                        "context_length": 8192,
+                    }
+                ],
+            )
+        )
         models = mgr.list_all_models()
         assert len(models) == 2
         ids = {m["id"] for m in models}
@@ -184,7 +243,9 @@ class TestContextLimitResolver:
         assert out == 4_096
 
     def test_config_overrides_exact(self) -> None:
-        r = ContextLimitResolver({"my-custom-model": {"context_window": 50_000, "max_output": 10_000}})
+        r = ContextLimitResolver(
+            {"my-custom-model": {"context_window": 50_000, "max_output": 10_000}}
+        )
         ctx, out = r.resolve("my-custom-model")
         assert ctx == 50_000
         assert out == 10_000
@@ -248,7 +309,13 @@ class TestAnthropicHelpers:
     def test_convert_tools(self) -> None:
         from spark.llm.anthropic_direct import _convert_tools
 
-        tools = [{"name": "read_file", "description": "Read a file", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}}}]
+        tools = [
+            {
+                "name": "read_file",
+                "description": "Read a file",
+                "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }
+        ]
         converted = _convert_tools(tools)
         assert len(converted) == 1
         assert converted[0]["name"] == "read_file"
@@ -283,10 +350,15 @@ class TestBedrockHelpers:
     def test_convert_messages_blocks(self) -> None:
         from spark.llm.bedrock import _convert_messages
 
-        msgs = [{"role": "assistant", "content": [
-            {"type": "text", "text": "Let me check"},
-            {"type": "tool_use", "id": "t1", "name": "read", "input": {"path": "/tmp"}},
-        ]}]
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Let me check"},
+                    {"type": "tool_use", "id": "t1", "name": "read", "input": {"path": "/tmp"}},
+                ],
+            }
+        ]
         converted = _convert_messages(msgs)
         blocks = converted[0]["content"]
         assert blocks[0] == {"text": "Let me check"}
@@ -368,12 +440,18 @@ class TestXAIHelpers:
         from spark.llm.xai import _convert_messages
 
         msgs = [
-            {"role": "assistant", "content": [
-                {"type": "tool_use", "id": "t1", "name": "read", "input": {}},
-            ]},
-            {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "t1", "content": "file contents"},
-            ]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "read", "input": {}},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "file contents"},
+                ],
+            },
         ]
         converted = _convert_messages(msgs)
         tool_result = [m for m in converted if m["role"] == "tool"]

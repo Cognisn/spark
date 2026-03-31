@@ -55,12 +55,14 @@ async def settings_page(request: Request) -> HTMLResponse:
     available_models = llm_manager.list_all_models() if llm_manager else []
 
     return templates.TemplateResponse(
-        request, "settings.html", {
+        request,
+        "settings.html",
+        {
             "sections": sections,
             "tool_categories": tool_categories,
             "available_models": available_models,
             "is_locked": is_locked,
-        }
+        },
     )
 
 
@@ -313,9 +315,18 @@ def _build_sections(settings: object) -> list[dict]:
                         ),
                         {**_text("database.host", "Host", settings, ""), "db_requires": "remote"},
                         {**_number("database.port", "Port", settings, ""), "db_requires": "remote"},
-                        {**_text("database.name", "Database Name", settings, ""), "db_requires": "remote"},
-                        {**_text("database.user", "Username", settings, ""), "db_requires": "remote"},
-                        {**_secret("database.password", "Password", settings), "db_requires": "remote"},
+                        {
+                            **_text("database.name", "Database Name", settings, ""),
+                            "db_requires": "remote",
+                        },
+                        {
+                            **_text("database.user", "Username", settings, ""),
+                            "db_requires": "remote",
+                        },
+                        {
+                            **_secret("database.password", "Password", settings),
+                            "db_requires": "remote",
+                        },
                     ],
                 },
             ],
@@ -499,8 +510,15 @@ def _build_sections(settings: object) -> list[dict]:
                     "id": "actions",
                     "title": "Actions",
                     "fields": [
-                        _toggle("autonomous_actions.enabled", "Enable Autonomous Actions", settings),
-                        _number("autonomous_actions.max_concurrent", "Max Concurrent Executions", settings, 3),
+                        _toggle(
+                            "autonomous_actions.enabled", "Enable Autonomous Actions", settings
+                        ),
+                        _number(
+                            "autonomous_actions.max_concurrent",
+                            "Max Concurrent Executions",
+                            settings,
+                            3,
+                        ),
                     ],
                 },
                 {
@@ -508,7 +526,12 @@ def _build_sections(settings: object) -> list[dict]:
                     "title": "Daemon",
                     "fields": [
                         _toggle("daemon.enabled", "Enable Background Daemon", settings),
-                        _number("daemon.heartbeat_interval", "Heartbeat Interval (seconds)", settings, 30),
+                        _number(
+                            "daemon.heartbeat_interval",
+                            "Heartbeat Interval (seconds)",
+                            settings,
+                            30,
+                        ),
                     ],
                 },
             ],
@@ -546,9 +569,7 @@ def _secret(key: str, label: str, settings: object) -> dict:
     return {"type": "secret", "key": key, "label": label, "has_value": has_value}
 
 
-def _select(
-    key: str, label: str, settings: object, options: list[str], default: str = ""
-) -> dict:
+def _select(key: str, label: str, settings: object, options: list[str], default: str = "") -> dict:
     return {
         "type": "select",
         "key": key,
@@ -585,8 +606,13 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 },
             ],
             "tools": [
-                "read_file", "list_directory", "search_files", "get_file_info",
-                "find_in_file", "get_directory_tree", "write_file",
+                "read_file",
+                "list_directory",
+                "search_files",
+                "get_file_info",
+                "find_in_file",
+                "get_directory_tree",
+                "write_file",
             ],
         },
         {

@@ -27,7 +27,10 @@ _TOOLS = [
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "URL to fetch."},
-                "max_length": {"type": "integer", "description": "Max content length in chars. Default: 50000."},
+                "max_length": {
+                    "type": "integer",
+                    "description": "Max content length in chars. Default: 50000.",
+                },
             },
             "required": ["url"],
         },

@@ -7,12 +7,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Request, UploadFile, File
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/memories")
+
 
 def _get_memory_index(request: Request) -> Any:
     """Get or create a MemoryIndex from app state."""
@@ -59,11 +60,13 @@ async def memory_stats(request: Request) -> JSONResponse:
         cat = m.get("category", "facts")
         by_cat[cat] = by_cat.get(cat, 0) + 1
         imp_sum += m.get("importance", 0.5)
-    return JSONResponse({
-        "total": total,
-        "by_category": by_cat,
-        "avg_importance": round(imp_sum / total, 2) if total else 0,
-    })
+    return JSONResponse(
+        {
+            "total": total,
+            "by_category": by_cat,
+            "avg_importance": round(imp_sum / total, 2) if total else 0,
+        }
+    )
 
 
 @router.post("/api/create")

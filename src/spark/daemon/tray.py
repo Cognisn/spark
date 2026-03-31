@@ -49,8 +49,8 @@ def _create_icon_image(color: str = "blue") -> Any:
     draw = ImageDraw.Draw(img)
 
     if color == "blue":
-        bolt_color = (90, 170, 232, 255)    # #5aaae8
-        bg_color = (8, 14, 30, 255)         # #080e1e
+        bolt_color = (90, 170, 232, 255)  # #5aaae8
+        bg_color = (8, 14, 30, 255)  # #080e1e
     else:
         bolt_color = (128, 128, 128, 255)
         bg_color = (40, 40, 40, 255)
@@ -60,7 +60,7 @@ def _create_icon_image(color: str = "blue") -> Any:
 
     # Lightning bolt polygon
     bolt = [
-        (35, 8),   # top right
+        (35, 8),  # top right
         (18, 30),  # middle left
         (30, 30),  # middle center-left
         (25, 56),  # bottom left
@@ -111,15 +111,18 @@ class SparkTrayDaemon:
             menu=pystray.Menu(
                 pystray.MenuItem(
                     lambda item: f"Actions: {self._action_stats['total']}",
-                    None, enabled=False,
+                    None,
+                    enabled=False,
                 ),
                 pystray.MenuItem(
                     lambda item: f"Last run: {self._action_stats['last_run'] or 'Never'}",
-                    None, enabled=False,
+                    None,
+                    enabled=False,
                 ),
                 pystray.MenuItem(
                     lambda item: f"Next run: {self._action_stats['next_run'] or 'None scheduled'}",
-                    None, enabled=False,
+                    None,
+                    enabled=False,
                 ),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Open Spark", self._on_open),
@@ -194,7 +197,7 @@ class SparkTrayDaemon:
         """Periodically read action stats from the database."""
         while self._running:
             try:
-                from spark.core.application import _get_data_path, _get_config_path
+                from spark.core.application import _get_config_path, _get_data_path
                 from spark.database.backends import SQLiteBackend
                 from spark.database.connection import DatabaseConnection
 
@@ -207,6 +210,7 @@ class SparkTrayDaemon:
                 conn = DatabaseConnection(backend)
                 # Ensure schema exists (idempotent)
                 from spark.database.schema import initialise_schema
+
                 initialise_schema(conn)
                 try:
                     # Total enabled actions
@@ -286,9 +290,9 @@ class SparkTrayDaemon:
         """Run the action scheduler loop."""
         try:
             from konfig import AppContext
-            from spark.core.application import _get_config_path, _default_settings
 
             import spark
+            from spark.core.application import _default_settings, _get_config_path
 
             config_path = _get_config_path()
             if not config_path.exists():

@@ -272,9 +272,11 @@ async def search_help(request: Request) -> JSONResponse:
 
     results = []
     for topic in HELP_TOPICS:
-        if (query in topic["title"].lower()
-                or query in topic["category"].lower()
-                or query in topic["content"].lower()):
+        if (
+            query in topic["title"].lower()
+            or query in topic["category"].lower()
+            or query in topic["content"].lower()
+        ):
             results.append(topic)
 
     return JSONResponse(results)

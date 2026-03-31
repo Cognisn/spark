@@ -35,8 +35,14 @@ def add_memory(
                  source_conversation_id, metadata_json)
                 VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
-                user_guid, content, category, content_hash, embedding_bytes,
-                importance, source_conversation_id, metadata_json,
+                user_guid,
+                content,
+                category,
+                content_hash,
+                embedding_bytes,
+                importance,
+                source_conversation_id,
+                metadata_json,
             ),
         )
         db.commit()

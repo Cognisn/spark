@@ -39,9 +39,7 @@ def set_tool_permission(
     db.commit()
 
 
-def get_all_tool_permissions(
-    db: DatabaseConnection, conversation_id: int
-) -> list[dict]:
+def get_all_tool_permissions(db: DatabaseConnection, conversation_id: int) -> list[dict]:
     """Get all tool permissions for a conversation."""
     ph = db.placeholder
     cursor = db.execute(
@@ -51,9 +49,7 @@ def get_all_tool_permissions(
     return [dict(row) for row in cursor.fetchall()]
 
 
-def is_tool_allowed(
-    db: DatabaseConnection, conversation_id: int, tool_name: str
-) -> bool | None:
+def is_tool_allowed(db: DatabaseConnection, conversation_id: int, tool_name: str) -> bool | None:
     """Returns True if allowed, False if denied, None if no record (prompt user)."""
     state = check_tool_permission(db, conversation_id, tool_name)
     if state is None:
@@ -61,9 +57,7 @@ def is_tool_allowed(
     return state == "allowed"
 
 
-def delete_tool_permission(
-    db: DatabaseConnection, conversation_id: int, tool_name: str
-) -> None:
+def delete_tool_permission(db: DatabaseConnection, conversation_id: int, tool_name: str) -> None:
     """Delete a tool permission (resets to prompt-on-first-use)."""
     ph = db.placeholder
     db.execute(

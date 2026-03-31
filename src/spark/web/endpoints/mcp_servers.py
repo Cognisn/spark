@@ -136,26 +136,34 @@ async def test_connection(request: Request) -> JSONResponse:
         if success:
             tools = await client.list_tools()
             await client.disconnect()
-            return JSONResponse({
-                "status": "ok",
-                "message": f"Connected successfully. {len(tools)} tools available.",
-                "tools": [t["name"] for t in tools],
-            })
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "message": f"Connected successfully. {len(tools)} tools available.",
+                    "tools": [t["name"] for t in tools],
+                }
+            )
         else:
             transport = data.get("transport", "stdio")
-            return JSONResponse({
-                "status": "error",
-                "message": f"Connection to '{data.get('name', '')}' failed via {transport}. Check the server is running and the configuration is correct.",
-            }, status_code=400)
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "message": f"Connection to '{data.get('name', '')}' failed via {transport}. Check the server is running and the configuration is correct.",
+                },
+                status_code=400,
+            )
     except asyncio.TimeoutError:
         try:
             await client.disconnect()
         except Exception:
             pass
-        return JSONResponse({
-            "status": "error",
-            "message": f"Connection timed out after {data.get('timeout', 10)}s. The server may not be running or the URL/command is incorrect.",
-        }, status_code=400)
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"Connection timed out after {data.get('timeout', 10)}s. The server may not be running or the URL/command is incorrect.",
+            },
+            status_code=400,
+        )
     except Exception as e:
         try:
             await client.disconnect()

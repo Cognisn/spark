@@ -89,8 +89,12 @@ def record_rollup(
              original_token_count, summarised_token_count, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            conversation_id, original_message_count, summarised_content,
-            original_token_count, summarised_token_count, user_guid,
+            conversation_id,
+            original_message_count,
+            summarised_content,
+            original_token_count,
+            summarised_token_count,
+            user_guid,
         ),
     )
     db.commit()

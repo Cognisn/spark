@@ -12,7 +12,12 @@ from spark.llm.base import LLMService
 logger = logging.getLogger(__name__)
 
 _MODELS = [
-    {"id": "grok-4.1-fast", "name": "Grok 4.1 Fast", "context_length": 2_000_000, "max_output": 131_072},
+    {
+        "id": "grok-4.1-fast",
+        "name": "Grok 4.1 Fast",
+        "context_length": 2_000_000,
+        "max_output": 131_072,
+    },
     {"id": "grok-4-0709", "name": "Grok 4", "context_length": 256_000, "max_output": 16_384},
     {"id": "grok-3", "name": "Grok 3", "context_length": 131_072, "max_output": 8_192},
     {"id": "grok-3-mini", "name": "Grok 3 Mini", "context_length": 131_072, "max_output": 8_192},
@@ -44,10 +49,7 @@ class XAIProvider(LLMService):
         return "X.AI API (api.x.ai)"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        return [
-            {**m, "provider": "X.AI", "supports_tools": True}
-            for m in _MODELS
-        ]
+        return [{**m, "provider": "X.AI", "supports_tools": True} for m in _MODELS]
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -58,6 +60,7 @@ class XAIProvider(LLMService):
     def count_tokens(self, text: str) -> int:
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
         except Exception:
@@ -109,8 +112,13 @@ class XAIProvider(LLMService):
                     "error_message": str(e),
                 }
 
-        return {"content": "", "stop_reason": "error", "usage": {"input_tokens": 0, "output_tokens": 0},
-                "tool_use": None, "content_blocks": []}
+        return {
+            "content": "",
+            "stop_reason": "error",
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+            "tool_use": None,
+            "content_blocks": [],
+        }
 
 
 def _normalise_response(response: Any) -> dict[str, Any]:
@@ -198,29 +206,36 @@ def _convert_messages(
                     if block.get("type") == "text":
                         text_parts.append(block["text"])
                     elif block.get("type") == "tool_use":
-                        tool_calls.append({
-                            "id": block["id"],
-                            "type": "function",
-                            "function": {
-                                "name": block["name"],
-                                "arguments": json.dumps(block.get("input", {})),
-                            },
-                        })
+                        tool_calls.append(
+                            {
+                                "id": block["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": block["name"],
+                                    "arguments": json.dumps(block.get("input", {})),
+                                },
+                            }
+                        )
                     elif block.get("type") == "tool_result":
                         result = block.get("content", "")
                         if isinstance(result, list):
                             result = " ".join(
                                 b.get("text", "") for b in result if isinstance(b, dict)
                             )
-                        converted.append({
-                            "role": "tool",
-                            "tool_call_id": block["tool_use_id"],
-                            "content": str(result),
-                        })
+                        converted.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": block["tool_use_id"],
+                                "content": str(result),
+                            }
+                        )
                         continue
 
             if text_parts or tool_calls:
-                m: dict[str, Any] = {"role": role, "content": "\n".join(text_parts) if text_parts else ""}
+                m: dict[str, Any] = {
+                    "role": role,
+                    "content": "\n".join(text_parts) if text_parts else "",
+                }
                 if tool_calls:
                     m["tool_calls"] = tool_calls
                 converted.append(m)

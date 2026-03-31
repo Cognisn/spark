@@ -26,8 +26,10 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
+
         async def error_gen() -> AsyncGenerator[dict, None]:
             yield {"event": "error", "data": json.dumps({"message": "Not initialised"})}
+
         return EventSourceResponse(error_gen())
 
     user_guid = getattr(request.app.state, "user_guid", "default")
@@ -65,21 +67,27 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             request_id = str(uuid.uuid4())[:8]
 
             # Create an event that the main loop will emit as SSE
-            tool_events.append({
-                "event": "permission_request",
-                "data": {
-                    "request_id": request_id,
-                    "tool_name": tool_name,
-                    "params": tool_input,
-                },
-            })
+            tool_events.append(
+                {
+                    "event": "permission_request",
+                    "data": {
+                        "request_id": request_id,
+                        "tool_name": tool_name,
+                        "params": tool_input,
+                    },
+                }
+            )
 
             # Create a threading event to wait on
             wait_event = threading.Event()
             request.app.state.permission_events[request_id] = wait_event
             request.app.state.permission_responses[request_id] = None
 
-            logger.info("Permission requested for tool %s (id=%s), waiting for user...", tool_name, request_id)
+            logger.info(
+                "Permission requested for tool %s (id=%s), waiting for user...",
+                tool_name,
+                request_id,
+            )
 
             # Block until user responds (timeout after 120s)
             if wait_event.wait(timeout=120):
@@ -104,7 +112,9 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             result_future = loop.run_in_executor(
                 None,
                 lambda: conv_mgr.send_message(
-                    conversation_id, message, user_guid,
+                    conversation_id,
+                    message,
+                    user_guid,
                     status_callback=status_callback,
                     stream_callback=stream_callback,
                 ),
@@ -120,21 +130,25 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     if event_type == "tool_call":
                         yield {
                             "event": "tool_start",
-                            "data": json.dumps({
-                                "tool_use_id": event_data.get("tool_use_id", ""),
-                                "tool_name": event_data.get("tool_name", ""),
-                                "params": event_data.get("params", {}),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "tool_use_id": event_data.get("tool_use_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "params": event_data.get("params", {}),
+                                }
+                            ),
                         }
                     elif event_type == "tool_result":
                         yield {
                             "event": "tool_complete",
-                            "data": json.dumps({
-                                "tool_use_id": event_data.get("tool_use_id", ""),
-                                "tool_name": event_data.get("tool_name", ""),
-                                "result": event_data.get("result", ""),
-                                "status": event_data.get("status", "success"),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "tool_use_id": event_data.get("tool_use_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "result": event_data.get("result", ""),
+                                    "status": event_data.get("status", "success"),
+                                }
+                            ),
                         }
                     elif event_type == "permission_request":
                         yield {
@@ -177,13 +191,15 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
                 yield {
                     "event": "response",
-                    "data": json.dumps({
-                        "content": result.get("content", ""),
-                        "final": True,
-                        "usage": result.get("usage", {}),
-                        "tool_calls": len(result.get("tool_calls", [])),
-                        "iterations": result.get("iterations", 1),
-                    }),
+                    "data": json.dumps(
+                        {
+                            "content": result.get("content", ""),
+                            "final": True,
+                            "usage": result.get("usage", {}),
+                            "tool_calls": len(result.get("tool_calls", [])),
+                            "iterations": result.get("iterations", 1),
+                        }
+                    ),
                 }
                 yield {"event": "complete", "data": json.dumps({"status": "ok"})}
 

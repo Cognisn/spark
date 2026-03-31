@@ -35,10 +35,12 @@ def generate_self_signed_cert() -> tuple[Path, Path]:
     # Generate new key pair
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "Spark"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Cognisn"),
-    ])
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, "Spark"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Cognisn"),
+        ]
+    )
 
     cert = (
         x509.CertificateBuilder()
@@ -49,11 +51,13 @@ def generate_self_signed_cert() -> tuple[Path, Path]:
         .not_valid_before(datetime.now(timezone.utc))
         .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         .add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.DNSName("127.0.0.1"),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-            ]),
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("localhost"),
+                    x509.DNSName("127.0.0.1"),
+                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                ]
+            ),
             critical=False,
         )
         .sign(key, hashes.SHA256())

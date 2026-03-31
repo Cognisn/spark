@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/actions")
 
+
 def _user(request: Request) -> str:
     return getattr(request.app.state, "user_guid", "default")
 
@@ -41,7 +42,8 @@ def _guard(request: Request) -> JSONResponse | None:
 
 @router.get("/api/list")
 async def list_actions(request: Request) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse([])
@@ -55,7 +57,8 @@ async def list_actions(request: Request) -> JSONResponse:
 
 @router.post("/api/create")
 async def create_action(request: Request) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
@@ -84,7 +87,8 @@ async def create_action(request: Request) -> JSONResponse:
 
 @router.put("/api/{action_id}")
 async def update_action(request: Request, action_id: int) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
@@ -93,13 +97,21 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     from spark.database import autonomous_actions
 
     allowed = {
-        "name", "description", "action_prompt", "model_id", "schedule_type",
-        "schedule_config", "context_mode", "max_failures", "max_tokens", "is_enabled",
+        "name",
+        "description",
+        "action_prompt",
+        "model_id",
+        "schedule_type",
+        "schedule_config",
+        "context_mode",
+        "max_failures",
+        "max_tokens",
+        "is_enabled",
     }
     updates = {k: v for k, v in data.items() if k in allowed}
 
     try:
-        autonomous_actions.update_action(db.connection, action_id, USER, **updates)
+        autonomous_actions.update_action(db.connection, action_id, _user(request), **updates)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -107,7 +119,8 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
 
 @router.delete("/api/{action_id}")
 async def delete_action(request: Request, action_id: int) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
@@ -120,7 +133,8 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
 
 @router.post("/api/{action_id}/toggle")
 async def toggle_action(request: Request, action_id: int) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
@@ -129,7 +143,7 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     from spark.database import autonomous_actions
 
     autonomous_actions.update_action(
-        db.connection, action_id, USER, is_enabled=int(bool(data.get("enabled", True)))
+        db.connection, action_id, _user(request), is_enabled=int(bool(data.get("enabled", True)))
     )
     return JSONResponse({"status": "ok"})
 
@@ -137,7 +151,8 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
 @router.get("/api/{action_id}/tools")
 async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
     """API: get tool permissions for an action."""
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"tools": []})
@@ -154,11 +169,13 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
     if mcp_mgr and mcp_mgr._tools_cache:
         for t in mcp_mgr._tools_cache:
-            all_tools.append({
-                "name": t.get("name", ""),
-                "description": t.get("description", ""),
-                "source": t.get("server", "mcp"),
-            })
+            all_tools.append(
+                {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "source": t.get("server", "mcp"),
+                }
+            )
 
     # Get action's tool permissions
     cursor = db.connection.execute(
@@ -172,12 +189,14 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
         name = t.get("name", "")
         # Default to allowed if no permission record exists
         perm = permissions.get(name, "allowed")
-        tools.append({
-            "name": name,
-            "description": t.get("description", "")[:80],
-            "source": t.get("source", "embedded"),
-            "enabled": perm == "allowed",
-        })
+        tools.append(
+            {
+                "name": name,
+                "description": t.get("description", "")[:80],
+                "source": t.get("source", "embedded"),
+                "enabled": perm == "allowed",
+            }
+        )
 
     return JSONResponse({"tools": tools})
 
@@ -185,7 +204,8 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
 @router.post("/api/{action_id}/tools")
 async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
     """API: toggle a tool for an action."""
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
@@ -209,7 +229,8 @@ async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
 
 @router.get("/api/{action_id}/runs")
 async def get_runs(request: Request, action_id: int) -> JSONResponse:
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse([])
@@ -223,7 +244,8 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
 @router.post("/api/ai-create")
 async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
-    if (r := _guard(request)): return r
+    if r := _guard(request):
+        return r
     llm_manager = getattr(request.app.state, "llm_manager", None)
     db = getattr(request.app.state, "database", None)
     if not llm_manager or not llm_manager.active_service or not db:
@@ -279,39 +301,48 @@ async def ai_create_message(request: Request) -> JSONResponse:
             tool_results = []
             for tc in response["tool_use"]:
                 result_text = execute_creation_tool(
-                    tc["name"], tc.get("input", {}), config, db.connection,
+                    tc["name"],
+                    tc.get("input", {}),
+                    config,
+                    db.connection,
                 )
-                all_tool_calls.append({
-                    "name": tc["name"],
-                    "input": tc.get("input", {}),
-                    "result": result_text,
-                })
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tc["id"],
-                    "content": result_text,
-                })
+                all_tool_calls.append(
+                    {
+                        "name": tc["name"],
+                        "input": tc.get("input", {}),
+                        "result": result_text,
+                    }
+                )
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tc["id"],
+                        "content": result_text,
+                    }
+                )
 
             messages.append({"role": "assistant", "content": response.get("content_blocks", [])})
             messages.append({"role": "user", "content": tool_results})
             continue
 
-        return JSONResponse({
-            "response": response.get("content", ""),
+        return JSONResponse(
+            {
+                "response": response.get("content", ""),
+                "tool_calls": all_tool_calls,
+                "history": messages,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "response": "Maximum tool call iterations reached. Please try again.",
             "tool_calls": all_tool_calls,
             "history": messages,
-        })
-
-    return JSONResponse({
-        "response": "Maximum tool call iterations reached. Please try again.",
-        "tool_calls": all_tool_calls,
-        "history": messages,
-    })
+        }
+    )
 
 
 def _get_all_actions(db_conn: Any) -> list[dict]:
     """Get all actions (enabled and disabled)."""
-    cursor = db_conn.execute(
-        "SELECT * FROM autonomous_actions ORDER BY name"
-    )
+    cursor = db_conn.execute("SELECT * FROM autonomous_actions ORDER BY name")
     return [dict(row) for row in cursor.fetchall()]

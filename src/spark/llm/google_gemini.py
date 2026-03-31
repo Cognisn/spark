@@ -12,11 +12,36 @@ logger = logging.getLogger(__name__)
 
 # Fallback static list used if the API listing fails
 _FALLBACK_MODELS = [
-    {"id": "gemini-2.5-pro-preview-06-05", "name": "Gemini 2.5 Pro", "context_length": 1_000_000, "max_output": 65_536},
-    {"id": "gemini-2.5-flash-preview-05-20", "name": "Gemini 2.5 Flash", "context_length": 1_000_000, "max_output": 65_536},
-    {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "context_length": 1_000_000, "max_output": 8_192},
-    {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "context_length": 2_000_000, "max_output": 8_192},
-    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "context_length": 1_000_000, "max_output": 8_192},
+    {
+        "id": "gemini-2.5-pro-preview-06-05",
+        "name": "Gemini 2.5 Pro",
+        "context_length": 1_000_000,
+        "max_output": 65_536,
+    },
+    {
+        "id": "gemini-2.5-flash-preview-05-20",
+        "name": "Gemini 2.5 Flash",
+        "context_length": 1_000_000,
+        "max_output": 65_536,
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash",
+        "context_length": 1_000_000,
+        "max_output": 8_192,
+    },
+    {
+        "id": "gemini-1.5-pro",
+        "name": "Gemini 1.5 Pro",
+        "context_length": 2_000_000,
+        "max_output": 8_192,
+    },
+    {
+        "id": "gemini-1.5-flash",
+        "name": "Gemini 1.5 Flash",
+        "context_length": 1_000_000,
+        "max_output": 8_192,
+    },
 ]
 
 
@@ -66,14 +91,16 @@ class GoogleGeminiProvider(LLMService):
                 if methods and "generateContent" not in methods:
                     continue
 
-                models.append({
-                    "id": model_id,
-                    "name": display_name,
-                    "provider": "Google Gemini",
-                    "supports_tools": True,
-                    "context_length": input_limit,
-                    "max_output": output_limit,
-                })
+                models.append(
+                    {
+                        "id": model_id,
+                        "name": display_name,
+                        "provider": "Google Gemini",
+                        "supports_tools": True,
+                        "context_length": input_limit,
+                        "max_output": output_limit,
+                    }
+                )
 
             if models:
                 self._cached_models = models
@@ -85,8 +112,7 @@ class GoogleGeminiProvider(LLMService):
 
         # Fallback to static list
         self._cached_models = [
-            {**m, "provider": "Google Gemini", "supports_tools": True}
-            for m in _FALLBACK_MODELS
+            {**m, "provider": "Google Gemini", "supports_tools": True} for m in _FALLBACK_MODELS
         ]
         return self._cached_models
 
@@ -150,7 +176,9 @@ class GoogleGeminiProvider(LLMService):
                 return _normalise_response(response)
             except Exception as e:
                 err = str(e).lower()
-                if ("rate" in err or "429" in err or "quota" in err) and attempt < self._max_retries:
+                if (
+                    "rate" in err or "429" in err or "quota" in err
+                ) and attempt < self._max_retries:
                     delay = self._base_delay ** (attempt + 1)
                     logger.warning("Rate limited, retrying in %.1fs", delay)
                     time.sleep(delay)
@@ -166,8 +194,13 @@ class GoogleGeminiProvider(LLMService):
                     "error_message": str(e),
                 }
 
-        return {"content": "", "stop_reason": "error", "usage": {"input_tokens": 0, "output_tokens": 0},
-                "tool_use": None, "content_blocks": []}
+        return {
+            "content": "",
+            "stop_reason": "error",
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+            "tool_use": None,
+            "content_blocks": [],
+        }
 
 
 def _normalise_response(response: Any) -> dict[str, Any]:
@@ -176,8 +209,8 @@ def _normalise_response(response: Any) -> dict[str, Any]:
     tool_blocks: list[dict] = []
     content_blocks: list[dict] = []
 
-    for candidate in (response.candidates or []):
-        for part in (candidate.content.parts or []):
+    for candidate in response.candidates or []:
+        for part in candidate.content.parts or []:
             if hasattr(part, "text") and part.text:
                 text_parts.append(part.text)
                 content_blocks.append({"type": "text", "text": part.text})
@@ -229,24 +262,28 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     if block.get("type") == "text":
                         parts.append(types.Part(text=block["text"]))
                     elif block.get("type") == "tool_use":
-                        parts.append(types.Part(
-                            function_call=types.FunctionCall(
-                                name=block["name"],
-                                args=block.get("input", {}),
+                        parts.append(
+                            types.Part(
+                                function_call=types.FunctionCall(
+                                    name=block["name"],
+                                    args=block.get("input", {}),
+                                )
                             )
-                        ))
+                        )
                     elif block.get("type") == "tool_result":
                         result = block.get("content", "")
                         if isinstance(result, list):
                             result = " ".join(
                                 b.get("text", "") for b in result if isinstance(b, dict)
                             )
-                        parts.append(types.Part(
-                            function_response=types.FunctionResponse(
-                                name=block.get("name", "unknown"),
-                                response={"result": str(result)},
+                        parts.append(
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=block.get("name", "unknown"),
+                                    response={"result": str(result)},
+                                )
                             )
-                        ))
+                        )
 
         if parts:
             converted.append(types.Content(role=role, parts=parts))
@@ -262,25 +299,32 @@ def _convert_tools(tools: list[dict[str, Any]]) -> list[Any]:
     for t in tools:
         schema = t.get("inputSchema") or t.get("input_schema", {})
         schema = _clean_schema(schema)
-        declarations.append(types.FunctionDeclaration(
-            name=t["name"],
-            description=t.get("description", ""),
-            parameters=schema,
-        ))
+        declarations.append(
+            types.FunctionDeclaration(
+                name=t["name"],
+                description=t.get("description", ""),
+                parameters=schema,
+            )
+        )
     return [types.Tool(function_declarations=declarations)]
 
 
 def _clean_schema(schema: dict) -> dict:
     """Remove fields unsupported by Gemini's API."""
     unsupported = {
-        "additionalProperties", "$ref", "$defs", "default", "examples",
-        "allOf", "anyOf", "oneOf", "not",
+        "additionalProperties",
+        "$ref",
+        "$defs",
+        "default",
+        "examples",
+        "allOf",
+        "anyOf",
+        "oneOf",
+        "not",
     }
     cleaned = {k: v for k, v in schema.items() if k not in unsupported}
     if "properties" in cleaned:
-        cleaned["properties"] = {
-            k: _clean_schema(v) for k, v in cleaned["properties"].items()
-        }
+        cleaned["properties"] = {k: _clean_schema(v) for k, v in cleaned["properties"].items()}
     if "items" in cleaned and isinstance(cleaned["items"], dict):
         cleaned["items"] = _clean_schema(cleaned["items"])
     return cleaned

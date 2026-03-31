@@ -50,13 +50,15 @@ class OllamaProvider(LLMService):
             models = []
             for m in resp.get("models", []):
                 name = m.get("name", "")
-                models.append({
-                    "id": name,
-                    "name": name,
-                    "provider": "Ollama",
-                    "supports_tools": _supports_tools(name),
-                    "context_length": _estimate_context(name),
-                })
+                models.append(
+                    {
+                        "id": name,
+                        "name": name,
+                        "provider": "Ollama",
+                        "supports_tools": _supports_tools(name),
+                        "context_length": _estimate_context(name),
+                    }
+                )
             return models
         except Exception as e:
             logger.error("Failed to list Ollama models: %s", e)
@@ -71,6 +73,7 @@ class OllamaProvider(LLMService):
     def count_tokens(self, text: str) -> int:
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
         except Exception:
@@ -206,12 +209,14 @@ def _convert_messages(
                     if block.get("type") == "text":
                         text_parts.append(block["text"])
                     elif block.get("type") == "tool_use":
-                        tool_calls.append({
-                            "function": {
-                                "name": block["name"],
-                                "arguments": block.get("input", {}),
+                        tool_calls.append(
+                            {
+                                "function": {
+                                    "name": block["name"],
+                                    "arguments": block.get("input", {}),
+                                }
                             }
-                        })
+                        )
                     elif block.get("type") == "tool_result":
                         result = block.get("content", "")
                         if isinstance(result, list):

@@ -12,9 +12,8 @@ from spark.database import Database
 from spark.database.backends import SQLiteBackend
 from spark.database.connection import DatabaseConnection
 from spark.index.embeddings import EmbeddingModel
-from spark.index.memory_index import MemoryIndex, VALID_CATEGORIES
+from spark.index.memory_index import VALID_CATEGORIES, MemoryIndex
 from spark.index.vector_index import ConversationVectorIndex
-
 
 USER = "test-user"
 DIM = 64
@@ -223,7 +222,9 @@ class TestConversationVectorIndex:
         ids = vector_index.index_message(1, "user", "Hello there")
         assert len(ids) == 1
 
-    def test_index_message_tool_results_skipped(self, vector_index: ConversationVectorIndex) -> None:
+    def test_index_message_tool_results_skipped(
+        self, vector_index: ConversationVectorIndex
+    ) -> None:
         ids = vector_index.index_message(1, "user", "[TOOL_RESULTS]{}")
         assert len(ids) == 0
 

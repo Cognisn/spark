@@ -33,9 +33,17 @@ def create_action(
              created_at, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            name, description, action_prompt, model_id, schedule_type,
-            schedule_config, context_mode, max_failures, max_tokens,
-            now, user_guid,
+            name,
+            description,
+            action_prompt,
+            model_id,
+            schedule_type,
+            schedule_config,
+            context_mode,
+            max_failures,
+            max_tokens,
+            now,
+            user_guid,
         ),
     )
     db.commit()
@@ -63,9 +71,7 @@ def get_enabled_actions(db: DatabaseConnection, user_guid: str) -> list[dict]:
     return [dict(row) for row in cursor.fetchall()]
 
 
-def update_action(
-    db: DatabaseConnection, action_id: int, user_guid: str, **kwargs: Any
-) -> None:
+def update_action(db: DatabaseConnection, action_id: int, user_guid: str, **kwargs: Any) -> None:
     """Update action fields."""
     if not kwargs:
         return
@@ -84,9 +90,7 @@ def delete_action(db: DatabaseConnection, action_id: int, user_guid: str) -> Non
     """Delete an action and its runs."""
     ph = db.placeholder
     db.execute(f"DELETE FROM action_runs WHERE action_id = {ph}", (action_id,))
-    db.execute(
-        f"DELETE FROM action_tool_permissions WHERE action_id = {ph}", (action_id,)
-    )
+    db.execute(f"DELETE FROM action_tool_permissions WHERE action_id = {ph}", (action_id,))
     db.execute(
         f"DELETE FROM autonomous_actions WHERE id = {ph} AND user_guid = {ph}",
         (action_id, user_guid),
@@ -94,9 +98,7 @@ def delete_action(db: DatabaseConnection, action_id: int, user_guid: str) -> Non
     db.commit()
 
 
-def start_run(
-    db: DatabaseConnection, action_id: int, user_guid: str
-) -> int:
+def start_run(db: DatabaseConnection, action_id: int, user_guid: str) -> int:
     """Record the start of an action run. Returns run ID."""
     ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
@@ -136,9 +138,7 @@ def complete_run(
     db.commit()
 
 
-def get_action_runs(
-    db: DatabaseConnection, action_id: int, *, limit: int = 20
-) -> list[dict]:
+def get_action_runs(db: DatabaseConnection, action_id: int, *, limit: int = 20) -> list[dict]:
     """Get recent runs for an action."""
     ph = db.placeholder
     cursor = db.execute(

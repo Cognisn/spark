@@ -149,9 +149,7 @@ class TestMainMenu:
         login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")
 
-        resp = app.get(
-            "/menu", cookies={"spark_session": session_cookie}, follow_redirects=False
-        )
+        resp = app.get("/menu", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 200
         assert "Dashboard" in resp.text
 
@@ -169,7 +167,9 @@ class TestSettingsPage:
         assert "Settings" in resp.text
         assert "LLM Providers" in resp.text
 
-    def test_save_settings(self, app: TestClient, tmp_path: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_save_settings(
+        self, app: TestClient, tmp_path: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
         login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")

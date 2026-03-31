@@ -71,7 +71,9 @@ class ConversationManager:
         service = llm_manager.active_service
         if service:
             self._compactor = ContextCompactor(
-                service, db, context_limits,
+                service,
+                db,
+                context_limits,
                 threshold=rollup_threshold,
                 emergency_threshold=emergency_rollup_threshold,
                 summary_ratio=rollup_summary_ratio,
@@ -87,7 +89,10 @@ class ConversationManager:
                 from spark.index.vector_index import ConversationVectorIndex
 
                 self._vector_indices[conversation_id] = ConversationVectorIndex(
-                    self._db, conversation_id, user_guid, self._index_config,
+                    self._db,
+                    conversation_id,
+                    user_guid,
+                    self._index_config,
                 )
             except Exception as e:
                 logger.debug("Vector index not available: %s", e)
@@ -119,7 +124,14 @@ class ConversationManager:
             logger.debug("Failed to index tool call: %s", e)
 
     def _index_tool_result(
-        self, conversation_id: int, user_guid: str, tool_name: str, result: str, msg_id: int, *, is_error: bool = False
+        self,
+        conversation_id: int,
+        user_guid: str,
+        tool_name: str,
+        result: str,
+        msg_id: int,
+        *,
+        is_error: bool = False,
     ) -> None:
         """Index a tool result in the vector store."""
         idx = self._get_vector_index(conversation_id, user_guid)
@@ -166,7 +178,8 @@ class ConversationManager:
             if len(search_ids) > 1:
                 logger.info(
                     "RAG search across %d conversations (current + %d linked)",
-                    len(search_ids), len(search_ids) - 1,
+                    len(search_ids),
+                    len(search_ids) - 1,
                 )
                 results = idx.search_multi(query, search_ids, top_k=top_k, threshold=threshold)
             else:
@@ -219,6 +232,7 @@ class ConversationManager:
                     if loop.is_running():
                         # We're in an async context, use a thread
                         import concurrent.futures
+
                         with concurrent.futures.ThreadPoolExecutor() as pool:
                             mcp_tools = pool.submit(
                                 lambda: asyncio.run(self._mcp_manager.list_all_tools())
@@ -229,14 +243,19 @@ class ConversationManager:
                     mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 
                 for t in mcp_tools:
-                    tools.append({
-                        "name": t.get("name", ""),
-                        "description": t.get("description", ""),
-                        "inputSchema": t.get("inputSchema", {}),
-                    })
+                    tools.append(
+                        {
+                            "name": t.get("name", ""),
+                            "description": t.get("description", ""),
+                            "inputSchema": t.get("inputSchema", {}),
+                        }
+                    )
                 if mcp_tools:
-                    logger.info("Loaded %d MCP tools from %d servers",
-                                len(mcp_tools), len(self._mcp_manager.servers))
+                    logger.info(
+                        "Loaded %d MCP tools from %d servers",
+                        len(mcp_tools),
+                        len(self._mcp_manager.servers),
+                    )
             except Exception as e:
                 logger.warning("Failed to load MCP tools: %s", e)
 
@@ -257,7 +276,10 @@ class ConversationManager:
         from spark.database import conversations
 
         cid = conversations.create_conversation(
-            self._db, name, model_id, user_guid,
+            self._db,
+            name,
+            model_id,
+            user_guid,
             instructions=instructions,
             web_search_enabled=web_search_enabled,
         )
@@ -309,7 +331,8 @@ class ConversationManager:
 
         If tools is None, automatically loads embedded built-in tools.
         """
-        from spark.database import messages as msg_db, conversations
+        from spark.database import conversations
+        from spark.database import messages as msg_db
 
         conv = conversations.get_conversation(self._db, conversation_id, user_guid)
         if not conv:
@@ -331,13 +354,23 @@ class ConversationManager:
 
             inspector_enabled = self._embedded_tools_config.get("_prompt_inspection_enabled", False)
             if inspector_enabled:
-                inspector_level = self._embedded_tools_config.get("_prompt_inspection_level", "standard")
-                inspector_action = self._embedded_tools_config.get("_prompt_inspection_action", "warn")
-                inspector = PromptInspector(level=inspector_level, action=inspector_action, db=self._db)
+                inspector_level = self._embedded_tools_config.get(
+                    "_prompt_inspection_level", "standard"
+                )
+                inspector_action = self._embedded_tools_config.get(
+                    "_prompt_inspection_action", "warn"
+                )
+                inspector = PromptInspector(
+                    level=inspector_level, action=inspector_action, db=self._db
+                )
                 result = inspector.inspect(user_message, user_guid=user_guid)
                 if not result.is_safe:
-                    logger.warning("Prompt inspection flagged: %s (severity=%s, action=%s)",
-                                   result.explanation, result.severity, result.action)
+                    logger.warning(
+                        "Prompt inspection flagged: %s (severity=%s, action=%s)",
+                        result.explanation,
+                        result.severity,
+                        result.action,
+                    )
                     if result.action == "block":
                         return {
                             "content": f"Message blocked by security inspection: {result.explanation}",
@@ -351,21 +384,31 @@ class ConversationManager:
 
         # Add user message
         token_count = self._llm.count_tokens(user_message)
-        user_msg_id = msg_db.add_message(self._db, conversation_id, "user", user_message, token_count, user_guid)
+        user_msg_id = msg_db.add_message(
+            self._db, conversation_id, "user", user_message, token_count, user_guid
+        )
 
         # Index user message in vector store
         self._index_message(conversation_id, user_guid, user_msg_id, "user", user_message)
 
         # Retrieve relevant context from vector index (respects conv settings)
-        retrieved_context = self._retrieve_relevant_context(conversation_id, user_guid, user_message, conv)
+        retrieved_context = self._retrieve_relevant_context(
+            conversation_id, user_guid, user_message, conv
+        )
         if retrieved_context:
-            logger.info("RAG context injected into system prompt (%d chars)", len(retrieved_context))
+            logger.info(
+                "RAG context injected into system prompt (%d chars)", len(retrieved_context)
+            )
         else:
             logger.debug("No RAG context retrieved for this message")
 
         # Build system instructions (with retrieved context if available)
         system = self._build_system_instructions(conv, retrieved_context=retrieved_context)
-        logger.debug("System prompt: %d chars, %d messages in history", len(system), len(self._get_messages_for_model(conversation_id, conv)))
+        logger.debug(
+            "System prompt: %d chars, %d messages in history",
+            len(system),
+            len(self._get_messages_for_model(conversation_id, conv)),
+        )
 
         # Tool use loop
         self._in_tool_use_loop = True
@@ -388,9 +431,9 @@ class ConversationManager:
                         max_tokens=self._context_limits.get_max_output(model_id),
                         temperature=0.7,
                         tools=tools if tools else None,
-                    system=system,
-                    stream_callback=stream_callback,
-                )
+                        system=system,
+                        stream_callback=stream_callback,
+                    )
                 except Exception as e:
                     error_msg = str(e)
                     if "rate" in error_msg.lower() or "429" in error_msg:
@@ -399,10 +442,16 @@ class ConversationManager:
                         continue
                     logger.error("LLM invocation failed: %s", error_msg[:300])
                     # Store error as assistant message so user sees it
-                    error_content = f"I encountered an error communicating with the model: {error_msg}"
+                    error_content = (
+                        f"I encountered an error communicating with the model: {error_msg}"
+                    )
                     msg_db.add_message(
-                        self._db, conversation_id, "assistant",
-                        error_content, self._llm.count_tokens(error_content), user_guid,
+                        self._db,
+                        conversation_id,
+                        "assistant",
+                        error_content,
+                        self._llm.count_tokens(error_content),
+                        user_guid,
                     )
                     return {
                         "content": error_content,
@@ -422,7 +471,9 @@ class ConversationManager:
                 if stop_reason == "tool_use" and response.get("tool_use"):
                     # Execute tools and continue loop
                     tool_results = self._execute_tools(
-                        conversation_id, response["tool_use"], user_guid,
+                        conversation_id,
+                        response["tool_use"],
+                        user_guid,
                         status_callback=status_callback,
                     )
                     all_tool_calls.extend(response["tool_use"])
@@ -432,21 +483,31 @@ class ConversationManager:
                     assistant_text = json.dumps(assistant_content) if assistant_content else ""
                     assistant_tokens = self._llm.count_tokens(assistant_text)
                     asst_msg_id = msg_db.add_message(
-                        self._db, conversation_id, "assistant",
-                        assistant_text, assistant_tokens, user_guid,
+                        self._db,
+                        conversation_id,
+                        "assistant",
+                        assistant_text,
+                        assistant_tokens,
+                        user_guid,
                     )
 
                     # Index tool calls and results in vector store
                     for tc in response["tool_use"]:
                         self._index_tool_call(
-                            conversation_id, user_guid,
-                            tc.get("name", ""), tc.get("input", {}), asst_msg_id,
+                            conversation_id,
+                            user_guid,
+                            tc.get("name", ""),
+                            tc.get("input", {}),
+                            asst_msg_id,
                         )
                     for tr in tool_results:
                         if tr.get("type") == "tool_result":
                             self._index_tool_result(
-                                conversation_id, user_guid,
-                                tr.get("tool_use_id", ""), tr.get("content", ""), asst_msg_id,
+                                conversation_id,
+                                user_guid,
+                                tr.get("tool_use_id", ""),
+                                tr.get("content", ""),
+                                asst_msg_id,
                                 is_error=tr.get("is_error", False),
                             )
 
@@ -454,14 +515,19 @@ class ConversationManager:
                     results_text = json.dumps(tool_results)
                     results_tokens = self._llm.count_tokens(results_text)
                     msg_db.add_message(
-                        self._db, conversation_id, "user",
+                        self._db,
+                        conversation_id,
+                        "user",
                         f"{_TOOL_RESULTS_MARKER}{results_text}",
-                        results_tokens, user_guid,
+                        results_tokens,
+                        user_guid,
                     )
 
                     # Update token usage
                     conversations.update_token_usage(
-                        self._db, conversation_id, model_id,
+                        self._db,
+                        conversation_id,
+                        model_id,
                         resp_usage.get("input_tokens", 0),
                         resp_usage.get("output_tokens", 0),
                         user_guid,
@@ -476,15 +542,23 @@ class ConversationManager:
                 final_content = response.get("content", "")
                 final_tokens = self._llm.count_tokens(final_content)
                 final_msg_id = msg_db.add_message(
-                    self._db, conversation_id, "assistant",
-                    final_content, final_tokens, user_guid,
+                    self._db,
+                    conversation_id,
+                    "assistant",
+                    final_content,
+                    final_tokens,
+                    user_guid,
                 )
 
                 # Index assistant response in vector store
-                self._index_message(conversation_id, user_guid, final_msg_id, "assistant", final_content)
+                self._index_message(
+                    conversation_id, user_guid, final_msg_id, "assistant", final_content
+                )
 
                 conversations.update_token_usage(
-                    self._db, conversation_id, model_id,
+                    self._db,
+                    conversation_id,
+                    model_id,
                     resp_usage.get("input_tokens", 0),
                     resp_usage.get("output_tokens", 0),
                     user_guid,
@@ -578,7 +652,7 @@ class ConversationManager:
             if content.startswith(_TOOL_RESULTS_MARKER):
                 if not include_tools:
                     continue
-                json_str = content[len(_TOOL_RESULTS_MARKER):]
+                json_str = content[len(_TOOL_RESULTS_MARKER) :]
                 try:
                     blocks = json.loads(json_str)
                     formatted.append({"role": role, "content": blocks})
@@ -614,7 +688,7 @@ class ConversationManager:
         status_callback: Callable | None = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results."""
-        from spark.database import tool_permissions, mcp_ops
+        from spark.database import mcp_ops, tool_permissions
 
         results: list[dict] = []
 
@@ -624,11 +698,14 @@ class ConversationManager:
             tool_input = tool_call.get("input", {})
 
             if status_callback:
-                status_callback("tool_call", {
-                    "tool_use_id": tool_id,
-                    "tool_name": tool_name,
-                    "params": tool_input,
-                })
+                status_callback(
+                    "tool_call",
+                    {
+                        "tool_use_id": tool_id,
+                        "tool_name": tool_name,
+                        "params": tool_input,
+                    },
+                )
 
             # Check permissions
             permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
@@ -645,7 +722,9 @@ class ConversationManager:
                         tool_permissions.set_tool_permission(
                             self._db, conversation_id, tool_name, "denied", user_guid
                         )
-                        results.append(_tool_result(tool_id, "Tool execution denied by user.", is_error=True))
+                        results.append(
+                            _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
+                        )
                         continue
                 # No callback — auto-allow (for testing or auto-approve mode)
             elif permission is False:
@@ -653,7 +732,9 @@ class ConversationManager:
                 continue
 
             # Execute
-            logger.info("Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200])
+            logger.info(
+                "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
+            )
             start_time = time.monotonic()
             try:
                 result_text, is_error = self._call_tool(tool_name, tool_input)
@@ -664,9 +745,13 @@ class ConversationManager:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
             if is_error:
-                logger.warning("Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200])
+                logger.warning(
+                    "Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200]
+                )
             else:
-                logger.info("Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100])
+                logger.info(
+                    "Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100]
+                )
 
             # Truncate large results
             if len(result_text) > self._max_tool_result_tokens * 4:
@@ -674,18 +759,26 @@ class ConversationManager:
 
             # Record transaction
             mcp_ops.record_transaction(
-                self._db, conversation_id, tool_name,
-                json.dumps(tool_input), result_text, user_guid,
-                is_error=is_error, execution_time_ms=elapsed_ms,
+                self._db,
+                conversation_id,
+                tool_name,
+                json.dumps(tool_input),
+                result_text,
+                user_guid,
+                is_error=is_error,
+                execution_time_ms=elapsed_ms,
             )
 
             if status_callback:
-                status_callback("tool_result", {
-                    "tool_use_id": tool_id,
-                    "tool_name": tool_name,
-                    "result": result_text[:500],
-                    "status": "error" if is_error else "success",
-                })
+                status_callback(
+                    "tool_result",
+                    {
+                        "tool_use_id": tool_id,
+                        "tool_name": tool_name,
+                        "result": result_text[:500],
+                        "status": "error" if is_error else "success",
+                    },
+                )
 
             results.append(_tool_result(tool_id, result_text, is_error=is_error))
 
@@ -760,7 +853,8 @@ class ConversationManager:
         """Check and perform context compaction if needed."""
         if self._compactor:
             self._compactor.check_and_compact(
-                conversation_id, model_id,
+                conversation_id,
+                model_id,
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
             )

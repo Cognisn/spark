@@ -10,7 +10,6 @@ import pytest
 
 from spark.daemon.manager import DaemonManager
 
-
 # -- DaemonManager ------------------------------------------------------------
 
 

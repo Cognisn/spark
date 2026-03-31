@@ -79,9 +79,7 @@ class TestConversationsPage:
 
     def test_api_delete_no_manager(self, client: TestClient) -> None:
         cookies = _auth(client)
-        resp = client.request(
-            "DELETE", "/conversations/api/1", cookies=cookies
-        )
+        resp = client.request("DELETE", "/conversations/api/1", cookies=cookies)
         assert resp.status_code == 503
 
 
@@ -225,9 +223,7 @@ class TestConversationsWithManager:
         mock_mgr = MagicMock()
         client.app.state.conversation_manager = mock_mgr
 
-        resp = client.request(
-            "DELETE", "/conversations/api/5", cookies=cookies
-        )
+        resp = client.request("DELETE", "/conversations/api/5", cookies=cookies)
         assert resp.status_code == 200
         mock_mgr.delete_conversation.assert_called_once()
 

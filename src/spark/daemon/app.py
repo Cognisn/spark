@@ -23,11 +23,12 @@ def run_daemon() -> None:
     signal.signal(signal.SIGINT, lambda *_: _shutdown.set())
 
     try:
-        from konfig import AppContext
-        import spark
-
         # Boot konfig
         from pathlib import Path
+
+        from konfig import AppContext
+
+        import spark
 
         config_path = Path("config.yaml")
         if not config_path.exists():

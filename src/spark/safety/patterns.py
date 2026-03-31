@@ -23,7 +23,10 @@ JAILBREAK_PATTERNS: list[tuple[str, str]] = [
     (r"(?i)pretend\s+(?:you\s+)?(?:have|had)\s+no\s+(?:restrictions|limitations|rules)", "high"),
     (r"(?i)(?:enable|activate|enter)\s+(?:developer|god|admin|root)\s+mode", "high"),
     (r"(?i)you\s+(?:can|must|should)\s+(?:say|do|generate)\s+anything", "medium"),
-    (r"(?i)(?:bypass|circumvent|disable)\s+(?:your\s+)?(?:safety|content|ethical)\s+(?:filters|guidelines)", "high"),
+    (
+        r"(?i)(?:bypass|circumvent|disable)\s+(?:your\s+)?(?:safety|content|ethical)\s+(?:filters|guidelines)",
+        "high",
+    ),
 ]
 
 CODE_INJECTION_PATTERNS: list[tuple[str, str]] = [
@@ -78,12 +81,14 @@ class PatternMatcher:
         matches: list[PatternMatch] = []
         for compiled, category, severity in self._compiled:
             for m in compiled.finditer(text):
-                matches.append(PatternMatch(
-                    category=category,
-                    severity=severity,
-                    pattern=compiled.pattern,
-                    matched_text=m.group()[:100],
-                ))
+                matches.append(
+                    PatternMatch(
+                        category=category,
+                        severity=severity,
+                        pattern=compiled.pattern,
+                        matched_text=m.group()[:100],
+                    )
+                )
         return matches
 
     def has_threats(self, text: str) -> bool:

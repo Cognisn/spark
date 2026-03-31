@@ -96,14 +96,18 @@ class MCPClient:
         except asyncio.TimeoutError:
             logger.error(
                 "MCP server '%s' (%s) connection timed out after %.0fs",
-                self._config.name, self._config.transport, self._config.timeout,
+                self._config.name,
+                self._config.transport,
+                self._config.timeout,
             )
             await self._cleanup()
             return False
         except Exception as e:
             logger.error(
                 "MCP server '%s' (%s) connection failed: %s",
-                self._config.name, self._config.transport, e,
+                self._config.name,
+                self._config.transport,
+                e,
             )
             await self._cleanup()
             return False
@@ -254,12 +258,14 @@ class MCPClient:
         result = await self._session.list_tools()
         tools = []
         for tool in result.tools:
-            tools.append({
-                "name": tool.name,
-                "description": getattr(tool, "description", "") or "",
-                "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
-                "server": self._config.name,
-            })
+            tools.append(
+                {
+                    "name": tool.name,
+                    "description": getattr(tool, "description", "") or "",
+                    "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                    "server": self._config.name,
+                }
+            )
         return tools
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -307,9 +313,7 @@ class MCPManager:
         """All registered MCP clients."""
         return dict(self._clients)
 
-    async def connect_all(
-        self, *, progress_callback: Any | None = None
-    ) -> dict[str, bool]:
+    async def connect_all(self, *, progress_callback: Any | None = None) -> dict[str, bool]:
         """Connect to all registered servers. Returns name→success mapping."""
         results: dict[str, bool] = {}
         for name, client in self._clients.items():
@@ -369,7 +373,9 @@ class MCPManager:
 
         raise ValueError(f"Tool '{tool_name}' not found on any connected server")
 
-    def get_server_timeout(self, *, server_name: str | None = None, tool_name: str | None = None) -> float:
+    def get_server_timeout(
+        self, *, server_name: str | None = None, tool_name: str | None = None
+    ) -> float:
         """Get the configured timeout for a server or tool's owning server."""
         if server_name and server_name in self._clients:
             return self._clients[server_name].config.timeout

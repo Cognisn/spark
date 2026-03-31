@@ -32,9 +32,7 @@ def record_usage(
     db.commit()
 
 
-def get_token_usage_in_window(
-    db: DatabaseConnection, user_guid: str, since: str
-) -> dict:
+def get_token_usage_in_window(db: DatabaseConnection, user_guid: str, since: str) -> dict:
     """Get total input/output tokens since a timestamp."""
     ph = db.placeholder
     cursor = db.execute(

@@ -26,8 +26,14 @@ _READ_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path. Default: current directory."},
-                "recursive": {"type": "boolean", "description": "List recursively. Default: false."},
+                "path": {
+                    "type": "string",
+                    "description": "Directory path. Default: current directory.",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "List recursively. Default: false.",
+                },
             },
         },
     },
@@ -37,8 +43,14 @@ _READ_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.py', 'test_*.txt')."},
-                "path": {"type": "string", "description": "Directory to search. Default: current directory."},
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern (e.g. '*.py', 'test_*.txt').",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Directory to search. Default: current directory.",
+                },
             },
             "required": ["pattern"],
         },
@@ -62,7 +74,10 @@ _READ_TOOLS = [
             "properties": {
                 "path": {"type": "string", "description": "File path to search."},
                 "query": {"type": "string", "description": "Text or regex to find."},
-                "case_sensitive": {"type": "boolean", "description": "Case-sensitive search. Default: false."},
+                "case_sensitive": {
+                    "type": "boolean",
+                    "description": "Case-sensitive search. Default: false.",
+                },
             },
             "required": ["path", "query"],
         },
@@ -73,7 +88,10 @@ _READ_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Root directory. Default: current directory."},
+                "path": {
+                    "type": "string",
+                    "description": "Root directory. Default: current directory.",
+                },
                 "max_depth": {"type": "integer", "description": "Max depth. Default: 3."},
             },
         },
@@ -168,12 +186,18 @@ def _list_directory(path: Path, recursive: bool) -> str:
             rel = item.relative_to(path)
             kind = "d" if item.is_dir() else "f"
             size = item.stat().st_size if item.is_file() else 0
-            entries.append(f"[{kind}] {rel} ({size:,} bytes)" if kind == "f" else f"[{kind}] {rel}/")
+            entries.append(
+                f"[{kind}] {rel} ({size:,} bytes)" if kind == "f" else f"[{kind}] {rel}/"
+            )
     else:
         for item in sorted(path.iterdir()):
             kind = "d" if item.is_dir() else "f"
             size = item.stat().st_size if item.is_file() else 0
-            entries.append(f"[{kind}] {item.name} ({size:,} bytes)" if kind == "f" else f"[{kind}] {item.name}/")
+            entries.append(
+                f"[{kind}] {item.name} ({size:,} bytes)"
+                if kind == "f"
+                else f"[{kind}] {item.name}/"
+            )
     return "\n".join(entries) if entries else "(empty directory)"
 
 

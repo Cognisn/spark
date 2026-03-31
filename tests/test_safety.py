@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from spark.safety.patterns import PatternMatch, PatternMatcher
 from spark.safety.inspector import InspectionResult, PromptInspector
-
+from spark.safety.patterns import PatternMatch, PatternMatcher
 
 # -- PatternMatcher -----------------------------------------------------------
 

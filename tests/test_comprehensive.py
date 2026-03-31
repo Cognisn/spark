@@ -71,9 +71,11 @@ class TestConversationSearch:
         from spark.database import conversations as conv_mod
 
         original = conv_mod.search_conversations
-        conv_mod.search_conversations = MagicMock(return_value=[
-            {"id": 1, "name": "Test Chat", "model_id": "m1"},
-        ])
+        conv_mod.search_conversations = MagicMock(
+            return_value=[
+                {"id": 1, "name": "Test Chat", "model_id": "m1"},
+            ]
+        )
 
         try:
             resp = client.get("/conversations/api/search?q=test", cookies=cookies)
@@ -214,8 +216,8 @@ class TestPromptInspection:
 
 class TestSSLUtils:
     def test_generate_cert(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import spark.web.ssl_utils as ssl_mod
         import spark.core.application as app_mod
+        import spark.web.ssl_utils as ssl_mod
 
         monkeypatch.setattr(app_mod, "_get_data_path", lambda: tmp_path)
 
@@ -248,10 +250,9 @@ class TestUserGUID:
 
 class TestConversationLinksDB:
     def test_full_lifecycle(self, tmp_path: Path) -> None:
-        from spark.database import Database
+        from spark.database import Database, conversation_links, conversations
         from spark.database.backends import SQLiteBackend
         from spark.database.connection import DatabaseConnection
-        from spark.database import conversations, conversation_links
 
         backend = SQLiteBackend(tmp_path / "test.db")
         conn = DatabaseConnection(backend)

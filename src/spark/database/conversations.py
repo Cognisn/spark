@@ -29,8 +29,15 @@ def create_conversation(
              compaction_threshold, web_search_enabled, memory_enabled, user_guid)
             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
         (
-            name, model_id, now, now, instructions,
-            compaction_threshold, int(web_search_enabled), int(memory_enabled), user_guid,
+            name,
+            model_id,
+            now,
+            now,
+            instructions,
+            compaction_threshold,
+            int(web_search_enabled),
+            int(memory_enabled),
+            user_guid,
         ),
     )
     db.commit()
@@ -120,10 +127,20 @@ def update_token_usage(
     # Upsert model usage
     upsert = db.backend.upsert_sql(
         "conversation_model_usage",
-        ["conversation_id", "model_id", "input_tokens", "output_tokens", "first_used", "last_used", "user_guid"],
+        [
+            "conversation_id",
+            "model_id",
+            "input_tokens",
+            "output_tokens",
+            "first_used",
+            "last_used",
+            "user_guid",
+        ],
         ["conversation_id", "model_id"],
     )
-    db.execute(upsert, (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid))
+    db.execute(
+        upsert, (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid)
+    )
     db.commit()
 
 

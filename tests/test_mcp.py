@@ -12,7 +12,6 @@ import pytest
 from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig
 from spark.mcp_integration.tool_selector import ToolSelector
 
-
 # -- MCPServerConfig ----------------------------------------------------------
 
 
@@ -59,32 +58,36 @@ class TestMCPClientAuth:
         assert headers["X-API-Key"] == "key123"
 
     def test_api_key_custom_header(self) -> None:
-        client = MCPClient(MCPServerConfig(
-            name="t", auth_type="api_key", auth_token="key123", auth_header_name="X-Custom"
-        ))
+        client = MCPClient(
+            MCPServerConfig(
+                name="t", auth_type="api_key", auth_token="key123", auth_header_name="X-Custom"
+            )
+        )
         headers = client._build_auth_headers()
         assert headers["X-Custom"] == "key123"
 
     def test_basic(self) -> None:
-        client = MCPClient(MCPServerConfig(
-            name="t", auth_type="basic", basic_username="user", basic_password="pass"
-        ))
+        client = MCPClient(
+            MCPServerConfig(
+                name="t", auth_type="basic", basic_username="user", basic_password="pass"
+            )
+        )
         headers = client._build_auth_headers()
         expected = base64.b64encode(b"user:pass").decode()
         assert headers["Authorization"] == f"Basic {expected}"
 
     def test_basic_no_password(self) -> None:
-        client = MCPClient(MCPServerConfig(
-            name="t", auth_type="basic", basic_username="user"
-        ))
+        client = MCPClient(MCPServerConfig(name="t", auth_type="basic", basic_username="user"))
         headers = client._build_auth_headers()
         expected = base64.b64encode(b"user:").decode()
         assert headers["Authorization"] == f"Basic {expected}"
 
     def test_custom_headers(self) -> None:
-        client = MCPClient(MCPServerConfig(
-            name="t", auth_type="custom", custom_headers={"X-Foo": "bar", "X-Baz": "qux"}
-        ))
+        client = MCPClient(
+            MCPServerConfig(
+                name="t", auth_type="custom", custom_headers={"X-Foo": "bar", "X-Baz": "qux"}
+            )
+        )
         headers = client._build_auth_headers()
         assert headers == {"X-Foo": "bar", "X-Baz": "qux"}
 
@@ -149,7 +152,12 @@ class TestMCPManager:
             "mcp": {
                 "servers": [
                     {"name": "srv1", "transport": "stdio", "command": "npx", "args": ["-y", "pkg"]},
-                    {"name": "srv2", "transport": "http", "url": "http://localhost:8000", "enabled": False},
+                    {
+                        "name": "srv2",
+                        "transport": "http",
+                        "url": "http://localhost:8000",
+                        "enabled": False,
+                    },
                 ]
             }
         }
@@ -224,28 +232,64 @@ class TestToolSelector:
 
     def test_detects_filesystem_category(self) -> None:
         selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(["read_file", "web_search", "get_current_datetime", "unrelated_1", "unrelated_2", "unrelated_3", "unrelated_4", "unrelated_5", "unrelated_6"])
+        tools = self._make_tools(
+            [
+                "read_file",
+                "web_search",
+                "get_current_datetime",
+                "unrelated_1",
+                "unrelated_2",
+                "unrelated_3",
+                "unrelated_4",
+                "unrelated_5",
+                "unrelated_6",
+            ]
+        )
         result = selector.select_tools(tools, "Please read the file at /tmp/test.txt")
         names = {t["name"] for t in result}
         assert "read_file" in names
 
     def test_detects_web_category(self) -> None:
         selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(["read_file", "web_search", "fetch_url", "unrelated_1", "unrelated_2", "unrelated_3", "unrelated_4", "unrelated_5"])
+        tools = self._make_tools(
+            [
+                "read_file",
+                "web_search",
+                "fetch_url",
+                "unrelated_1",
+                "unrelated_2",
+                "unrelated_3",
+                "unrelated_4",
+                "unrelated_5",
+            ]
+        )
         result = selector.select_tools(tools, "search the web for python tutorials")
         names = {t["name"] for t in result}
         assert "web_search" in names
 
     def test_detects_datetime_category(self) -> None:
         selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(["get_current_datetime", "read_file", "other1", "other2", "other3", "other4", "other5", "other6"])
+        tools = self._make_tools(
+            [
+                "get_current_datetime",
+                "read_file",
+                "other1",
+                "other2",
+                "other3",
+                "other4",
+                "other5",
+                "other6",
+            ]
+        )
         result = selector.select_tools(tools, "what time is it now?")
         names = {t["name"] for t in result}
         assert "get_current_datetime" in names
 
     def test_uses_history_for_detection(self) -> None:
         selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(["read_file", "web_search", "other1", "other2", "other3", "other4", "other5", "other6"])
+        tools = self._make_tools(
+            ["read_file", "web_search", "other1", "other2", "other3", "other4", "other5", "other6"]
+        )
         history = [{"role": "user", "content": "I need to read some files"}]
         result = selector.select_tools(tools, "please continue", history)
         names = {t["name"] for t in result}

@@ -85,8 +85,13 @@ def execute_builtin_tool(
 
         # Filesystem
         fs_tools = {
-            "read_file", "write_file", "list_directory", "search_files",
-            "get_file_info", "find_in_file", "get_directory_tree",
+            "read_file",
+            "write_file",
+            "list_directory",
+            "search_files",
+            "get_file_info",
+            "find_in_file",
+            "get_directory_tree",
         }
         if tool_name in fs_tools:
             fs_config = embedded.get("filesystem", {})

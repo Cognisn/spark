@@ -5,13 +5,20 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spark.database import Database
+from spark.database import (
+    Database,
+    autonomous_actions,
+    context_index,
+    conversations,
+    files,
+    mcp_ops,
+    memories,
+    messages,
+    tool_permissions,
+    usage,
+)
 from spark.database.backends import SQLiteBackend
 from spark.database.connection import DatabaseConnection
-from spark.database import conversations, messages, files, memories
-from spark.database import tool_permissions, usage, context_index, mcp_ops
-from spark.database import autonomous_actions
-
 
 USER = "test-user-guid"
 

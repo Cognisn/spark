@@ -95,9 +95,7 @@ class MySQLBackend(DatabaseBackend):
         ph = self.placeholder()
         cols = ", ".join(columns)
         vals = ", ".join([ph] * len(columns))
-        updates = ", ".join(
-            f"{c} = VALUES({c})" for c in columns if c not in conflict_columns
-        )
+        updates = ", ".join(f"{c} = VALUES({c})" for c in columns if c not in conflict_columns)
         return f"INSERT INTO {table} ({cols}) VALUES ({vals}) ON DUPLICATE KEY UPDATE {updates}"
 
 
