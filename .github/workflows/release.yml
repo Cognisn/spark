@@ -157,9 +157,14 @@ jobs:
             artifact: spark-macos-x86_64
           - arch: arm64
             artifact: spark-macos-arm64
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Download binary
         uses: actions/download-artifact@v5
@@ -169,8 +174,8 @@ jobs:
 
       - name: Generate icons
         run: |
-          pip3 install Pillow
-          python3 assets/generate_icons.py
+          pip install Pillow
+          python assets/generate_icons.py
           mkdir -p spark.iconset
           for size in 16 32 64 128 256 512; do
             cp assets/icons/spark-${size}.png spark.iconset/icon_${size}x${size}.png
@@ -228,18 +233,19 @@ jobs:
 
       - name: Create NSIS installer script
         shell: bash
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          cat > installer.nsi << 'NSIEOF'
+          cat > installer.nsi <<NSIEOF
           !include "MUI2.nsh"
 
           Name "Spark"
           OutFile "Spark-${VERSION}-windows-x86_64-setup.exe"
-          InstallDir "$PROGRAMFILES64\Cognisn\Spark"
+          InstallDir "\$PROGRAMFILES64\\Cognisn\\Spark"
           RequestExecutionLevel admin
 
-          !define MUI_ICON "assets\icons\spark.ico"
-          !define MUI_UNICON "assets\icons\spark.ico"
+          !define MUI_ICON "assets\\icons\\spark.ico"
+          !define MUI_UNICON "assets\\icons\\spark.ico"
           !define MUI_WELCOMEPAGE_TITLE "Spark Setup"
           !define MUI_WELCOMEPAGE_TEXT "This will install Spark - Secure Personal AI Research Kit by Cognisn."
 
@@ -254,32 +260,32 @@ jobs:
           !insertmacro MUI_LANGUAGE "English"
 
           Section "Install"
-            SetOutPath $INSTDIR
-            File "binary\spark-windows-x86_64.exe"
-            Rename "$INSTDIR\spark-windows-x86_64.exe" "$INSTDIR\spark.exe"
-            File "assets\icons\spark.ico"
+            SetOutPath \$INSTDIR
+            File "binary\\spark-windows-x86_64.exe"
+            Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark.exe"
+            File "assets\\icons\\spark.ico"
 
-            CreateDirectory "$SMPROGRAMS\Cognisn"
-            CreateShortCut "$SMPROGRAMS\Cognisn\Spark.lnk" "$INSTDIR\spark.exe" "" "$INSTDIR\spark.ico"
-            CreateShortCut "$DESKTOP\Spark.lnk" "$INSTDIR\spark.exe" "" "$INSTDIR\spark.ico"
+            CreateDirectory "\$SMPROGRAMS\\Cognisn"
+            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "\$INSTDIR\\spark.exe" "" "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$DESKTOP\\Spark.lnk" "\$INSTDIR\\spark.exe" "" "\$INSTDIR\\spark.ico"
 
-            WriteUninstaller "$INSTDIR\Uninstall.exe"
+            WriteUninstaller "\$INSTDIR\\Uninstall.exe"
 
-            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "DisplayName" "Spark"
-            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "UninstallString" "$INSTDIR\Uninstall.exe"
-            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "Publisher" "Cognisn"
-            WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark" "DisplayIcon" "$INSTDIR\spark.ico"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayName" "Spark"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "UninstallString" "\$INSTDIR\\Uninstall.exe"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "Publisher" "Cognisn"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayIcon" "\$INSTDIR\\spark.ico"
           SectionEnd
 
           Section "Uninstall"
-            Delete "$INSTDIR\spark.exe"
-            Delete "$INSTDIR\spark.ico"
-            Delete "$INSTDIR\Uninstall.exe"
-            RMDir "$INSTDIR"
-            Delete "$SMPROGRAMS\Cognisn\Spark.lnk"
-            Delete "$DESKTOP\Spark.lnk"
-            RMDir "$SMPROGRAMS\Cognisn"
-            DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Spark"
+            Delete "\$INSTDIR\\spark.exe"
+            Delete "\$INSTDIR\\spark.ico"
+            Delete "\$INSTDIR\\Uninstall.exe"
+            RMDir "\$INSTDIR"
+            Delete "\$SMPROGRAMS\\Cognisn\\Spark.lnk"
+            Delete "\$DESKTOP\\Spark.lnk"
+            RMDir "\$SMPROGRAMS\\Cognisn"
+            DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark"
           SectionEnd
           NSIEOF
 
@@ -287,7 +293,10 @@ jobs:
         run: choco install nsis -y
 
       - name: Build installer
-        run: makensis installer.nsi
+        shell: cmd
+        run: |
+          set PATH=%PATH%;C:\Program Files (x86)\NSIS
+          makensis installer.nsi
 
       - name: Upload installer
         uses: actions/upload-artifact@v5
