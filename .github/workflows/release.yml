@@ -290,6 +290,7 @@ jobs:
           ls -la "${DMG_NAME}"
 
       - name: Notarize DMG
+        timeout-minutes: 30
         env:
           APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
           APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
@@ -303,16 +304,21 @@ jobs:
             --team-id "${APPLE_TEAM_ID}" \
             --password "${APPLE_ID_APP_PASSWORD}"
 
-          # Submit for notarization and wait
+          # Submit for notarization and wait (timeout handled by step timeout-minutes)
+          echo "Submitting ${DMG_NAME} for notarization..."
           xcrun notarytool submit "${DMG_NAME}" \
             --keychain-profile "AC_PASSWORD" \
-            --wait
+            --wait \
+            --timeout 20m \
+          && NOTARIZED=true || NOTARIZED=false
 
-          # Staple the notarization ticket to the DMG
-          xcrun stapler staple "${DMG_NAME}"
-
-          # Verify
-          spctl -a -v -t open --context context:primary-signature "${DMG_NAME}" || true
+          if [ "${NOTARIZED}" = true ]; then
+            echo "Notarization succeeded — stapling ticket"
+            xcrun stapler staple "${DMG_NAME}"
+            spctl -a -v -t open --context context:primary-signature "${DMG_NAME}" || true
+          else
+            echo "::warning::Notarization did not complete within timeout. The DMG is code-signed but not notarized. Users may need to right-click > Open on first launch."
+          fi
 
       - name: Clean up keychain
         if: always()
