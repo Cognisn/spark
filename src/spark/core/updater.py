@@ -150,14 +150,66 @@ def apply_update() -> dict[str, Any]:
         return _update_pip()
 
 
+def _find_pyapp_binary() -> str | None:
+    """Locate the PyApp binary.
+
+    PyApp sets PYAPP=1 in the environment. The binary is typically:
+    - macOS .app: Spark.app/Contents/MacOS/spark-engine
+    - Windows: spark-engine.exe in the install directory
+    - Linux: the AppImage or standalone binary
+
+    We find it by looking for PYAPP_COMMAND_NAME, or by searching
+    common locations relative to sys.executable.
+    """
+    from pathlib import Path
+
+    # 1. Environment variable (set by some PyApp versions)
+    cmd = os.environ.get("PYAPP_COMMAND_NAME")
+    if cmd and os.path.isfile(cmd):
+        return cmd
+
+    # 2. Search relative to sys.executable
+    # PyApp extracts Python to ~/.local/share/pyapp/<hash>/
+    # The binary that launched it is outside this directory
+    exe = Path(sys.executable).resolve()
+
+    # 3. On macOS, look for spark-engine in the .app bundle
+    if sys.platform == "darwin":
+        # Walk up from Python to find Contents/MacOS/spark-engine
+        for parent in exe.parents:
+            candidate = parent / "Contents" / "MacOS" / "spark-engine"
+            if candidate.is_file():
+                return str(candidate)
+
+    # 4. On Windows, look for spark-engine.exe nearby
+    if sys.platform == "win32":
+        for parent in exe.parents:
+            candidate = parent / "spark-engine.exe"
+            if candidate.is_file():
+                return str(candidate)
+
+    # 5. Check if pyapp data dir has a record of the binary
+    data_dir = Path.home() / ".local" / "share" / "pyapp"
+    if not data_dir.exists() and sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA", "")
+        if local:
+            data_dir = Path(local) / "pyapp"
+
+    return None
+
+
 def _update_pyapp() -> dict[str, Any]:
     """Update via PyApp's self-update mechanism."""
     try:
-        # PyApp binaries support: <binary> self update
-        exe = sys.executable
-        # Find the PyApp binary — it's the parent process or the binary itself
-        pyapp_bin = os.environ.get("PYAPP_COMMAND_NAME", exe)
+        pyapp_bin = _find_pyapp_binary()
+        if not pyapp_bin:
+            return {
+                "status": "error",
+                "message": "Could not locate the PyApp binary. Try updating manually with: pip install --upgrade cognisn-spark",
+                "needs_restart": False,
+            }
 
+        logger.info("PyApp binary found at: %s", pyapp_bin)
         result = subprocess.run(
             [pyapp_bin, "self", "update"],
             capture_output=True,
