@@ -458,8 +458,23 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     url_file.parent.mkdir(parents=True, exist_ok=True)
     url_file.write_text(url)
 
-    # Always open browser with auto-login
-    webbrowser.open(login_url)
+    # Open browser after server starts (delayed so uvicorn has time to bind the port)
+    import threading as _threading
+
+    def _open_browser_when_ready() -> None:
+        """Wait for the server to start listening, then open the browser."""
+        import socket
+        import time as _t
+
+        for _ in range(30):  # Wait up to 15 seconds
+            try:
+                with socket.create_connection((host, port), timeout=0.5):
+                    break
+            except (ConnectionRefusedError, OSError):
+                _t.sleep(0.5)
+        webbrowser.open(login_url)
+
+    _threading.Thread(target=_open_browser_when_ready, daemon=True).start()
 
     # SSL configuration
     ssl_kwargs: dict = {}
