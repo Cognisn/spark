@@ -70,6 +70,12 @@ def run() -> None:
             await create_and_serve(ctx, first_run=first_run)
 
     try:
+        # On Windows, uvicorn needs the SelectorEventLoop (ProactorEventLoop has issues)
+        import sys
+
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
         asyncio.run(_start())
     except KeyboardInterrupt:
         logger.info("Spark shut down by user")

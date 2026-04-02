@@ -450,6 +450,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
 
     logger.info("Spark web interface starting at %s", url)
     logger.info("Authentication code: %s", auth_code)
+    logger.debug("Pre-startup: writing URL file and scheduling browser open")
 
     # Write URL file so the tray daemon can find us
     from spark.core.application import _get_data_path
@@ -507,8 +508,12 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         **ssl_kwargs,
     )
     server = uvicorn.Server(config)
+    logger.info("Starting uvicorn server on %s:%d", host, port)
     try:
         await server.serve()
+    except Exception as e:
+        logger.error("Uvicorn server failed to start: %s", e, exc_info=True)
+        raise
     finally:
         # Clean up URL file on shutdown
         url_file.unlink(missing_ok=True)
