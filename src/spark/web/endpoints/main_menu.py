@@ -135,6 +135,37 @@ async def dismiss_update(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@router.get("/api/provider-models")
+async def provider_models(request: Request) -> JSONResponse:
+    """API: list models for a given provider."""
+    provider_key = request.query_params.get("provider", "")
+    llm_manager = getattr(request.app.state, "llm_manager", None)
+    if not llm_manager:
+        return JSONResponse({"models": []})
+
+    # Map config keys to provider display names
+    key_to_display = {
+        "anthropic": "Anthropic",
+        "aws_bedrock": "AWS Bedrock",
+        "ollama": "Ollama",
+        "google_gemini": "Google Gemini",
+        "xai": "X.AI",
+    }
+    display_name = key_to_display.get(provider_key, provider_key)
+
+    models = [
+        {
+            "id": m.get("id", ""),
+            "name": m.get("name", m.get("id", "")),
+            "supports_tools": m.get("supports_tools", False),
+            "context_length": m.get("context_length", 0),
+        }
+        for m in llm_manager.list_all_models()
+        if m.get("provider") == display_name
+    ]
+    return JSONResponse({"provider": display_name, "models": models})
+
+
 @router.get("/menu", response_class=HTMLResponse)
 async def main_menu(request: Request) -> HTMLResponse:
     """Main menu / dashboard."""

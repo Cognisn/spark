@@ -162,6 +162,18 @@
                                        value="{{ field.value }}"
                                        step="any">
 
+                                {% elif field.type == 'textarea' %}
+                                <textarea class="form-control form-control-sm setting-input"
+                                          id="field-{{ field.key|replace('.', '-') }}"
+                                          data-key="{{ field.key }}"
+                                          rows="{{ field.rows or 4 }}"
+                                          style="font-size: 0.8125rem;">{{ field.value }}</textarea>
+                                {% if field.help %}
+                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {{ field.help }}
+                                </div>
+                                {% endif %}
+
                                 {% else %}
                                 <input type="text"
                                        class="form-control form-control-sm setting-input"

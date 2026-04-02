@@ -83,7 +83,7 @@ class TestBuildSections:
         for section in sections:
             for group in section["groups"]:
                 all_fields.extend(group["fields"])
-        valid_types = {"toggle", "text", "number", "secret", "select", "model_select"}
+        valid_types = {"toggle", "text", "number", "secret", "select", "model_select", "textarea"}
         for field in all_fields:
             assert field["type"] in valid_types
             assert "key" in field

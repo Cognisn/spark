@@ -176,11 +176,18 @@ class GoogleGeminiProvider(LLMService):
                 return _normalise_response(response)
             except Exception as e:
                 err = str(e).lower()
-                if (
-                    "rate" in err or "429" in err or "quota" in err
-                ) and attempt < self._max_retries:
+                retryable = (
+                    "rate" in err
+                    or "429" in err
+                    or "quota" in err
+                    or "503" in err
+                    or "unavailable" in err
+                    or "500" in err
+                    or "overloaded" in err
+                )
+                if retryable and attempt < self._max_retries:
                     delay = self._base_delay ** (attempt + 1)
-                    logger.warning("Rate limited, retrying in %.1fs", delay)
+                    logger.warning("Transient error, retrying in %.1fs: %s", delay, e)
                     time.sleep(delay)
                     continue
                 logger.error("Gemini invocation failed: %s", e)

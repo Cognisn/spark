@@ -136,17 +136,27 @@ class AnthropicDirectProvider(LLMService):
                 else:
                     return self._invoke_sync(req)
             except Exception as e:
-                if "rate" in str(e).lower() or "429" in str(e):
-                    if attempt < self._max_retries:
-                        delay = self._base_delay ** (attempt + 1)
-                        logger.warning(
-                            "Rate limited (attempt %d/%d), retrying in %.1fs",
-                            attempt + 1,
-                            self._max_retries,
-                            delay,
-                        )
-                        time.sleep(delay)
-                        continue
+                err = str(e).lower()
+                retryable = (
+                    "rate" in err
+                    or "429" in err
+                    or "503" in err
+                    or "overloaded" in err
+                    or "unavailable" in err
+                    or "500" in err
+                    or "internal" in err
+                )
+                if retryable and attempt < self._max_retries:
+                    delay = self._base_delay ** (attempt + 1)
+                    logger.warning(
+                        "Transient error (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        self._max_retries,
+                        delay,
+                        e,
+                    )
+                    time.sleep(delay)
+                    continue
                 raise
 
         return {

@@ -8,6 +8,31 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _get_tool_documentation(tool_name: str) -> str:
+    """Read tool documentation from the resources/tool_docs directory."""
+    from pathlib import Path
+
+    docs_dir = Path(__file__).parent.parent / "resources" / "tool_docs"
+
+    if not tool_name:
+        return "Please provide a tool_name parameter."
+
+    # Sanitize — only allow alphanumeric, underscore, and leading underscore
+    safe_name = "".join(c for c in tool_name if c.isalnum() or c == "_")
+    doc_file = docs_dir / f"{safe_name}.md"
+
+    if doc_file.exists():
+        return doc_file.read_text(encoding="utf-8")
+
+    # List available docs
+    available = sorted(f.stem for f in docs_dir.glob("*.md") if not f.stem.startswith("_template"))
+    return (
+        f"Documentation not found for tool: {tool_name}\n\n"
+        f"Available documentation: {', '.join(available)}\n\n"
+        f"Tip: Use '_index' to see the full tool index."
+    )
+
+
 def _has_paths(config: dict) -> bool:
     """Check if allowed_paths is configured and non-empty."""
     paths = config.get("allowed_paths")
@@ -31,6 +56,24 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
     from spark.tools.datetime_tool import TOOLS as dt_tools
 
     tools.extend(dt_tools)
+
+    # Tool documentation — always available
+    tools.append(
+        {
+            "name": "get_tool_documentation",
+            "description": "Retrieve detailed documentation for any embedded tool. Use this to learn about a tool's parameters, return values, examples, and best practices before using it. Pass '_index' as tool_name to get the full tool index.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Name of the tool to get documentation for, or '_index' for the full index.",
+                    }
+                },
+                "required": ["tool_name"],
+            },
+        }
+    )
 
     # Filesystem — requires allowed_paths
     fs_config = embedded.get("filesystem", {})
@@ -77,6 +120,10 @@ def execute_builtin_tool(
     embedded = config.get("embedded_tools", {})
 
     try:
+        # Tool documentation
+        if tool_name == "get_tool_documentation":
+            return _get_tool_documentation(tool_input.get("tool_name", "")), False
+
         # Datetime
         if tool_name == "get_current_datetime":
             from spark.tools.datetime_tool import execute

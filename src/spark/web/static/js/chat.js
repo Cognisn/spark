@@ -77,6 +77,10 @@ function appendMessage(msg) {
         try {
             const blocks = JSON.parse(content);
             if (Array.isArray(blocks) && blocks.length > 0) {
+                // Skip tool_result-only blocks (already shown in tool group)
+                const onlyToolResults = blocks.every(b => b.type === 'tool_result');
+                if (onlyToolResults) return;
+
                 // Check there's at least one meaningful block
                 const hasContent = blocks.some(b =>
                     (b.type === 'text' && b.text) || (b.type === 'tool_use' && b.name)
@@ -197,97 +201,158 @@ function appendContentBlocks(role, blocks, timestamp) {
     }
 
     if (toolCalls.length) {
-        appendToolCallGroup(toolCalls);
+        // Add to sidecar panel + inline indicator in chat
+        addToolCallsToPanel(toolCalls, timestamp);
+        appendToolInlineIndicator(toolCalls.length);
     }
-    // If only tool_use blocks with no names (malformed), skip — don't render empty group
 }
 
 
 /* ==========================================================================
-   3. Tool Call Display (Termograph-style)
+   3. Tool Call Display — Sidecar Panel
    ========================================================================== */
 
-function appendToolCallGroup(toolCalls, statuses) {
-    if (!toolCalls || !toolCalls.length) return;
+let _toolPanelCount = 0;
 
-    const container = document.getElementById('chat-messages');
-    const groupId = 'tcg-' + Math.random().toString(36).substr(2, 8);
-
-    const completedCount = toolCalls.length;
-    const statusText = `${completedCount} tool call${completedCount !== 1 ? 's' : ''} completed`;
-
-    const group = document.createElement('div');
-    group.className = 'tool-call-group';
-    group.innerHTML = `
-        <div class="group-header" onclick="toggleToolGroup('${groupId}')">
-            <div class="group-summary">
-                <i class="bi bi-tools" style="color: var(--app-accent);"></i>
-                <span class="tool-count">${statusText}</span>
-                <div class="status-dots">
-                    ${toolCalls.slice(0, 8).map(() =>
-                        `<span class="dot success"></span>`
-                    ).join('')}
-                    ${toolCalls.length > 8 ? `<span style="font-size:0.6875rem;color:var(--app-text-muted);">+${toolCalls.length - 8}</span>` : ''}
-                </div>
-            </div>
-            <i class="bi bi-chevron-down" id="${groupId}-chevron"
-               style="color: var(--app-text-muted); transition: transform 0.2s;"></i>
-        </div>
-        <div class="group-body" id="${groupId}-body" style="display: none;">
-            ${toolCalls.map(tc => buildActionCard(tc)).join('')}
-        </div>
-    `;
-
-    container.appendChild(group);
+function _formatToolTime(timestamp) {
+    const d = timestamp ? new Date(timestamp) : new Date();
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function buildActionCard(toolCall, status = 'success', result = null) {
-    const cardId = 'ac-' + Math.random().toString(36).substr(2, 8);
-    const statusIcon = {
-        running: '<i class="bi bi-arrow-repeat tool-status running"></i>',
-        success: '<i class="bi bi-check-circle-fill tool-status success"></i>',
-        error: '<i class="bi bi-x-circle-fill tool-status error"></i>',
-    }[status] || '';
+function _addToolPanelItem(toolName, params, status, result, timestamp) {
+    const panel = document.getElementById('tool-panel-body');
+    const empty = document.getElementById('tool-panel-empty');
+    if (empty) empty.style.display = 'none';
 
-    const toolIcon = getToolIcon(toolCall.name || '');
-    const resultText = result
-        ? (typeof result === 'string' ? result.trim() : JSON.stringify(result, null, 2))
-        : null;
+    _toolPanelCount++;
+    _updateToolPanelBadge();
+
+    const itemId = 'tp-' + Math.random().toString(36).substr(2, 8);
+    const toolIcon = getToolIcon(toolName || '');
+    const statusIcons = {
+        running: '<i class="bi bi-arrow-repeat tp-status running"></i>',
+        success: '<i class="bi bi-check-circle-fill tp-status success"></i>',
+        error: '<i class="bi bi-x-circle-fill tp-status error"></i>',
+    };
+    const statusIcon = statusIcons[status] || '';
+    const timeStr = _formatToolTime(timestamp);
+
+    const paramsJson = JSON.stringify(params || {}, null, 2);
+    const resultText = result ? (typeof result === 'string' ? result.trim() : JSON.stringify(result, null, 2)) : null;
 
     let detailHtml = '';
-    if (resultText && resultText.length > 0) {
-        detailHtml = `
-            <div class="action-detail" id="${cardId}-detail" style="display: none;">
-                <div class="action-detail-label">Result:</div>
-                <div class="action-detail-code">${escapeHtml(resultText)}</div>
-            </div>`;
-    } else {
-        const paramsJson = JSON.stringify(toolCall.input || {}, null, 2);
-        if (paramsJson !== '{}' && paramsJson !== '""' && paramsJson.length > 2) {
-            detailHtml = `
-                <div class="action-detail" id="${cardId}-detail" style="display: none;">
-                    <div class="action-detail-label">Parameters:</div>
-                    <div class="action-detail-code">${escapeHtml(paramsJson)}</div>
-                </div>`;
-        }
+    if (paramsJson !== '{}' && paramsJson.length > 2) {
+        detailHtml += `<div class="tp-detail-section">Parameters</div><div class="tp-detail-code">${escapeHtml(paramsJson)}</div>`;
+    }
+    if (resultText) {
+        detailHtml += `<div class="tp-detail-section">Result</div><div class="tp-detail-code">${escapeHtml(resultText)}</div>`;
     }
 
-    return `
-        <div class="action-card">
-            <div class="action-header" onclick="toggleActionDetail('${cardId}')">
-                <i class="bi ${toolIcon} tool-icon"></i>
-                <span class="tool-name">${escapeHtml(toolCall.name || 'Unknown')}</span>
-                ${statusIcon}
-                <i class="bi bi-chevron-down chevron-icon" id="${cardId}-chevron"></i>
-            </div>
-            ${detailHtml}
+    const item = document.createElement('div');
+    item.className = 'tool-panel-item';
+    item.id = itemId;
+    item.innerHTML = `
+        <div class="tp-header" onclick="toggleToolPanelItem('${itemId}')">
+            <i class="bi ${toolIcon} tp-icon"></i>
+            <span class="tp-name">${escapeHtml(toolName || 'Unknown')}</span>
+            <span class="tp-time">${timeStr}</span>
+            ${statusIcon}
         </div>
+        <div class="tp-detail" id="${itemId}-detail">${detailHtml}</div>
     `;
+
+    panel.appendChild(item);
+    panel.scrollTop = panel.scrollHeight;
+    return itemId;
+}
+
+function updateToolPanelItem(itemId, status, result) {
+    const item = document.getElementById(itemId);
+    if (!item) return;
+
+    // Update status icon
+    const header = item.querySelector('.tp-header');
+    const oldStatus = header.querySelector('.tp-status');
+    if (oldStatus) oldStatus.remove();
+    const statusIcons = {
+        success: '<i class="bi bi-check-circle-fill tp-status success"></i>',
+        error: '<i class="bi bi-x-circle-fill tp-status error"></i>',
+    };
+    header.insertAdjacentHTML('beforeend', statusIcons[status] || '');
+
+    // Add result to detail
+    if (result) {
+        const detail = item.querySelector('.tp-detail');
+        const resultText = typeof result === 'string' ? result.trim() : JSON.stringify(result, null, 2);
+        detail.innerHTML += `<div class="tp-detail-section">Result</div><div class="tp-detail-code">${escapeHtml(resultText)}</div>`;
+    }
+}
+
+function _updateToolPanelBadge() {
+    const badge = document.getElementById('tool-panel-badge');
+    const total = document.getElementById('tool-panel-total');
+    if (badge) {
+        if (_toolPanelCount > 0) {
+            badge.textContent = _toolPanelCount;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    if (total) total.textContent = _toolPanelCount;
+}
+
+function toggleToolPanel() {
+    const panel = document.getElementById('tool-panel');
+    const isOpen = panel.style.display === 'flex';
+    panel.style.display = isOpen ? 'none' : 'flex';
+    sessionStorage.setItem('spark-tool-panel', isOpen ? 'closed' : 'open');
+}
+
+function clearToolPanel() {
+    const panel = document.getElementById('tool-panel-body');
+    panel.innerHTML = `
+        <div id="tool-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
+            <i class="bi bi-tools" style="font-size: 1.5rem; opacity: 0.3;"></i>
+            <p class="mt-2 mb-0" style="font-size: 0.75rem;">No tool calls yet</p>
+        </div>`;
+    _toolPanelCount = 0;
+    _updateToolPanelBadge();
+}
+
+function toggleToolPanelItem(itemId) {
+    const detail = document.getElementById(itemId + '-detail');
+    if (!detail) return;
+    const isHidden = getComputedStyle(detail).display === 'none';
+    detail.style.display = isHidden ? 'block' : 'none';
+}
+
+// Add completed tool calls from history to the sidecar panel
+function addToolCallsToPanel(toolCalls, timestamp) {
+    toolCalls.forEach(tc => {
+        _addToolPanelItem(tc.name, tc.input, 'success', null, timestamp);
+    });
+}
+
+// Inline indicator in chat area (replaces the old tool-call-group)
+function appendToolInlineIndicator(count, statuses) {
+    const container = document.getElementById('chat-messages');
+    const dots = (statuses || []).map(s => `<span class="dot ${s}"></span>`).join('')
+        || Array(Math.min(count, 6)).fill('<span class="dot success"></span>').join('');
+
+    const div = document.createElement('div');
+    div.className = 'tool-inline-indicator';
+    div.onclick = () => { if (document.getElementById('tool-panel').style.display !== 'flex') toggleToolPanel(); };
+    div.innerHTML = `
+        <i class="bi bi-tools" style="font-size: 0.75rem;"></i>
+        <span>Used ${count} tool${count !== 1 ? 's' : ''}</span>
+        <div class="indicator-dots">${dots}</div>
+    `;
+    container.appendChild(div);
 }
 
 function appendToolResults(results) {
-    // Tool results are already represented in the tool call group from the
-    // preceding assistant message. Don't render them again as separate cards.
+    // Tool results shown in sidecar panel, not inline.
 }
 
 function appendApprovalCard(toolName, params, toolUseId) {
@@ -381,77 +446,42 @@ function finaliseStreamingMessage(content) {
     scrollToBottom();
 }
 
-let streamingToolGroup = null;
-let streamingToolCount = 0;
-
-function _ensureStreamingToolGroup() {
-    if (streamingToolGroup) return;
-    const container = document.getElementById('chat-messages');
-    streamingToolGroup = document.createElement('div');
-    streamingToolGroup.className = 'tool-call-group';
-    streamingToolGroup.id = 'streaming-tool-group';
-    streamingToolCount = 0;
-    streamingToolGroup.innerHTML = `
-        <div class="group-header" onclick="toggleToolGroup('streaming-tg')">
-            <div class="group-summary">
-                <i class="bi bi-tools" style="color: var(--app-accent);"></i>
-                <span class="tool-count" id="streaming-tg-count">Running tools...</span>
-                <div class="status-dots" id="streaming-tg-dots"></div>
-            </div>
-            <i class="bi bi-chevron-down" id="streaming-tg-chevron"
-               style="color: var(--app-text-muted); transition: transform 0.2s;"></i>
-        </div>
-        <div class="group-body" id="streaming-tg-body" style="display: none;"></div>
-    `;
-    container.appendChild(streamingToolGroup);
-    scrollToBottom();
-}
+// Streaming tool tracking — routes to sidecar panel
+let _streamingToolIds = {};  // toolUseId -> panelItemId
+let _streamingToolCount = 0;
+let _streamingToolStatuses = [];
 
 function appendStreamingToolStart(toolName, params, toolUseId) {
-    _ensureStreamingToolGroup();
-    streamingToolCount++;
-    const body = document.getElementById('streaming-tg-body');
-    const card = document.createElement('div');
-    card.id = `tool-${toolUseId}`;
-    card.innerHTML = buildActionCard({ name: toolName, input: params }, 'running');
-    body.appendChild(card);
+    _streamingToolCount++;
+    _streamingToolStatuses.push('running');
 
-    // Update dots
-    const dots = document.getElementById('streaming-tg-dots');
-    dots.innerHTML += '<span class="dot running"></span>';
+    // Auto-open panel if closed
+    const panel = document.getElementById('tool-panel');
+    if (panel.style.display !== 'flex') toggleToolPanel();
 
-    // Update count text
-    document.getElementById('streaming-tg-count').textContent = `Running tools...`;
-    scrollToBottom();
+    // Add to sidecar panel
+    const panelItemId = _addToolPanelItem(toolName, params, 'running', null, null);
+    _streamingToolIds[toolUseId] = panelItemId;
 }
 
 function updateStreamingToolComplete(toolUseId, toolName, result, status) {
-    const existing = document.getElementById(`tool-${toolUseId}`);
-    if (existing) {
-        existing.innerHTML = buildActionCard({ name: toolName, input: {} }, status, result);
+    const panelItemId = _streamingToolIds[toolUseId];
+    if (panelItemId) {
+        updateToolPanelItem(panelItemId, status, result);
     }
-
-    // Update the corresponding dot
-    const dots = document.getElementById('streaming-tg-dots');
-    if (dots) {
-        const runningDot = dots.querySelector('.dot.running');
-        if (runningDot) {
-            runningDot.className = `dot ${status}`;
-        }
-    }
+    // Update status tracking
+    const idx = _streamingToolStatuses.indexOf('running');
+    if (idx !== -1) _streamingToolStatuses[idx] = status;
 }
 
 function finaliseStreamingToolGroup() {
-    if (!streamingToolGroup) return;
-    const countEl = document.getElementById('streaming-tg-count');
-    if (countEl) {
-        countEl.textContent = `${streamingToolCount} tool call${streamingToolCount !== 1 ? 's' : ''} completed`;
+    if (_streamingToolCount > 0) {
+        // Add inline indicator in chat
+        appendToolInlineIndicator(_streamingToolCount, _streamingToolStatuses);
     }
-    // Collapse the body by default now that it's done
-    const body = document.getElementById('streaming-tg-body');
-    if (body) body.style.display = 'none';
-    streamingToolGroup = null;
-    streamingToolCount = 0;
+    _streamingToolIds = {};
+    _streamingToolCount = 0;
+    _streamingToolStatuses = [];
 }
 
 

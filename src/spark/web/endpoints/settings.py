@@ -356,8 +356,22 @@ def _build_sections(settings: object) -> list[dict]:
             "id": "conversation",
             "title": "Conversation",
             "icon": "bi-chat-dots",
-            "description": "Context management and tool execution settings.",
+            "description": "Global instructions, context management, and tool execution settings.",
             "groups": [
+                {
+                    "id": "global_instructions",
+                    "title": "Global Instructions",
+                    "fields": [
+                        _textarea(
+                            "conversation.global_instructions",
+                            "System Instructions",
+                            settings,
+                            "",
+                            rows=6,
+                            help_text="These instructions are prepended to every conversation alongside the built-in system prompt and any per-conversation instructions.",
+                        ),
+                    ],
+                },
                 {
                     "id": "context",
                     "title": "Context Compaction",
@@ -560,6 +574,19 @@ def _number(key: str, label: str, settings: object, default: object = "") -> dic
         "key": key,
         "label": label,
         "value": _get_val(settings, key, default),
+    }
+
+
+def _textarea(
+    key: str, label: str, settings: object, default: str = "", rows: int = 4, help_text: str = ""
+) -> dict:
+    return {
+        "type": "textarea",
+        "key": key,
+        "label": label,
+        "value": _get_val(settings, key, default) or "",
+        "rows": rows,
+        "help": help_text,
     }
 
 

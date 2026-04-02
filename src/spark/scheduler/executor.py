@@ -108,6 +108,7 @@ class ActionExecutor:
         model_id = action["model_id"]
         prompt = action["action_prompt"]
         max_tokens = action.get("max_tokens", 8192)
+        context_mode = action.get("context_mode", "fresh")
 
         # Initialise LLM
         llm = self._init_llm(model_id)
@@ -129,6 +130,12 @@ class ActionExecutor:
             f"Current time: {now}\n\n"
             f"You have access to tools. Use them as needed to complete the action."
         )
+
+        # Build context from previous runs if cumulative mode
+        if context_mode == "cumulative":
+            previous_context = self._build_cumulative_context(db, action)
+            if previous_context:
+                system += f"\n\n## Previous Run Results\n\n{previous_context}"
 
         messages: list[dict] = [{"role": "user", "content": prompt}]
 
@@ -186,6 +193,38 @@ class ActionExecutor:
             "input_tokens": total_input,
             "output_tokens": total_output,
         }
+
+    def _build_cumulative_context(self, db: Any, action: dict) -> str:
+        """Build context from previous completed runs for cumulative mode.
+
+        Returns a formatted string summarising recent run results,
+        newest first, capped at 5 runs to avoid context overflow.
+        """
+        try:
+            from spark.database import autonomous_actions
+
+            runs = autonomous_actions.get_action_runs(db, action["id"], limit=5)
+            completed = [r for r in runs if r.get("status") == "completed" and r.get("result_text")]
+
+            if not completed:
+                return ""
+
+            parts = []
+            for i, run in enumerate(completed):
+                ts = run.get("completed_at", run.get("started_at", "unknown"))
+                result = run.get("result_text", "")
+                # Truncate very long results to avoid blowing context
+                if len(result) > 2000:
+                    result = result[:2000] + "\n... (truncated)"
+                parts.append(f"### Run {len(completed) - i} ({ts})\n\n{result}")
+
+            # Reverse so oldest is first (chronological order)
+            parts.reverse()
+            return "\n\n---\n\n".join(parts)
+
+        except Exception as e:
+            logger.warning("Failed to load cumulative context: %s", e)
+            return ""
 
     def _get_tools(self) -> list[dict]:
         """Get available tools for the action."""

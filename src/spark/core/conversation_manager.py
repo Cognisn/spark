@@ -602,6 +602,9 @@ class ConversationManager:
             f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
             f"**Other tools:** You may also have access to filesystem, document, web search, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
+            f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
+            f"parameter references, examples, and best practices for any tool before using it. "
+            f"Pass `_index` as the tool name to see all available documentation.\n\n"
             f"**Linked conversations:** If this conversation is linked to others, relevant context from those conversations "
             f"is automatically provided below. You can reference this context in your responses."
         )
@@ -715,9 +718,11 @@ class ConversationManager:
                     decision = self._tool_permission_callback(tool_name, tool_input)
                     if decision in ("allowed", "once"):
                         if decision == "allowed":
-                            tool_permissions.set_tool_permission(
-                                self._db, conversation_id, tool_name, "allowed", user_guid
-                            )
+                            # Approve this tool and all tools in the same category
+                            for sibling in _get_tool_category_siblings(tool_name):
+                                tool_permissions.set_tool_permission(
+                                    self._db, conversation_id, sibling, "allowed", user_guid
+                                )
                     else:
                         tool_permissions.set_tool_permission(
                             self._db, conversation_id, tool_name, "denied", user_guid
@@ -858,6 +863,36 @@ class ConversationManager:
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
             )
+
+
+_TOOL_CATEGORIES: dict[str, list[str]] = {
+    "filesystem": [
+        "read_file",
+        "write_file",
+        "list_directory",
+        "search_files",
+        "get_file_info",
+        "find_in_file",
+        "get_directory_tree",
+    ],
+    "documents": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
+    "archives": ["list_archive", "extract_archive"],
+    "web": ["web_search", "web_fetch"],
+    "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+    "core": ["get_current_datetime", "get_tool_documentation"],
+}
+
+
+def _get_tool_category_siblings(tool_name: str) -> list[str]:
+    """Return all tool names in the same category as the given tool.
+
+    When a user approves a tool with 'Always Allow', all tools in the same
+    category are also approved (e.g. approving web_search also approves web_fetch).
+    """
+    for _category, tools in _TOOL_CATEGORIES.items():
+        if tool_name in tools:
+            return tools
+    return [tool_name]
 
 
 def _tool_result(tool_use_id: str, content: str, *, is_error: bool = False) -> dict:

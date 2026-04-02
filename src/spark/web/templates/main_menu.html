@@ -22,7 +22,12 @@
     <div class="row g-3 mb-4">
         {% for provider in providers %}
         <div class="col-sm-6 col-lg-4">
-            <div class="app-stat-card">
+            <div class="app-stat-card{% if provider.enabled and provider.model_count > 0 %} provider-clickable{% endif %}"
+                 {% if provider.enabled and provider.model_count > 0 %}
+                 style="cursor: pointer;"
+                 onclick="showProviderModels('{{ provider.key }}', '{{ provider.name }}')"
+                 title="Click to view models"
+                 {% endif %}>
                 <div class="stat-icon">
                     <i class="bi {{ provider.icon }}"></i>
                 </div>
@@ -257,4 +262,104 @@
     </div>
 
 </div>
+
+<!-- Provider Models Modal -->
+<div class="modal fade" id="providerModelsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="providerModelsTitle">
+                    <i class="bi bi-robot me-2" style="color: var(--app-accent);"></i>
+                    <span id="providerModelsName">Provider</span> Models
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="providerModelsLoading" class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm" style="color: var(--app-accent);"></div>
+                    <span class="ms-2" style="color: var(--app-text-secondary);">Loading models...</span>
+                </div>
+                <div id="providerModelsContent" style="display: none;">
+                    <div class="mb-3" style="font-size: 0.8125rem; color: var(--app-text-secondary);">
+                        <span id="providerModelsCount"></span> models available
+                    </div>
+                    <div class="app-table-responsive">
+                        <table class="app-table" style="font-size: 0.8125rem;">
+                            <thead>
+                                <tr>
+                                    <th>Model ID</th>
+                                    <th>Name</th>
+                                    <th style="text-align: center;">Tools</th>
+                                    <th style="text-align: right;">Context</th>
+                                </tr>
+                            </thead>
+                            <tbody id="providerModelsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="providerModelsEmpty" style="display: none;">
+                    <p class="text-center py-3" style="color: var(--app-text-muted);">No models found for this provider.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function showProviderModels(providerKey, providerName) {
+    document.getElementById('providerModelsName').textContent = providerName;
+    document.getElementById('providerModelsLoading').style.display = '';
+    document.getElementById('providerModelsContent').style.display = 'none';
+    document.getElementById('providerModelsEmpty').style.display = 'none';
+
+    new bootstrap.Modal(document.getElementById('providerModelsModal')).show();
+
+    try {
+        const resp = await fetch(`/api/provider-models?provider=${encodeURIComponent(providerKey)}`);
+        const data = await resp.json();
+
+        document.getElementById('providerModelsLoading').style.display = 'none';
+
+        if (data.models && data.models.length > 0) {
+            document.getElementById('providerModelsCount').textContent = data.models.length;
+            const tbody = document.getElementById('providerModelsBody');
+            tbody.innerHTML = '';
+
+            data.models.sort((a, b) => a.name.localeCompare(b.name));
+
+            data.models.forEach(model => {
+                const ctx = model.context_length > 0
+                    ? (model.context_length >= 1000000
+                        ? (model.context_length / 1000000).toFixed(1) + 'M'
+                        : (model.context_length >= 1000
+                            ? Math.round(model.context_length / 1000) + 'K'
+                            : model.context_length))
+                    : '—';
+
+                const toolsBadge = model.supports_tools
+                    ? '<span class="badge-app badge-app-success" style="font-size:0.625rem;">Yes</span>'
+                    : '<span class="badge-app" style="font-size:0.625rem; opacity:0.5;">No</span>';
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><code style="font-size:0.75rem;">${model.id}</code></td>
+                    <td>${model.name}</td>
+                    <td style="text-align:center;">${toolsBadge}</td>
+                    <td style="text-align:right;">${ctx}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            document.getElementById('providerModelsContent').style.display = '';
+        } else {
+            document.getElementById('providerModelsEmpty').style.display = '';
+        }
+    } catch (e) {
+        document.getElementById('providerModelsLoading').style.display = 'none';
+        document.getElementById('providerModelsEmpty').style.display = '';
+    }
+}
+</script>
 {% endblock %}

@@ -10,7 +10,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex flex-column" style="height: calc(100vh - var(--app-navbar-height) - 80px);">
+<div class="d-flex" style="height: calc(100vh - var(--app-navbar-height) - 80px);">
+
+    <!-- Main chat column -->
+    <div class="d-flex flex-column flex-grow-1" style="min-width: 0;">
 
     <!-- Chat header -->
     <div class="d-flex align-items-center justify-content-between px-3 py-2"
@@ -26,10 +29,34 @@
                     style="color: {% if conversation.is_favourite %}var(--app-warning){% else %}var(--app-text-muted){% endif %};">
                 <i class="bi {% if conversation.is_favourite %}bi-star-fill{% else %}bi-star{% endif %}"></i>
             </button>
+            <button class="btn btn-app-ghost btn-sm" id="btn-voice-mode" title="Voice Conversation" onclick="toggleVoiceMode()" style="display: none;">
+                <i class="bi bi-headset" id="voice-mode-icon"></i>
+            </button>
+            <button class="btn btn-app-ghost btn-sm" title="Tool Activity" onclick="toggleToolPanel()" id="btn-tool-panel">
+                <i class="bi bi-tools"></i>
+                <span id="tool-panel-badge" class="badge rounded-pill" style="display: none; position: absolute; top: -2px; right: -2px; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px;"></span>
+            </button>
             <button class="btn btn-app-ghost btn-sm" title="Info" onclick="showInfoModal()"><i class="bi bi-info-circle"></i></button>
             <button class="btn btn-app-ghost btn-sm" title="Settings" onclick="showSettingsModal()"><i class="bi bi-gear"></i></button>
             <button class="btn btn-app-ghost btn-sm" title="Delete" onclick="confirmDeleteConversation()" style="color: var(--app-danger);"><i class="bi bi-trash"></i></button>
         </div>
+    </div>
+
+    <!-- Voice mode indicator -->
+    <div id="voice-mode-bar" style="display: none; padding: 0.375rem 1rem; font-size: 0.75rem;
+         background: var(--app-bg-tertiary); border-bottom: 1px solid var(--app-border);
+         color: var(--app-text-secondary); text-align: center;">
+        <i class="bi bi-headset me-1" style="color: var(--app-accent);"></i>
+        <span id="voice-mode-status">Voice mode active</span>
+        <span class="ms-2">|</span>
+        <span class="ms-2">Voice: <select id="voice-select" style="background: transparent; border: none;
+              color: var(--app-accent); font-size: 0.75rem; cursor: pointer; padding: 0;"
+              onchange="saveVoicePreference()"></select></span>
+        <span class="ms-2">|</span>
+        <button class="btn btn-sm ms-2" onclick="toggleVoiceMode()"
+                style="font-size: 0.7rem; padding: 0.1rem 0.5rem; color: var(--app-text-muted); border: 1px solid var(--app-border);">
+            Exit Voice Mode
+        </button>
     </div>
 
     <!-- Messages area -->
@@ -38,8 +65,11 @@
     <!-- Input area -->
     <div class="chat-input-container">
         <form id="chat-form" onsubmit="handleSubmit(event)">
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-end">
                 <textarea id="chat-input" class="form-control" rows="1" placeholder="Type a message..." onkeydown="handleKeydown(event)" style="resize: none;"></textarea>
+                <button type="button" class="btn btn-app-ghost" id="btn-mic" onclick="toggleSpeechInput()" title="Voice input" style="display: none; font-size: 1.125rem; padding: 0.25rem 0.5rem;">
+                    <i class="bi bi-mic" id="mic-icon"></i>
+                </button>
                 <button type="submit" class="btn btn-app-primary" id="btn-send"><i class="bi bi-send"></i></button>
             </div>
         </form>
@@ -47,6 +77,38 @@
             Tokens: <span id="tc-in">0</span> in / <span id="tc-out">0</span> out
         </div>
     </div>
+
+    </div><!-- end main chat column -->
+
+    <!-- Tool Activity Sidecar Panel -->
+    <div id="tool-panel" style="display: none; width: 380px; flex-shrink: 0;
+         border-left: 1px solid var(--app-border); background: var(--app-bg-primary);
+         display: none; flex-direction: column;">
+        <!-- Panel header -->
+        <div class="d-flex align-items-center justify-content-between px-3 py-2"
+             style="border-bottom: 1px solid var(--app-border); min-height: 45px;">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-tools" style="color: var(--app-accent);"></i>
+                <strong style="font-size: 0.875rem;">Tool Activity</strong>
+                <span id="tool-panel-total" class="badge rounded-pill"
+                      style="font-size: 0.65rem; background: var(--app-bg-tertiary); color: var(--app-text-secondary);">0</span>
+            </div>
+            <div>
+                <button class="btn btn-app-ghost btn-sm" onclick="toggleToolPanel()" title="Close">
+                    <i class="bi bi-x-lg" style="font-size: 0.75rem;"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Panel body — scrollable -->
+        <div id="tool-panel-body" class="flex-grow-1 overflow-auto px-2 py-2"
+             style="font-size: 0.8125rem;">
+            <div id="tool-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
+                <i class="bi bi-tools" style="font-size: 1.5rem; opacity: 0.3;"></i>
+                <p class="mt-2 mb-0" style="font-size: 0.75rem;">No tool calls yet</p>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Info Modal -->
@@ -243,6 +305,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     configureMarked();
     initMermaid();
     loadChatHistory(conversationId);
+
+    // Restore tool panel state
+    if (sessionStorage.getItem('spark-tool-panel') === 'open') {
+        document.getElementById('tool-panel').style.display = 'flex';
+    }
 
     // Seed token counter from stored values
     try {
@@ -539,5 +606,334 @@ async function deleteConversation() {
         window.location.href = '/conversations';
     } catch (err) { AppToast.danger('Error', 'Failed to delete.'); }
 }
+
+// ==========================================================================
+// Speech Input (mic button) + Voice Conversation Mode
+// ==========================================================================
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let _speechRecognition = null;
+let _isListening = false;
+let _voiceModeActive = false;
+let _voiceSilenceTimer = null;
+let _voiceTTS = window.speechSynthesis;
+let _voiceIsSpeaking = false;
+let _voiceSelectedVoice = null;
+let _voiceSendInFlight = false;
+
+// -- Init: show buttons if supported --
+function initSpeechInput() {
+    if (!SpeechRecognition) return;
+    document.getElementById('btn-mic').style.display = '';
+    document.getElementById('btn-voice-mode').style.display = '';
+    _populateVoiceSelect();
+    // Voices load async in some browsers
+    if (_voiceTTS) _voiceTTS.onvoiceschanged = _populateVoiceSelect;
+}
+
+function _populateVoiceSelect() {
+    if (!_voiceTTS) return;
+    const select = document.getElementById('voice-select');
+    if (!select) return;
+    const voices = _voiceTTS.getVoices();
+    if (voices.length === 0) return;
+    const saved = localStorage.getItem('spark-voice-name');
+    select.innerHTML = '';
+    voices.forEach((v, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `${v.name} (${v.lang})`;
+        if (saved && v.name === saved) { opt.selected = true; _voiceSelectedVoice = v; }
+        select.appendChild(opt);
+    });
+    if (!_voiceSelectedVoice && voices.length > 0) _voiceSelectedVoice = voices[0];
+}
+
+function saveVoicePreference() {
+    const select = document.getElementById('voice-select');
+    const voices = _voiceTTS.getVoices();
+    const idx = parseInt(select.value);
+    if (voices[idx]) {
+        _voiceSelectedVoice = voices[idx];
+        localStorage.setItem('spark-voice-name', voices[idx].name);
+    }
+}
+
+// -- Mic button (push-to-talk, manual send) --
+function toggleSpeechInput() {
+    if (!SpeechRecognition) return;
+    if (_voiceModeActive) return; // Use voice mode controls instead
+
+    if (_isListening) {
+        if (_speechRecognition) _speechRecognition.stop();
+        _isListening = false;
+        _updateMicUI(false);
+        return;
+    }
+
+    const input = document.getElementById('chat-input');
+    input.dataset.preVoiceText = input.value;
+    _isListening = true;
+    _updateMicUI(true);
+    _startRecognition(false); // manual mode — no auto-send
+}
+
+// -- Voice Conversation Mode --
+function toggleVoiceMode() {
+    if (_voiceModeActive) {
+        _exitVoiceMode();
+    } else {
+        _enterVoiceMode();
+    }
+}
+
+function _enterVoiceMode() {
+    _voiceModeActive = true;
+    document.getElementById('voice-mode-bar').style.display = '';
+    const btn = document.getElementById('btn-voice-mode');
+    btn.classList.remove('btn-app-ghost');
+    btn.classList.add('btn-app-primary');
+    document.getElementById('voice-mode-icon').classList.replace('bi-headset', 'bi-headset');
+    btn.title = 'Exit Voice Mode';
+    _setVoiceStatus('Listening...');
+    _voiceStartListening();
+}
+
+function _exitVoiceMode() {
+    _voiceModeActive = false;
+    _voiceStopAll();
+    document.getElementById('voice-mode-bar').style.display = 'none';
+    const btn = document.getElementById('btn-voice-mode');
+    btn.classList.remove('btn-app-primary');
+    btn.classList.add('btn-app-ghost');
+    btn.title = 'Voice Conversation';
+    _isListening = false;
+    _updateMicUI(false);
+}
+
+function _voiceStopAll() {
+    if (_speechRecognition) { try { _speechRecognition.abort(); } catch(e) {} }
+    if (_voiceTTS) _voiceTTS.cancel();
+    if (_voiceSilenceTimer) { clearTimeout(_voiceSilenceTimer); _voiceSilenceTimer = null; }
+    _voiceIsSpeaking = false;
+    _voiceSendInFlight = false;
+    _isListening = false;
+}
+
+function _setVoiceStatus(text) {
+    const el = document.getElementById('voice-mode-status');
+    if (el) el.textContent = text;
+}
+
+function _voiceStartListening() {
+    if (!_voiceModeActive) return;
+    if (_voiceIsSpeaking) return; // Wait for TTS to finish
+    if (isRequestInProgress()) {
+        // LLM still responding — wait then retry
+        setTimeout(() => _voiceStartListening(), 500);
+        return;
+    }
+    _setVoiceStatus('Listening...');
+    _isListening = true;
+    _updateMicUI(true);
+    _startRecognition(true); // auto-send mode
+}
+
+function _startRecognition(autoSend) {
+    const input = document.getElementById('chat-input');
+    if (!autoSend) input.dataset.preVoiceText = input.value;
+
+    _speechRecognition = new SpeechRecognition();
+    _speechRecognition.continuous = true;
+    _speechRecognition.interimResults = true;
+    _speechRecognition.lang = navigator.language || 'en-US';
+
+    let finalTranscript = '';
+    let lastResultTime = Date.now();
+
+    _speechRecognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += t;
+            } else {
+                interim += t;
+            }
+        }
+        lastResultTime = Date.now();
+        const pre = autoSend ? '' : (input.dataset.preVoiceText || '');
+        const sep = pre && !pre.endsWith(' ') ? ' ' : '';
+        input.value = pre + sep + finalTranscript + interim;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+
+        if (autoSend) {
+            _setVoiceStatus('Listening...');
+            // Reset silence timer — auto-send after 1.5s of silence
+            if (_voiceSilenceTimer) clearTimeout(_voiceSilenceTimer);
+            if (finalTranscript.trim()) {
+                _voiceSilenceTimer = setTimeout(() => {
+                    if (_voiceModeActive && finalTranscript.trim()) {
+                        _voiceAutoSend(finalTranscript.trim());
+                    }
+                }, 1500);
+            }
+        }
+    };
+
+    _speechRecognition.onend = () => {
+        _isListening = false;
+        _updateMicUI(false);
+        if (autoSend && _voiceModeActive && !_voiceSendInFlight && finalTranscript.trim()) {
+            // Only send from onend if the silence timer hasn't already sent
+            if (_voiceSilenceTimer) clearTimeout(_voiceSilenceTimer);
+            _voiceAutoSend(finalTranscript.trim());
+        } else if (autoSend && _voiceModeActive && !_voiceSendInFlight) {
+            // No transcript but still in voice mode — restart listening
+            setTimeout(() => _voiceStartListening(), 300);
+        } else if (!autoSend) {
+            const pre = input.dataset.preVoiceText || '';
+            const sep = pre && !pre.endsWith(' ') ? ' ' : '';
+            if (finalTranscript) input.value = pre + sep + finalTranscript;
+        }
+    };
+
+    _speechRecognition.onerror = (event) => {
+        _isListening = false;
+        _updateMicUI(false);
+        if (event.error === 'no-speech' && autoSend && _voiceModeActive && !_voiceSendInFlight) {
+            // No speech detected — just restart listening in voice mode
+            setTimeout(() => _voiceStartListening(), 300);
+            return;
+        }
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+        AppToast.danger('Voice Input', 'Speech recognition error: ' + event.error);
+        if (_voiceModeActive && !_voiceSendInFlight) setTimeout(() => _voiceStartListening(), 1000);
+    };
+
+    try { _speechRecognition.start(); } catch(e) {
+        _isListening = false;
+        _updateMicUI(false);
+    }
+}
+
+function _voiceAutoSend(text) {
+    if (!_voiceModeActive || _voiceSendInFlight) return;
+    _voiceSendInFlight = true;
+
+    // Stop recognition without triggering another send (guard prevents re-entry)
+    if (_voiceSilenceTimer) { clearTimeout(_voiceSilenceTimer); _voiceSilenceTimer = null; }
+    if (_speechRecognition) { try { _speechRecognition.abort(); } catch(e) {} }
+    _isListening = false;
+    _updateMicUI(false);
+    _setVoiceStatus('Processing...');
+
+    // Wait a tick for any in-flight SSE to be fully cleaned up
+    setTimeout(() => {
+        const input = document.getElementById('chat-input');
+        clearEmptyState();
+        appendTextMessage('user', text, null);
+        input.value = '';
+        scrollToBottom();
+
+        // Send via SSE and hook into completion for TTS
+        sendMessageWithSSE(conversationId, text);
+
+        // Poll for completion
+        const pollDone = setInterval(() => {
+            if (!isRequestInProgress()) {
+                clearInterval(pollDone);
+                _voiceSendInFlight = false;
+                if (_voiceModeActive) {
+                    // Get the last assistant message text and speak it
+                    const msgs = document.querySelectorAll('.chat-message.assistant .markdown-content');
+                    if (msgs.length > 0) {
+                        const lastMsg = msgs[msgs.length - 1];
+                        const responseText = lastMsg.innerText || lastMsg.textContent || '';
+                        if (responseText.trim()) {
+                            _voiceSpeak(responseText.trim());
+                        } else {
+                            _voiceStartListening();
+                        }
+                    } else {
+                        _voiceStartListening();
+                    }
+                }
+            }
+        }, 300);
+    }, 100);
+}
+
+function _voiceSpeak(text) {
+    if (!_voiceTTS || !_voiceModeActive) { _voiceStartListening(); return; }
+    _voiceIsSpeaking = true;
+    _setVoiceStatus('Speaking...');
+
+    // Split long text into chunks at sentence boundaries (TTS has length limits)
+    const chunks = _splitIntoSentences(text);
+    let idx = 0;
+
+    function speakNext() {
+        if (idx >= chunks.length || !_voiceModeActive) {
+            _voiceIsSpeaking = false;
+            if (_voiceModeActive) _voiceStartListening();
+            return;
+        }
+        const utterance = new SpeechSynthesisUtterance(chunks[idx]);
+        if (_voiceSelectedVoice) utterance.voice = _voiceSelectedVoice;
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.onend = () => { idx++; speakNext(); };
+        utterance.onerror = (e) => {
+            if (e.error !== 'canceled') console.warn('TTS error:', e.error);
+            _voiceIsSpeaking = false;
+            if (_voiceModeActive) _voiceStartListening();
+        };
+        _voiceTTS.speak(utterance);
+    }
+
+    // If user starts speaking while TTS is active, interrupt
+    speakNext();
+}
+
+function _splitIntoSentences(text) {
+    // Split on sentence endings, keeping chunks under ~200 chars for reliable TTS
+    const raw = text.match(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g) || [text];
+    const chunks = [];
+    let current = '';
+    for (const s of raw) {
+        if ((current + s).length > 200 && current) {
+            chunks.push(current.trim());
+            current = s;
+        } else {
+            current += s;
+        }
+    }
+    if (current.trim()) chunks.push(current.trim());
+    return chunks;
+}
+
+// -- Shared mic UI --
+function _updateMicUI(listening) {
+    const btn = document.getElementById('btn-mic');
+    const icon = document.getElementById('mic-icon');
+    if (listening) {
+        btn.classList.remove('btn-app-ghost');
+        btn.classList.add('btn-app-danger');
+        icon.classList.remove('bi-mic');
+        icon.classList.add('bi-mic-fill');
+        btn.title = 'Stop listening';
+    } else {
+        btn.classList.remove('btn-app-danger');
+        btn.classList.add('btn-app-ghost');
+        icon.classList.remove('bi-mic-fill');
+        icon.classList.add('bi-mic');
+        btn.title = 'Voice input';
+    }
+}
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', initSpeechInput);
 </script>
 {% endblock %}

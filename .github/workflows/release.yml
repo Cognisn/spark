@@ -270,6 +270,10 @@ jobs:
           # Install create-dmg for proper DMG layout
           brew install create-dmg
 
+          # Stage the app in a clean directory to avoid extra files in DMG
+          mkdir -p dmg-staging
+          cp -R Spark.app dmg-staging/
+
           # create-dmg with custom background, icon positions, and Applications link
           create-dmg \
             --volname "Spark" \
@@ -283,7 +287,7 @@ jobs:
             --app-drop-link 480 260 \
             --no-internet-enable \
             "${DMG_NAME}" \
-            "Spark.app" \
+            "dmg-staging/" \
           || true
 
           # Verify DMG was created

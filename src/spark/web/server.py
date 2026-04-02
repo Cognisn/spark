@@ -405,6 +405,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
 def _start_heartbeat_monitor(app: FastAPI, interval: int, max_misses: int) -> None:
     """Monitor browser heartbeat and shutdown if too many misses."""
     import signal
+    import threading
     import time as _time
 
     app.state._last_heartbeat = _time.time()

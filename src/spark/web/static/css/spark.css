@@ -271,6 +271,127 @@
 }
 
 
+/* Tool Panel Sidecar — items */
+
+.tool-panel-item {
+    background: var(--app-bg-secondary);
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.tool-panel-item .tp-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    transition: var(--app-transition-fast);
+}
+
+.tool-panel-item .tp-header:hover {
+    background: var(--app-hover-bg);
+}
+
+.tool-panel-item .tp-icon {
+    color: var(--app-accent);
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.tool-panel-item .tp-name {
+    font-weight: 600;
+    color: var(--app-text-primary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tool-panel-item .tp-time {
+    font-size: 0.625rem;
+    color: var(--app-text-muted);
+    flex-shrink: 0;
+}
+
+.tool-panel-item .tp-status {
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.tool-panel-item .tp-status.running { color: var(--app-accent); animation: app-spin 0.75s linear infinite; }
+.tool-panel-item .tp-status.success { color: var(--app-success); }
+.tool-panel-item .tp-status.error { color: var(--app-danger); }
+
+.tool-panel-item .tp-detail {
+    padding: 0 0.625rem 0.5rem;
+    display: none;
+}
+
+.tool-panel-item .tp-detail-section {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.25rem;
+}
+
+.tool-panel-item .tp-detail-code {
+    font-size: 0.6875rem;
+    font-family: 'SFMono-Regular', 'Menlo', monospace;
+    background: var(--app-bg-deep);
+    border: 1px solid var(--app-border);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--app-text-secondary);
+    margin-bottom: 0.375rem;
+}
+
+
+/* Inline tool indicator in chat */
+
+.tool-inline-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    margin: 0.25rem 0;
+    font-size: 0.6875rem;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    border-radius: 0.375rem;
+    transition: var(--app-transition-fast);
+    max-width: fit-content;
+}
+
+.tool-inline-indicator:hover {
+    background: var(--app-hover-bg);
+    color: var(--app-accent);
+}
+
+.tool-inline-indicator .indicator-dots {
+    display: flex;
+    gap: 3px;
+}
+
+.tool-inline-indicator .indicator-dots .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.tool-inline-indicator .indicator-dots .dot.success { background: var(--app-success); }
+.tool-inline-indicator .indicator-dots .dot.error { background: var(--app-danger); }
+.tool-inline-indicator .indicator-dots .dot.running { background: var(--app-accent); animation: app-pulse 1.5s infinite; }
+
+
 /* Approval Card — mutation approval */
 
 .approval-card {

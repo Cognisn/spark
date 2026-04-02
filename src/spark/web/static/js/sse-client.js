@@ -121,6 +121,7 @@ function sendMessageWithSSE(conversationId, message) {
 function cancelCurrentRequest() {
     isRequestCancelled = true;
     closeStream();
+    finaliseStreamingToolGroup();
     finaliseStreamingMessage(accumulatedContent || '_Request cancelled._');
 }
 
