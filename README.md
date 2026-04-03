@@ -4,6 +4,12 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/cognisn-spark.svg)](https://pypi.org/project/cognisn-spark/)
 [![CI](https://github.com/Cognisn/spark/actions/workflows/ci.yml/badge.svg)](https://github.com/Cognisn/spark/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=alert_status)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=security_rating)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=reliability_rating)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=sqale_rating)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=vulnerabilities)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=bugs)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
 
 **Spark** is a secure, multi-provider AI research kit with a modern web interface. It connects to AI models from Anthropic, AWS Bedrock, Google Gemini, Ollama, and X.AI, with features like MCP tool integration, intelligent context management, persistent memory, and autonomous scheduled actions.
 
