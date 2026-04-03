@@ -606,13 +606,14 @@ jobs:
           NSIEOF
 
       - name: Install NSIS
-        run: choco install nsis -y
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "C:\Program Files\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build installer
         shell: cmd
-        run: |
-          set PATH=%PATH%;C:\Program Files (x86)\NSIS
-          makensis installer.nsi
+        run: makensis installer.nsi
 
       - name: Upload installer
         uses: actions/upload-artifact@v5
