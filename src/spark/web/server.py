@@ -459,23 +459,18 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     url_file.parent.mkdir(parents=True, exist_ok=True)
     url_file.write_text(url)
 
-    # Open browser after server starts (delayed so uvicorn has time to bind the port)
-    import threading as _threading
+    # Open browser after a short delay (gives uvicorn time to bind the port)
+    import threading
 
-    def _open_browser_when_ready() -> None:
-        """Wait for the server to start listening, then open the browser."""
-        import socket
-        import time as _t
+    def _open_browser_delayed() -> None:
+        import time
 
-        for _ in range(30):  # Wait up to 15 seconds
-            try:
-                with socket.create_connection((host, port), timeout=0.5):
-                    break
-            except (ConnectionRefusedError, OSError):
-                _t.sleep(0.5)
+        time.sleep(2)  # Simple delay — uvicorn binds quickly once serve() is called
+        logger.debug("Opening browser at %s", login_url)
         webbrowser.open(login_url)
 
-    _threading.Thread(target=_open_browser_when_ready, daemon=True).start()
+    threading.Thread(target=_open_browser_delayed, daemon=True).start()
+    logger.debug("Browser open scheduled, configuring server...")
 
     # SSL configuration
     ssl_kwargs: dict = {}
@@ -499,6 +494,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
             except Exception as e:
                 logger.warning("Failed to generate SSL certificate: %s", e)
 
+    logger.debug("Creating uvicorn config...")
     config = uvicorn.Config(
         app,
         host=host,
@@ -507,8 +503,8 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         access_log=False,
         **ssl_kwargs,
     )
-    server = uvicorn.Server(config)
     logger.info("Starting uvicorn server on %s:%d", host, port)
+    server = uvicorn.Server(config)
     try:
         await server.serve()
     except Exception as e:

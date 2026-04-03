@@ -248,11 +248,8 @@ def generate_nsis_welcome(width: int = 164, height: int = 314) -> Image.Image:
         b = int(BG_DEEP[2] * (1 - t) + BG_PRIMARY[2] * t)
         draw.line([(0, y), (width, y)], fill=(r, g, b))
 
-    # Cognisn logo mark
-    _draw_cognisn_logo(draw, width // 2, 70, radius=30)
-
-    # Lightning bolt centered below logo
-    _draw_lightning_bolt(draw, width // 2, 140, 50)
+    # Lightning bolt — centered vertically
+    _draw_lightning_bolt(draw, width // 2, 110, 55)
 
     # "Spark" below bolt
     font_title = _try_font(22, bold=True)
@@ -261,20 +258,20 @@ def generate_nsis_welcome(width: int = 164, height: int = 314) -> Image.Image:
     title = "Spark"
     bbox = draw.textbbox((0, 0), title, font=font_title)
     tw = bbox[2] - bbox[0]
-    draw.text(((width - tw) // 2, 175), title, fill=TEXT_PRIMARY, font=font_title)
+    draw.text(((width - tw) // 2, 150), title, fill=TEXT_PRIMARY, font=font_title)
 
     sub = "Secure Personal"
     bbox = draw.textbbox((0, 0), sub, font=font_sub)
     sw = bbox[2] - bbox[0]
-    draw.text(((width - sw) // 2, 205), sub, fill=TEXT_SECONDARY, font=font_sub)
+    draw.text(((width - sw) // 2, 180), sub, fill=TEXT_SECONDARY, font=font_sub)
 
     sub2 = "AI Research Kit"
     bbox = draw.textbbox((0, 0), sub2, font=font_sub)
     s2w = bbox[2] - bbox[0]
-    draw.text(((width - s2w) // 2, 220), sub2, fill=TEXT_SECONDARY, font=font_sub)
+    draw.text(((width - s2w) // 2, 195), sub2, fill=TEXT_SECONDARY, font=font_sub)
 
     # Accent line
-    draw.line([(30, 250), (width - 30, 250)], fill=ACCENT, width=1)
+    draw.line([(30, 225), (width - 30, 225)], fill=ACCENT, width=1)
 
     # "by Cognisn" near bottom
     by_text = "by Cognisn"

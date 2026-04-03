@@ -384,10 +384,6 @@ jobs:
           !define MUI_WELCOMEFINISHPAGE_BITMAP "assets\\installer\\nsis-welcome.bmp"
           !define MUI_UNWELCOMEFINISHPAGE_BITMAP "assets\\installer\\nsis-welcome.bmp"
 
-          ; Colours — Cognisn navy background with light text
-          !define MUI_BGCOLOR "080E1E"
-          !define MUI_TEXTCOLOR "E8F0FA"
-
           !define MUI_WELCOMEPAGE_TITLE "Welcome to Spark Setup"
           !define MUI_WELCOMEPAGE_TEXT "This will install Spark — Secure Personal AI Research Kit by Cognisn.\$\\r\$\\n\$\\r\$\\nSpark provides a multi-provider LLM interface with MCP tool integration, autonomous actions, and a built-in security layer.\$\\r\$\\n\$\\r\$\\nClick Next to continue."
           !define MUI_FINISHPAGE_TITLE "Spark Installation Complete"
@@ -406,6 +402,9 @@ jobs:
           !insertmacro MUI_LANGUAGE "English"
 
           Section "Install"
+            ; Clear PyApp cache from any previous version so the new wheel is used
+            RMDir /r "\$LOCALAPPDATA\\pyapp"
+
             SetOutPath \$INSTDIR
             File "binary\\spark-windows-x86_64.exe"
             Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark-engine.exe"
@@ -431,6 +430,9 @@ jobs:
           SectionEnd
 
           Section "Uninstall"
+            ; Remove PyApp cached environment
+            RMDir /r "\$LOCALAPPDATA\\pyapp"
+
             Delete "\$INSTDIR\\spark-engine.exe"
             Delete "\$INSTDIR\\launcher.vbs"
             Delete "\$INSTDIR\\spark.bat"
