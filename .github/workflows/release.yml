@@ -4,10 +4,6 @@ on:
   release:
     types: [published]
 
-permissions:
-  id-token: write
-  contents: write
-
 env:
   PYAPP_VERSION: "0.24.0"
   PYTHON_VERSION: "3.12"
@@ -705,6 +701,8 @@ jobs:
     needs: build-wheel
     runs-on: ubuntu-latest
     environment: pypi
+    permissions:
+      id-token: write
     steps:
       - name: Download wheel
         uses: actions/download-artifact@v5
@@ -713,10 +711,12 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b54027e44d48159144e12fb4 # release/v1
 
   # Step 7: Attach all artifacts to the GitHub Release
   attach-release:
+    permissions:
+      contents: write
     needs:
       - build-binaries
       - create-macos-installer
@@ -734,7 +734,7 @@ jobs:
         run: find artifacts/ -type f | sort
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a07b400ef65b2de6b4f2 # v2
         with:
           files: |
             artifacts/spark-macos-x86_64/*

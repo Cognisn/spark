@@ -20,9 +20,9 @@
          style="border-bottom: 1px solid var(--app-border);">
         <div>
             <a href="/conversations" class="btn btn-app-ghost btn-sm me-2"><i class="bi bi-arrow-left"></i></a>
-            <strong id="conv-display-name" style="cursor: pointer;" onclick="renameConversation()" title="Click to rename">{{ conversation.name }}</strong>
+            <strong id="conv-display-name" style="cursor: pointer;" onclick="renameConversation()" onkeydown="if(event.key==='Enter')renameConversation()" tabindex="0" role="button" title="Click to rename">{{ conversation.name }}</strong>
             <button class="btn btn-app-ghost btn-sm ms-1" onclick="renameConversation()" title="Rename"><i class="bi bi-pencil" style="font-size: 0.7rem;"></i></button>
-            <span class="ms-1" style="font-size: 0.8125rem; color: var(--app-text-muted); cursor: pointer;" onclick="changeModel()" title="Click to change model" id="conv-display-model">{{ conversation.model_id }}</span>
+            <span class="ms-1" style="font-size: 0.8125rem; color: var(--app-text-muted); cursor: pointer;" onclick="changeModel()" onkeydown="if(event.key==='Enter')changeModel()" tabindex="0" role="button" title="Click to change model" id="conv-display-model">{{ conversation.model_id }}</span>
         </div>
         <div class="d-flex gap-1">
             <button class="btn btn-app-ghost btn-sm" id="btn-favourite" title="Favourite" onclick="toggleFavourite()"
@@ -73,8 +73,12 @@
                 <button type="submit" class="btn btn-app-primary" id="btn-send"><i class="bi bi-send"></i></button>
             </div>
         </form>
-        <div style="font-size: 0.6875rem; color: var(--app-text-muted); margin-top: 0.375rem; padding-left: 0.25rem;">
-            Tokens: <span id="tc-in">0</span> in / <span id="tc-out">0</span> out
+        <div style="font-size: 0.6875rem; color: var(--app-text-muted); margin-top: 0.375rem; padding-left: 0.25rem; display: flex; gap: 1rem;">
+            <span>Tokens: <span id="tc-in">0</span> in / <span id="tc-out">0</span> out</span>
+            <span id="tc-cache" style="display: none; color: var(--app-accent); opacity: 0.8;">
+                Cache: <span id="tc-cache-read">0</span> read / <span id="tc-cache-create">0</span> created
+                <span id="tc-cache-savings" style="display: none; color: var(--app-success); font-weight: 600;"></span>
+            </span>
         </div>
     </div>
 
@@ -264,6 +268,30 @@
     </div>
 </div>
 
+<!-- Model Selector Modal -->
+<div class="modal fade" id="modelSelectorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cpu me-2" style="color: var(--app-accent);"></i>Change Model</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control form-control-sm" id="model-search"
+                           placeholder="Search models..." oninput="filterModelList()"
+                           style="font-size: 0.8125rem;">
+                </div>
+                <div id="model-selector-loading" class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm" style="color: var(--app-accent);"></div>
+                    <span class="ms-2" style="color: var(--app-text-secondary);">Loading models...</span>
+                </div>
+                <div id="model-selector-list" style="display: none; max-height: 400px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog">
@@ -304,6 +332,7 @@
 <script>
 const conversationId = {{ conversation.id }};
 const conversationName = "{{ conversation.name }}";
+window._currentModelId = "{{ conversation.model_id or '' }}";
 
 document.addEventListener('DOMContentLoaded', async () => {
     configureMarked();
@@ -581,26 +610,96 @@ async function renameConversation() {
     } catch (err) { AppToast.danger('Error', 'Failed to rename.'); }
 }
 
+let _allModels = [];
+
 async function changeModel() {
+    const modal = new bootstrap.Modal(document.getElementById('modelSelectorModal'));
+    document.getElementById('model-selector-loading').style.display = '';
+    document.getElementById('model-selector-list').style.display = 'none';
+    document.getElementById('model-search').value = '';
+    modal.show();
+
     try {
         const resp = await fetch('/conversations/api/models');
         const data = await resp.json();
-        const models = data.models || [];
-        if (!models.length) { AppToast.warning('No models', 'No models available.'); return; }
+        _allModels = data.models || [];
 
-        const names = models.map(m => `${m.name} (${m.provider}) [${m.id}]`);
-        const choice = prompt('Select model ID:\\n' + names.join('\\n') + '\\n\\nEnter model ID:',
-            document.getElementById('conv-display-model').textContent);
-        if (!choice || !choice.trim()) return;
+        document.getElementById('model-selector-loading').style.display = 'none';
+        renderModelList(_allModels);
+        document.getElementById('model-selector-list').style.display = '';
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to load models.');
+        modal.hide();
+    }
+}
 
-        const modelId = choice.trim();
+function renderModelList(models) {
+    const list = document.getElementById('model-selector-list');
+    const currentModel = window._currentModelId || '';
+
+    // Group by provider
+    const grouped = {};
+    models.forEach(m => {
+        const provider = m.provider || 'Unknown';
+        if (!grouped[provider]) grouped[provider] = [];
+        grouped[provider].push(m);
+    });
+
+    let html = '';
+    for (const [provider, providerModels] of Object.entries(grouped)) {
+        html += `<div style="font-size: 0.6875rem; font-weight: 600; color: var(--app-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.5rem 0.25rem; margin-top: 0.25rem;">${provider}</div>`;
+        providerModels.forEach(m => {
+            const isActive = m.id === currentModel;
+            const toolBadge = m.supports_tools
+                ? '<span style="font-size:0.5625rem; color:var(--app-success);">tools</span>'
+                : '';
+            const ctx = m.context_length > 0
+                ? (m.context_length >= 1000000 ? (m.context_length / 1000000).toFixed(1) + 'M'
+                   : m.context_length >= 1000 ? Math.round(m.context_length / 1000) + 'K'
+                   : m.context_length)
+                : '';
+
+            html += `
+                <div class="d-flex align-items-center gap-2 px-2 py-2 rounded model-selector-item${isActive ? ' active' : ''}"
+                     style="cursor: pointer; font-size: 0.8125rem; ${isActive ? 'background: var(--app-active-bg);' : ''}"
+                     onclick="selectModel('${m.id}')"
+                     data-model-name="${(m.name || m.id).toLowerCase()}"
+                     data-model-id="${m.id.toLowerCase()}">
+                    ${isActive ? '<i class="bi bi-check-circle-fill" style="color: var(--app-accent); flex-shrink:0;"></i>' : '<i class="bi bi-circle" style="color: var(--app-text-muted); opacity:0.3; flex-shrink:0;"></i>'}
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight: ${isActive ? '600' : '400'}; color: var(--app-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.name || m.id}</div>
+                        <div style="font-size:0.6875rem; color:var(--app-text-muted);">${m.id}</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2" style="flex-shrink:0;">
+                        ${toolBadge}
+                        <span style="font-size:0.625rem; color:var(--app-text-muted);">${ctx}</span>
+                    </div>
+                </div>`;
+        });
+    }
+    list.innerHTML = html;
+}
+
+function filterModelList() {
+    const query = document.getElementById('model-search').value.toLowerCase();
+    document.querySelectorAll('.model-selector-item').forEach(item => {
+        const name = item.dataset.modelName || '';
+        const id = item.dataset.modelId || '';
+        item.style.display = (name.includes(query) || id.includes(query)) ? '' : 'none';
+    });
+}
+
+async function selectModel(modelId) {
+    try {
         const r = await fetch(`/conversations/api/${conversationId}/model`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ model_id: modelId }),
         });
         if (r.ok) {
+            window._currentModelId = modelId;
             document.getElementById('conv-display-model').textContent = modelId;
             AppToast.success('Model changed', `Now using ${modelId}`);
+            bootstrap.Modal.getInstance(document.getElementById('modelSelectorModal'))?.hide();
         }
     } catch (err) { AppToast.danger('Error', 'Failed to change model.'); }
 }

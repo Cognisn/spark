@@ -218,27 +218,16 @@ class GoogleGeminiProvider(LLMService):
                 tools=_convert_tools(tools),
             )
 
-        # Gemini context caching: cache system prompt + tools to reduce input costs
-        if prompt_caching and system and self._model_id:
-            cache_name = self._get_or_create_context_cache(system, tools)
-            if cache_name:
-                req_kwargs["cached_content"] = cache_name
-                # Remove system_instruction from config when using cached content
-                config.pop("system_instruction", None)
-                if tools:
-                    req_kwargs["config"] = types.GenerateContentConfig(
-                        max_output_tokens=max_tokens,
-                        temperature=temperature,
-                    )
-                else:
-                    req_kwargs["config"] = types.GenerateContentConfig(**config)
-
         for attempt in range(self._max_retries + 1):
             try:
                 response = self._client.models.generate_content(**req_kwargs)
                 return _normalise_response(response)
             except Exception as e:
                 err = str(e).lower()
+                # Don't retry argument/type errors — those are code bugs
+                if "argument" in err or "typeerror" in err:
+                    logger.error("Gemini invocation failed (non-retryable): %s", e)
+                    break
                 retryable = (
                     "rate" in err
                     or "429" in err

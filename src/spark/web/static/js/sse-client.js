@@ -42,7 +42,12 @@ function sendMessageWithSSE(conversationId, message) {
         if (data.final) {
             finaliseStreamingMessage(data.content);
             if (data.usage) {
-                updateTokenDisplay(data.usage.input_tokens, data.usage.output_tokens);
+                updateTokenDisplay(
+                    data.usage.input_tokens,
+                    data.usage.output_tokens,
+                    data.usage.cache_read_input_tokens,
+                    data.usage.cache_creation_input_tokens
+                );
             }
         } else {
             accumulatedContent += data.content || '';
@@ -52,6 +57,15 @@ function sendMessageWithSSE(conversationId, message) {
 
     currentEventSource.addEventListener('tool_start', (e) => {
         const data = JSON.parse(e.data);
+        // Finalise the current streaming bubble as a permanent message so the
+        // intermediate text ("Sure! Let me check") stays visible in its own bubble.
+        // Then reset for the next LLM response after tool completion.
+        if (accumulatedContent.trim()) {
+            finaliseStreamingMessage(accumulatedContent);
+        } else {
+            removeStreamingMessage();
+        }
+        accumulatedContent = '';
         appendStreamingToolStart(data.tool_name, data.params, data.tool_use_id);
     });
 

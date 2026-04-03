@@ -21,7 +21,7 @@ async def heartbeat(request: Request) -> JSONResponse:
 @router.post("/api/open-folder")
 async def open_folder(request: Request) -> JSONResponse:
     """Open a system folder in the file browser."""
-    import subprocess
+    import asyncio
     import sys
 
     folder_type = request.query_params.get("type", "logs")
@@ -39,12 +39,12 @@ async def open_folder(request: Request) -> JSONResponse:
 
     path.mkdir(parents=True, exist_ok=True)
 
-    if sys.platform == "darwin":
-        subprocess.Popen(["open", str(path)])
-    elif sys.platform == "win32":
-        subprocess.Popen(["explorer", str(path)])
-    else:
-        subprocess.Popen(["xdg-open", str(path)])
+    cmd = (
+        ["open", str(path)]
+        if sys.platform == "darwin"
+        else ["explorer", str(path)] if sys.platform == "win32" else ["xdg-open", str(path)]
+    )
+    await asyncio.create_subprocess_exec(*cmd)
 
     return JSONResponse({"status": "ok", "path": str(path)})
 
@@ -65,7 +65,9 @@ async def quit_app(request: Request) -> JSONResponse:
         await asyncio.sleep(0.5)
         os.kill(os.getpid(), signal.SIGINT)
 
-    asyncio.ensure_future(_shutdown())
+    task = asyncio.ensure_future(_shutdown())
+    # Store reference on app state to prevent garbage collection
+    request.app.state._shutdown_task = task
     return JSONResponse({"status": "ok"})
 
 

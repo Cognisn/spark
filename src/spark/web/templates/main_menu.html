@@ -85,7 +85,9 @@
                     <a href="/chat/{{ conv.id }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
                        style="{% if not loop.last %}border-bottom: 1px solid var(--app-border);{% endif %} cursor: pointer; transition: background 0.15s;"
                        onmouseover="this.style.background='var(--app-hover-bg)'"
-                       onmouseout="this.style.background=''">
+                       onmouseout="this.style.background=''"
+                       onfocus="this.style.background='var(--app-hover-bg)'"
+                       onblur="this.style.background=''">
                         <div class="flex-grow-1" style="min-width: 0;">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="bi bi-star-fill" style="color: var(--app-warning); font-size: 0.75rem;"></i>
@@ -115,7 +117,9 @@
                     <a href="/chat/{{ conv.id }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
                        style="{% if not loop.last %}border-bottom: 1px solid var(--app-border);{% endif %} cursor: pointer; transition: background 0.15s;"
                        onmouseover="this.style.background='var(--app-hover-bg)'"
-                       onmouseout="this.style.background=''">
+                       onmouseout="this.style.background=''"
+                       onfocus="this.style.background='var(--app-hover-bg)'"
+                       onblur="this.style.background=''">
                         <div class="flex-grow-1" style="min-width: 0;">
                             <div class="d-flex align-items-center gap-2">
                                 <span style="font-weight: 600; color: var(--app-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">

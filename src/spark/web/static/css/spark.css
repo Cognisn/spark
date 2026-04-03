@@ -43,14 +43,25 @@
     color: var(--app-text-muted);
     margin-top: 0.25rem;
     padding: 0 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .chat-message-wrapper.user .message-timestamp {
-    text-align: right;
+    justify-content: flex-end;
 }
 
 .chat-message-wrapper.assistant .message-timestamp {
-    text-align: left;
+    justify-content: flex-start;
+}
+
+.message-model {
+    font-size: 0.5625rem;
+    color: var(--app-accent);
+    opacity: 0.7;
+    margin-left: auto;
+    font-family: 'SFMono-Regular', 'Menlo', monospace;
 }
 
 .chat-message.user {

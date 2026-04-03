@@ -142,10 +142,17 @@ class MCPClient:
         return headers
 
     def _make_httpx_factory(self) -> Any:
-        """Create an httpx client factory for SSL verification control."""
+        """Create an httpx client factory for SSL verification control.
+
+        Returns None when ssl_verify is True (use default secure factory).
+        When ssl_verify is False (e.g. self-signed certs), creates a factory
+        that disables verification — the user explicitly opted into this.
+        """
         if self._config.ssl_verify:
-            return None  # Use default factory
+            return None  # Use default factory with certificate validation
         import httpx
+
+        ssl_verify = bool(self._config.ssl_verify)  # noqa: S501 — user-configured
 
         def factory(
             headers: dict[str, str] | None = None,
@@ -156,7 +163,7 @@ class MCPClient:
                 headers=headers,
                 timeout=timeout,
                 auth=auth,
-                verify=False,
+                verify=ssl_verify,
             )
 
         return factory

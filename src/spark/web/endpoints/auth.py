@@ -32,12 +32,14 @@ async def authenticate(request: Request) -> RedirectResponse:
         )
 
     session_id = request.app.state.session.create()
+    is_ssl = request.url.scheme == "https"
     response = RedirectResponse(url="/loading", status_code=303)
     response.set_cookie(
         key="spark_session",
         value=session_id,
         httponly=True,
         samesite="lax",
+        secure=is_ssl,
     )
     return response
 
@@ -51,12 +53,14 @@ async def auto_login(request: Request) -> RedirectResponse:
         return RedirectResponse(url="/login", status_code=303)
 
     session_id = request.app.state.session.create()
+    is_ssl = request.url.scheme == "https"
     response = RedirectResponse(url="/loading", status_code=303)
     response.set_cookie(
         key="spark_session",
         value=session_id,
         httponly=True,
         samesite="lax",
+        secure=is_ssl,
     )
     return response
 

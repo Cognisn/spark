@@ -275,7 +275,15 @@ class AnthropicDirectProvider(LLMService):
 
                 elif event_type == "message_start":
                     if hasattr(event, "message") and hasattr(event.message, "usage"):
-                        usage["input_tokens"] = event.message.usage.input_tokens
+                        msg_usage = event.message.usage
+                        usage["input_tokens"] = msg_usage.input_tokens
+                        # Capture cache metrics from message_start
+                        cache_create = getattr(msg_usage, "cache_creation_input_tokens", 0)
+                        cache_read = getattr(msg_usage, "cache_read_input_tokens", 0)
+                        if cache_create:
+                            usage["cache_creation_input_tokens"] = cache_create
+                        if cache_read:
+                            usage["cache_read_input_tokens"] = cache_read
 
             # Get final message
             final = stream.get_final_message()
@@ -314,13 +322,30 @@ def _normalise_response(response: Any) -> dict[str, Any]:
             tool_blocks.append(tool)
             content_blocks.append(tool)
 
+    usage_dict = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+    # Capture prompt caching metrics when available
+    cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0)
+    cache_read = getattr(response.usage, "cache_read_input_tokens", 0)
+    if cache_creation or cache_read:
+        usage_dict["cache_creation_input_tokens"] = cache_creation
+        usage_dict["cache_read_input_tokens"] = cache_read
+        total_input = response.usage.input_tokens + cache_read + cache_creation
+        pct_cached = (cache_read / max(total_input, 1)) * 100
+        logger.info(
+            "Prompt cache: %d created, %d read, %d uncached (%.0f%% of input served from cache)",
+            cache_creation,
+            cache_read,
+            response.usage.input_tokens,
+            pct_cached,
+        )
+
     return {
         "content": "".join(text_parts),
         "stop_reason": response.stop_reason or "end_turn",
-        "usage": {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-        },
+        "usage": usage_dict,
         "tool_use": tool_blocks if tool_blocks else None,
         "content_blocks": content_blocks,
     }

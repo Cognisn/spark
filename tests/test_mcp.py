@@ -21,7 +21,7 @@ class TestMCPServerConfig:
         assert cfg.transport == "stdio"
         assert cfg.enabled is True
         assert cfg.auth_type == "none"
-        assert cfg.timeout == 30.0
+        assert cfg.timeout == pytest.approx(30.0)
         assert cfg.ssl_verify is True
 
     def test_custom(self) -> None:
@@ -69,11 +69,14 @@ class TestMCPClientAuth:
     def test_basic(self) -> None:
         client = MCPClient(
             MCPServerConfig(
-                name="t", auth_type="basic", basic_username="user", basic_password="pass"
+                name="t",
+                auth_type="basic",
+                basic_username="user",
+                basic_password="test-cred",  # noqa: S106
             )
         )
         headers = client._build_auth_headers()
-        expected = base64.b64encode(b"user:pass").decode()
+        expected = base64.b64encode(b"user:test-cred").decode()
         assert headers["Authorization"] == f"Basic {expected}"
 
     def test_basic_no_password(self) -> None:
@@ -104,7 +107,7 @@ class TestMCPClientProperties:
     def test_config_accessible(self) -> None:
         cfg = MCPServerConfig(name="t", timeout=99.0)
         client = MCPClient(cfg)
-        assert client.config.timeout == 99.0
+        assert client.config.timeout == pytest.approx(99.0)
 
 
 # -- MCPManager ---------------------------------------------------------------
@@ -124,18 +127,18 @@ class TestMCPManager:
     def test_get_server_timeout(self) -> None:
         mgr = MCPManager()
         mgr.add_server(MCPServerConfig(name="s1", timeout=45.0))
-        assert mgr.get_server_timeout(server_name="s1") == 45.0
+        assert mgr.get_server_timeout(server_name="s1") == pytest.approx(45.0)
 
     def test_get_server_timeout_default(self) -> None:
         mgr = MCPManager()
-        assert mgr.get_server_timeout(server_name="unknown") == 30.0
+        assert mgr.get_server_timeout(server_name="unknown") == pytest.approx(30.0)
 
     def test_get_server_timeout_by_tool(self) -> None:
         mgr = MCPManager()
         mgr.add_server(MCPServerConfig(name="s1", timeout=99.0))
         # Manually populate cache
         mgr._tools_cache = [{"name": "my_tool", "server": "s1"}]
-        assert mgr.get_server_timeout(tool_name="my_tool") == 99.0
+        assert mgr.get_server_timeout(tool_name="my_tool") == pytest.approx(99.0)
 
     def test_invalidate_cache(self) -> None:
         mgr = MCPManager()
@@ -185,7 +188,7 @@ class TestMCPManager:
         client = mgr.servers["authed"]
         assert client.config.auth_type == "bearer"
         assert client.config.auth_token == "secret"
-        assert client.config.timeout == 60.0
+        assert client.config.timeout == pytest.approx(60.0)
         assert client.config.ssl_verify is False
 
 

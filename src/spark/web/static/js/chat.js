@@ -8,14 +8,42 @@ const TOOL_RESULTS_MARKER = '[TOOL_RESULTS]';
 // Running token totals
 let totalTokensIn = 0;
 let totalTokensOut = 0;
+let totalCacheRead = 0;
+let totalCacheCreate = 0;
 
-function updateTokenDisplay(inputTokens, outputTokens) {
+function updateTokenDisplay(inputTokens, outputTokens, cacheRead, cacheCreate) {
     totalTokensIn += inputTokens || 0;
     totalTokensOut += outputTokens || 0;
     const inEl = document.getElementById('tc-in');
     const outEl = document.getElementById('tc-out');
     if (inEl) inEl.textContent = totalTokensIn.toLocaleString();
     if (outEl) outEl.textContent = totalTokensOut.toLocaleString();
+
+    // Update cache stats if present
+    if (cacheRead || cacheCreate) {
+        totalCacheRead += cacheRead || 0;
+        totalCacheCreate += cacheCreate || 0;
+        const cacheEl = document.getElementById('tc-cache');
+        const readEl = document.getElementById('tc-cache-read');
+        const createEl = document.getElementById('tc-cache-create');
+        const savingsEl = document.getElementById('tc-cache-savings');
+        if (cacheEl) cacheEl.style.display = '';
+        if (readEl) readEl.textContent = totalCacheRead.toLocaleString();
+        if (createEl) createEl.textContent = totalCacheCreate.toLocaleString();
+
+        // Calculate cost savings percentage
+        // Without cache: all tokens at full price
+        // With cache: uncached at full, cache_read at 10%, cache_create at 125%
+        if (savingsEl && (totalCacheRead > 0 || totalCacheCreate > 0)) {
+            const withoutCache = totalTokensIn + totalCacheRead + totalCacheCreate;
+            const withCache = totalTokensIn + (totalCacheRead * 0.1) + (totalCacheCreate * 1.25);
+            const savingsPct = withoutCache > 0 ? ((1 - withCache / withoutCache) * 100) : 0;
+            if (savingsPct > 0) {
+                savingsEl.textContent = `(${Math.round(savingsPct)}% saved)`;
+                savingsEl.style.display = '';
+            }
+        }
+    }
 }
 
 function localTime() {
@@ -101,7 +129,7 @@ function appendMessage(msg) {
         return;
     }
 
-    appendTextMessage(role, content, timestamp);
+    appendTextMessage(role, content, timestamp, msg.model_id || null);
 }
 
 
@@ -133,8 +161,11 @@ function _buildMessageHeader(role) {
     `;
 }
 
-function _buildTimestamp(timestamp) {
-    return `<div class="message-timestamp">${_formatDateTime(timestamp)}</div>`;
+function _buildTimestamp(timestamp, modelId) {
+    const modelBadge = modelId
+        ? `<span class="message-model">${modelId}</span>`
+        : '';
+    return `<div class="message-timestamp">${_formatDateTime(timestamp)}${modelBadge}</div>`;
 }
 
 function _buildCopyButton(contentText) {
@@ -149,7 +180,7 @@ function _buildCopyButton(contentText) {
     `;
 }
 
-function appendTextMessage(role, content, timestamp) {
+function appendTextMessage(role, content, timestamp, modelId) {
     clearEmptyState();
     const container = document.getElementById('chat-messages');
 
@@ -170,8 +201,10 @@ function appendTextMessage(role, content, timestamp) {
         bubble.innerHTML = `${header}<div class="message-body">${escapeHtml(content)}</div>${copyBtn}`;
     }
 
+    // Show model badge on assistant messages
+    const badge = (role === 'assistant') ? (modelId || window._currentModelId || '') : null;
     wrapper.appendChild(bubble);
-    wrapper.insertAdjacentHTML('beforeend', _buildTimestamp(timestamp));
+    wrapper.insertAdjacentHTML('beforeend', _buildTimestamp(timestamp, badge));
     container.appendChild(wrapper);
 }
 
@@ -390,6 +423,14 @@ function appendApprovalCard(toolName, params, toolUseId) {
 let streamingMessageDiv = null;
 let streamingWrapperDiv = null;
 
+function removeStreamingMessage() {
+    if (streamingWrapperDiv) {
+        streamingWrapperDiv.remove();
+        streamingMessageDiv = null;
+        streamingWrapperDiv = null;
+    }
+}
+
 function startStreamingMessage() {
     clearEmptyState();
     const container = document.getElementById('chat-messages');
@@ -436,9 +477,9 @@ function finaliseStreamingMessage(content) {
     actions.innerHTML = _buildCopyButton(content);
     streamingMessageDiv.appendChild(actions.firstElementChild);
 
-    // Add timestamp outside the bubble
+    // Add timestamp with model badge outside the bubble
     if (streamingWrapperDiv) {
-        streamingWrapperDiv.insertAdjacentHTML('beforeend', _buildTimestamp(null));
+        streamingWrapperDiv.insertAdjacentHTML('beforeend', _buildTimestamp(null, window._currentModelId || ''));
     }
 
     streamingMessageDiv = null;

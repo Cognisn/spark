@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from spark.core.application import (
     _default_settings,
     _ensure_config,
@@ -88,5 +90,5 @@ class TestDefaultSettings:
 
     def test_conversation_defaults(self) -> None:
         defaults = _default_settings()
-        assert defaults["conversation"]["rollup_threshold"] == 0.3
+        assert defaults["conversation"]["rollup_threshold"] == pytest.approx(0.3)
         assert defaults["conversation"]["max_tool_iterations"] == 25

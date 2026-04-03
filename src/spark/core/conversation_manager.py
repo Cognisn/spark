@@ -150,6 +150,9 @@ class ConversationManager:
         """Retrieve relevant context from the vector index for augmentation.
 
         Searches the current conversation AND any linked conversations.
+        Only returns context from messages that have been compacted (rolled up),
+        NOT from messages still in the active history — those are already sent
+        to the LLM as part of the conversation and would waste tokens.
         """
         if not conv.get("rag_enabled", True):
             return None
@@ -162,6 +165,19 @@ class ConversationManager:
         threshold = conv.get("rag_threshold") or 0.4
 
         try:
+            # Get the content of active (non-rolled-up) messages to filter them out
+            from spark.database import messages as msg_db
+
+            active_msgs = msg_db.get_messages(self._db, conversation_id)
+            active_content_hashes = set()
+            for m in active_msgs:
+                content = m.get("content", "")
+                if content:
+                    import hashlib
+
+                    # Hash the content the same way context_index does
+                    active_content_hashes.add(hashlib.sha256(content.encode()).hexdigest())
+
             # Build list of conversation IDs to search (current + linked)
             search_ids = [conversation_id]
             try:
@@ -172,10 +188,12 @@ class ConversationManager:
                     link_id = link.get("id")
                     if link_id:
                         search_ids.append(link_id)
-                        # Ensure linked conversations are also indexed
                         self._get_vector_index(link_id, user_guid)
             except Exception as e:
                 logger.debug("Failed to get linked conversations: %s", e)
+
+            # Request extra results since we'll filter some out
+            fetch_k = top_k * 3
 
             if len(search_ids) > 1:
                 logger.info(
@@ -183,15 +201,44 @@ class ConversationManager:
                     len(search_ids),
                     len(search_ids) - 1,
                 )
-                results = idx.search_multi(query, search_ids, top_k=top_k, threshold=threshold)
+                results = idx.search_multi(query, search_ids, top_k=fetch_k, threshold=threshold)
             else:
-                results = idx.search(query, top_k=top_k, threshold=threshold)
+                results = idx.search(query, top_k=fetch_k, threshold=threshold)
 
             if not results:
                 return None
 
-            lines = ["## Relevant Context from History\n"]
+            # Filter out results whose content is already in active messages
+            filtered = []
             for r in results:
+                content = r.get("content_text", "")
+                content_hash = r.get("content_hash", "")
+                conv_id = r.get("conversation_id", conversation_id)
+
+                # Always include results from linked conversations
+                if conv_id != conversation_id:
+                    filtered.append(r)
+                    continue
+
+                # For current conversation, skip if content is in active history
+                if content_hash and content_hash in active_content_hashes:
+                    continue
+                if content:
+                    import hashlib
+
+                    h = hashlib.sha256(content.encode()).hexdigest()
+                    if h in active_content_hashes:
+                        continue
+
+                filtered.append(r)
+
+            filtered = filtered[:top_k]
+
+            if not filtered:
+                return None
+
+            lines = ["## Relevant Context from History\n"]
+            for r in filtered:
                 element_type = r.get("element_type", "")
                 content = r.get("content_text", "")
                 conv_id = r.get("conversation_id", conversation_id)
@@ -199,7 +246,11 @@ class ConversationManager:
                 if content:
                     lines.append(f"- [{element_type}]{source} {content[:300]}")
 
-            logger.info("RAG retrieved %d relevant context items", len(results))
+            logger.info(
+                "RAG retrieved %d relevant context items (filtered from %d)",
+                len(filtered),
+                len(results),
+            )
             return "\n".join(lines)
         except Exception as e:
             logger.debug("Failed to retrieve context: %s", e)
@@ -469,10 +520,20 @@ class ConversationManager:
                         "error": True,
                     }
 
-                # Accumulate usage
+                # Accumulate usage (including cache stats if present)
                 resp_usage = response.get("usage", {})
                 total_usage["input_tokens"] += resp_usage.get("input_tokens", 0)
                 total_usage["output_tokens"] += resp_usage.get("output_tokens", 0)
+                if resp_usage.get("cache_read_input_tokens"):
+                    total_usage["cache_read_input_tokens"] = (
+                        total_usage.get("cache_read_input_tokens", 0)
+                        + resp_usage["cache_read_input_tokens"]
+                    )
+                if resp_usage.get("cache_creation_input_tokens"):
+                    total_usage["cache_creation_input_tokens"] = (
+                        total_usage.get("cache_creation_input_tokens", 0)
+                        + resp_usage["cache_creation_input_tokens"]
+                    )
 
                 stop_reason = response.get("stop_reason", "end_turn")
 
