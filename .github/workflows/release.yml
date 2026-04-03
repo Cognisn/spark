@@ -164,43 +164,32 @@ jobs:
           echo "wheel_name=${WHEEL_NAME}" >> $GITHUB_OUTPUT
         id: copy_wheel
 
-      # --- For standard/full: download deps and install into wheel cache ---
+      # --- For standard/full: download dependency wheels as companion archive ---
       - name: Download dependency wheels
         if: matrix.variant != 'lite'
         shell: bash
         run: |
-          mkdir -p deps
+          mkdir -p wheels
 
-          # First try platform-specific download
+          # Download all dependency wheels for the current platform
           pip download \
-            --dest deps/ \
-            --platform ${{ matrix.pip_platform }} \
-            --python-version 312 \
+            --dest wheels/ \
             --only-binary=:all: \
             --no-cache-dir \
             ${{ steps.wheel.outputs.filename }} \
-          || {
-            echo "Platform-specific download failed, trying with current platform..."
-            pip download \
-              --dest deps/ \
-              --only-binary=:all: \
-              --no-cache-dir \
-              ${{ steps.wheel.outputs.filename }}
-          }
+          || true
 
           # For standard variant, remove large ML packages
           if [ "${{ matrix.variant }}" = "standard" ]; then
             echo "Removing large ML packages for standard variant..."
-            cd deps
+            cd wheels
             rm -f sentence[-_]transformers* torch-* torch[-_]* torchvision* torchaudio* \
                   nvidia[-_]* triton* sympy* mpmath* networkx* \
                   huggingface[-_]hub* safetensors* tokenizers* transformers*
             cd ..
           fi
 
-          echo "Dependency wheels:"
-          ls -lh deps/
-          echo "Total: $(du -sh deps/ | cut -f1)"
+          echo "Wheels: $(ls wheels/ | wc -l) files, $(du -sh wheels/ | cut -f1)"
 
       - name: Set PyApp build configuration
         id: pyapp_config
@@ -213,13 +202,6 @@ jobs:
             echo "is_gui=1" >> $GITHUB_OUTPUT
           fi
 
-          # For standard/full: tell pip to use local wheels
-          if [ "${{ matrix.variant }}" != "lite" ]; then
-            echo "pip_extra_args=--no-index --find-links deps/" >> $GITHUB_OUTPUT
-          else
-            echo "pip_extra_args=" >> $GITHUB_OUTPUT
-          fi
-
       - name: Build PyApp binary
         shell: bash
         env:
@@ -230,14 +212,8 @@ jobs:
           PYAPP_PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
           PYAPP_DISTRIBUTION_EMBED: "1"
           PYAPP_IS_GUI: ${{ steps.pyapp_config.outputs.is_gui }}
-          PYAPP_PIP_EXTRA_ARGS: ${{ steps.pyapp_config.outputs.pip_extra_args }}
           PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
         run: |
-          # For standard/full, copy deps into the pyapp-src dir so they're accessible
-          if [ -d "deps" ]; then
-            cp -r deps pyapp-src/deps
-          fi
-
           cd pyapp-src
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             cross build --release --target ${{ matrix.target }}
@@ -249,15 +225,34 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p release
-          cp pyapp-src/target/${{ matrix.target }}/release/pyapp release/${{ matrix.name }}
-          chmod +x release/${{ matrix.name }}
+          if [ "${{ matrix.variant }}" != "lite" ] && [ -d "wheels" ]; then
+            # Package binary + wheels together as a tar.gz
+            mkdir -p pkg/wheels
+            cp pyapp-src/target/${{ matrix.target }}/release/pyapp pkg/spark-engine
+            chmod +x pkg/spark-engine
+            cp wheels/*.whl pkg/wheels/ 2>/dev/null || true
+            tar czf release/${{ matrix.name }}.tar.gz -C pkg .
+            echo "Package size: $(ls -lh release/${{ matrix.name }}.tar.gz | awk '{print $5}')"
+          else
+            cp pyapp-src/target/${{ matrix.target }}/release/pyapp release/${{ matrix.name }}
+            chmod +x release/${{ matrix.name }}
+          fi
 
       - name: Prepare binary (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           mkdir -p release
-          cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
+          if [ "${{ matrix.variant }}" != "lite" ] && [ -d "wheels" ]; then
+            # Package binary + wheels together as a zip
+            mkdir -p pkg/wheels
+            cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe pkg/spark-engine.exe
+            cp wheels/*.whl pkg/wheels/ 2>/dev/null || true
+            cd pkg && 7z a -tzip ../release/${{ matrix.name }}.zip . && cd ..
+            echo "Package size: $(ls -lh release/${{ matrix.name }}.zip | awk '{print $5}')"
+          else
+            cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
+          fi
 
       - name: Upload binary
         uses: actions/upload-artifact@v5
@@ -326,7 +321,18 @@ jobs:
           mkdir -p "${APP}/Contents/Resources"
 
           # PyApp binary as the engine, launcher script as the main executable
-          cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
+          if ls binary/*.tar.gz 1>/dev/null 2>&1; then
+            # Standard/full: extract tar.gz containing engine + wheels
+            tar xzf binary/*.tar.gz -C binary/
+            cp binary/spark-engine "${APP}/Contents/MacOS/spark-engine"
+            if [ -d "binary/wheels" ]; then
+              mkdir -p "${APP}/Contents/Resources/wheels"
+              cp binary/wheels/*.whl "${APP}/Contents/Resources/wheels/" 2>/dev/null || true
+              echo "Bundled $(ls ${APP}/Contents/Resources/wheels/ | wc -l) wheels"
+            fi
+          else
+            cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
+          fi
           chmod +x "${APP}/Contents/MacOS/spark-engine"
           cp assets/macos/launcher.sh "${APP}/Contents/MacOS/spark"
           chmod +x "${APP}/Contents/MacOS/spark"
@@ -503,16 +509,27 @@ jobs:
           python assets/generate_icons.py
           python assets/generate_installer_assets.py
 
-      - name: Rename binary to expected name
+      - name: Prepare binary for installer
         shell: bash
         run: |
-          # NSIS expects spark-windows-x86_64.exe regardless of variant
           cd binary
-          for f in *.exe; do
-            if [ "$f" != "spark-windows-x86_64.exe" ]; then
-              mv "$f" "spark-windows-x86_64.exe"
+          # Standard/full: extract zip containing engine + wheels
+          if ls *.zip 1>/dev/null 2>&1; then
+            7z x *.zip -obundled
+            mv bundled/spark-engine.exe spark-windows-x86_64.exe
+            if [ -d "bundled/wheels" ]; then
+              mv bundled/wheels .
+              echo "Bundled $(ls wheels/ | wc -l) wheel files"
             fi
-          done
+            rm -rf bundled *.zip
+          else
+            # Lite: rename binary
+            for f in *.exe; do
+              if [ "$f" != "spark-windows-x86_64.exe" ]; then
+                mv "$f" "spark-windows-x86_64.exe"
+              fi
+            done
+          fi
 
       - name: Create NSIS installer script
         shell: bash
@@ -566,6 +583,11 @@ jobs:
             File "assets\\windows\\launcher.vbs"
             File "assets\\icons\\spark.ico"
 
+            ; Include bundled wheels if present (standard/full variants)
+            IfFileExists "binary\\wheels\\*.whl" 0 +3
+              SetOutPath "\$INSTDIR\\wheels"
+              File /nonfatal "binary\\wheels\\*.whl"
+
             ; Create a batch wrapper so shortcuts can launch via wscript
             FileOpen \$0 "\$INSTDIR\\spark.bat" w
             FileWrite \$0 '@echo off\$\\r\$\\n'
@@ -587,6 +609,9 @@ jobs:
           Section "Uninstall"
             ; Remove PyApp cached environment
             RMDir /r "\$LOCALAPPDATA\\pyapp"
+
+            ; Remove bundled wheels if present
+            RMDir /r "\$INSTDIR\\wheels"
 
             Delete "\$INSTDIR\\spark-engine.exe"
             Delete "\$INSTDIR\\launcher.vbs"

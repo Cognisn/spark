@@ -9,6 +9,13 @@ set -e
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENGINE="${SELF_DIR}/spark-engine"
 
+# If bundled wheels exist (standard/full variant), tell pip to use them
+WHEELS_DIR="${SELF_DIR}/../Resources/wheels"
+if [ -d "${WHEELS_DIR}" ] && [ "$(ls -A "${WHEELS_DIR}" 2>/dev/null)" ]; then
+    export PIP_FIND_LINKS="${WHEELS_DIR}"
+    export PIP_NO_INDEX=1
+fi
+
 # PyApp stores its data under ~/Library/Application Support/pyapp.
 PYAPP_DATA="${HOME}/Library/Application Support/pyapp"
 

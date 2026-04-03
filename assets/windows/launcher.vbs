@@ -9,6 +9,15 @@ Set objFSO = CreateObject("Scripting.FileSystemObject")
 strDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
 strEngine = objFSO.BuildPath(strDir, "spark-engine.exe")
 
+' If bundled wheels exist (standard/full variant), set pip env vars
+strWheelsDir = objFSO.BuildPath(strDir, "wheels")
+If objFSO.FolderExists(strWheelsDir) Then
+    Dim objEnv
+    Set objEnv = objShell.Environment("Process")
+    objEnv("PIP_FIND_LINKS") = strWheelsDir
+    objEnv("PIP_NO_INDEX") = "1"
+End If
+
 ' Check if this is a first run — PyApp stores data in %LOCALAPPDATA%\pyapp
 strPyAppData = objShell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\pyapp"
 bFirstRun = False
