@@ -81,7 +81,7 @@ jobs:
             os: macos-15
             name: spark-macos-arm64-standard
             variant: standard
-            pip_platform: macosx_11_0_arm64
+            pip_platform: macosx_12_0_arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64-standard
@@ -103,7 +103,7 @@ jobs:
             os: macos-15
             name: spark-macos-arm64-full
             variant: full
-            pip_platform: macosx_11_0_arm64
+            pip_platform: macosx_12_0_arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64-full
@@ -174,13 +174,23 @@ jobs:
         shell: bash
         run: |
           mkdir -p deps
+
+          # First try platform-specific download
           pip download \
             --dest deps/ \
             --platform ${{ matrix.pip_platform }} \
             --python-version 312 \
             --only-binary=:all: \
             --no-cache-dir \
-            ${{ steps.wheel.outputs.filename }}
+            ${{ steps.wheel.outputs.filename }} \
+          || {
+            echo "Platform-specific download failed, trying with current platform..."
+            pip download \
+              --dest deps/ \
+              --only-binary=:all: \
+              --no-cache-dir \
+              ${{ steps.wheel.outputs.filename }}
+          }
 
           # For standard variant, remove large ML packages
           if [ "${{ matrix.variant }}" = "standard" ]; then
