@@ -12,6 +12,18 @@ logger = logging.getLogger(__name__)
 
 _MODELS = [
     {
+        "id": "claude-opus-4-6-20250605",
+        "name": "Claude Opus 4.6",
+        "context_length": 200_000,
+        "max_output": 32_000,
+    },
+    {
+        "id": "claude-sonnet-4-6-20250605",
+        "name": "Claude Sonnet 4.6",
+        "context_length": 200_000,
+        "max_output": 32_000,
+    },
+    {
         "id": "claude-opus-4-20250514",
         "name": "Claude Opus 4",
         "context_length": 200_000,
@@ -69,9 +81,11 @@ class AnthropicDirectProvider(LLMService):
         import anthropic
 
         self._client = anthropic.Anthropic(api_key=api_key)
+        self._api_key = api_key
         self._model_id: str | None = None
         self._max_retries = max_retries
         self._base_delay = rate_limit_base_delay
+        self._cached_models: list[dict[str, Any]] | None = None
 
     def get_provider_name(self) -> str:
         return "Anthropic"
@@ -80,7 +94,37 @@ class AnthropicDirectProvider(LLMService):
         return "Direct API (api.anthropic.com)"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        return [{**m, "provider": "Anthropic", "supports_tools": True} for m in _MODELS]
+        """List models from the Anthropic API, with static fallback."""
+        if self._cached_models is not None:
+            return self._cached_models
+
+        try:
+            models = []
+            page = self._client.models.list(limit=100)
+            for m in page.data:
+                model_id = m.id
+                display_name = getattr(m, "display_name", model_id)
+                models.append(
+                    {
+                        "id": model_id,
+                        "name": display_name,
+                        "provider": "Anthropic",
+                        "supports_tools": True,
+                        "context_length": 200_000,
+                    }
+                )
+            if models:
+                self._cached_models = models
+                logger.info("Discovered %d Anthropic models from API", len(models))
+                return models
+        except Exception as e:
+            logger.debug("Anthropic model list API failed, using static fallback: %s", e)
+
+        # Fallback to static list
+        self._cached_models = [
+            {**m, "provider": "Anthropic", "supports_tools": True} for m in _MODELS
+        ]
+        return self._cached_models
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id

@@ -41,6 +41,7 @@ class XAIProvider(LLMService):
         self._model_id: str | None = None
         self._max_retries = max_retries
         self._base_delay = rate_limit_base_delay
+        self._cached_models: list[dict[str, Any]] | None = None
 
     def get_provider_name(self) -> str:
         return "X.AI"
@@ -49,7 +50,34 @@ class XAIProvider(LLMService):
         return "X.AI API (api.x.ai)"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        return [{**m, "provider": "X.AI", "supports_tools": True} for m in _MODELS]
+        """List models from the X.AI API, with static fallback."""
+        if self._cached_models is not None:
+            return self._cached_models
+
+        try:
+            resp = self._client.models.list()
+            models = []
+            for m in resp.data:
+                model_id = m.id
+                models.append(
+                    {
+                        "id": model_id,
+                        "name": model_id,
+                        "provider": "X.AI",
+                        "supports_tools": True,
+                        "context_length": _estimate_xai_context(model_id),
+                    }
+                )
+            if models:
+                self._cached_models = models
+                logger.info("Discovered %d X.AI models from API", len(models))
+                return models
+        except Exception as e:
+            logger.debug("X.AI model list API failed, using static fallback: %s", e)
+
+        # Fallback to static list
+        self._cached_models = [{**m, "provider": "X.AI", "supports_tools": True} for m in _MODELS]
+        return self._cached_models
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -119,6 +147,20 @@ class XAIProvider(LLMService):
             "tool_use": None,
             "content_blocks": [],
         }
+
+
+def _estimate_xai_context(model_id: str) -> int:
+    """Estimate context window for an X.AI model based on its ID."""
+    mid = model_id.lower()
+    if "4.1" in mid:
+        return 2_000_000
+    if "grok-4" in mid:
+        return 256_000
+    if "grok-3" in mid:
+        return 131_072
+    if "grok-2" in mid:
+        return 131_072
+    return 131_072
 
 
 def _normalise_response(response: Any) -> dict[str, Any]:

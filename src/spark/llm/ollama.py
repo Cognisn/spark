@@ -51,8 +51,23 @@ class OllamaProvider(LLMService):
         try:
             resp = self._client.list()
             models = []
-            for m in resp.get("models", []):
-                name = m.get("name", "")
+            # Handle both dict and object response formats
+            model_list = []
+            if isinstance(resp, dict):
+                model_list = resp.get("models", [])
+            elif hasattr(resp, "models"):
+                model_list = resp.models or []
+
+            for m in model_list:
+                # Handle both dict and object model entries
+                if isinstance(m, dict):
+                    name = m.get("name", "") or m.get("model", "")
+                else:
+                    name = getattr(m, "name", "") or getattr(m, "model", "")
+
+                if not name:
+                    continue
+
                 models.append(
                     {
                         "id": name,
