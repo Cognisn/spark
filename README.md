@@ -10,45 +10,79 @@
 ## Features
 
 ### Conversations
-- **Multi-Provider LLM Support** — Claude, Gemini, Grok, Llama, Mistral, and more
-- **Real-Time Streaming** — Server-Sent Events for token-by-token responses
-- **Dark/Light Theme** — Cognisn design system with theme persistence
-- **Context Compaction** — LLM-driven summarisation when approaching context limits
-- **Conversation Linking** — Share context between related conversations
-- **Favourites** — Star conversations for quick access
+- **Multi-Provider LLM Support** -- Claude, Gemini, Grok, Llama, Mistral, and more
+- **Real-Time Streaming** -- Server-Sent Events for token-by-token responses
+- **Dark/Light Theme** -- Cognisn design system with theme persistence
+- **Context Compaction** -- LLM-driven summarisation when approaching context limits
+- **Conversation Linking** -- Share context between related conversations
+- **Favourites** -- Star conversations for quick access
+- **Global System Instructions** -- Define persistent instructions applied to all conversations (Settings > Conversation)
+- **Voice Conversation Mode** -- Hands-free AI interaction via the headset button with text-to-speech output and voice selection
+- **Speech-to-Text Input** -- Dictate messages using the microphone button
 
 ### Tools
-- **MCP Integration** — Connect external tool servers via stdio, HTTP, or SSE
-- **Built-in Tools** — Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
-- **Memory Tools** — Persistent semantic memory across conversations
-- **Per-Conversation Control** — Enable/disable tools at the server or individual level
-- **Tool Approval** — Permission prompts for first-use with allow once/always/deny
+- **MCP Integration** -- Connect external tool servers via stdio, HTTP, or SSE
+- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
+- **Memory Tools** -- Persistent semantic memory across conversations
+- **Per-Conversation Control** -- Enable/disable tools at the server or individual level
+- **Tool Approval** -- Permission prompts for first-use with allow once/always/deny
+- **Tool Activity Sidecar Panel** -- Dedicated panel for tool call visibility, replacing inline tool groups
+- **Tool Documentation** -- Built-in `get_tool_documentation` tool for querying tool usage information
+- **Web Search Engines** -- DuckDuckGo, Brave, Google/SerpAPI, Bing/Azure, SearXNG
 
 ### Memory
-- **Persistent Storage** — Facts, preferences, projects, instructions, relationships
-- **Semantic Search** — Vector embeddings for relevant recall
-- **Auto-Retrieval** — Relevant memories silently injected into context
-- **Import/Export** — JSON format for backup and sharing
+- **Persistent Storage** -- Facts, preferences, projects, instructions, relationships
+- **Semantic Search** -- Vector embeddings for relevant recall
+- **Auto-Retrieval** -- Relevant memories silently injected into context
+- **Import/Export** -- JSON format for backup and sharing
 
 ### Autonomous Actions
-- **Scheduled Tasks** — Cron or one-off schedules via APScheduler
-- **AI-Assisted Creation** — Describe what you want and the AI builds the action
-- **Background Daemon** — System tray icon (macOS/Windows) runs actions independently
-- **Run History** — Track execution status, results, and token usage
+- **Scheduled Tasks** -- Cron or one-off schedules via APScheduler
+- **AI-Assisted Creation** -- Describe what you want and the AI builds the action
+- **Background Daemon** -- System tray icon (macOS/Windows) runs actions independently
+- **Run History** -- Track execution status, results, and token usage
+
+### Dashboard
+- **Provider Models Modal** -- Click any provider on the dashboard to view its available models
 
 ### Security
-- **Prompt Inspection** — Pattern and keyword-based threat detection
-- **Secret Management** — API keys stored in OS keychain, never in config files
-- **Settings Lock** — Password-protect the settings page
-- **Tool Permissions** — Per-conversation, per-tool approval system
+- **Prompt Inspection** -- Pattern and keyword-based threat detection
+- **Secret Management** -- API keys stored in OS keychain, never in config files
+- **Settings Lock** -- Password-protect the settings page
+- **Tool Permissions** -- Per-conversation, per-tool approval system
+
+### Updates
+- **Auto-Update Checker** -- Checks GitHub releases for new versions; update from the Help menu
 
 ## Installation
+
+### Download (Standalone)
+
+Spark is available as a standalone download in three variants:
+
+| Variant | Size | Description |
+|---------|------|-------------|
+| **Lite** | ~25 MB | Python + Spark wheel embedded. Dependencies downloaded on first run. Requires internet on first launch. |
+| **Standard** | ~80 MB | All dependencies pre-installed except sentence-transformers (ML model). Faster first run; sentence-transformers downloads on first use. |
+| **Full** | ~500 MB | Everything pre-installed including sentence-transformers. Fully offline, instant start. |
+
+#### Platform Downloads
+
+| Platform | Architecture | Lite | Standard | Full |
+|----------|-------------|------|----------|------|
+| macOS | ARM64 (Apple Silicon) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| macOS | x86_64 (Intel) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Windows | x86_64 | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Linux | x86_64 | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Linux | ARM64 | [Download](https://github.com/Cognisn/spark/releases/latest) | -- | -- |
+
+### Install from PyPI
 
 ```bash
 pip install cognisn-spark
 ```
 
-### Optional database drivers
+#### Optional database drivers
 
 ```bash
 pip install cognisn-spark[postgresql]   # PostgreSQL
@@ -79,21 +113,43 @@ API keys are stored in the OS keychain (macOS Keychain, Windows Credential Locke
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Web Interface                       │
-│           FastAPI + SSE + Bootstrap 5 (Cognisn)         │
-├─────────────────────────────────────────────────────────┤
-│                  Conversation Manager                   │
-│    Context compaction · Memory · RAG · Tool routing     │
-├──────────────┬──────────────┬───────────────────────────┤
-│  LLM Providers              │  Tools                    │
-│  Bedrock · Anthropic        │  MCP servers              │
-│  Ollama · Gemini · X.AI     │  Built-in + Memory        │
-├──────────────┴──────────────┴───────────────────────────┤
-│                     cognisn-konfig                      │
-│          Settings · Secrets · Logging                   │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph UI ["Web Interface"]
+        FE["FastAPI + SSE + Bootstrap 5 (Cognisn)"]
+        Voice["Voice / Speech-to-Text"]
+        Sidecar["Tool Activity Sidecar"]
+    end
+
+    subgraph Core ["Conversation Manager"]
+        CM["Context Compaction / Memory / RAG / Tool Routing"]
+    end
+
+    subgraph Providers ["LLM Providers"]
+        Bedrock["AWS Bedrock"]
+        Anthropic["Anthropic"]
+        Ollama["Ollama"]
+        Gemini["Google Gemini"]
+        XAI["X.AI"]
+    end
+
+    subgraph Tools ["Tools"]
+        MCP["MCP Servers"]
+        Builtin["Built-in Tools"]
+        Memory["Memory"]
+        WebSearch["Web Search"]
+    end
+
+    subgraph Foundation ["cognisn-konfig"]
+        Settings["Settings"]
+        Secrets["Secrets"]
+        Logging["Logging"]
+    end
+
+    UI --> Core
+    Core --> Providers
+    Core --> Tools
+    Core --> Foundation
 ```
 
 ## Keyboard Shortcuts
@@ -123,7 +179,7 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 
-MIT License with Commons Clause — free for personal and educational use. Commercial use requires a licence from the author. See [LICENSE](LICENSE).
+MIT License with Commons Clause -- free for personal and educational use. Commercial use requires a licence from the author. See [LICENSE](LICENSE).
 
 ## Author
 

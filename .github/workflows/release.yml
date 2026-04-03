@@ -36,33 +36,94 @@ jobs:
           name: wheel
           path: dist/*.whl
 
-  # Step 2: Build PyApp binaries for all platforms
+  # Step 2: Build PyApp binaries for all platforms and variants
+  #
+  # Three variants per platform:
+  #   lite     — deps downloaded from PyPI on first run (~small binary, needs internet)
+  #   standard — all deps pre-installed except sentence-transformers (~medium binary)
+  #   full     — ALL deps pre-installed including sentence-transformers (~large binary, fully offline)
+  #
   build-binaries:
     needs: build-wheel
     strategy:
       fail-fast: false
       matrix:
         include:
+          # --- Lite (current behaviour — deps from PyPI on first run) ---
           - target: x86_64-apple-darwin
             os: macos-15
             name: spark-macos-x86_64
+            variant: lite
           - target: aarch64-apple-darwin
             os: macos-15
             name: spark-macos-arm64
+            variant: lite
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64
+            variant: lite
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-arm64
+            variant: lite
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: spark-windows-x86_64
+            variant: lite
+
+          # --- Standard (all deps except sentence-transformers) ---
+          - target: x86_64-apple-darwin
+            os: macos-15
+            name: spark-macos-x86_64-standard
+            variant: standard
+            pip_platform: macosx_11_0_x86_64
+          - target: aarch64-apple-darwin
+            os: macos-15
+            name: spark-macos-arm64-standard
+            variant: standard
+            pip_platform: macosx_11_0_arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: spark-linux-x86_64-standard
+            variant: standard
+            pip_platform: manylinux2014_x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: spark-windows-x86_64-standard
+            variant: standard
+            pip_platform: win_amd64
+
+          # --- Full (ALL deps including sentence-transformers — fully offline) ---
+          - target: x86_64-apple-darwin
+            os: macos-15
+            name: spark-macos-x86_64-full
+            variant: full
+            pip_platform: macosx_11_0_x86_64
+          - target: aarch64-apple-darwin
+            os: macos-15
+            name: spark-macos-arm64-full
+            variant: full
+            pip_platform: macosx_11_0_arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: spark-linux-x86_64-full
+            variant: full
+            pip_platform: manylinux2014_x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: spark-windows-x86_64-full
+            variant: full
+            pip_platform: win_amd64
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Download wheel
         uses: actions/download-artifact@v5
@@ -90,7 +151,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ matrix.variant }}
 
       - name: Download PyApp source
         shell: bash
@@ -107,16 +168,50 @@ jobs:
           echo "wheel_name=${WHEEL_NAME}" >> $GITHUB_OUTPUT
         id: copy_wheel
 
-      - name: Set PyApp GUI mode
-        id: gui_mode
+      # --- For standard/full: download deps and install into wheel cache ---
+      - name: Download dependency wheels
+        if: matrix.variant != 'lite'
         shell: bash
         run: |
-          # On Windows, PYAPP_IS_GUI uses pythonw.exe which has no stdio and causes
-          # asyncio event loop hangs. The VBS launcher hides the console instead.
+          mkdir -p deps
+          pip download \
+            --dest deps/ \
+            --platform ${{ matrix.pip_platform }} \
+            --python-version 312 \
+            --only-binary=:all: \
+            --no-cache-dir \
+            ${{ steps.wheel.outputs.filename }}
+
+          # For standard variant, remove large ML packages
+          if [ "${{ matrix.variant }}" = "standard" ]; then
+            echo "Removing large ML packages for standard variant..."
+            cd deps
+            rm -f sentence[-_]transformers* torch-* torch[-_]* torchvision* torchaudio* \
+                  nvidia[-_]* triton* sympy* mpmath* networkx* \
+                  huggingface[-_]hub* safetensors* tokenizers* transformers*
+            cd ..
+          fi
+
+          echo "Dependency wheels:"
+          ls -lh deps/
+          echo "Total: $(du -sh deps/ | cut -f1)"
+
+      - name: Set PyApp build configuration
+        id: pyapp_config
+        shell: bash
+        run: |
+          # GUI mode: off for Windows (pythonw.exe causes stdio hang)
           if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
             echo "is_gui=0" >> $GITHUB_OUTPUT
           else
             echo "is_gui=1" >> $GITHUB_OUTPUT
+          fi
+
+          # For standard/full: tell pip to use local wheels
+          if [ "${{ matrix.variant }}" != "lite" ]; then
+            echo "pip_extra_args=--no-index --find-links deps/" >> $GITHUB_OUTPUT
+          else
+            echo "pip_extra_args=" >> $GITHUB_OUTPUT
           fi
 
       - name: Build PyApp binary
@@ -128,9 +223,15 @@ jobs:
           PYAPP_EXEC_SPEC: spark.launch:main
           PYAPP_PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
           PYAPP_DISTRIBUTION_EMBED: "1"
-          PYAPP_IS_GUI: ${{ steps.gui_mode.outputs.is_gui }}
+          PYAPP_IS_GUI: ${{ steps.pyapp_config.outputs.is_gui }}
+          PYAPP_PIP_EXTRA_ARGS: ${{ steps.pyapp_config.outputs.pip_extra_args }}
           PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
         run: |
+          # For standard/full, copy deps into the pyapp-src dir so they're accessible
+          if [ -d "deps" ]; then
+            cp -r deps pyapp-src/deps
+          fi
+
           cd pyapp-src
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             cross build --release --target ${{ matrix.target }}
@@ -158,7 +259,7 @@ jobs:
           name: ${{ matrix.name }}
           path: release/
 
-  # Step 3: Create macOS .app bundles and DMG installers
+  # Step 3: Create macOS .app bundles and DMG installers (all variants)
   create-macos-installer:
     needs: build-binaries
     strategy:
@@ -167,8 +268,22 @@ jobs:
         include:
           - arch: x86_64
             artifact: spark-macos-x86_64
+            suffix: ""
           - arch: arm64
             artifact: spark-macos-arm64
+            suffix: ""
+          - arch: x86_64
+            artifact: spark-macos-x86_64-standard
+            suffix: "-standard"
+          - arch: arm64
+            artifact: spark-macos-arm64-standard
+            suffix: "-standard"
+          - arch: x86_64
+            artifact: spark-macos-x86_64-full
+            suffix: "-full"
+          - arch: arm64
+            artifact: spark-macos-arm64-full
+            suffix: "-full"
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -277,7 +392,7 @@ jobs:
       - name: Create branded DMG
         env:
           VERSION: ${{ github.event.release.tag_name }}
-          DMG_NAME: Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg
+          DMG_NAME: Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}${{ matrix.suffix }}.dmg
         run: |
           # Install create-dmg for proper DMG layout
           brew install create-dmg
@@ -312,7 +427,7 @@ jobs:
           APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          DMG_NAME="Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}.dmg"
+          DMG_NAME="Spark-${{ github.event.release.tag_name }}-macos-${{ matrix.arch }}${{ matrix.suffix }}.dmg"
 
           # Store notarization credentials
           xcrun notarytool store-credentials "AC_PASSWORD" \
@@ -345,20 +460,30 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v5
         with:
-          name: spark-dmg-${{ matrix.arch }}
+          name: spark-dmg-${{ matrix.arch }}${{ matrix.suffix }}
           path: "*.dmg"
 
   # Step 4: Create Windows installer
   create-windows-installer:
     needs: build-binaries
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: spark-windows-x86_64
+            suffix: ""
+          - artifact: spark-windows-x86_64-standard
+            suffix: "-standard"
+          - artifact: spark-windows-x86_64-full
+            suffix: "-full"
     steps:
       - uses: actions/checkout@v5
 
       - name: Download binary
         uses: actions/download-artifact@v5
         with:
-          name: spark-windows-x86_64
+          name: ${{ matrix.artifact }}
           path: binary/
 
       - name: Set up Python for icon generation
@@ -372,16 +497,28 @@ jobs:
           python assets/generate_icons.py
           python assets/generate_installer_assets.py
 
+      - name: Rename binary to expected name
+        shell: bash
+        run: |
+          # NSIS expects spark-windows-x86_64.exe regardless of variant
+          cd binary
+          for f in *.exe; do
+            if [ "$f" != "spark-windows-x86_64.exe" ]; then
+              mv "$f" "spark-windows-x86_64.exe"
+            fi
+          done
+
       - name: Create NSIS installer script
         shell: bash
         env:
           VERSION: ${{ github.event.release.tag_name }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           cat > installer.nsi <<NSIEOF
           !include "MUI2.nsh"
 
           Name "Spark"
-          OutFile "Spark-${VERSION}-windows-x86_64-setup.exe"
+          OutFile "Spark-${VERSION}-windows-x86_64${SUFFIX}-setup.exe"
           InstallDir "\$PROGRAMFILES64\\Cognisn\\Spark"
           RequestExecutionLevel admin
           BrandingText "Spark by Cognisn"
@@ -470,20 +607,30 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v5
         with:
-          name: spark-windows-installer
+          name: spark-windows-installer${{ matrix.suffix }}
           path: "*-setup.exe"
 
   # Step 5: Create Linux AppImage
   create-linux-installer:
     needs: build-binaries
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: spark-linux-x86_64
+            suffix: ""
+          - artifact: spark-linux-x86_64-standard
+            suffix: "-standard"
+          - artifact: spark-linux-x86_64-full
+            suffix: "-full"
     steps:
       - uses: actions/checkout@v5
 
       - name: Download binary
         uses: actions/download-artifact@v5
         with:
-          name: spark-linux-x86_64
+          name: ${{ matrix.artifact }}
           path: binary/
 
       - name: Set up Python for icon generation
@@ -502,7 +649,8 @@ jobs:
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
           mkdir -p AppDir/usr/share/applications
 
-          cp binary/spark-linux-x86_64 AppDir/usr/bin/spark
+          # Copy the binary (name varies by variant)
+          cp binary/$(ls binary/ | head -1) AppDir/usr/bin/spark
           chmod +x AppDir/usr/bin/spark
           cp assets/icons/spark-256.png AppDir/usr/share/icons/hicolor/256x256/apps/spark.png
           cp assets/icons/spark-256.png AppDir/spark.png
@@ -533,12 +681,12 @@ jobs:
       - name: Build AppImage
         run: |
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir \
-            "Spark-${{ github.event.release.tag_name }}-linux-x86_64.AppImage"
+            "Spark-${{ github.event.release.tag_name }}-linux-x86_64${{ matrix.suffix }}.AppImage"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v5
         with:
-          name: spark-linux-appimage
+          name: spark-linux-appimage${{ matrix.suffix }}
           path: "*.AppImage"
 
   # Step 6: Publish to PyPI
@@ -580,11 +728,18 @@ jobs:
           files: |
             artifacts/spark-macos-x86_64/*
             artifacts/spark-macos-arm64/*
+            artifacts/spark-macos-x86_64-standard/*
+            artifacts/spark-macos-arm64-standard/*
+            artifacts/spark-macos-x86_64-full/*
+            artifacts/spark-macos-arm64-full/*
             artifacts/spark-linux-x86_64/*
+            artifacts/spark-linux-x86_64-standard/*
+            artifacts/spark-linux-x86_64-full/*
             artifacts/spark-linux-arm64/*
             artifacts/spark-windows-x86_64/*
-            artifacts/spark-dmg-x86_64/*.dmg
-            artifacts/spark-dmg-arm64/*.dmg
-            artifacts/spark-windows-installer/*-setup.exe
-            artifacts/spark-linux-appimage/*.AppImage
+            artifacts/spark-windows-x86_64-standard/*
+            artifacts/spark-windows-x86_64-full/*
+            artifacts/spark-dmg-*/*.dmg
+            artifacts/spark-windows-installer*/*-setup.exe
+            artifacts/spark-linux-appimage*/*.AppImage
             artifacts/wheel/*.whl
