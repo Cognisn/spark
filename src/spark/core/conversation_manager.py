@@ -45,6 +45,7 @@ class ConversationManager:
         tool_permission_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
+        prompt_caching: bool = True,
     ) -> None:
         self._db = db
         self._llm = llm_manager
@@ -57,6 +58,7 @@ class ConversationManager:
         self._tool_permission_callback = tool_permission_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
+        self._prompt_caching_enabled = prompt_caching
         self._in_tool_use_loop = False
 
         # Cache embedded tool definitions
@@ -426,6 +428,11 @@ class ConversationManager:
 
                 # Invoke model (with error recovery)
                 try:
+                    # Resolve prompt caching: global default, overridden by per-conversation setting
+                    use_caching = self._prompt_caching_enabled
+                    if conv and conv.get("prompt_caching") is not None:
+                        use_caching = bool(conv.get("prompt_caching", True))
+
                     response = self._llm.invoke_model(
                         history,
                         max_tokens=self._context_limits.get_max_output(model_id),
@@ -433,6 +440,7 @@ class ConversationManager:
                         tools=tools if tools else None,
                         system=system,
                         stream_callback=stream_callback,
+                        prompt_caching=use_caching,
                     )
                 except Exception as e:
                     error_msg = str(e)

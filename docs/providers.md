@@ -230,3 +230,37 @@ context_limits:
 ```
 
 The resolution order is: exact config match, partial config match, built-in defaults, then a global fallback of 8,192 context / 4,096 output.
+
+## Prompt Caching
+
+Spark supports prompt caching to reduce input token costs. When enabled (default: on), the system prompt and tool definitions are cached so that repeated requests in a conversation reuse the cached prefix rather than re-processing it.
+
+### Provider Support
+
+| Provider | Caching Method | How It Works |
+|----------|---------------|--------------|
+| **Anthropic** | `cache_control` blocks | System prompt and tool definitions are marked with `cache_control: {type: "ephemeral"}`. Anthropic caches the prefix automatically; cached tokens are billed at 90% discount. |
+| **Google Gemini** | Context caching API | A `CachedContent` object is created containing the system prompt and tools (5-minute TTL). Subsequent requests reference the cache by name, reducing input processing. |
+| **AWS Bedrock** | Not supported | Bedrock's Converse API does not expose prompt caching. |
+| **Ollama** | Not supported | Local inference; no caching API. |
+| **X.AI (Grok)** | Not supported | OpenAI-compatible API without caching extensions. |
+
+### Configuration
+
+Global setting in `config.yaml`:
+
+```yaml
+conversation:
+  prompt_caching: true    # Default: on
+```
+
+Or toggle in **Settings > Conversation > Prompt Caching**.
+
+Each conversation can override the global setting via its settings panel (gear icon > Context tab > Prompt caching toggle).
+
+### Cost Impact
+
+For Anthropic, prompt caching can reduce input costs significantly:
+- **Without caching**: Full system prompt + tools sent with every request (~2,000-5,000 tokens)
+- **With caching**: Cached tokens billed at ~10% of normal input cost after first request
+- **Savings**: Up to 90% reduction on system prompt tokens for multi-turn conversations

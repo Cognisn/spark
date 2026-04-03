@@ -397,6 +397,19 @@ def _build_sections(settings: object) -> list[dict]:
                     ],
                 },
                 {
+                    "id": "prompt_caching",
+                    "title": "Prompt Caching",
+                    "fields": [
+                        {
+                            "type": "toggle",
+                            "key": "conversation.prompt_caching",
+                            "label": "Enable Prompt Caching",
+                            "value": bool(_get_val(settings, "conversation.prompt_caching", True)),
+                            "help": "Cache system prompts and tool definitions across requests to reduce input token costs. Supported by Anthropic. Default: on.",
+                        },
+                    ],
+                },
+                {
                     "id": "tools",
                     "title": "Tool Execution",
                     "fields": [

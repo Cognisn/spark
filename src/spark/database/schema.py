@@ -47,6 +47,7 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             rag_tool_enabled INTEGER DEFAULT 0,
             max_history_messages INTEGER,
             include_tool_results INTEGER DEFAULT 1,
+            prompt_caching INTEGER DEFAULT 1,
             is_favourite INTEGER DEFAULT 0,
             user_guid TEXT NOT NULL DEFAULT ''
         )""",
@@ -317,6 +318,7 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN max_history_messages INTEGER",
         "ALTER TABLE conversations ADD COLUMN include_tool_results INTEGER DEFAULT 1",
         "ALTER TABLE conversations ADD COLUMN is_favourite INTEGER DEFAULT 0",
+        "ALTER TABLE conversations ADD COLUMN prompt_caching INTEGER DEFAULT 1",
     ]
 
     for sql in migrations:

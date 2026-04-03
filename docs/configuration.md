@@ -144,7 +144,14 @@ conversation:
   max_tool_result_tokens: 4000    # Max tokens per tool result
   global_instructions: |          # Prepended to all conversations
     You are a helpful AI assistant.
+  prompt_caching: true            # Cache system prompts to reduce input costs
 ```
+
+#### Prompt Caching
+
+When enabled (default: on), Spark caches system prompts and tool definitions across requests to reduce input token costs. This is particularly effective for Anthropic (cache_control) and Google Gemini (context caching) where the system prompt is sent identically with every message in a conversation.
+
+The setting can be overridden per conversation in the conversation settings panel.
 
 ### Context Limits
 

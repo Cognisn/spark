@@ -30,6 +30,7 @@ class BedrockProvider(LLMService):
         self._bedrock = session.client("bedrock")
         self._region = region
         self._model_id: str | None = None
+        self._cached_models: list[dict[str, Any]] | None = None
 
     def get_provider_name(self) -> str:
         return "AWS Bedrock"
@@ -38,7 +39,9 @@ class BedrockProvider(LLMService):
         return f"AWS Bedrock ({self._region})"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        """List models available in Bedrock."""
+        """List models available in Bedrock (cached after first call)."""
+        if self._cached_models is not None:
+            return self._cached_models
         try:
             resp = self._bedrock.list_foundation_models()
             models = []
@@ -53,6 +56,7 @@ class BedrockProvider(LLMService):
                         "context_length": 200_000 if "claude" in model_id.lower() else 8_192,
                     }
                 )
+            self._cached_models = models
             return models
         except Exception as e:
             logger.error("Failed to list Bedrock models: %s", e)

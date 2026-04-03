@@ -62,6 +62,8 @@ class GoogleGeminiProvider(LLMService):
         self._max_retries = max_retries
         self._base_delay = rate_limit_base_delay
         self._cached_models: list[dict[str, Any]] | None = None
+        # Prompt caching: store cache name keyed by hash of system+tools
+        self._context_cache: dict[str, str] = {}  # hash -> cache_name
 
     def get_provider_name(self) -> str:
         return "Google Gemini"
@@ -122,6 +124,51 @@ class GoogleGeminiProvider(LLMService):
     def supports_streaming(self) -> bool:
         return False
 
+    def _get_or_create_context_cache(
+        self, system: str, tools: list[dict[str, Any]] | None
+    ) -> str | None:
+        """Create or retrieve a Gemini context cache for the system prompt + tools.
+
+        Returns the cache name if successful, None otherwise.
+        """
+        import hashlib
+
+        # Build a hash key from system prompt + tool names
+        cache_key_data = system + ("|".join(sorted(t.get("name", "") for t in (tools or []))))
+        cache_hash = hashlib.md5(cache_key_data.encode()).hexdigest()[:16]
+
+        # Check if we already have a cache for this content
+        if cache_hash in self._context_cache:
+            return self._context_cache[cache_hash]
+
+        try:
+            from google.genai import types
+
+            # Build cached content
+            cached_config: dict[str, Any] = {
+                "model": self._model_id,
+                "config": types.CreateCachedContentConfig(
+                    system_instruction=system,
+                    ttl="300s",  # 5 minute TTL
+                ),
+            }
+            if tools:
+                cached_config["config"] = types.CreateCachedContentConfig(
+                    system_instruction=system,
+                    tools=_convert_tools(tools),
+                    ttl="300s",
+                )
+
+            cached = self._client.caches.create(**cached_config)
+            cache_name = cached.name
+            self._context_cache[cache_hash] = cache_name
+            logger.info("Gemini context cache created: %s", cache_name)
+            return cache_name
+
+        except Exception as e:
+            logger.debug("Gemini context caching not available: %s", e)
+            return None
+
     def count_tokens(self, text: str) -> int:
         try:
             from google import genai
@@ -150,6 +197,7 @@ class GoogleGeminiProvider(LLMService):
 
         from google.genai import types
 
+        prompt_caching = kwargs.get("prompt_caching", False)
         gemini_contents = _convert_messages(messages)
         config: dict[str, Any] = {
             "max_output_tokens": max_tokens,
@@ -169,6 +217,21 @@ class GoogleGeminiProvider(LLMService):
                 **config,
                 tools=_convert_tools(tools),
             )
+
+        # Gemini context caching: cache system prompt + tools to reduce input costs
+        if prompt_caching and system and self._model_id:
+            cache_name = self._get_or_create_context_cache(system, tools)
+            if cache_name:
+                req_kwargs["cached_content"] = cache_name
+                # Remove system_instruction from config when using cached content
+                config.pop("system_instruction", None)
+                if tools:
+                    req_kwargs["config"] = types.GenerateContentConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                else:
+                    req_kwargs["config"] = types.GenerateContentConfig(**config)
 
         for attempt in range(self._max_retries + 1):
             try:

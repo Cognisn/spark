@@ -37,6 +37,7 @@ class OllamaProvider(LLMService):
         self._client = ollama_sdk.Client(**client_kwargs)
         self._model_id: str | None = None
         self._base_url = base_url
+        self._cached_models: list[dict[str, Any]] | None = None
 
     def get_provider_name(self) -> str:
         return "Ollama"
@@ -45,6 +46,8 @@ class OllamaProvider(LLMService):
         return f"Ollama ({self._base_url})"
 
     def list_available_models(self) -> list[dict[str, Any]]:
+        if self._cached_models is not None:
+            return self._cached_models
         try:
             resp = self._client.list()
             models = []
@@ -59,6 +62,7 @@ class OllamaProvider(LLMService):
                         "context_length": _estimate_context(name),
                     }
                 )
+            self._cached_models = models
             return models
         except Exception as e:
             logger.error("Failed to list Ollama models: %s", e)

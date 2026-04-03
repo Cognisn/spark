@@ -102,6 +102,10 @@ conversation:
   # global_instructions: |
   #   You are a helpful AI assistant.
 
+  # Prompt caching — caches system prompts and tool definitions to reduce input costs.
+  # Supported by Anthropic (cache_control). Default: true.
+  prompt_caching: true
+
 # -----------------------------------------------------------------------------
 # Model Context Limits
 # -----------------------------------------------------------------------------

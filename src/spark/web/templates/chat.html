@@ -190,6 +190,10 @@
                                 <label class="form-check-label" for="conv-include-tools">Include tool results in context</label>
                             </div>
                             <div class="form-switch">
+                                <input class="form-check-input" type="checkbox" id="conv-prompt-caching" checked>
+                                <label class="form-check-label" for="conv-prompt-caching">Prompt caching</label>
+                            </div>
+                            <div class="form-switch">
                                 <input class="form-check-input" type="checkbox" id="conv-memory" checked>
                                 <label class="form-check-label" for="conv-memory">Enable persistent memory</label>
                             </div>
@@ -387,6 +391,7 @@ async function showSettingsModal() {
         document.getElementById('conv-rag-threshold').value = info.rag_threshold || 0.4;
         document.getElementById('conv-rag-tool').checked = !!info.rag_tool_enabled;
         document.getElementById('conv-include-tools').checked = info.include_tool_results !== false;
+        document.getElementById('conv-prompt-caching').checked = info.prompt_caching !== false;
 
         if (info.max_history_messages) {
             document.getElementById('history-last').checked = true;
@@ -429,6 +434,7 @@ async function saveConversationSettings() {
         rag_threshold: parseFloat(document.getElementById('conv-rag-threshold').value) || 0.4,
         rag_tool_enabled: document.getElementById('conv-rag-tool').checked,
         include_tool_results: document.getElementById('conv-include-tools').checked,
+        prompt_caching: document.getElementById('conv-prompt-caching').checked,
         max_history_messages: historyMode === 'last' ? parseInt(document.getElementById('conv-max-messages').value) || 20 : null,
     };
     try {

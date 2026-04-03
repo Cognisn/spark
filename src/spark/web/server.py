@@ -339,6 +339,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 ),
                 embedded_tools_config=embedded_tools_config,
                 mcp_manager=mcp_manager,
+                prompt_caching=bool(ctx.settings.get("conversation.prompt_caching", True)),
             )
 
             # Step 4: Embedding model (warm up)

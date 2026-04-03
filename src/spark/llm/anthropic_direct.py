@@ -117,6 +117,8 @@ class AnthropicDirectProvider(LLMService):
         max_tokens = min(max_tokens, model_max)
 
         # Build request kwargs
+        prompt_caching = kwargs.get("prompt_caching", False)
+
         req: dict[str, Any] = {
             "model": self._model_id,
             "messages": _clean_messages(messages),
@@ -124,9 +126,23 @@ class AnthropicDirectProvider(LLMService):
             "temperature": temperature,
         }
         if system:
-            req["system"] = system
+            if prompt_caching:
+                # Use Anthropic's prompt caching: wrap system in a block with cache_control
+                req["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                req["system"] = system
         if tools:
-            req["tools"] = _convert_tools(tools)
+            converted = _convert_tools(tools)
+            if prompt_caching and converted:
+                # Cache the tool definitions too (they rarely change within a conversation)
+                converted[-1]["cache_control"] = {"type": "ephemeral"}
+            req["tools"] = converted
 
         # Retry loop with exponential backoff for rate limits
         for attempt in range(self._max_retries + 1):

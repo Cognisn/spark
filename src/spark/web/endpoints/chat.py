@@ -125,6 +125,7 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "rag_tool_enabled": bool(conv.get("rag_tool_enabled", False)),
             "max_history_messages": conv.get("max_history_messages"),
             "include_tool_results": bool(conv.get("include_tool_results", True)),
+            "prompt_caching": bool(conv.get("prompt_caching", True)),
         }
     )
 
@@ -152,12 +153,14 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "rag_tool_enabled",
         "max_history_messages",
         "include_tool_results",
+        "prompt_caching",
     }
     _BOOL_FIELDS = {
         "memory_enabled",
         "rag_enabled",
         "rag_tool_enabled",
         "include_tool_results",
+        "prompt_caching",
     }
 
     updates: dict[str, Any] = {}
