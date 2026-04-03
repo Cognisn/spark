@@ -325,10 +325,12 @@ jobs:
             # Standard/full: extract tar.gz containing engine + wheels
             tar xzf binary/*.tar.gz -C binary/
             cp binary/spark-engine "${APP}/Contents/MacOS/spark-engine"
+            # Wheels go into dmg-staging (outside .app) to avoid notarization issues
+            # with unsigned .so/.dylib files inside wheel packages
             if [ -d "binary/wheels" ]; then
-              mkdir -p "${APP}/Contents/Resources/wheels"
-              cp binary/wheels/*.whl "${APP}/Contents/Resources/wheels/" 2>/dev/null || true
-              echo "Bundled $(ls ${APP}/Contents/Resources/wheels/ | wc -l) wheels"
+              mkdir -p dmg-wheels
+              cp binary/wheels/*.whl dmg-wheels/ 2>/dev/null || true
+              echo "Bundled $(ls dmg-wheels/ | wc -l) wheels (outside .app for notarization)"
             fi
           else
             cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
@@ -412,6 +414,12 @@ jobs:
           # Stage the app in a clean directory to avoid extra files in DMG
           mkdir -p dmg-staging
           cp -R Spark.app dmg-staging/
+
+          # For standard/full: include wheels directory in DMG (outside .app)
+          if [ -d "dmg-wheels" ]; then
+            cp -R dmg-wheels dmg-staging/wheels
+            echo "Wheels included in DMG staging: $(ls dmg-staging/wheels/ | wc -l) files"
+          fi
 
           # create-dmg with custom background, icon positions, and Applications link
           create-dmg \

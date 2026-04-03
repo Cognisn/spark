@@ -9,10 +9,26 @@ set -e
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENGINE="${SELF_DIR}/spark-engine"
 
-# If bundled wheels exist (standard/full variant), tell pip to use them
-WHEELS_DIR="${SELF_DIR}/../Resources/wheels"
-if [ -d "${WHEELS_DIR}" ] && [ "$(ls -A "${WHEELS_DIR}" 2>/dev/null)" ]; then
-    export PIP_FIND_LINKS="${WHEELS_DIR}"
+# Check for bundled wheels (standard/full variant)
+# Wheels may be in Resources (if bundled in .app) or in a data directory
+# (copied from DMG on first install)
+WHEELS_IN_RESOURCES="${SELF_DIR}/../Resources/wheels"
+WHEELS_IN_DATA="${HOME}/Library/Application Support/spark/wheels"
+
+# On first install from DMG, the wheels directory is alongside the .app
+# in the mounted volume. Copy them to the data directory for persistence.
+DMG_WHEELS="$(cd "${SELF_DIR}/../.." 2>/dev/null && pwd)/wheels"
+if [ -d "${DMG_WHEELS}" ] && [ ! -d "${WHEELS_IN_DATA}" ]; then
+    mkdir -p "${WHEELS_IN_DATA}"
+    cp "${DMG_WHEELS}"/*.whl "${WHEELS_IN_DATA}/" 2>/dev/null || true
+fi
+
+# Set pip to use local wheels if available
+if [ -d "${WHEELS_IN_RESOURCES}" ] && [ "$(ls -A "${WHEELS_IN_RESOURCES}" 2>/dev/null)" ]; then
+    export PIP_FIND_LINKS="${WHEELS_IN_RESOURCES}"
+    export PIP_NO_INDEX=1
+elif [ -d "${WHEELS_IN_DATA}" ] && [ "$(ls -A "${WHEELS_IN_DATA}" 2>/dev/null)" ]; then
+    export PIP_FIND_LINKS="${WHEELS_IN_DATA}"
     export PIP_NO_INDEX=1
 fi
 
