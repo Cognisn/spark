@@ -107,6 +107,18 @@ jobs:
           echo "wheel_name=${WHEEL_NAME}" >> $GITHUB_OUTPUT
         id: copy_wheel
 
+      - name: Set PyApp GUI mode
+        id: gui_mode
+        shell: bash
+        run: |
+          # On Windows, PYAPP_IS_GUI uses pythonw.exe which has no stdio and causes
+          # asyncio event loop hangs. The VBS launcher hides the console instead.
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+            echo "is_gui=0" >> $GITHUB_OUTPUT
+          else
+            echo "is_gui=1" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build PyApp binary
         shell: bash
         env:
@@ -116,7 +128,7 @@ jobs:
           PYAPP_EXEC_SPEC: spark.launch:main
           PYAPP_PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
           PYAPP_DISTRIBUTION_EMBED: "1"
-          PYAPP_IS_GUI: "1"
+          PYAPP_IS_GUI: ${{ steps.gui_mode.outputs.is_gui }}
           PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
         run: |
           cd pyapp-src
