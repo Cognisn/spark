@@ -323,9 +323,9 @@ class SparkTrayDaemon:
 
                     while self._running:
                         if self._paused:
-                            time.sleep(1)
+                            await asyncio.sleep(1)
                             continue
-                        time.sleep(5)
+                        await asyncio.sleep(5)
 
                     runner.stop()
 

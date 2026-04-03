@@ -67,12 +67,13 @@ class TestMCPClientAuth:
         assert headers["X-Custom"] == "key123"
 
     def test_basic(self) -> None:
+        test_secret = "test-cred"  # noqa: S105
         client = MCPClient(
             MCPServerConfig(
                 name="t",
                 auth_type="basic",
                 basic_username="user",
-                basic_password="test-cred",  # noqa: S106
+                basic_password=test_secret,
             )
         )
         headers = client._build_auth_headers()
