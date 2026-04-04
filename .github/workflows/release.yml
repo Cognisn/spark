@@ -383,7 +383,6 @@ jobs:
               mv "$f" "spark-windows-x86_64.exe"
             fi
           done
-          fi
 
       - name: Create NSIS installer script
         shell: bash
