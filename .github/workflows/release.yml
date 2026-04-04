@@ -441,6 +441,7 @@ jobs:
           ls -la "${DMG_NAME}"
 
       - name: Notarize DMG
+        if: matrix.suffix == ''
         timeout-minutes: 30
         env:
           APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
