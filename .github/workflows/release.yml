@@ -32,66 +32,28 @@ jobs:
           name: wheel
           path: dist/*.whl
 
-  # Step 2: Build PyApp binaries for all platforms and variants
-  #
-  # Three variants per platform:
-  #   lite     — deps downloaded from PyPI on first run (~small binary, needs internet)
-  #   standard — all deps pre-installed except sentence-transformers (~medium binary)
-  #   full     — ALL deps pre-installed including sentence-transformers (~large binary, fully offline)
-  #
+  # Step 2: Build PyApp binaries for all platforms
   build-binaries:
     needs: build-wheel
     strategy:
       fail-fast: false
       matrix:
         include:
-          # --- Lite (current behaviour — deps from PyPI on first run) ---
           - target: x86_64-apple-darwin
             os: macos-15
             name: spark-macos-x86_64
-            variant: lite
           - target: aarch64-apple-darwin
             os: macos-15
             name: spark-macos-arm64
-            variant: lite
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64
-            variant: lite
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-arm64
-            variant: lite
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: spark-windows-x86_64
-            variant: lite
-
-          # --- Standard (all deps except sentence-transformers) ---
-          # Note: macOS standard/full omitted — Apple notarization rejects
-          # DMGs containing unsigned .so/.dylib in bundled wheel packages.
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: spark-linux-x86_64-standard
-            variant: standard
-            pip_platform: manylinux2014_x86_64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            name: spark-windows-x86_64-standard
-            variant: standard
-            pip_platform: win_amd64
-
-          # --- Full (ALL deps including sentence-transformers — fully offline) ---
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: spark-linux-x86_64-full
-            variant: full
-            pip_platform: manylinux2014_x86_64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            name: spark-windows-x86_64-full
-            variant: full
-            pip_platform: win_amd64
 
     runs-on: ${{ matrix.os }}
 
@@ -146,33 +108,6 @@ jobs:
           echo "wheel_name=${WHEEL_NAME}" >> $GITHUB_OUTPUT
         id: copy_wheel
 
-      # --- For standard/full: download dependency wheels as companion archive ---
-      - name: Download dependency wheels
-        if: matrix.variant != 'lite'
-        shell: bash
-        run: |
-          mkdir -p wheels
-
-          # Download all dependency wheels for the current platform
-          pip download \
-            --dest wheels/ \
-            --only-binary=:all: \
-            --no-cache-dir \
-            ${{ steps.wheel.outputs.filename }} \
-          || true
-
-          # For standard variant, remove large ML packages
-          if [ "${{ matrix.variant }}" = "standard" ]; then
-            echo "Removing large ML packages for standard variant..."
-            cd wheels
-            rm -f sentence[-_]transformers* torch-* torch[-_]* torchvision* torchaudio* \
-                  nvidia[-_]* triton* sympy* mpmath* networkx* \
-                  huggingface[-_]hub* safetensors* tokenizers* transformers*
-            cd ..
-          fi
-
-          echo "Wheels: $(ls wheels/ | wc -l) files, $(du -sh wheels/ | cut -f1)"
-
       - name: Set PyApp build configuration
         id: pyapp_config
         shell: bash
@@ -207,34 +142,15 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p release
-          if [ "${{ matrix.variant }}" != "lite" ] && [ -d "wheels" ]; then
-            # Package binary + wheels together as a tar.gz
-            mkdir -p pkg/wheels
-            cp pyapp-src/target/${{ matrix.target }}/release/pyapp pkg/spark-engine
-            chmod +x pkg/spark-engine
-            cp wheels/*.whl pkg/wheels/ 2>/dev/null || true
-            tar czf release/${{ matrix.name }}.tar.gz -C pkg .
-            echo "Package size: $(ls -lh release/${{ matrix.name }}.tar.gz | awk '{print $5}')"
-          else
-            cp pyapp-src/target/${{ matrix.target }}/release/pyapp release/${{ matrix.name }}
-            chmod +x release/${{ matrix.name }}
-          fi
+          cp pyapp-src/target/${{ matrix.target }}/release/pyapp release/${{ matrix.name }}
+          chmod +x release/${{ matrix.name }}
 
       - name: Prepare binary (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           mkdir -p release
-          if [ "${{ matrix.variant }}" != "lite" ] && [ -d "wheels" ]; then
-            # Package binary + wheels together as a zip
-            mkdir -p pkg/wheels
-            cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe pkg/spark-engine.exe
-            cp wheels/*.whl pkg/wheels/ 2>/dev/null || true
-            cd pkg && 7z a -tzip ../release/${{ matrix.name }}.zip . && cd ..
-            echo "Package size: $(ls -lh release/${{ matrix.name }}.zip | awk '{print $5}')"
-          else
-            cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
-          fi
+          cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
 
       - name: Upload binary
         uses: actions/upload-artifact@v5
@@ -438,23 +354,13 @@ jobs:
   create-windows-installer:
     needs: build-binaries
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - artifact: spark-windows-x86_64
-            suffix: ""
-          - artifact: spark-windows-x86_64-standard
-            suffix: "-standard"
-          - artifact: spark-windows-x86_64-full
-            suffix: "-full"
     steps:
       - uses: actions/checkout@v5
 
       - name: Download binary
         uses: actions/download-artifact@v5
         with:
-          name: ${{ matrix.artifact }}
+          name: spark-windows-x86_64
           path: binary/
 
       - name: Set up Python for icon generation
@@ -472,35 +378,23 @@ jobs:
         shell: bash
         run: |
           cd binary
-          # Standard/full: extract zip containing engine + wheels
-          if ls *.zip 1>/dev/null 2>&1; then
-            7z x *.zip -obundled
-            mv bundled/spark-engine.exe spark-windows-x86_64.exe
-            if [ -d "bundled/wheels" ]; then
-              mv bundled/wheels .
-              echo "Bundled $(ls wheels/ | wc -l) wheel files"
+          for f in *.exe; do
+            if [ "$f" != "spark-windows-x86_64.exe" ]; then
+              mv "$f" "spark-windows-x86_64.exe"
             fi
-            rm -rf bundled *.zip
-          else
-            # Lite: rename binary
-            for f in *.exe; do
-              if [ "$f" != "spark-windows-x86_64.exe" ]; then
-                mv "$f" "spark-windows-x86_64.exe"
-              fi
-            done
+          done
           fi
 
       - name: Create NSIS installer script
         shell: bash
         env:
           VERSION: ${{ github.event.release.tag_name }}
-          SUFFIX: ${{ matrix.suffix }}
         run: |
           cat > installer.nsi <<NSIEOF
           !include "MUI2.nsh"
 
           Name "Spark"
-          OutFile "Spark-${VERSION}-windows-x86_64${SUFFIX}-setup.exe"
+          OutFile "Spark-${VERSION}-windows-x86_64-setup.exe"
           InstallDir "\$PROGRAMFILES64\\Cognisn\\Spark"
           RequestExecutionLevel admin
           BrandingText "Spark by Cognisn"
@@ -542,10 +436,6 @@ jobs:
             File "assets\\windows\\launcher.vbs"
             File "assets\\icons\\spark.ico"
 
-            ; Include bundled wheels if present (standard/full variants)
-            IfFileExists "binary\\wheels\\*.whl" 0 +3
-              SetOutPath "\$INSTDIR\\wheels"
-              File /nonfatal "binary\\wheels\\*.whl"
 
             ; Create a batch wrapper so shortcuts can launch via wscript
             FileOpen \$0 "\$INSTDIR\\spark.bat" w
@@ -568,9 +458,6 @@ jobs:
           Section "Uninstall"
             ; Remove PyApp cached environment
             RMDir /r "\$LOCALAPPDATA\\pyapp"
-
-            ; Remove bundled wheels if present
-            RMDir /r "\$INSTDIR\\wheels"
 
             Delete "\$INSTDIR\\spark-engine.exe"
             Delete "\$INSTDIR\\launcher.vbs"
@@ -598,30 +485,20 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v5
         with:
-          name: spark-windows-installer${{ matrix.suffix }}
+          name: spark-windows-installer
           path: "*-setup.exe"
 
   # Step 5: Create Linux AppImage
   create-linux-installer:
     needs: build-binaries
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - artifact: spark-linux-x86_64
-            suffix: ""
-          - artifact: spark-linux-x86_64-standard
-            suffix: "-standard"
-          - artifact: spark-linux-x86_64-full
-            suffix: "-full"
     steps:
       - uses: actions/checkout@v5
 
       - name: Download binary
         uses: actions/download-artifact@v5
         with:
-          name: ${{ matrix.artifact }}
+          name: spark-linux-x86_64
           path: binary/
 
       - name: Set up Python for icon generation
@@ -672,12 +549,12 @@ jobs:
       - name: Build AppImage
         run: |
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir \
-            "Spark-${{ github.event.release.tag_name }}-linux-x86_64${{ matrix.suffix }}.AppImage"
+            "Spark-${{ github.event.release.tag_name }}-linux-x86_64.AppImage"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v5
         with:
-          name: spark-linux-appimage${{ matrix.suffix }}
+          name: spark-linux-appimage
           path: "*.AppImage"
 
   # Step 6: Publish to PyPI
@@ -724,13 +601,9 @@ jobs:
             artifacts/spark-macos-x86_64/*
             artifacts/spark-macos-arm64/*
             artifacts/spark-linux-x86_64/*
-            artifacts/spark-linux-x86_64-standard/*
-            artifacts/spark-linux-x86_64-full/*
             artifacts/spark-linux-arm64/*
             artifacts/spark-windows-x86_64/*
-            artifacts/spark-windows-x86_64-standard/*
-            artifacts/spark-windows-x86_64-full/*
             artifacts/spark-dmg-*/*.dmg
-            artifacts/spark-windows-installer*/*-setup.exe
-            artifacts/spark-linux-appimage*/*.AppImage
+            artifacts/spark-windows-installer/*-setup.exe
+            artifacts/spark-linux-appimage/*.AppImage
             artifacts/wheel/*.whl
