@@ -68,16 +68,8 @@ jobs:
             variant: lite
 
           # --- Standard (all deps except sentence-transformers) ---
-          - target: x86_64-apple-darwin
-            os: macos-15
-            name: spark-macos-x86_64-standard
-            variant: standard
-            pip_platform: macosx_11_0_x86_64
-          - target: aarch64-apple-darwin
-            os: macos-15
-            name: spark-macos-arm64-standard
-            variant: standard
-            pip_platform: macosx_12_0_arm64
+          # Note: macOS standard/full omitted — Apple notarization rejects
+          # DMGs containing unsigned .so/.dylib in bundled wheel packages.
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64-standard
@@ -90,16 +82,6 @@ jobs:
             pip_platform: win_amd64
 
           # --- Full (ALL deps including sentence-transformers — fully offline) ---
-          - target: x86_64-apple-darwin
-            os: macos-15
-            name: spark-macos-x86_64-full
-            variant: full
-            pip_platform: macosx_11_0_x86_64
-          - target: aarch64-apple-darwin
-            os: macos-15
-            name: spark-macos-arm64-full
-            variant: full
-            pip_platform: macosx_12_0_arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: spark-linux-x86_64-full
@@ -273,18 +255,6 @@ jobs:
           - arch: arm64
             artifact: spark-macos-arm64
             suffix: ""
-          - arch: x86_64
-            artifact: spark-macos-x86_64-standard
-            suffix: "-standard"
-          - arch: arm64
-            artifact: spark-macos-arm64-standard
-            suffix: "-standard"
-          - arch: x86_64
-            artifact: spark-macos-x86_64-full
-            suffix: "-full"
-          - arch: arm64
-            artifact: spark-macos-arm64-full
-            suffix: "-full"
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -321,20 +291,7 @@ jobs:
           mkdir -p "${APP}/Contents/Resources"
 
           # PyApp binary as the engine, launcher script as the main executable
-          if ls binary/*.tar.gz 1>/dev/null 2>&1; then
-            # Standard/full: extract tar.gz containing engine + wheels
-            tar xzf binary/*.tar.gz -C binary/
-            cp binary/spark-engine "${APP}/Contents/MacOS/spark-engine"
-            # Wheels go into dmg-staging (outside .app) to avoid notarization issues
-            # with unsigned .so/.dylib files inside wheel packages
-            if [ -d "binary/wheels" ]; then
-              mkdir -p dmg-wheels
-              cp binary/wheels/*.whl dmg-wheels/ 2>/dev/null || true
-              echo "Bundled $(ls dmg-wheels/ | wc -l) wheels (outside .app for notarization)"
-            fi
-          else
-            cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
-          fi
+          cp binary/${{ matrix.artifact }} "${APP}/Contents/MacOS/spark-engine"
           chmod +x "${APP}/Contents/MacOS/spark-engine"
           cp assets/macos/launcher.sh "${APP}/Contents/MacOS/spark"
           chmod +x "${APP}/Contents/MacOS/spark"
@@ -415,12 +372,6 @@ jobs:
           mkdir -p dmg-staging
           cp -R Spark.app dmg-staging/
 
-          # For standard/full: include wheels directory in DMG (outside .app)
-          if [ -d "dmg-wheels" ]; then
-            cp -R dmg-wheels dmg-staging/wheels
-            echo "Wheels included in DMG staging: $(ls dmg-staging/wheels/ | wc -l) files"
-          fi
-
           # create-dmg with custom background, icon positions, and Applications link
           create-dmg \
             --volname "Spark" \
@@ -441,7 +392,6 @@ jobs:
           ls -la "${DMG_NAME}"
 
       - name: Notarize DMG
-        if: matrix.suffix == ''
         timeout-minutes: 30
         env:
           APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
@@ -773,10 +723,6 @@ jobs:
           files: |
             artifacts/spark-macos-x86_64/*
             artifacts/spark-macos-arm64/*
-            artifacts/spark-macos-x86_64-standard/*
-            artifacts/spark-macos-arm64-standard/*
-            artifacts/spark-macos-x86_64-full/*
-            artifacts/spark-macos-arm64-full/*
             artifacts/spark-linux-x86_64/*
             artifacts/spark-linux-x86_64-standard/*
             artifacts/spark-linux-x86_64-full/*
