@@ -124,6 +124,8 @@ jobs:
         run: |
           pip install Pillow
           python assets/generate_icons.py
+          # Copy icon into pyapp-src so cross (Docker) can access it
+          cp assets/icons/spark-256.png pyapp-src/splash-icon.png
 
       - name: Build PyApp binary
         shell: bash
@@ -139,7 +141,7 @@ jobs:
           # Cognisn fork splash screen configuration
           PYAPP_SPLASH_ENABLED: "true"
           PYAPP_SPLASH_THEME: "dark"
-          PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/assets/icons/spark-256.png
+          PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/pyapp-src/splash-icon.png
           PYAPP_SPLASH_BG_COLOR: "080e1e"
           PYAPP_SPLASH_TEXT_COLOR: "e8f0fa"
           PYAPP_SPLASH_PROGRESS_COLOR: "5aaae8"
