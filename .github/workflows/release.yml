@@ -46,12 +46,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-15
             name: spark-macos-arm64
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: spark-linux-x86_64
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: spark-linux-arm64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: spark-windows-x86_64
@@ -81,10 +75,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install cross (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Rust
         uses: actions/cache@v4
@@ -148,18 +138,7 @@ jobs:
           PYAPP_SPLASH_WINDOW_TITLE: "Spark — Setting up environment"
         run: |
           cd pyapp-src
-          # Splash screen requires a windowing system (winit) — disable for Linux
-          if [[ "${{ matrix.target }}" == *"linux"* ]]; then
-            FEATURES=""
-          else
-            FEATURES="--features splash"
-          fi
-
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            cross build --release $FEATURES --target ${{ matrix.target }}
-          else
-            cargo build --release $FEATURES --target ${{ matrix.target }}
-          fi
+          cargo build --release --features splash --target ${{ matrix.target }}
 
       - name: Prepare binary (Unix)
         if: runner.os != 'Windows'
@@ -513,74 +492,6 @@ jobs:
           name: spark-windows-installer
           path: "*-setup.exe"
 
-  # Step 5: Create Linux AppImage
-  create-linux-installer:
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Download binary
-        uses: actions/download-artifact@v5
-        with:
-          name: spark-linux-x86_64
-          path: binary/
-
-      - name: Set up Python for icon generation
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Generate icons
-        run: |
-          pip install Pillow
-          python assets/generate_icons.py
-
-      - name: Create AppImage structure
-        run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          mkdir -p AppDir/usr/share/applications
-
-          # Copy the binary (name varies by variant)
-          cp binary/$(ls binary/ | head -1) AppDir/usr/bin/spark
-          chmod +x AppDir/usr/bin/spark
-          cp assets/icons/spark-256.png AppDir/usr/share/icons/hicolor/256x256/apps/spark.png
-          cp assets/icons/spark-256.png AppDir/spark.png
-
-          cat > AppDir/spark.desktop << EOF
-          [Desktop Entry]
-          Name=Spark
-          Comment=Secure Personal AI Research Kit
-          Exec=spark
-          Icon=spark
-          Type=Application
-          Categories=Development;Science;
-          EOF
-
-          cat > AppDir/AppRun << 'EOF'
-          #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          exec "${HERE}/usr/bin/spark" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-
-      - name: Download appimagetool
-        run: |
-          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-
-      - name: Build AppImage
-        run: |
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir \
-            "Spark-${{ github.event.release.tag_name }}-linux-x86_64.AppImage"
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v5
-        with:
-          name: spark-linux-appimage
-          path: "*.AppImage"
 
   # Step 6: Publish to PyPI
   publish-pypi:
@@ -607,7 +518,6 @@ jobs:
       - build-binaries
       - create-macos-installer
       - create-windows-installer
-      - create-linux-installer
       - publish-pypi
     runs-on: ubuntu-latest
     steps:
@@ -625,10 +535,7 @@ jobs:
           files: |
             artifacts/spark-macos-x86_64/*
             artifacts/spark-macos-arm64/*
-            artifacts/spark-linux-x86_64/*
-            artifacts/spark-linux-arm64/*
             artifacts/spark-windows-x86_64/*
             artifacts/spark-dmg-*/*.dmg
             artifacts/spark-windows-installer/*-setup.exe
-            artifacts/spark-linux-appimage/*.AppImage
             artifacts/wheel/*.whl
