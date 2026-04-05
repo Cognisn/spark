@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  PYAPP_VERSION: "0.29.0-splash.2"
+  PYAPP_VERSION: "0.29.0-splash.4"
   PYAPP_FORK_REPO: "Cognisn/pyapp"
   PYTHON_VERSION: "3.12"
 
@@ -110,12 +110,36 @@ jobs:
             echo "is_gui=1" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate splash icon
+      - name: Generate splash image
         run: |
           pip install Pillow
           python assets/generate_icons.py
-          # Copy icon into pyapp-src so cross (Docker) can access it
-          cp assets/icons/spark-256.png pyapp-src/splash-icon.png
+          python assets/generate_installer_assets.py
+          # Generate a 640x400 splash image for PyApp first-run screen
+          python -c "
+from assets.generate_installer_assets import BG_DEEP, BG_PRIMARY, ACCENT, TEXT_PRIMARY, TEXT_SECONDARY, _draw_lightning_bolt, _try_font, _centered_text
+from PIL import Image, ImageDraw
+img = Image.new('RGB', (640, 400), BG_DEEP)
+draw = ImageDraw.Draw(img)
+for y in range(400):
+    t = y / 400
+    r = int(BG_DEEP[0] + (BG_PRIMARY[0] - BG_DEEP[0]) * t * 0.6)
+    g = int(BG_DEEP[1] + (BG_PRIMARY[1] - BG_DEEP[1]) * t * 0.6)
+    b = int(BG_DEEP[2] + (BG_PRIMARY[2] - BG_DEEP[2]) * t * 0.6)
+    draw.line([(0, y), (640, y)], fill=(r, g, b))
+_draw_lightning_bolt(draw, 320, 120, 70)
+font_title = _try_font(36, bold=True)
+font_sub = _try_font(14)
+font_hint = _try_font(12)
+_centered_text(draw, 175, 'Spark', font_title, TEXT_PRIMARY, 640)
+_centered_text(draw, 225, 'Secure Personal AI Research Kit', font_sub, TEXT_SECONDARY, 640)
+_centered_text(draw, 255, 'by Cognisn', font_hint, ACCENT, 640)
+_centered_text(draw, 340, 'Setting up environment, please wait...', font_hint, TEXT_SECONDARY, 640)
+img.save('assets/installer/splash-screen.png')
+print('Generated: assets/installer/splash-screen.png')
+"
+          # Copy into pyapp-src for build access
+          cp assets/installer/splash-screen.png pyapp-src/splash-screen.png
 
       - name: Build PyApp binary
         shell: bash
@@ -128,14 +152,8 @@ jobs:
           PYAPP_DISTRIBUTION_EMBED: "1"
           PYAPP_IS_GUI: ${{ steps.pyapp_config.outputs.is_gui }}
           PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
-          # Cognisn fork splash screen configuration
           PYAPP_SPLASH_ENABLED: "true"
-          PYAPP_SPLASH_THEME: "dark"
-          PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/pyapp-src/splash-icon.png
-          PYAPP_SPLASH_BG_COLOR: "080e1e"
-          PYAPP_SPLASH_TEXT_COLOR: "e8f0fa"
-          PYAPP_SPLASH_PROGRESS_COLOR: "5aaae8"
-          PYAPP_SPLASH_WINDOW_TITLE: "Spark — Setting up environment"
+          PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/pyapp-src/splash-screen.png
         run: |
           cd pyapp-src
           cargo build --release --features splash --target ${{ matrix.target }}
