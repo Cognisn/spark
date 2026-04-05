@@ -248,8 +248,11 @@
     </script>
 
     <!-- Update Available Modal -->
+    <!-- Marked.js for rendering release notes markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
     <div class="modal fade" id="updateModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-download me-2" style="color: var(--app-accent);"></i>Update Available</h5>
@@ -268,24 +271,13 @@
                             <div id="update-modal-version" style="font-weight: 600; color: var(--app-accent);"></div>
                         </div>
                     </div>
-                    <div id="update-modal-notes" style="font-size: 0.8125rem; color: var(--app-text-secondary); max-height: 150px; overflow-y: auto; display: none;" class="mb-3 p-2" ></div>
-                    <div id="update-modal-method" style="font-size: 0.75rem; color: var(--app-text-muted);"></div>
-                    <div id="update-progress" style="display: none;" class="mt-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <div class="spinner-border spinner-border-sm" style="color: var(--app-accent);"></div>
-                            <span id="update-progress-text" style="font-size: 0.875rem;">Updating...</span>
-                        </div>
-                    </div>
-                    <div id="update-result" style="display: none;" class="mt-3"></div>
+                    <div id="update-modal-notes" class="mb-3 p-3" style="display: none; font-size: 0.8125rem; color: var(--app-text-secondary); max-height: 300px; overflow-y: auto; background: var(--app-bg-secondary); border-radius: 8px; border: 1px solid var(--app-border);"></div>
                 </div>
-                <div class="modal-footer" id="update-modal-actions">
-                    <a id="update-release-link" href="#" target="_blank" class="btn btn-app-ghost btn-sm me-auto" style="font-size: 0.8125rem;">
-                        <i class="bi bi-box-arrow-up-right me-1"></i>Release Notes
-                    </a>
+                <div class="modal-footer">
                     <button class="btn btn-app-ghost" data-bs-dismiss="modal">Later</button>
-                    <button class="btn btn-app-primary" onclick="applyUpdate()">
-                        <i class="bi bi-download me-1"></i>Update Now
-                    </button>
+                    <a id="update-download-link" href="#" target="_blank" class="btn btn-app-primary">
+                        <i class="bi bi-download me-1"></i>Download Update
+                    </a>
                 </div>
             </div>
         </div>
@@ -299,45 +291,20 @@
         if (event) event.preventDefault();
         if (_updateData) {
             document.getElementById('update-modal-version').textContent = 'v' + _updateData.latest_version;
-            document.getElementById('update-release-link').href = _updateData.release_url || '#';
+            document.getElementById('update-download-link').href = _updateData.release_url || '#';
+
             const notesEl = document.getElementById('update-modal-notes');
             if (_updateData.release_notes) {
-                notesEl.textContent = _updateData.release_notes;
+                // Render release notes as markdown
+                try {
+                    notesEl.innerHTML = marked.parse(_updateData.release_notes);
+                } catch (e) {
+                    notesEl.textContent = _updateData.release_notes;
+                }
                 notesEl.style.display = 'block';
             }
-            const method = _updateData.install_method === 'pyapp' ? 'PyApp self-update' : 'pip upgrade';
-            document.getElementById('update-modal-method').textContent = 'Install method: ' + method;
         }
-        // Reset state
-        document.getElementById('update-progress').style.display = 'none';
-        document.getElementById('update-result').style.display = 'none';
-        document.getElementById('update-modal-actions').style.display = '';
         new bootstrap.Modal(document.getElementById('updateModal')).show();
-    }
-
-    async function applyUpdate() {
-        document.getElementById('update-progress').style.display = 'block';
-        document.getElementById('update-modal-actions').querySelectorAll('button').forEach(b => b.disabled = true);
-        try {
-            const resp = await fetch('/api/apply-update', { method: 'POST' });
-            const data = await resp.json();
-            document.getElementById('update-progress').style.display = 'none';
-            const resultEl = document.getElementById('update-result');
-            resultEl.style.display = 'block';
-            if (data.status === 'success') {
-                resultEl.innerHTML = '<div class="alert-app alert-app-success"><i class="bi bi-check-circle me-2"></i>' + data.message + '</div>';
-                if (data.needs_restart) {
-                    resultEl.innerHTML += '<p class="mt-2" style="font-size:0.8125rem; color:var(--app-text-secondary);">Please restart Spark to use the new version.</p>';
-                }
-            } else {
-                resultEl.innerHTML = '<div class="alert-app alert-app-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + data.message + '</div>';
-            }
-        } catch (e) {
-            document.getElementById('update-progress').style.display = 'none';
-            document.getElementById('update-result').style.display = 'block';
-            document.getElementById('update-result').innerHTML = '<div class="alert-app alert-app-danger">Update failed: ' + e.message + '</div>';
-        }
-        document.getElementById('update-modal-actions').querySelectorAll('button').forEach(b => b.disabled = false);
     }
 
     async function checkForUpdate() {

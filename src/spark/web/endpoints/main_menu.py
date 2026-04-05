@@ -119,15 +119,6 @@ async def check_update(request: Request) -> JSONResponse:
     )
 
 
-@router.post("/api/apply-update")
-async def apply_update(request: Request) -> JSONResponse:
-    """API: apply an available update."""
-    from spark.core.updater import apply_update
-
-    result = apply_update()
-    return JSONResponse(result)
-
-
 @router.post("/api/dismiss-update")
 async def dismiss_update(request: Request) -> JSONResponse:
     """API: dismiss the update notification for this session."""
