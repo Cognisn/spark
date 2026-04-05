@@ -103,12 +103,10 @@ jobs:
         id: pyapp_config
         shell: bash
         run: |
-          # GUI mode: off for Windows (pythonw.exe causes stdio hang)
-          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
-            echo "is_gui=0" >> $GITHUB_OUTPUT
-          else
-            echo "is_gui=1" >> $GITHUB_OUTPUT
-          fi
+          # GUI mode: uses pythonw.exe on Windows (no console window)
+          # The WindowsSelectorEventLoopPolicy in application.py prevents the
+          # asyncio hang that previously required IS_GUI=0
+          echo "is_gui=1" >> $GITHUB_OUTPUT
 
       - name: Generate icons and splash image
         run: |
