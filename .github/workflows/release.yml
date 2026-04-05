@@ -110,35 +110,12 @@ jobs:
             echo "is_gui=1" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate splash image
+      - name: Generate icons and splash image
         run: |
           pip install Pillow
           python assets/generate_icons.py
           python assets/generate_installer_assets.py
-          # Generate a 640x400 splash image for PyApp first-run screen
-          python -c "
-from assets.generate_installer_assets import BG_DEEP, BG_PRIMARY, ACCENT, TEXT_PRIMARY, TEXT_SECONDARY, _draw_lightning_bolt, _try_font, _centered_text
-from PIL import Image, ImageDraw
-img = Image.new('RGB', (640, 400), BG_DEEP)
-draw = ImageDraw.Draw(img)
-for y in range(400):
-    t = y / 400
-    r = int(BG_DEEP[0] + (BG_PRIMARY[0] - BG_DEEP[0]) * t * 0.6)
-    g = int(BG_DEEP[1] + (BG_PRIMARY[1] - BG_DEEP[1]) * t * 0.6)
-    b = int(BG_DEEP[2] + (BG_PRIMARY[2] - BG_DEEP[2]) * t * 0.6)
-    draw.line([(0, y), (640, y)], fill=(r, g, b))
-_draw_lightning_bolt(draw, 320, 120, 70)
-font_title = _try_font(36, bold=True)
-font_sub = _try_font(14)
-font_hint = _try_font(12)
-_centered_text(draw, 175, 'Spark', font_title, TEXT_PRIMARY, 640)
-_centered_text(draw, 225, 'Secure Personal AI Research Kit', font_sub, TEXT_SECONDARY, 640)
-_centered_text(draw, 255, 'by Cognisn', font_hint, ACCENT, 640)
-_centered_text(draw, 340, 'Setting up environment, please wait...', font_hint, TEXT_SECONDARY, 640)
-img.save('assets/installer/splash-screen.png')
-print('Generated: assets/installer/splash-screen.png')
-"
-          # Copy into pyapp-src for build access
+          python assets/generate_splash.py
           cp assets/installer/splash-screen.png pyapp-src/splash-screen.png
 
       - name: Build PyApp binary
