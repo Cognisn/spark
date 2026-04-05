@@ -148,10 +148,17 @@ jobs:
           PYAPP_SPLASH_WINDOW_TITLE: "Spark — Setting up environment"
         run: |
           cd pyapp-src
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            cross build --release --features splash --target ${{ matrix.target }}
+          # Splash screen requires a windowing system (winit) — disable for Linux
+          if [[ "${{ matrix.target }}" == *"linux"* ]]; then
+            FEATURES=""
           else
-            cargo build --release --features splash --target ${{ matrix.target }}
+            FEATURES="--features splash"
+          fi
+
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release $FEATURES --target ${{ matrix.target }}
+          else
+            cargo build --release $FEATURES --target ${{ matrix.target }}
           fi
 
       - name: Prepare binary (Unix)
