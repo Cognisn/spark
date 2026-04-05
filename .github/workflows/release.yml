@@ -5,7 +5,8 @@ on:
     types: [published]
 
 env:
-  PYAPP_VERSION: "0.24.0"
+  PYAPP_VERSION: "0.29.0-splash.1"
+  PYAPP_FORK_REPO: "Cognisn/pyapp"
   PYTHON_VERSION: "3.12"
 
 jobs:
@@ -93,12 +94,12 @@ jobs:
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ matrix.variant }}
 
-      - name: Download PyApp source
+      - name: Download PyApp source (Cognisn fork with splash)
         shell: bash
         run: |
-          curl -LO "https://github.com/ofek/pyapp/releases/download/v${PYAPP_VERSION}/source.tar.gz"
-          tar xzf source.tar.gz
-          mv pyapp-v${PYAPP_VERSION} pyapp-src
+          curl -LO "https://github.com/${PYAPP_FORK_REPO}/archive/refs/tags/v${PYAPP_VERSION}.tar.gz"
+          tar xzf v${PYAPP_VERSION}.tar.gz
+          mv pyapp-${PYAPP_VERSION} pyapp-src
 
       - name: Copy wheel into build context
         shell: bash
@@ -119,6 +120,11 @@ jobs:
             echo "is_gui=1" >> $GITHUB_OUTPUT
           fi
 
+      - name: Generate splash icon
+        run: |
+          pip install Pillow
+          python assets/generate_icons.py
+
       - name: Build PyApp binary
         shell: bash
         env:
@@ -130,12 +136,20 @@ jobs:
           PYAPP_DISTRIBUTION_EMBED: "1"
           PYAPP_IS_GUI: ${{ steps.pyapp_config.outputs.is_gui }}
           PYAPP_METADATA_TEMPLATE: "Spark {version} by Cognisn"
+          # Cognisn fork splash screen configuration
+          PYAPP_SPLASH_ENABLED: "true"
+          PYAPP_SPLASH_THEME: "dark"
+          PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/assets/icons/spark-256.png
+          PYAPP_SPLASH_BG_COLOR: "080e1e"
+          PYAPP_SPLASH_TEXT_COLOR: "e8f0fa"
+          PYAPP_SPLASH_PROGRESS_COLOR: "5aaae8"
+          PYAPP_SPLASH_WINDOW_TITLE: "Spark — Setting up environment"
         run: |
           cd pyapp-src
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            cross build --release --target ${{ matrix.target }}
+            cross build --release --features splash --target ${{ matrix.target }}
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --features splash --target ${{ matrix.target }}
           fi
 
       - name: Prepare binary (Unix)
