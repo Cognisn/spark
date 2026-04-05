@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env:
-  PYAPP_VERSION: "0.29.0-splash.1"
+  PYAPP_VERSION: "0.29.0-splash.2"
   PYAPP_FORK_REPO: "Cognisn/pyapp"
   PYTHON_VERSION: "3.12"
 
@@ -442,25 +442,29 @@ jobs:
           !insertmacro MUI_LANGUAGE "English"
 
           Section "Install"
-            ; Clear PyApp cache from any previous version so the new wheel is used
+            ; Clean previous installation (preserve user config in %APPDATA%\spark)
+            ; Remove old binaries and launcher scripts
+            Delete "\$INSTDIR\\spark-engine.exe"
+            Delete "\$INSTDIR\\spark.exe"
+            Delete "\$INSTDIR\\launcher.vbs"
+            Delete "\$INSTDIR\\spark.bat"
+            Delete "\$INSTDIR\\spark.ico"
+            Delete "\$INSTDIR\\Uninstall.exe"
+            RMDir /r "\$INSTDIR\\wheels"
+
+            ; Clear PyApp cache so the new wheel is extracted fresh
             RMDir /r "\$LOCALAPPDATA\\pyapp"
 
+            ; Install new files
             SetOutPath \$INSTDIR
             File "binary\\spark-windows-x86_64.exe"
             Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark-engine.exe"
-            File "assets\\windows\\launcher.vbs"
             File "assets\\icons\\spark.ico"
 
-
-            ; Create a batch wrapper so shortcuts can launch via wscript
-            FileOpen \$0 "\$INSTDIR\\spark.bat" w
-            FileWrite \$0 '@echo off\$\\r\$\\n'
-            FileWrite \$0 'wscript.exe "\$INSTDIR\\launcher.vbs"\$\\r\$\\n'
-            FileClose \$0
-
+            ; Shortcuts launch spark-engine.exe directly (splash screen is built into PyApp)
             CreateDirectory "\$SMPROGRAMS\\Cognisn"
-            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
-            CreateShortCut "\$DESKTOP\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$DESKTOP\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
 
             WriteUninstaller "\$INSTDIR\\Uninstall.exe"
 
@@ -474,9 +478,8 @@ jobs:
             ; Remove PyApp cached environment
             RMDir /r "\$LOCALAPPDATA\\pyapp"
 
+            ; Remove all installed files
             Delete "\$INSTDIR\\spark-engine.exe"
-            Delete "\$INSTDIR\\launcher.vbs"
-            Delete "\$INSTDIR\\spark.bat"
             Delete "\$INSTDIR\\spark.ico"
             Delete "\$INSTDIR\\Uninstall.exe"
             RMDir "\$INSTDIR"
