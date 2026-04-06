@@ -61,40 +61,32 @@ python -m spark.launch
 
 ## 2. macOS DMG
 
-Three variants are available for macOS. Each is offered for both **ARM64** (Apple Silicon -- M1/M2/M3/M4) and **x86_64** (Intel) architectures.
+Available for both **ARM64** (Apple Silicon -- M1/M2/M3/M4) and **x86_64** (Intel) architectures. The DMG is code-signed with a Developer ID certificate and notarized by Apple.
 
 ### Step by step
 
-1. **Download** the `.dmg` file for your architecture and preferred variant from the [Releases](https://github.com/Cognisn/spark/releases) page.
+1. **Download** the `.dmg` file for your architecture from the [Releases](https://github.com/Cognisn/spark/releases) page.
 
 2. **Open** the DMG by double-clicking. Drag the **Spark** icon into the **Applications** folder.
 
-3. **Launch Spark**. Double-click Spark in Applications. The app is code-signed with a Developer ID certificate and notarized by Apple, so it should open without any Gatekeeper warnings.
+3. **Launch Spark**. Double-click Spark in Applications. The app is notarized by Apple, so it should open without any Gatekeeper warnings.
 
    > **Troubleshooting**: If macOS shows a warning that "Spark can't be opened", this means the notarization ticket was not stapled to this build. In that case:
    > - Right-click (or Control-click) on Spark in Applications and choose **Open**. Click **Open** again to confirm.
    > - Or go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**.
    > - Or run `xattr -cr /Applications/Spark.app` in Terminal to remove the quarantine attribute.
 
-4. Your browser opens to the Spark loading screen, then redirects to the UI when ready.
+4. On first launch, a splash screen appears while the Python runtime is extracted and dependencies are downloaded from PyPI. This takes 30-60 seconds and requires an internet connection. Subsequent launches start in a few seconds.
 
-### First-run behaviour by variant
-
-| Variant  | What happens on first launch |
-|----------|------------------------------|
-| Lite     | Downloads all Python dependencies from PyPI. Requires internet. Takes 30-60 seconds depending on connection speed. |
-| Standard | Core dependencies are bundled. Downloads the sentence-transformers ML model only. Takes 10-15 seconds. |
-| Full     | Everything is bundled. Extracts and starts immediately in roughly 5 seconds. No internet needed. |
+5. Your browser opens to the Spark loading screen, then redirects to the UI when ready.
 
 ---
 
 ## 3. Windows NSIS Installer
 
-Three variants are available as Windows setup executables.
-
 ### Step by step
 
-1. **Download** the `Spark-<variant>-setup.exe` for your preferred variant from the [Releases](https://github.com/Cognisn/spark/releases) page.
+1. **Download** the `Spark-<version>-windows-x86_64-setup.exe` from the [Releases](https://github.com/Cognisn/spark/releases) page.
 
 2. **Run the installer**. Follow the setup wizard. The default install location is:
 
@@ -106,79 +98,23 @@ Three variants are available as Windows setup executables.
    - A **desktop shortcut**
    - A **Start Menu** entry under Cognisn > Spark
 
-4. **Launch** from the desktop shortcut or Start Menu. Your browser opens to the Spark UI.
+4. **Launch** from the desktop shortcut or Start Menu.
 
-5. **Windows Firewall**: on first launch Windows may ask whether to allow Spark to communicate on the network. Choose **Allow access** -- Spark needs this to serve its local web UI and to reach LLM provider APIs.
+5. On first launch, a splash screen appears while the Python runtime is extracted and dependencies are downloaded from PyPI. This takes 30-60 seconds and requires an internet connection. Subsequent launches start in a few seconds.
 
-### First-run behaviour by variant
+6. Your browser opens to the Spark UI.
 
-| Variant  | What happens on first launch |
-|----------|------------------------------|
-| Lite     | Downloads all Python dependencies from PyPI. Requires internet. Takes 30-60 seconds depending on connection speed. |
-| Standard | Core dependencies are bundled. Downloads the sentence-transformers ML model only. Takes 10-15 seconds. |
-| Full     | Everything is bundled. Extracts and starts immediately in roughly 5 seconds. No internet needed. |
+7. **Windows Firewall**: on first launch Windows may ask whether to allow Spark to communicate on the network. Choose **Allow access** -- Spark needs this to serve its local web UI and to reach LLM provider APIs.
 
 ---
 
-## 4. Linux AppImage
+## 4. Linux
 
-Three variants are available as portable AppImage files. No installation or root access required.
-
-### Step by step
-
-1. **Download** the `Spark-<variant>-x86_64.AppImage` from the [Releases](https://github.com/Cognisn/spark/releases) page.
-
-2. **Make it executable**:
-
-   ```bash
-   chmod +x Spark-*.AppImage
-   ```
-
-3. **Run**:
-
-   ```bash
-   ./Spark-*.AppImage
-   ```
-
-   Your browser opens to the Spark UI.
-
-4. **Desktop integration** (optional). To get a proper application icon and launcher entry, either:
-
-   - Use [appimaged](https://github.com/probonopd/go-appimage) for automatic integration.
-   - Create a `.desktop` file manually:
-
-     ```ini
-     [Desktop Entry]
-     Name=Spark
-     Exec=/path/to/Spark-Standard-x86_64.AppImage
-     Icon=spark
-     Type=Application
-     Categories=Development;Science;
-     ```
-
-     Place it in `~/.local/share/applications/` and update the `Exec` path to match where you saved the AppImage.
-
-### First-run behaviour by variant
-
-| Variant  | What happens on first launch |
-|----------|------------------------------|
-| Lite     | Downloads all Python dependencies from PyPI. Requires internet. Takes 30-60 seconds depending on connection speed. |
-| Standard | Core dependencies are bundled. Downloads the sentence-transformers ML model only. Takes 10-15 seconds. |
-| Full     | Everything is bundled. Extracts and starts immediately in roughly 5 seconds. No internet needed. |
+Linux users install via pip (see section 1 above). Pre-built binaries are not currently available for Linux. Any desktop Linux distribution with Python 3.12+ and a web browser is supported.
 
 ---
 
-## 5. Variant Comparison
-
-| Variant  | Download Size | First Run Time | Internet Required | Best For |
-|----------|---------------|----------------|-------------------|----------|
-| Lite     | ~25 MB        | 30-60s (downloads dependencies) | Yes | Small download, users with a fast connection |
-| Standard | ~80 MB        | 10-15s (downloads ML model) | Partially (model download only) | Balance of download size and startup speed |
-| Full     | ~500 MB       | ~5s (extract only) | No | Offline or air-gapped environments, instant start |
-
----
-
-## 6. First-Run Configuration
+## 5. First-Run Configuration
 
 After launching Spark for the first time, the following flow applies regardless of installation method.
 
@@ -288,19 +224,19 @@ Then restart Spark. Your conversations and settings are preserved.
 2. The installer clears the PyApp cache automatically and replaces the previous installation.
 3. Launch Spark from the desktop shortcut or Start Menu as usual.
 
-### Linux AppImage
+### Linux (pip)
 
-1. Download the new AppImage.
-2. Replace the old file (or keep both and update your `.desktop` file).
-3. Make it executable (`chmod +x`) and run.
+```bash
+pip install --upgrade cognisn-spark
+```
 
 ### Auto-update notifications
 
 Spark checks for new versions in the background. When an update is available:
 
 1. A notification badge appears on the **Help** menu in the web UI.
-2. Open Help to see the available version.
-3. Click **Update Now** for a one-click upgrade (downloads and restages the new version, then restarts).
+2. A modal displays on the dashboard showing the current and latest version with rendered release notes.
+3. Click **Download Update** to open the GitHub releases page where you can download the new installer for your platform.
 
 ---
 

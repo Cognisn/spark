@@ -1,6 +1,6 @@
 # Auto-Update
 
-Spark checks for updates on startup and can apply them automatically depending on the installation method.
+Spark checks for updates on startup and notifies you when a newer version is available.
 
 ## Update Check
 
@@ -11,38 +11,35 @@ After the web server is ready, Spark checks the [GitHub Releases](https://github
 
 The update check is non-blocking and does not prevent Spark from starting.
 
-## Installation Methods
+## Update Notification
 
-Spark detects how it was installed and offers the appropriate update path:
+When an update is available:
 
-### PyApp Binary
+1. A badge appears on the **Help** menu item in the navigation bar
+2. On the dashboard, a modal displays showing the current and latest version with rendered release notes
+3. Click **Download Update** to open the GitHub releases page where you can download the new installer
 
-If Spark was installed as a pre-built binary (via PyApp), the updater:
+The notification modal only appears once per session. You can re-open it from the Help menu at any time.
 
-1. Locates the PyApp binary (macOS .app bundle, Windows .exe, or Linux binary)
-2. Runs `<binary> self update` to download and install the new version
-3. Prompts for a restart
+## Updating
 
-PyApp bundles a Python runtime, so the update includes both the application and its dependencies.
+### macOS (DMG)
 
-### pip Install
+1. Download the new DMG from the releases page.
+2. Open the DMG and drag Spark to Applications (replacing the old version).
+3. On next launch, the app detects the binary has changed and clears the PyApp cache automatically.
 
-If Spark was installed via pip, the updater:
+### Windows (NSIS Installer)
 
-1. Runs `pip install --upgrade cognisn-spark`
-2. Prompts for a restart
-
-## Manual Update
+1. Download and run the new setup executable.
+2. The installer clears the old installation and PyApp cache automatically.
+3. Launch Spark from the desktop shortcut or Start Menu.
 
 ### pip
 
 ```bash
 pip install --upgrade cognisn-spark
 ```
-
-### PyApp Binary
-
-Download the latest binary from the [Releases page](https://github.com/Cognisn/spark/releases) and replace the existing binary.
 
 ## Version Comparison
 
@@ -54,15 +51,6 @@ The updater compares semantic versions including pre-release suffixes:
 - `0.2.0b2` is newer than `0.2.0a1`
 
 The ordering is: alpha (a) < beta (b) < release candidate (rc) < release.
-
-## Update Notification
-
-When an update is available, the web UI displays:
-
-- The current and latest version numbers
-- A link to the release notes
-- An **Update** button (if the installation method supports it)
-- Whether the update is a pre-release
 
 ## Disabling Update Checks
 

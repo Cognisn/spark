@@ -64,23 +64,14 @@
 
 ### Download (Standalone)
 
-Spark is available as a standalone download in three variants:
+Pre-built binaries with an embedded Python runtime and a native splash screen for first-run setup. Dependencies are downloaded from PyPI on first launch (~30-60 seconds, requires internet).
 
-| Variant | Size | Description |
-|---------|------|-------------|
-| **Lite** | ~25 MB | Python + Spark wheel embedded. Dependencies downloaded on first run. Requires internet on first launch. |
-| **Standard** | ~80 MB | All dependencies pre-installed except sentence-transformers (ML model). Faster first run; sentence-transformers downloads on first use. |
-| **Full** | ~500 MB | Everything pre-installed including sentence-transformers. Fully offline, instant start. |
-
-#### Platform Downloads
-
-| Platform | Architecture | Lite | Standard | Full |
-|----------|-------------|------|----------|------|
-| macOS | ARM64 (Apple Silicon) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| macOS | x86_64 (Intel) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Windows | x86_64 | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Linux | x86_64 | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Linux | ARM64 | [Download](https://github.com/Cognisn/spark/releases/latest) | -- | -- |
+| Platform | Architecture | Format | Download |
+|----------|-------------|--------|----------|
+| macOS | ARM64 (Apple Silicon) | Signed + notarized DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| macOS | x86_64 (Intel) | Signed + notarized DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Windows | x86_64 | NSIS installer | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Linux | Any | pip install (see below) | -- |
 
 ### Install from PyPI
 
