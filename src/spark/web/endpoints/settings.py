@@ -176,6 +176,24 @@ def _secret_name(dotted_key: str) -> str:
     return "_".join(parts[1:])
 
 
+@router.get("/api/reveal-secret")
+async def reveal_secret(request: Request) -> JSONResponse:
+    """API: reveal a secret value (for the eye toggle in settings)."""
+    key = request.query_params.get("key", "")
+    if not key:
+        return JSONResponse({"error": "Missing key"}, status_code=400)
+
+    ctx = getattr(request.app.state, "ctx", None)
+    if not ctx:
+        return JSONResponse({"error": "Not initialised"}, status_code=503)
+
+    val = ctx.settings.get(key)
+    if val is None or str(val) == "":
+        return JSONResponse({"value": ""})
+
+    return JSONResponse({"value": str(val)})
+
+
 @router.post("/api/save")
 async def save_settings(request: Request) -> JSONResponse:
     """Persist settings changes to config.yaml."""

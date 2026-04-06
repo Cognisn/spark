@@ -550,10 +550,24 @@ function toggleSecretField(btn) {
     }
 }
 
-function togglePasswordVisibility(btn) {
+async function togglePasswordVisibility(btn) {
     const input = btn.parentElement.querySelector('input');
     const icon = btn.querySelector('i');
     if (input.type === 'password') {
+        // Fetch actual value from server if still showing mask
+        const mask = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+        if (input.value === mask && input.dataset.key) {
+            try {
+                const resp = await fetch(`/settings/api/reveal-secret?key=${encodeURIComponent(input.dataset.key)}`);
+                const data = await resp.json();
+                if (data.value) {
+                    input.value = data.value;
+                    input.dataset.secretRevealed = 'true';
+                }
+            } catch (e) {
+                // Failed to fetch — just show the mask
+            }
+        }
         input.type = 'text';
         icon.classList.replace('bi-eye', 'bi-eye-slash');
     } else {
