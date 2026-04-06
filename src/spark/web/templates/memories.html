@@ -156,7 +156,7 @@ function confirmDeleteAll() { document.getElementById('delete-all-confirm').valu
 async function deleteAllMemories() {
     const confirm = document.getElementById('delete-all-confirm').value;
     if (confirm !== 'DELETE_ALL') { AppToast.warning('Confirmation', 'Type DELETE_ALL to confirm.'); return; }
-    await fetch('/memories/api/all', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({confirm: 'DELETE_ALL'}) });
+    await fetch('/memories/api/delete-all', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({confirm: 'DELETE_ALL'}) });
     bootstrap.Modal.getInstance(document.getElementById('deleteAllModal'))?.hide();
     loadMemories(); loadStats();
 }

@@ -114,12 +114,15 @@ async def delete_memory(request: Request, memory_id: int) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@router.delete("/api/all")
+@router.post("/api/delete-all")
 async def delete_all_memories(request: Request) -> JSONResponse:
     idx = _get_memory_index(request)
     if not idx:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
     if data.get("confirm") != "DELETE_ALL":
         return JSONResponse({"error": "Confirmation required"}, status_code=400)
     idx.clear_all()
