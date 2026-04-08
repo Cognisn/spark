@@ -103,7 +103,8 @@
 
                         {% for field in group.fields %}
                         <div class="mb-3 row align-items-center"
-                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}>
+                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}
+                             {% if field.bedrock_auth is defined and field.bedrock_auth %}data-bedrock-auth="{{ field.bedrock_auth }}"{% endif %}>
                             <label class="col-sm-4 form-label mb-0" for="field-{{ field.key|replace('.', '-') }}">
                                 {{ field.label }}
                             </label>
@@ -180,6 +181,12 @@
                                        id="field-{{ field.key|replace('.', '-') }}"
                                        data-key="{{ field.key }}"
                                        value="{{ field.value }}">
+                                {% endif %}
+
+                                {% if field.help is defined and field.help and field.type != 'textarea' %}
+                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {{ field.help }}
+                                </div>
                                 {% endif %}
                             </div>
                         </div>
@@ -646,6 +653,33 @@ function updateDatabaseFields() {
     });
 }
 
+// Bedrock auth method field toggling
+function updateBedrockAuthFields() {
+    const authSelect = document.getElementById('field-providers-aws_bedrock-auth_method');
+    if (!authSelect) return;
+    const method = authSelect.value;
+
+    document.querySelectorAll('[data-bedrock-auth]').forEach(row => {
+        const authType = row.dataset.bedrockAuth;
+        // 'sso' shows for sso only, 'keys' shows for iam & session, 'session' shows for session only
+        const shouldShow =
+            (authType === 'sso' && method === 'sso') ||
+            (authType === 'keys' && (method === 'iam' || method === 'session')) ||
+            (authType === 'session' && method === 'session');
+
+        const inputs = row.querySelectorAll('input, select, button');
+        if (shouldShow) {
+            row.style.display = '';
+            row.style.opacity = '1';
+            row.style.pointerEvents = '';
+            inputs.forEach(el => el.disabled = false);
+        } else {
+            row.style.display = 'none';
+            inputs.forEach(el => el.disabled = true);
+        }
+    });
+}
+
 // Tool category enable/disable toggling
 function updateToolCategories() {
     document.querySelectorAll('.tool-category-toggle').forEach(toggle => {
@@ -700,6 +734,11 @@ document.addEventListener('DOMContentLoaded', () => {
             el.dataset.secretChanged = 'true';
         });
     });
+
+    // Init Bedrock auth field visibility
+    updateBedrockAuthFields();
+    const bedrockAuthEl = document.getElementById('field-providers-aws_bedrock-auth_method');
+    if (bedrockAuthEl) bedrockAuthEl.addEventListener('change', updateBedrockAuthFields);
 
     // Init tool category toggling
     updateToolCategories();

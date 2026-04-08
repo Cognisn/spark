@@ -19,11 +19,20 @@ class BedrockProvider(LLMService):
         region: str = "us-east-1",
         *,
         profile: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        session_token: str | None = None,
     ) -> None:
         import boto3
 
         session_kwargs: dict[str, Any] = {"region_name": region}
-        if profile:
+        if access_key and secret_key:
+            # Explicit IAM / session credentials supplied via settings.
+            session_kwargs["aws_access_key_id"] = access_key
+            session_kwargs["aws_secret_access_key"] = secret_key
+            if session_token:
+                session_kwargs["aws_session_token"] = session_token
+        elif profile:
             session_kwargs["profile_name"] = profile
         session = boto3.Session(**session_kwargs)
         self._client = session.client("bedrock-runtime")
