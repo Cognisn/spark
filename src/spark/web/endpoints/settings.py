@@ -263,6 +263,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "anthropic",
                     "title": "Anthropic",
+                    "help_url": "/help/provider/anthropic",
                     "fields": [
                         _toggle("providers.anthropic.enabled", "Enabled", settings),
                         _secret("providers.anthropic.api_key", "API Key", settings),
@@ -271,6 +272,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "aws_bedrock",
                     "title": "AWS Bedrock",
+                    "help_url": "/help/provider/aws_bedrock",
                     "fields": [
                         _toggle("providers.aws_bedrock.enabled", "Enabled", settings),
                         _text("providers.aws_bedrock.region", "Region", settings, "us-east-1"),
@@ -286,6 +288,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "ollama",
                     "title": "Ollama",
+                    "help_url": "/help/provider/ollama",
                     "fields": [
                         _toggle("providers.ollama.enabled", "Enabled", settings),
                         _text(
@@ -299,6 +302,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "google_gemini",
                     "title": "Google Gemini",
+                    "help_url": "/help/provider/google_gemini",
                     "fields": [
                         _toggle("providers.google_gemini.enabled", "Enabled", settings),
                         _secret("providers.google_gemini.api_key", "API Key", settings),
@@ -307,6 +311,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "xai",
                     "title": "X.AI",
+                    "help_url": "/help/provider/xai",
                     "fields": [
                         _toggle("providers.xai.enabled", "Enabled", settings),
                         _secret("providers.xai.api_key", "API Key", settings),
