@@ -165,6 +165,11 @@ _SECRET_KEYS = {
     "database.password",
 }
 
+# Keys whose UI value is a comma-separated string but stored as a list in config.yaml
+_LIST_KEYS = {
+    "embedded_tools.filesystem.allowed_paths",
+}
+
 
 def _secret_name(dotted_key: str) -> str:
     """Derive a secret store key name from a dotted settings key.
@@ -194,6 +199,35 @@ async def reveal_secret(request: Request) -> JSONResponse:
     return JSONResponse({"value": str(val)})
 
 
+@router.get("/api/browse-directory")
+async def browse_directory(request: Request) -> JSONResponse:
+    """List subdirectories at a given path for the folder browser."""
+    from pathlib import Path
+
+    path_str = request.query_params.get("path", "")
+    if not path_str:
+        # Return common root directories
+        path_str = str(Path.home())
+
+    target = Path(path_str).resolve()
+    if not target.is_dir():
+        return JSONResponse({"error": "Not a directory"}, status_code=400)
+
+    dirs = []
+    try:
+        for entry in sorted(target.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                dirs.append({"name": entry.name, "path": str(entry)})
+    except PermissionError:
+        pass
+
+    return JSONResponse({
+        "current": str(target),
+        "parent": str(target.parent) if target != target.parent else None,
+        "directories": dirs,
+    })
+
+
 @router.post("/api/save")
 async def save_settings(request: Request) -> JSONResponse:
     """Persist settings changes to config.yaml."""
@@ -221,6 +255,13 @@ async def save_settings(request: Request) -> JSONResponse:
                 # Write a secret:// URI reference in the config
                 _set_nested(raw, dotted_key, f"secret://{name}")
                 logger.info("Stored secret for %s", dotted_key)
+            elif dotted_key in _LIST_KEYS:
+                # Ensure list keys are stored as lists in config.yaml
+                if isinstance(value, str):
+                    value = [p.strip() for p in value.split(",") if p.strip()]
+                elif not isinstance(value, list):
+                    value = []
+                _set_nested(raw, dotted_key, value)
             else:
                 _set_nested(raw, dotted_key, value)
 
@@ -658,9 +699,9 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 {
                     "key": "embedded_tools.filesystem.allowed_paths",
                     "label": "Allowed Paths",
-                    "type": "text",
-                    "value": ", ".join(get("embedded_tools.filesystem.allowed_paths", []) or []),
-                    "help": "Comma-separated list of directories. Empty = working directory only.",
+                    "type": "path_list",
+                    "value": get("embedded_tools.filesystem.allowed_paths", []) or [],
+                    "help": "Directories the AI can access. Empty = working directory only.",
                 },
             ],
             "tools": [

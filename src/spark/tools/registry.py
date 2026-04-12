@@ -143,6 +143,9 @@ def execute_builtin_tool(
         if tool_name in fs_tools:
             fs_config = embedded.get("filesystem", {})
             allowed = fs_config.get("allowed_paths", [])
+            # Handle legacy string format (comma-separated)
+            if isinstance(allowed, str):
+                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
             if not allowed:
                 return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
 

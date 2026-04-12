@@ -289,6 +289,23 @@
                                                     <i class="bi bi-eye"></i>
                                                 </button>
                                             </div>
+                                            {% elif field.type == 'path_list' %}
+                                            <div class="path-list-control" data-key="{{ field.key }}" id="pathlist-{{ field.key | replace('.', '-') }}">
+                                                <div class="path-list-items">
+                                                    {% for p in field.value %}
+                                                    <div class="path-list-entry d-flex align-items-center gap-2 mb-1">
+                                                        <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p }}</code>
+                                                        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
+                                                            <i class="bi bi-dash-circle"></i>
+                                                        </button>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                                <button class="btn btn-app-outline btn-sm mt-1" onclick="openPathBrowser('{{ field.key }}')" title="Add directory">
+                                                    <i class="bi bi-plus-circle me-1"></i>Add Path
+                                                </button>
+                                            </div>
+
                                             {% elif field.type == 'number' %}
                                             <input type="number"
                                                    class="form-control form-control-sm setting-input"
@@ -522,6 +539,35 @@
                 </div>
             </div>
 
+            <!-- Directory Browser Modal -->
+            <div class="modal fade" id="pathBrowserModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-folder2-open me-2"></i>Select Directory</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <button class="btn btn-app-ghost btn-sm" onclick="pathBrowserUp()" title="Parent directory" id="pathBrowserUpBtn">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <code id="pathBrowserCurrent" class="flex-grow-1" style="font-size: 0.75rem; padding: 0.375rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></code>
+                            </div>
+                            <div id="pathBrowserList" style="max-height: 350px; overflow-y: auto;">
+                                <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                            <button class="btn btn-app-primary" onclick="selectCurrentPath()">
+                                <i class="bi bi-check-lg me-1"></i>Select This Folder
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Save -->
             <div class="text-end mb-5">
                 <button class="btn btn-app-secondary me-2" onclick="window.location.reload()">
@@ -594,6 +640,18 @@ function collectSettings() {
         }
         settings[key] = value;
     });
+
+    // Collect path list controls
+    document.querySelectorAll('.path-list-control').forEach(el => {
+        const key = el.dataset.key;
+        const paths = [];
+        el.querySelectorAll('.path-list-entry code').forEach(code => {
+            const p = code.textContent.trim();
+            if (p) paths.push(p);
+        });
+        settings[key] = paths;
+    });
+
     return settings;
 }
 
@@ -969,6 +1027,85 @@ async function deleteMCPServer(name) {
 }
 
 function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// -- Path List (Allowed Paths) --
+
+let _pathBrowserTargetKey = null;
+let _pathBrowserCurrentPath = null;
+let _pathBrowserParentPath = null;
+
+function removePathEntry(btn) {
+    btn.closest('.path-list-entry').remove();
+}
+
+function openPathBrowser(fieldKey) {
+    _pathBrowserTargetKey = fieldKey;
+    _pathBrowserCurrentPath = null;
+    const modal = new bootstrap.Modal(document.getElementById('pathBrowserModal'));
+    modal.show();
+    loadPathBrowser('');
+}
+
+async function loadPathBrowser(path) {
+    const list = document.getElementById('pathBrowserList');
+    list.innerHTML = '<div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>';
+    try {
+        const url = path ? `/settings/api/browse-directory?path=${encodeURIComponent(path)}` : '/settings/api/browse-directory';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        _pathBrowserCurrentPath = data.current;
+        _pathBrowserParentPath = data.parent;
+        document.getElementById('pathBrowserCurrent').textContent = data.current;
+        document.getElementById('pathBrowserUpBtn').disabled = !data.parent;
+
+        if (!data.directories.length) {
+            list.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted); font-size:0.8125rem;">No subdirectories</div>';
+            return;
+        }
+        list.innerHTML = data.directories.map(d => `
+            <div class="d-flex align-items-center gap-2 py-1 px-2 rounded" style="cursor:pointer; font-size:0.8125rem; transition: background 0.1s;"
+                 onmouseover="this.style.background='var(--app-hover-bg)'" onmouseout="this.style.background=''"
+                 onclick="loadPathBrowser('${escapeHtml(d.path).replace(/'/g, "\\'")}')">
+                <i class="bi bi-folder-fill" style="color:var(--app-accent);"></i>
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(d.name)}</span>
+            </div>
+        `).join('');
+    } catch (err) {
+        list.innerHTML = '<div class="alert-app alert-app-danger">Failed to load directories.</div>';
+    }
+}
+
+function pathBrowserUp() {
+    if (_pathBrowserParentPath) loadPathBrowser(_pathBrowserParentPath);
+}
+
+function selectCurrentPath() {
+    if (!_pathBrowserCurrentPath || !_pathBrowserTargetKey) return;
+    const containerId = 'pathlist-' + _pathBrowserTargetKey.replace(/\./g, '-');
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Check for duplicates
+    const existing = container.querySelectorAll('.path-list-entry code');
+    for (const el of existing) {
+        if (el.textContent.trim() === _pathBrowserCurrentPath) {
+            AppToast.warning('Duplicate', 'This path is already in the list.');
+            return;
+        }
+    }
+
+    const items = container.querySelector('.path-list-items');
+    const entry = document.createElement('div');
+    entry.className = 'path-list-entry d-flex align-items-center gap-2 mb-1';
+    entry.innerHTML = `
+        <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(_pathBrowserCurrentPath)}</code>
+        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
+            <i class="bi bi-dash-circle"></i>
+        </button>
+    `;
+    items.appendChild(entry);
+    bootstrap.Modal.getInstance(document.getElementById('pathBrowserModal'))?.hide();
+}
 
 // -- Settings Lock --
 
