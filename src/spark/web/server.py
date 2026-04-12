@@ -125,8 +125,24 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             from spark.llm.bedrock import BedrockProvider
 
             region = settings.get("providers.aws_bedrock.region", "us-east-1")
+            auth_method = settings.get("providers.aws_bedrock.auth_method", "sso")
             profile = settings.get("providers.aws_bedrock.profile")
-            provider = BedrockProvider(region=region, profile=profile)
+            access_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.access_key"))
+            secret_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.secret_key"))
+            session_token = _resolve_secret(
+                ctx, settings.get("providers.aws_bedrock.session_token")
+            )
+
+            # Only pass explicit keys when auth method is not SSO.
+            if auth_method in ("iam", "session") and access_key and secret_key:
+                provider = BedrockProvider(
+                    region=region,
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    session_token=session_token or None,
+                )
+            else:
+                provider = BedrockProvider(region=region, profile=profile)
             mgr.register_provider(provider)
         except Exception as e:
             logger.warning("Failed to init AWS Bedrock provider: %s", e)

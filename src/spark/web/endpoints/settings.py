@@ -160,6 +160,9 @@ def _handle_daemon_settings(data: dict, ctx: Any) -> None:
 # Keys that hold secret values — stored in secrets backend, not config.yaml
 _SECRET_KEYS = {
     "providers.anthropic.api_key",
+    "providers.aws_bedrock.access_key",
+    "providers.aws_bedrock.secret_key",
+    "providers.aws_bedrock.session_token",
     "providers.google_gemini.api_key",
     "providers.xai.api_key",
     "database.password",
@@ -324,6 +327,41 @@ def _build_sections(settings: object) -> list[dict]:
                             ["sso", "iam", "session"],
                             "sso",
                         ),
+                        {
+                            **_text(
+                                "providers.aws_bedrock.profile",
+                                "SSO Profile",
+                                settings,
+                                "",
+                            ),
+                            "bedrock_auth": "sso",
+                            "help": "AWS CLI profile name. Leave empty to use the default profile.",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.access_key",
+                                "Access Key ID",
+                                settings,
+                            ),
+                            "bedrock_auth": "keys",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.secret_key",
+                                "Secret Access Key",
+                                settings,
+                            ),
+                            "bedrock_auth": "keys",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.session_token",
+                                "Session Token",
+                                settings,
+                            ),
+                            "bedrock_auth": "session",
+                            "help": "Required for temporary session credentials only.",
+                        },
                     ],
                 },
                 {
