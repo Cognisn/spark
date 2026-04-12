@@ -294,14 +294,17 @@
                                                 {% endfor %}
                                             </select>
                                             {% elif field.type == 'secret' %}
+                                            {% set has_val = field.value and field.value|string != '' and not field.value|string|truncate(9, True, '') == 'secret://' %}
                                             <div class="input-group input-group-sm">
                                                 <input type="password"
                                                        class="form-control form-control-sm setting-input"
                                                        data-key="{{ field.key }}"
-                                                       value="{{ field.value }}"
+                                                       data-is-secret="true"
+                                                       {% if field.value and field.value|string != '' %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
+                                                       placeholder="{% if field.value and field.value|string != '' %}{% else %}Enter value{% endif %}"
                                                        autocomplete="off">
-                                                <button class="btn btn-outline-secondary" type="button"
-                                                        onclick="toggleSecretField(this)"
+                                                <button class="btn btn-app-ghost" type="button"
+                                                        onclick="togglePasswordVisibility(this)"
                                                         title="Show/hide">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
@@ -357,6 +360,14 @@
                                             {% endfor %}
                                         </div>
                                     </div>
+
+                                    {% if cat.id == 'email' %}
+                                    <div style="margin-top: 0.75rem; border-top: 1px solid var(--app-border); padding-top: 0.75rem;">
+                                        <button class="btn btn-app-outline btn-sm" onclick="testEmailConnection()">
+                                            <i class="bi bi-plug me-1"></i>Test Email Connection
+                                        </button>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -597,6 +608,24 @@
         </div>
     </div>
 </div>
+<!-- Email Test Results Modal -->
+<div class="modal fade" id="emailTestModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-envelope me-2"></i>Email Connection Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="emailTestBody">
+                <div class="text-center py-3"><div class="app-spinner mx-auto"></div><p class="mt-2" style="font-size: 0.875rem; color: var(--app-text-muted);">Testing connection...</p></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-app-ghost" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -1191,6 +1220,60 @@ function selectCurrentPath() {
     `;
     items.appendChild(entry);
     bootstrap.Modal.getInstance(document.getElementById('pathBrowserModal'))?.hide();
+}
+
+// -- Email Test Connection --
+
+async function testEmailConnection(sendTest) {
+    const body = document.getElementById('emailTestBody');
+    const label = sendTest ? 'Sending test email...' : 'Testing connection...';
+    body.innerHTML = `<div class="text-center py-3"><div class="app-spinner mx-auto"></div><p class="mt-2" style="font-size:0.875rem; color:var(--app-text-muted);">${label}</p></div>`;
+    // Only open modal if not already visible (avoids stacking when called from within)
+    const modalEl = document.getElementById('emailTestModal');
+    if (!bootstrap.Modal.getInstance(modalEl)) {
+        new bootstrap.Modal(modalEl).show();
+    }
+
+    try {
+        const resp = await fetch('/settings/api/test-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ send_test: !!sendTest }),
+        });
+        const data = await resp.json();
+
+        const statusClass = data.status === 'ok' ? 'success' : 'danger';
+        const statusIcon = data.status === 'ok' ? 'bi-check-circle-fill' : 'bi-x-circle-fill';
+        const statusLabel = data.status === 'ok'
+            ? (sendTest ? 'Test Email Sent' : 'Connection Successful')
+            : 'Connection Failed';
+
+        let html = `
+            <div class="text-center mb-3">
+                <i class="bi ${statusIcon}" style="font-size: 2rem; color: var(--app-${statusClass});"></i>
+                <h6 class="mt-2" style="color: var(--app-${statusClass});">${statusLabel}</h6>
+            </div>
+            <div style="font-size: 0.8125rem;">
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Host</div><div class="col-8"><code>${escapeHtml(data.host || '—')}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Port</div><div class="col-8"><code>${data.port || '—'}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">TLS</div><div class="col-8">${data.use_tls ? 'Yes (STARTTLS)' : 'No'}</div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Username</div><div class="col-8"><code>${escapeHtml(data.username || '—')}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Sender</div><div class="col-8"><code>${escapeHtml(data.sender || '—')}</code></div></div>
+            </div>`;
+
+        if (data.message) {
+            html += `<div class="alert-app alert-app-${statusClass} mt-3" style="font-size: 0.8125rem;">${escapeHtml(data.message)}</div>`;
+        }
+
+        // Show "Send Test Email" button if connection succeeded but we didn't send yet
+        if (data.status === 'ok' && !sendTest) {
+            html += `<div class="text-center mt-3"><button class="btn btn-app-primary btn-sm" onclick="testEmailConnection(true)"><i class="bi bi-send me-1"></i>Send Test Email</button></div>`;
+        }
+
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = '<div class="alert-app alert-app-danger">Network error while testing connection.</div>';
+    }
 }
 
 // -- Settings Lock --

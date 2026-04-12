@@ -267,6 +267,13 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             conv_settings = ctx.settings.get("conversation") or {}
             embedded_tools_config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
 
+            # Resolve secret:// URIs within embedded tools config
+            for _cat, cat_config in embedded_tools_config.get("embedded_tools", {}).items():
+                if isinstance(cat_config, dict):
+                    for key, val in cat_config.items():
+                        if isinstance(val, str) and val.startswith("secret://"):
+                            cat_config[key] = _resolve_secret(ctx, val)
+
             # Pass prompt inspection settings into the config
             if ctx.settings.get("prompt_inspection.enabled"):
                 embedded_tools_config["_prompt_inspection_enabled"] = True
