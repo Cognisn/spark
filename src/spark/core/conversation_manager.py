@@ -42,6 +42,7 @@ class ConversationManager:
         emergency_rollup_threshold: float = 0.95,
         compaction_model: str | None = None,
         mcp_manager: Any | None = None,
+        user_guid: str = "default",
         tool_permission_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
@@ -55,6 +56,7 @@ class ConversationManager:
         self._max_tool_selections = max_tool_selections
         self._max_tool_result_tokens = max_tool_result_tokens
         self._mcp_manager = mcp_manager
+        self._user_guid = user_guid
         self._tool_permission_callback = tool_permission_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
@@ -864,7 +866,7 @@ class ConversationManager:
             try:
                 from spark.index.memory_index import MemoryIndex
 
-                self._memory_index_instance = MemoryIndex(self._db, "default")
+                self._memory_index_instance = MemoryIndex(self._db, self._user_guid)
             except Exception:
                 self._memory_index_instance = None
         return self._memory_index_instance

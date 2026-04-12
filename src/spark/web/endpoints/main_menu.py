@@ -377,7 +377,8 @@ def _get_recent_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        all_convs = conv_mgr.get_conversations("default")
+        user_guid = getattr(request.app.state, "user_guid", "default")
+        all_convs = conv_mgr.get_conversations(user_guid)
         non_favs = [c for c in all_convs if not c.get("is_favourite")]
         return non_favs[:5]
     except Exception:
@@ -390,7 +391,8 @@ def _get_favourite_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        all_convs = conv_mgr.get_conversations("default")
+        user_guid = getattr(request.app.state, "user_guid", "default")
+        all_convs = conv_mgr.get_conversations(user_guid)
         return [c for c in all_convs if c.get("is_favourite")]
     except Exception:
         return []
