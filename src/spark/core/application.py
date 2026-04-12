@@ -48,6 +48,7 @@ def _ensure_macos_path() -> None:
         os.environ["PATH"] = current + os.pathsep + os.pathsep.join(additions)
         logger.debug("Extended PATH with: %s", ", ".join(additions))
 
+
 _APP_ID = "spark"
 _RESOURCES = Path(__file__).resolve().parent.parent / "resources"
 

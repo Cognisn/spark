@@ -289,7 +289,6 @@ async def ai_create_message(request: Request) -> JSONResponse:
     # Inject conversation context if creating from a conversation
     if conversation_id and conv_mgr and not history:
         try:
-            user_guid = _user(request)
             conv_messages = conv_mgr.get_messages(int(conversation_id))
             if conv_messages:
                 # Build a summary of the conversation for the AI to analyse
@@ -297,7 +296,11 @@ async def ai_create_message(request: Request) -> JSONResponse:
                 for msg in conv_messages:
                     role = msg.get("role", "")
                     content = msg.get("content", "")
-                    if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                    if (
+                        role in ("user", "assistant")
+                        and isinstance(content, str)
+                        and content.strip()
+                    ):
                         # Skip tool result markers and JSON blocks
                         if content.startswith("[TOOL_RESULTS]") or content.startswith("["):
                             continue

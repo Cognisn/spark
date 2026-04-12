@@ -200,7 +200,9 @@
                 {% for server in mcp_servers %}
                 <div class="col-sm-6 col-lg-4">
                     {% if server.type == 'mcp' and server.connected %}
-                    <div class="app-stat-card" style="cursor: pointer;" onclick="showDashboardTools('{{ server.name }}')">
+                    <div class="app-stat-card" style="cursor: pointer;" tabindex="0" role="button"
+                         onclick="showDashboardTools('{{ server.name }}')"
+                         onkeydown="if(event.key==='Enter') showDashboardTools('{{ server.name }}')">
                     {% else %}
                     <a href="{{ server.settings_url }}" class="text-decoration-none">
                     <div class="app-stat-card" style="cursor: pointer;">

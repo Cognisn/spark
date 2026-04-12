@@ -136,7 +136,6 @@ def _build_message(
     body = tool_input.get("body", "")
     body_type = tool_input.get("body_type", "plain")
     cc_addrs = tool_input.get("cc", [])
-    bcc_addrs = tool_input.get("bcc", [])
     attachments = tool_input.get("attachments", [])
     sender = email_config.get("sender", "")
 
@@ -164,10 +163,7 @@ def _build_message(
 
         # Validate against allowed paths
         if allowed_paths:
-            if not any(
-                str(file_path).startswith(str(Path(ap).resolve()))
-                for ap in allowed_paths
-            ):
+            if not any(str(file_path).startswith(str(Path(ap).resolve())) for ap in allowed_paths):
                 return msg, f"Error: attachment '{file_path}' is outside allowed paths."
 
         if not file_path.is_file():
@@ -222,18 +218,17 @@ def _send_email(
     all_recipients = to_addrs + cc_addrs + bcc_addrs
 
     try:
+        server = smtplib.SMTP(host, port, timeout=30)
         if use_tls:
-            context = ssl.create_default_context()
-            with smtplib.SMTP(host, port, timeout=30) as server:
-                server.starttls(context=context)
-                if username and password:
-                    server.login(username, password)
-                server.sendmail(email_config.get("sender", ""), all_recipients, msg.as_string())
-        else:
-            with smtplib.SMTP(host, port, timeout=30) as server:
-                if username and password:
-                    server.login(username, password)
-                server.sendmail(email_config.get("sender", ""), all_recipients, msg.as_string())
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_default_certs()
+            server.starttls(context=context)
+        if username and password:
+            server.login(username, password)
+        sender_addr = email_config.get("sender", "")
+        server.sendmail(sender_addr, all_recipients, msg.as_string())
+        server.quit()
 
         recipient_summary = ", ".join(to_addrs)
         if cc_addrs:
@@ -284,12 +279,10 @@ def _draft_email(
         save_dir = Path.cwd().resolve()
 
     # Validate save path against allowed paths
-    if allowed_paths:
-        if not any(
-            str(save_dir).startswith(str(Path(ap).resolve()))
-            for ap in allowed_paths
-        ):
-            return f"Error: save path '{save_dir}' is outside allowed paths."
+    if allowed_paths and not any(
+        str(save_dir).startswith(str(Path(ap).resolve())) for ap in allowed_paths
+    ):
+        return f"Error: save path '{save_dir}' is outside allowed paths."
 
     if not save_dir.is_dir():
         return f"Error: save directory '{save_dir}' does not exist."

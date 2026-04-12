@@ -77,15 +77,17 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
     # Strip the embedding-sized binary blob; keep only display fields.
     result = []
     for t in transactions:
-        result.append({
-            "id": t.get("id"),
-            "tool_name": t.get("tool_name", ""),
-            "tool_input": t.get("tool_input", "{}"),
-            "tool_response": t.get("tool_response", ""),
-            "is_error": bool(t.get("is_error")),
-            "execution_time_ms": t.get("execution_time_ms"),
-            "timestamp": t.get("transaction_timestamp"),
-        })
+        result.append(
+            {
+                "id": t.get("id"),
+                "tool_name": t.get("tool_name", ""),
+                "tool_input": t.get("tool_input", "{}"),
+                "tool_response": t.get("tool_response", ""),
+                "is_error": bool(t.get("is_error")),
+                "execution_time_ms": t.get("execution_time_ms"),
+                "timestamp": t.get("transaction_timestamp"),
+            }
+        )
     return JSONResponse(result)
 
 

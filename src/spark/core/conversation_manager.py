@@ -298,14 +298,10 @@ class ConversationManager:
 
                             with concurrent.futures.ThreadPoolExecutor() as pool:
                                 mcp_tools = pool.submit(
-                                    lambda: asyncio.run(
-                                        self._mcp_manager.list_all_tools()
-                                    )
+                                    lambda: asyncio.run(self._mcp_manager.list_all_tools())
                                 ).result(timeout=10)
                         else:
-                            mcp_tools = loop.run_until_complete(
-                                self._mcp_manager.list_all_tools()
-                            )
+                            mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
                     except RuntimeError:
                         mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 

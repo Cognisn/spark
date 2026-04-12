@@ -10,9 +10,9 @@ from spark.web.endpoints.chat import router as chat_router
 from spark.web.endpoints.conversations import router as conversations_router
 from spark.web.endpoints.help import router as help_router
 from spark.web.endpoints.main_menu import router as main_menu_router
-from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.mcp_servers import router as mcp_servers_router
 from spark.web.endpoints.memories import router as memories_router
+from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import router as settings_router
 from spark.web.endpoints.streaming import router as streaming_router
 

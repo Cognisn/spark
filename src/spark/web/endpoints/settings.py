@@ -261,12 +261,12 @@ async def test_email(request: Request) -> JSONResponse:
         return JSONResponse({**base, "status": "error", "message": "SMTP host is not configured."})
 
     try:
+        server = smtplib.SMTP(host, port, timeout=15)
         if use_tls:
-            context = _ssl.create_default_context()
-            server = smtplib.SMTP(host, port, timeout=15)
+            context = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+            context.minimum_version = _ssl.TLSVersion.TLSv1_2
+            context.load_default_certs()
             server.starttls(context=context)
-        else:
-            server = smtplib.SMTP(host, port, timeout=15)
 
         auth_msg = "no authentication"
         if username and password:
@@ -292,50 +292,76 @@ async def test_email(request: Request) -> JSONResponse:
         return JSONResponse({**base, "status": "ok", "message": result_msg})
 
     except smtplib.SMTPAuthenticationError:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": "Authentication failed. Check username and password.",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": "Authentication failed. Check username and password.",
+            }
+        )
     except smtplib.SMTPConnectError as e:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": f"Could not connect to {host}:{port} — {e}",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Could not connect to {host}:{port} — {e}",
+            }
+        )
     except smtplib.SMTPRecipientsRefused as e:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": f"Connected but test send failed — recipients refused: {e}",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connected but test send failed — recipients refused: {e}",
+            }
+        )
     except smtplib.SMTPSenderRefused as e:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": f"Connected but sender address rejected: {e}",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connected but sender address rejected: {e}",
+            }
+        )
     except ConnectionRefusedError:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": f"Connection refused at {host}:{port}. Check the host and port.",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connection refused at {host}:{port}. Check the host and port.",
+            }
+        )
     except TimeoutError:
-        return JSONResponse({
-            **base, "status": "error",
-            "message": f"Connection timed out connecting to {host}:{port}.",
-        })
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connection timed out connecting to {host}:{port}.",
+            }
+        )
     except Exception as e:
         return JSONResponse({**base, "status": "error", "message": str(e)})
 
 
 @router.get("/api/browse-directory")
 async def browse_directory(request: Request) -> JSONResponse:
-    """List subdirectories at a given path for the folder browser."""
+    """List subdirectories at a given path for the folder browser.
+
+    Restricted to the user's home directory tree to prevent path traversal.
+    """
     from pathlib import Path
 
+    home = Path.home().resolve()
     path_str = request.query_params.get("path", "")
     if not path_str:
-        # Return common root directories
-        path_str = str(Path.home())
+        path_str = str(home)
 
     target = Path(path_str).resolve()
+
+    # Prevent path traversal outside the home directory
+    if not str(target).startswith(str(home)):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
     if not target.is_dir():
         return JSONResponse({"error": "Not a directory"}, status_code=400)
 
@@ -347,11 +373,13 @@ async def browse_directory(request: Request) -> JSONResponse:
     except PermissionError:
         pass
 
-    return JSONResponse({
-        "current": str(target),
-        "parent": str(target.parent) if target != target.parent else None,
-        "directories": dirs,
-    })
+    return JSONResponse(
+        {
+            "current": str(target),
+            "parent": str(target.parent) if target != target.parent else None,
+            "directories": dirs,
+        }
+    )
 
 
 @router.post("/api/save")

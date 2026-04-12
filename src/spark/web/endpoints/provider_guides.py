@@ -59,9 +59,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "Anthropic will send a verification email.  Click the link in "
                     "the email to verify your account, then log in to the Console."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: Verification email from Anthropic"
-                ),
+                "screenshot_placeholder": ("Screenshot: Verification email from Anthropic"),
             },
             {
                 "title": "Add billing information",
@@ -93,7 +91,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                 "title": "Create a new API key",
                 "description": (
                     "Click <strong>Create Key</strong>.  Give the key a descriptive "
-                    "name (e.g. \"Spark\") so you can identify it later.  The key "
+                    'name (e.g. "Spark") so you can identify it later.  The key '
                     "will be displayed once — copy it immediately."
                 ),
                 "screenshot_placeholder": (
@@ -111,12 +109,11 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Enable the Anthropic provider",
                 "description": (
-                    'In Spark, go to <strong>Settings → LLM Providers → Anthropic</strong> '
+                    "In Spark, go to <strong>Settings → LLM Providers → Anthropic</strong> "
                     "and toggle <strong>Enabled</strong> on."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — Anthropic provider section "
-                    "with Enabled toggle"
+                    "Screenshot: Spark Settings — Anthropic provider section " "with Enabled toggle"
                 ),
             },
             {
@@ -126,9 +123,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "the <strong>API Key</strong> field, then click "
                     "<strong>Save Settings</strong>."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — Anthropic API Key field"
-                ),
+                "screenshot_placeholder": ("Screenshot: Spark Settings — Anthropic API Key field"),
             },
             {
                 "title": "Verify the connection",
@@ -202,9 +197,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "have an account, click <strong>Create an AWS Account</strong> "
                     "and follow the registration process."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: AWS Management Console sign-in page"
-                ),
+                "screenshot_placeholder": ("Screenshot: AWS Management Console sign-in page"),
             },
             {
                 "title": "Navigate to Amazon Bedrock",
@@ -214,8 +207,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "<strong>Services → Machine Learning → Amazon Bedrock</strong>."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: AWS Console — searching for Bedrock in the "
-                    "services search bar"
+                    "Screenshot: AWS Console — searching for Bedrock in the " "services search bar"
                 ),
                 "tip": (
                     "Bedrock is not available in all AWS regions.  Ensure you are "
@@ -276,7 +268,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Enable the AWS Bedrock provider",
                 "description": (
-                    'In Spark, go to <strong>Settings → LLM Providers → AWS Bedrock</strong> '
+                    "In Spark, go to <strong>Settings → LLM Providers → AWS Bedrock</strong> "
                     "and toggle <strong>Enabled</strong> on."
                 ),
                 "screenshot_placeholder": (
@@ -291,8 +283,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "method that matches how you configured your AWS CLI credentials."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — AWS Bedrock region and "
-                    "auth method fields"
+                    "Screenshot: Spark Settings — AWS Bedrock region and " "auth method fields"
                 ),
             },
             {
@@ -369,8 +360,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "via Homebrew: <code>brew install ollama</code>."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: Ollama download page (ollama.com) showing "
-                    "platform options"
+                    "Screenshot: Ollama download page (ollama.com) showing " "platform options"
                 ),
             },
             {
@@ -387,8 +377,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Pull a model",
                 "description": (
-                    "Open a terminal and run a pull command to download a model.  "
-                    "For example:"
+                    "Open a terminal and run a pull command to download a model.  " "For example:"
                 ),
                 "substeps": [
                     "<code>ollama pull llama3.3</code> — Meta's Llama 3.3 (good general purpose, ~4 GB)",
@@ -396,9 +385,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "<code>ollama pull mistral</code> — Mistral 7B (fast, lightweight, ~4 GB)",
                     "<code>ollama pull gemma3</code> — Google's Gemma 3 (efficient, ~3 GB)",
                 ],
-                "screenshot_placeholder": (
-                    "Screenshot: Terminal showing ollama pull progress"
-                ),
+                "screenshot_placeholder": ("Screenshot: Terminal showing ollama pull progress"),
                 "tip": (
                     "Browse the full model library at ollama.com/library to find "
                     "models suited to your use case and hardware."
@@ -413,8 +400,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "to start an interactive chat."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: Terminal showing ollama list output with "
-                    "downloaded models"
+                    "Screenshot: Terminal showing ollama list output with " "downloaded models"
                 ),
             },
         ],
@@ -422,12 +408,10 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Enable the Ollama provider",
                 "description": (
-                    'In Spark, go to <strong>Settings → LLM Providers → Ollama</strong> '
+                    "In Spark, go to <strong>Settings → LLM Providers → Ollama</strong> "
                     "and toggle <strong>Enabled</strong> on."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — Ollama provider section"
-                ),
+                "screenshot_placeholder": ("Screenshot: Spark Settings — Ollama provider section"),
             },
             {
                 "title": "Set the base URL",
@@ -521,8 +505,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "management page."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: Google AI Studio — left sidebar showing "
-                    "'Get API key' option"
+                    "Screenshot: Google AI Studio — left sidebar showing " "'Get API key' option"
                 ),
             },
             {
@@ -558,7 +541,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Enable the Google Gemini provider",
                 "description": (
-                    'In Spark, go to <strong>Settings → LLM Providers → Google Gemini</strong> '
+                    "In Spark, go to <strong>Settings → LLM Providers → Google Gemini</strong> "
                     "and toggle <strong>Enabled</strong> on."
                 ),
                 "screenshot_placeholder": (
@@ -641,9 +624,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "Visit <strong>console.x.ai</strong> and sign up.  You can "
                     "register using your X (Twitter) account or with an email address."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: X.AI Console sign-up / login page"
-                ),
+                "screenshot_placeholder": ("Screenshot: X.AI Console sign-up / login page"),
             },
             {
                 "title": "Add billing information",
@@ -651,9 +632,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "Navigate to the billing section and add a payment method.  "
                     "API access requires active billing."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: X.AI Console — Billing page"
-                ),
+                "screenshot_placeholder": ("Screenshot: X.AI Console — Billing page"),
                 "tip": (
                     "X.AI may offer free credits for new accounts.  Check "
                     "the billing dashboard for your current balance."
@@ -666,20 +645,17 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "section.  This is typically in the dashboard or under your "
                     "account settings."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: X.AI Console — API Keys page"
-                ),
+                "screenshot_placeholder": ("Screenshot: X.AI Console — API Keys page"),
             },
             {
                 "title": "Create a new API key",
                 "description": (
                     "Click <strong>Create API Key</strong> (or similar).  Give "
-                    "it a descriptive name like \"Spark\".  Copy the key "
+                    'it a descriptive name like "Spark".  Copy the key '
                     "immediately — it is only shown once."
                 ),
                 "screenshot_placeholder": (
-                    "Screenshot: X.AI Console — Create API Key dialog "
-                    "with generated key"
+                    "Screenshot: X.AI Console — Create API Key dialog " "with generated key"
                 ),
                 "tip": (
                     "As with all API keys, store it securely.  You will need "
@@ -691,12 +667,10 @@ PROVIDER_GUIDES: dict[str, dict] = {
             {
                 "title": "Enable the X.AI provider",
                 "description": (
-                    'In Spark, go to <strong>Settings → LLM Providers → X.AI</strong> '
+                    "In Spark, go to <strong>Settings → LLM Providers → X.AI</strong> "
                     "and toggle <strong>Enabled</strong> on."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — X.AI provider section"
-                ),
+                "screenshot_placeholder": ("Screenshot: Spark Settings — X.AI provider section"),
             },
             {
                 "title": "Enter your API key",
@@ -705,9 +679,7 @@ PROVIDER_GUIDES: dict[str, dict] = {
                     "<strong>API Key</strong> field, then click "
                     "<strong>Save Settings</strong>."
                 ),
-                "screenshot_placeholder": (
-                    "Screenshot: Spark Settings — X.AI API Key field"
-                ),
+                "screenshot_placeholder": ("Screenshot: Spark Settings — X.AI API Key field"),
             },
             {
                 "title": "Verify the connection",

@@ -116,9 +116,7 @@ def set_global_tool_permission(
     db.commit()
 
 
-def get_all_global_tool_permissions(
-    db: DatabaseConnection, user_guid: str
-) -> list[dict]:
+def get_all_global_tool_permissions(db: DatabaseConnection, user_guid: str) -> list[dict]:
     """Get all global tool permissions for a user."""
     ph = db.placeholder
     cursor = db.execute(
@@ -128,9 +126,7 @@ def get_all_global_tool_permissions(
     return [dict(row) for row in cursor.fetchall()]
 
 
-def delete_global_tool_permission(
-    db: DatabaseConnection, user_guid: str, tool_name: str
-) -> None:
+def delete_global_tool_permission(db: DatabaseConnection, user_guid: str, tool_name: str) -> None:
     """Delete a global tool permission."""
     ph = db.placeholder
     db.execute(
