@@ -8,6 +8,41 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 router = APIRouter(prefix="/help/provider")
 
 # ---------------------------------------------------------------------------
+# Helpers to reduce duplication in guide definitions
+# ---------------------------------------------------------------------------
+
+_ICON_EXTERNAL = "bi-box-arrow-up-right"
+_ICON_BOOK = "bi-book"
+_ICON_PRICE = "bi-currency-dollar"
+
+
+def _link(label: str, url: str, icon: str = _ICON_EXTERNAL) -> dict:
+    return {"label": label, "url": url, "icon": icon}
+
+
+def _step(
+    title: str,
+    description: str,
+    *,
+    screenshot_placeholder: str | None = None,
+    substeps: list[str] | None = None,
+    tip: str | None = None,
+) -> dict:
+    d: dict = {"title": title, "description": description}
+    if screenshot_placeholder:
+        d["screenshot_placeholder"] = screenshot_placeholder
+    if substeps:
+        d["substeps"] = substeps
+    if tip:
+        d["tip"] = tip
+    return d
+
+
+def _trouble(problem: str, solution: str) -> dict:
+    return {"problem": problem, "solution": solution}
+
+
+# ---------------------------------------------------------------------------
 # Guide definitions — one per LLM provider
 # ---------------------------------------------------------------------------
 
@@ -21,21 +56,11 @@ PROVIDER_GUIDES: dict[str, dict] = {
             "through creating an Anthropic account and generating an API key."
         ),
         "links": [
-            {
-                "label": "Anthropic Console",
-                "url": "https://console.anthropic.com/",
-                "icon": "bi-box-arrow-up-right",
-            },
-            {
-                "label": "API Documentation",
-                "url": "https://docs.anthropic.com/en/api/getting-started",
-                "icon": "bi-book",
-            },
-            {
-                "label": "Pricing",
-                "url": "https://www.anthropic.com/pricing",
-                "icon": "bi-currency-dollar",
-            },
+            _link("Anthropic Console", "https://console.anthropic.com/"),
+            _link(
+                "API Documentation", "https://docs.anthropic.com/en/api/getting-started", _ICON_BOOK
+            ),
+            _link("Pricing", "https://www.anthropic.com/pricing", _ICON_PRICE),
         ],
         "prerequisites": [
             "An email address to create an Anthropic account",
@@ -135,27 +160,27 @@ PROVIDER_GUIDES: dict[str, dict] = {
             },
         ],
         "troubleshooting": [
-            {
-                "problem": "Authentication error (401)",
-                "solution": (
+            _trouble(
+                "Authentication error (401)",
+                (
                     "Double-check that the API key is correct and has not been "
                     "revoked.  Ensure there are no leading/trailing spaces."
                 ),
-            },
-            {
-                "problem": "Insufficient credits / billing error",
-                "solution": (
+            ),
+            _trouble(
+                "Insufficient credits / billing error",
+                (
                     "Visit the Anthropic Console billing page and ensure a valid "
                     "payment method is on file and you have available credits."
                 ),
-            },
-            {
-                "problem": "Rate limit exceeded (429)",
-                "solution": (
+            ),
+            _trouble(
+                "Rate limit exceeded (429)",
+                (
                     "You have exceeded your usage tier limits.  Wait a moment and "
                     "retry, or upgrade your usage tier in the Anthropic Console."
                 ),
-            },
+            ),
         ],
     },
     "aws_bedrock": {
@@ -168,21 +193,13 @@ PROVIDER_GUIDES: dict[str, dict] = {
             "credential configuration."
         ),
         "links": [
-            {
-                "label": "AWS Console",
-                "url": "https://console.aws.amazon.com/bedrock/",
-                "icon": "bi-box-arrow-up-right",
-            },
-            {
-                "label": "Bedrock Documentation",
-                "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
-                "icon": "bi-book",
-            },
-            {
-                "label": "Bedrock Pricing",
-                "url": "https://aws.amazon.com/bedrock/pricing/",
-                "icon": "bi-currency-dollar",
-            },
+            _link("AWS Console", "https://console.aws.amazon.com/bedrock/"),
+            _link(
+                "Bedrock Documentation",
+                "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
+                _ICON_BOOK,
+            ),
+            _link("Bedrock Pricing", "https://aws.amazon.com/bedrock/pricing/", _ICON_PRICE),
         ],
         "prerequisites": [
             "An AWS account (or permission to create one within your organisation)",
@@ -296,29 +313,29 @@ PROVIDER_GUIDES: dict[str, dict] = {
             },
         ],
         "troubleshooting": [
-            {
-                "problem": "No models appear in the model picker",
-                "solution": (
+            _trouble(
+                "No models appear in the model picker",
+                (
                     "Ensure you have requested and been granted access to models "
                     "in the Bedrock console.  Also verify the region in Spark "
                     "matches the region where you enabled model access."
                 ),
-            },
-            {
-                "problem": "Access denied / credential errors",
-                "solution": (
+            ),
+            _trouble(
+                "Access denied / credential errors",
+                (
                     "Run <code>aws sts get-caller-identity</code> to verify your "
                     "credentials are valid.  For SSO, you may need to run "
                     "<code>aws sso login</code> to refresh your session."
                 ),
-            },
-            {
-                "problem": "Timeout connecting to Bedrock",
-                "solution": (
+            ),
+            _trouble(
+                "Timeout connecting to Bedrock",
+                (
                     "Check your network connection and ensure outbound HTTPS "
                     "traffic to AWS endpoints is not blocked by a firewall or proxy."
                 ),
-            },
+            ),
         ],
     },
     "ollama": {
@@ -330,21 +347,9 @@ PROVIDER_GUIDES: dict[str, dict] = {
             "or cloud account required — everything stays on your computer."
         ),
         "links": [
-            {
-                "label": "Ollama Website",
-                "url": "https://ollama.com/",
-                "icon": "bi-box-arrow-up-right",
-            },
-            {
-                "label": "Model Library",
-                "url": "https://ollama.com/library",
-                "icon": "bi-collection",
-            },
-            {
-                "label": "GitHub",
-                "url": "https://github.com/ollama/ollama",
-                "icon": "bi-github",
-            },
+            _link("Ollama Website", "https://ollama.com/"),
+            _link("Model Library", "https://ollama.com/library", "bi-collection"),
+            _link("GitHub", "https://github.com/ollama/ollama", "bi-github"),
         ],
         "prerequisites": [
             "macOS 12+, Windows 10+, or Linux",
@@ -431,30 +436,27 @@ PROVIDER_GUIDES: dict[str, dict] = {
             },
         ],
         "troubleshooting": [
-            {
-                "problem": "Connection refused / cannot reach Ollama",
-                "solution": (
+            _trouble(
+                "Connection refused / cannot reach Ollama",
+                (
                     "Ensure the Ollama application is running.  On macOS, check "
                     "for the Ollama icon in the menu bar.  You can also start it "
                     "manually with <code>ollama serve</code>."
                 ),
-            },
-            {
-                "problem": "No models appear in the model picker",
-                "solution": (
-                    "You need to pull at least one model first.  Run "
-                    "<code>ollama pull llama3.3</code> (or another model) in your "
-                    "terminal."
-                ),
-            },
-            {
-                "problem": "Model runs very slowly",
-                "solution": (
+            ),
+            _trouble(
+                "No models appear in the model picker",
+                "You need to pull at least one model first.  Run "
+                "<code>ollama pull llama3.3</code> (or another model) in your terminal.",
+            ),
+            _trouble(
+                "Model runs very slowly",
+                (
                     "Larger models require more RAM and compute.  Try a smaller "
                     "model variant, or check that no other heavy applications are "
                     "consuming system resources."
                 ),
-            },
+            ),
         ],
     },
     "google_gemini": {
@@ -466,21 +468,9 @@ PROVIDER_GUIDES: dict[str, dict] = {
             "This guide walks you through obtaining a free API key."
         ),
         "links": [
-            {
-                "label": "Google AI Studio",
-                "url": "https://aistudio.google.com/",
-                "icon": "bi-box-arrow-up-right",
-            },
-            {
-                "label": "API Documentation",
-                "url": "https://ai.google.dev/gemini-api/docs",
-                "icon": "bi-book",
-            },
-            {
-                "label": "Pricing",
-                "url": "https://ai.google.dev/gemini-api/docs/pricing",
-                "icon": "bi-currency-dollar",
-            },
+            _link("Google AI Studio", "https://aistudio.google.com/"),
+            _link("API Documentation", "https://ai.google.dev/gemini-api/docs", _ICON_BOOK),
+            _link("Pricing", "https://ai.google.dev/gemini-api/docs/pricing", _ICON_PRICE),
         ],
         "prerequisites": [
             "A Google account (personal Gmail or Google Workspace)",
@@ -569,28 +559,28 @@ PROVIDER_GUIDES: dict[str, dict] = {
             },
         ],
         "troubleshooting": [
-            {
-                "problem": "API key not valid / 400 error",
-                "solution": (
+            _trouble(
+                "API key not valid / 400 error",
+                (
                     "Ensure the key was copied correctly with no extra spaces.  "
                     "If the key was recently created, wait a minute for it to "
                     "propagate."
                 ),
-            },
-            {
-                "problem": "Quota exceeded (429)",
-                "solution": (
+            ),
+            _trouble(
+                "Quota exceeded (429)",
+                (
                     "You have hit the free-tier rate limit.  Wait a minute before "
                     "retrying, or check your quota in the Google Cloud Console."
                 ),
-            },
-            {
-                "problem": "Model not available in your region",
-                "solution": (
+            ),
+            _trouble(
+                "Model not available in your region",
+                (
                     "Some Gemini models may not be available in all regions.  "
                     "Check the Google AI documentation for regional availability."
                 ),
-            },
+            ),
         ],
     },
     "xai": {
@@ -602,16 +592,8 @@ PROVIDER_GUIDES: dict[str, dict] = {
             "through creating an X.AI account and generating an API key."
         ),
         "links": [
-            {
-                "label": "X.AI Console",
-                "url": "https://console.x.ai/",
-                "icon": "bi-box-arrow-up-right",
-            },
-            {
-                "label": "API Documentation",
-                "url": "https://docs.x.ai/docs/overview",
-                "icon": "bi-book",
-            },
+            _link("X.AI Console", "https://console.x.ai/"),
+            _link("API Documentation", "https://docs.x.ai/docs/overview", _ICON_BOOK),
         ],
         "prerequisites": [
             "An X (Twitter) account or email address to create an X.AI account",
@@ -691,27 +673,27 @@ PROVIDER_GUIDES: dict[str, dict] = {
             },
         ],
         "troubleshooting": [
-            {
-                "problem": "Authentication error (401)",
-                "solution": (
+            _trouble(
+                "Authentication error (401)",
+                (
                     "Verify your API key is correct and has not been revoked.  "
                     "Ensure there are no leading or trailing spaces."
                 ),
-            },
-            {
-                "problem": "Model not found",
-                "solution": (
+            ),
+            _trouble(
+                "Model not found",
+                (
                     "X.AI may update available models.  Check the X.AI "
                     "documentation for the current list of supported models."
                 ),
-            },
-            {
-                "problem": "Rate limit or billing error",
-                "solution": (
+            ),
+            _trouble(
+                "Rate limit or billing error",
+                (
                     "Ensure your billing information is current and you have "
                     "sufficient credits or an active payment method."
                 ),
-            },
+            ),
         ],
     },
 }

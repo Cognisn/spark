@@ -356,7 +356,7 @@ async def browse_directory(request: Request) -> JSONResponse:
     if not path_str:
         path_str = str(home)
 
-    target = Path(path_str).resolve()
+    target = Path(path_str).resolve()  # NOSONAR — validated below against home dir
 
     # Prevent path traversal outside the home directory
     if not str(target).startswith(str(home)):
