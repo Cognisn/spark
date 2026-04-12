@@ -199,25 +199,31 @@
             <div class="row g-3">
                 {% for server in mcp_servers %}
                 <div class="col-sm-6 col-lg-4">
+                    {% if server.type == 'mcp' and server.connected %}
+                    <div class="app-stat-card" style="cursor: pointer;" onclick="showDashboardTools('{{ server.name }}')">
+                    {% else %}
                     <a href="{{ server.settings_url }}" class="text-decoration-none">
-                        <div class="app-stat-card" style="cursor: pointer;">
-                            <div class="stat-icon"
-                                 {% if not server.connected %}style="background: var(--app-danger-bg); color: var(--app-danger);"{% endif %}>
-                                <i class="bi {{ server.icon }}"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value" style="font-size: 0.9375rem;">{{ server.name }}</div>
-                                <div class="stat-label">
-                                    {% if server.connected %}
-                                    <span class="status-dot online"></span>
-                                    {{ server.tool_count }} tool{{ 's' if server.tool_count != 1 else '' }}
-                                    {% else %}
-                                    <span class="status-dot error"></span> Disconnected
-                                    {% endif %}
-                                </div>
+                    <div class="app-stat-card" style="cursor: pointer;">
+                    {% endif %}
+                        <div class="stat-icon"
+                             {% if not server.connected %}style="background: var(--app-danger-bg); color: var(--app-danger);"{% endif %}>
+                            <i class="bi {{ server.icon }}"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value" style="font-size: 0.9375rem;">{{ server.name }}</div>
+                            <div class="stat-label">
+                                {% if server.connected %}
+                                <span class="status-dot online"></span>
+                                {{ server.tool_count }} tool{{ 's' if server.tool_count != 1 else '' }} — click to view
+                                {% else %}
+                                <span class="status-dot error"></span> Disconnected
+                                {% endif %}
                             </div>
                         </div>
+                    </div>
+                    {% if not (server.type == 'mcp' and server.connected) %}
                     </a>
+                    {% endif %}
                 </div>
                 {% endfor %}
                 {% if not mcp_servers %}
@@ -227,6 +233,13 @@
                     </div>
                 </div>
                 {% endif %}
+            </div>
+
+            <!-- Manage Servers link -->
+            <div class="text-end mt-3">
+                <a href="/settings#section-mcp-servers" class="btn btn-app-outline btn-sm">
+                    <i class="bi bi-gear me-1"></i> Manage MCP Servers
+                </a>
             </div>
         </div>
 
@@ -308,6 +321,21 @@
         </div>
     </div>
 </div>
+
+<!-- MCP Server Tools Modal (Dashboard) -->
+<div class="modal fade" id="dashboardToolsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-hdd-network me-2"></i><span id="dashboardToolsServerName"></span> — Tools</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dashboardToolsContent">
+                <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -363,6 +391,40 @@ async function showProviderModels(providerKey, providerName) {
     } catch (e) {
         document.getElementById('providerModelsLoading').style.display = 'none';
         document.getElementById('providerModelsEmpty').style.display = '';
+    }
+}
+
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+async function showDashboardTools(name) {
+    document.getElementById('dashboardToolsServerName').textContent = name;
+    const content = document.getElementById('dashboardToolsContent');
+    content.innerHTML = '<div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>';
+    new bootstrap.Modal(document.getElementById('dashboardToolsModal')).show();
+
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/tools`);
+        const data = await resp.json();
+        if (!data.tools || !data.tools.length) {
+            content.innerHTML = '<p style="color:var(--app-text-muted);">No tools available from this server.</p>';
+            return;
+        }
+        content.innerHTML = `
+            <p style="font-size:0.8125rem; color:var(--app-text-secondary); margin-bottom:1rem;">
+                ${data.tools.length} tool${data.tools.length !== 1 ? 's' : ''} available
+            </p>
+            ${data.tools.map(t => `
+                <div style="border:1px solid var(--app-border); border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-wrench" style="color:var(--app-accent);"></i>
+                        <strong style="font-size:0.875rem;">${escapeHtml(t.name)}</strong>
+                    </div>
+                    ${t.description ? `<div style="font-size:0.8125rem; color:var(--app-text-secondary); margin-top:0.375rem;">${escapeHtml(t.description)}</div>` : ''}
+                </div>
+            `).join('')}
+        `;
+    } catch (err) {
+        content.innerHTML = '<div class="alert-app alert-app-danger">Failed to load tools.</div>';
     }
 }
 </script>
