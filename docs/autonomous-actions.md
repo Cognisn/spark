@@ -48,6 +48,12 @@ The AI assistant has access to three creation tools:
 - `validate_schedule` -- Checks a cron or datetime expression
 - `create_autonomous_action` -- Creates the action in the database
 
+### Create from Conversation
+
+You can create an autonomous action directly from any conversation by clicking the play-circle icon in the chat header. The AI analyses the conversation content and guides you through setting up an action that automates the workflow you were working on.
+
+The assistant receives the last 30 messages as context and uses the same LLM model as the conversation. This is particularly useful for turning ad-hoc research, analysis, or reporting tasks into scheduled automations.
+
 ## Schedule Types
 
 ### One-Off
