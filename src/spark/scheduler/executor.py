@@ -19,9 +19,86 @@ class ActionExecutor:
     def __init__(self, ctx: Any, daemon_id: str) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        self._mcp_manager: Any | None = None
+        self._mcp_loop: Any | None = None
+        self._mcp_thread: Any | None = None
         from spark.core.user_guid import get_user_guid
 
         self._user_guid = get_user_guid(ctx)
+
+    def _init_mcp(self) -> None:
+        """Initialise independent MCP connections for this executor."""
+        import asyncio
+        import threading
+
+        import yaml
+
+        from spark.core.application import _get_config_path
+
+        config_path = _get_config_path()
+        if not config_path.exists():
+            return
+
+        try:
+            raw_config = yaml.safe_load(config_path.read_text()) or {}
+            mcp_config = raw_config.get("mcp", {})
+            if not mcp_config.get("servers"):
+                return
+
+            from spark.mcp_integration.manager import MCPManager
+
+            self._mcp_manager = MCPManager.from_config(raw_config)
+
+            # Create a persistent event loop for MCP connections
+            self._mcp_loop = asyncio.new_event_loop()
+
+            def _run_loop() -> None:
+                asyncio.set_event_loop(self._mcp_loop)
+                self._mcp_loop.run_forever()
+
+            self._mcp_thread = threading.Thread(target=_run_loop, daemon=True)
+            self._mcp_thread.start()
+
+            # Connect all servers
+            future = asyncio.run_coroutine_threadsafe(
+                self._mcp_manager.connect_all(), self._mcp_loop
+            )
+            results = future.result(timeout=60)
+            connected = sum(1 for v in results.values() if v)
+            failed = sum(1 for v in results.values() if not v)
+            logger.info("Daemon MCP: %d connected, %d failed", connected, failed)
+
+            # Populate tool cache
+            tools_future = asyncio.run_coroutine_threadsafe(
+                self._mcp_manager.list_all_tools(), self._mcp_loop
+            )
+            tools = tools_future.result(timeout=10)
+            logger.info("Daemon MCP tool cache: %d tools", len(tools))
+
+        except Exception as e:
+            logger.warning("Daemon MCP init failed (non-fatal): %s", e)
+            self._mcp_manager = None
+
+    def _cleanup_mcp(self) -> None:
+        """Disconnect MCP servers and stop the event loop."""
+        if self._mcp_manager and self._mcp_loop:
+            import asyncio
+
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._mcp_manager.disconnect_all(), self._mcp_loop
+                )
+                future.result(timeout=10)
+            except Exception as e:
+                logger.debug("MCP cleanup: %s", e)
+
+        if self._mcp_loop:
+            self._mcp_loop.call_soon_threadsafe(self._mcp_loop.stop)
+            if self._mcp_thread:
+                self._mcp_thread.join(timeout=5)
+            self._mcp_loop = None
+
+        self._mcp_manager = None
 
     def execute(self, action_id: int) -> None:
         """Execute an action by ID."""
@@ -33,6 +110,9 @@ class ActionExecutor:
         backend = create_backend(self._ctx.settings)
         db = DatabaseConnection(backend)
         initialise_schema(db)
+
+        # Initialise MCP connections for this execution
+        self._init_mcp()
 
         try:
             action = autonomous_actions.get_action(db, action_id, self._user_guid)
@@ -101,6 +181,7 @@ class ActionExecutor:
                 autonomous_actions.unlock_action(db, action_id)
 
         finally:
+            self._cleanup_mcp()
             db.close()
 
     def _run_action(self, db: Any, action: dict) -> dict[str, Any]:
@@ -227,12 +308,35 @@ class ActionExecutor:
             return ""
 
     def _get_tools(self) -> list[dict]:
-        """Get available tools for the action."""
+        """Get available tools for the action (builtin + MCP)."""
         try:
             from spark.tools.registry import get_builtin_tools
 
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
-            return get_builtin_tools(config)
+            tools = get_builtin_tools(config)
+
+            # Add MCP server tools if configured
+            if self._mcp_manager:
+                try:
+                    import asyncio
+
+                    mcp_tools = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                    ).result(timeout=10)
+                    for t in mcp_tools:
+                        tools.append(
+                            {
+                                "name": t.get("name", ""),
+                                "description": t.get("description", ""),
+                                "inputSchema": t.get("inputSchema", {}),
+                            }
+                        )
+                    if mcp_tools:
+                        logger.info("Daemon loaded %d MCP tools", len(mcp_tools))
+                except Exception as e:
+                    logger.warning("Failed to load MCP tools in daemon: %s", e)
+
+            return tools
         except Exception as e:
             logger.warning("Failed to load tools: %s", e)
             return []
@@ -258,10 +362,39 @@ class ActionExecutor:
             except Exception:
                 pass
 
-            result, is_error = execute_builtin_tool(tool_name, tool_input, config)
-            if is_error:
-                logger.warning("Action tool %s error: %s", tool_name, result[:200])
-            return result
+            # Try builtin tools first
+            from spark.tools.registry import get_builtin_tools
+
+            builtin_names = {t["name"] for t in get_builtin_tools(config)}
+            if tool_name in builtin_names:
+                result, is_error = execute_builtin_tool(tool_name, tool_input, config)
+                if is_error:
+                    logger.warning("Action tool %s error: %s", tool_name, result[:200])
+                return result
+
+            # Try MCP tools
+            if self._mcp_manager:
+                try:
+                    import asyncio
+
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.call_tool(tool_name, tool_input),
+                        self._mcp_loop,
+                    )
+                    mcp_result = future.result(timeout=60)
+                    content = mcp_result.get("content", [])
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif isinstance(item, str):
+                            text_parts.append(item)
+                    return "\n".join(text_parts) if text_parts else str(mcp_result)
+                except Exception as e:
+                    logger.warning("MCP tool %s failed in daemon: %s", tool_name, e)
+                    return f"MCP tool error: {e}"
+
+            return f"Tool '{tool_name}' is not available."
         except Exception as e:
             return f"Tool error: {e}"
 
