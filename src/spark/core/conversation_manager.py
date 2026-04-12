@@ -781,6 +781,18 @@ class ConversationManager:
 
             # Check permissions
             permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
+
+            # Email send_email: always prompt when require_approval is on,
+            # unless running without a callback (autonomous actions).
+            if (
+                tool_name == "send_email"
+                and self._tool_permission_callback
+                and self._embedded_tools_config.get("embedded_tools", {})
+                .get("email", {})
+                .get("require_approval", True)
+            ):
+                permission = None  # Force re-prompt
+
             if permission is None:
                 # First use — prompt user
                 if self._tool_permission_callback:
@@ -948,6 +960,7 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
     "archives": ["list_archive", "extract_archive"],
     "web": ["web_search", "web_fetch"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+    "email": ["send_email", "draft_email"],
     "core": ["get_current_datetime", "get_tool_documentation"],
 }
 

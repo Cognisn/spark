@@ -103,6 +103,13 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(web_tools())
 
+    # Email — requires SMTP configuration
+    email_config = embedded.get("email", {})
+    if email_config.get("enabled", False) and email_config.get("host"):
+        from spark.tools.email_tool import get_tools as email_tools
+
+        tools.extend(email_tools())
+
     # Memory — always available
     from spark.tools.memory_tools import TOOLS as mem_tools
 
@@ -178,6 +185,19 @@ def execute_builtin_tool(
             from spark.tools.web import execute
 
             return execute(tool_name, tool_input, config), False
+
+        # Email
+        email_tools = {"send_email", "draft_email"}
+        if tool_name in email_tools:
+            email_cfg = embedded.get("email", {})
+            if not email_cfg.get("enabled", False):
+                return "Email tool is disabled. Enable it in Settings → Email.", True
+            if not email_cfg.get("host"):
+                return "Email SMTP host is not configured. Go to Settings → Email.", True
+
+            from spark.tools.email_tool import execute as email_execute
+
+            return email_execute(tool_name, tool_input, config), False
 
         # Memory
         memory_tool_names = {"store_memory", "query_memory", "list_memories", "delete_memory"}

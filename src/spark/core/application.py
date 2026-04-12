@@ -138,5 +138,16 @@ def _default_settings() -> dict:
             "documents": {"enabled": True, "mode": "read", "max_file_size_mb": 50},
             "archives": {"enabled": True, "mode": "list"},
             "web": {"enabled": True, "search_engine": "duckduckgo"},
+            "email": {
+                "enabled": False,
+                "host": "",
+                "port": 587,
+                "username": "",
+                "password": "",
+                "sender": "",
+                "use_tls": True,
+                "max_attachment_mb": 25,
+                "require_approval": True,
+            },
         },
     }

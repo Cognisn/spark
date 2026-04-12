@@ -28,7 +28,8 @@
 
 ### Tools
 - **MCP Integration** -- Connect external tool servers via stdio, HTTP, or SSE
-- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
+- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives, email
+- **Email Tools** -- Send and draft emails via SMTP with HTML/plain text, attachments, and cc/bcc
 - **Memory Tools** -- Persistent semantic memory across conversations
 - **Per-Conversation Control** -- Enable/disable tools at the server or individual level
 - **Tool Approval** -- Permission prompts for first-use with allow once/always/deny
@@ -135,6 +136,7 @@ graph TB
         Builtin["Built-in Tools"]
         Memory["Memory"]
         WebSearch["Web Search"]
+        EmailTool["Email (SMTP)"]
     end
 
     subgraph Foundation ["cognisn-konfig"]

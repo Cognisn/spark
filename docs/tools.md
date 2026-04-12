@@ -14,6 +14,7 @@ graph TD
     Builtin --> Doc[Documents]
     Builtin --> Arc[Archives]
     Builtin --> Web[Web]
+    Builtin --> Email[Email]
     Builtin --> Mem[Memory]
     Builtin --> DT[DateTime]
     Builtin --> TD[Tool Docs]
@@ -36,6 +37,9 @@ graph TD
 
     Web --> web_search
     Web --> web_fetch
+
+    Email --> send_email
+    Email --> draft_email
 
     Mem --> store_memory
     Mem --> query_memory
@@ -137,6 +141,39 @@ Search the web and fetch page content. No path configuration required.
 
 See [Web Search](web-search.md) for search engine configuration.
 
+### Email
+
+Send and draft emails via SMTP. Disabled by default — requires SMTP configuration in Settings.
+
+| Tool | Description |
+|------|-------------|
+| `send_email` | Send an email with to/cc/bcc recipients, subject, HTML or plain text body, and file attachments |
+| `draft_email` | Compose an email and save it as a .eml file instead of sending |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  email:
+    enabled: true
+    host: smtp.gmail.com
+    port: 587
+    username: you@gmail.com
+    password: secret://email_password    # Stored in OS keychain
+    sender: you@gmail.com
+    use_tls: true
+    max_attachment_mb: 25
+    require_approval: true               # Always prompt before sending
+```
+
+**Settings UI:** Configure SMTP credentials in **Settings → Embedded Tools → Email**. The password is stored securely in the OS keychain via the secrets backend. Use the **Test Email Connection** button to verify your SMTP settings and optionally send a test email.
+
+**Security:**
+- `send_email` is a high-stakes mutation tool. When `require_approval` is enabled (default), it always prompts for user approval before sending — even if the tool has been globally approved.
+- File attachments are restricted to the filesystem `allowed_paths`. The attachment size is capped by `max_attachment_mb`.
+- When `require_approval` is disabled, `send_email` respects the standard tool permission system. This is required for autonomous actions where no user is present to approve.
+- `draft_email` saves to disk instead of sending, providing a lower-risk alternative for composing emails.
+
 ### Memory
 
 Always available. Manages persistent cross-conversation memories.
@@ -177,6 +214,7 @@ Permissions are stored per conversation in the database. When you approve a tool
 | documents | read_word, read_excel, read_pdf, read_powerpoint |
 | archives | list_archive, extract_archive |
 | web | web_search, web_fetch |
+| email | send_email, draft_email |
 | memory | store_memory, query_memory, list_memories, delete_memory |
 | core | get_current_datetime, get_tool_documentation |
 
