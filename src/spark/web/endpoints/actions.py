@@ -241,6 +241,40 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse(runs)
 
 
+@router.post("/api/{action_id}/run-now")
+async def run_action_now(request: Request, action_id: int) -> JSONResponse:
+    """Trigger an immediate action execution.
+
+    Runs the action using ActionExecutor in a background thread with its
+    own MCP connections, identical to how the daemon would execute it.
+    """
+    if r := _guard(request):
+        return r
+    db = getattr(request.app.state, "database", None)
+    ctx = getattr(request.app.state, "ctx", None)
+    if not db or not ctx:
+        return JSONResponse({"error": "Not initialised"}, status_code=503)
+
+    from spark.database import autonomous_actions
+
+    action = autonomous_actions.get_action(db.connection, action_id, _user(request))
+    if not action:
+        return JSONResponse({"error": "Action not found"}, status_code=404)
+
+    import threading
+
+    def _run() -> None:
+        from spark.scheduler.executor import ActionExecutor
+
+        executor = ActionExecutor(ctx, "web-run-now")
+        executor.execute(action_id)
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+
+    return JSONResponse({"status": "running", "message": f"Action '{action['name']}' started."})
+
+
 @router.post("/api/ai-create")
 async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
