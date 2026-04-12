@@ -185,13 +185,32 @@ def _build_message(
     return msg, None
 
 
+def _get_allowed_paths(config: dict[str, Any]) -> list[str]:
+    """Extract and normalise allowed filesystem paths from config."""
+    paths = config.get("embedded_tools", {}).get("filesystem", {}).get("allowed_paths", [])
+    if isinstance(paths, str):
+        return [p.strip() for p in paths.split(",") if p.strip()]
+    return paths or []
+
+
+def _prepare_message(
+    tool_input: dict[str, Any],
+    email_config: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[MIMEMultipart, list[str], str | None]:
+    """Build a MIME message with config validation. Returns (msg, allowed_paths, error)."""
+    allowed_paths = _get_allowed_paths(config)
+    max_attachment_mb = float(email_config.get("max_attachment_mb", 25))
+    msg, error = _build_message(tool_input, email_config, allowed_paths, max_attachment_mb)
+    return msg, allowed_paths, error
+
+
 def _send_email(
     tool_input: dict[str, Any],
     email_config: dict[str, Any],
     config: dict[str, Any],
 ) -> str:
     """Send an email via SMTP."""
-    # Validate SMTP configuration
     host = email_config.get("host", "")
     if not host:
         return "Error: SMTP host is not configured. Go to Settings → Email to configure."
@@ -200,15 +219,8 @@ def _send_email(
     username = email_config.get("username", "")
     password = email_config.get("password", "")
     use_tls = email_config.get("use_tls", True)
-    max_attachment_mb = float(email_config.get("max_attachment_mb", 25))
 
-    # Get allowed paths for attachment validation
-    fs_config = config.get("embedded_tools", {}).get("filesystem", {})
-    allowed_paths = fs_config.get("allowed_paths", [])
-    if isinstance(allowed_paths, str):
-        allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
-
-    msg, error = _build_message(tool_input, email_config, allowed_paths, max_attachment_mb)
+    msg, _, error = _prepare_message(tool_input, email_config, config)
     if error:
         return error
 
@@ -259,13 +271,7 @@ def _draft_email(
     config: dict[str, Any],
 ) -> str:
     """Save an email draft as a .eml file."""
-    fs_config = config.get("embedded_tools", {}).get("filesystem", {})
-    allowed_paths = fs_config.get("allowed_paths", [])
-    if isinstance(allowed_paths, str):
-        allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
-
-    max_attachment_mb = float(email_config.get("max_attachment_mb", 25))
-    msg, error = _build_message(tool_input, email_config, allowed_paths, max_attachment_mb)
+    msg, allowed_paths, error = _prepare_message(tool_input, email_config, config)
     if error:
         return error
 
