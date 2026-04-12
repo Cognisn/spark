@@ -159,6 +159,25 @@ async def provider_models(request: Request) -> JSONResponse:
     return JSONResponse({"provider": display_name, "models": models})
 
 
+@router.get("/api/embedded-tools")
+async def list_embedded_tools(request: Request) -> JSONResponse:
+    """API: list all currently enabled embedded tools."""
+    ctx = getattr(request.app.state, "ctx", None)
+    if not ctx:
+        return JSONResponse({"tools": []})
+
+    from spark.tools.registry import get_builtin_tools
+
+    config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+    tools = get_builtin_tools(config)
+
+    result = [
+        {"name": t.get("name", ""), "description": t.get("description", "")}
+        for t in tools
+    ]
+    return JSONResponse({"tools": result})
+
+
 @router.get("/menu", response_class=HTMLResponse)
 async def main_menu(request: Request) -> HTMLResponse:
     """Main menu / dashboard."""
