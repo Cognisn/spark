@@ -314,11 +314,23 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-exclamation me-2"></i>Tool Permission</h5></div>
-            <div class="modal-body"><p id="permission-message"></p><div id="permission-details" style="font-size: 0.8125rem; color: var(--app-text-secondary);"></div></div>
-            <div class="modal-footer">
-                <button class="btn btn-app-ghost" onclick="respondPermission('denied')">Deny</button>
-                <button class="btn btn-app-outline" onclick="respondPermission('once')">Allow Once</button>
-                <button class="btn btn-app-primary" onclick="respondPermission('allowed')">Always Allow</button>
+            <div class="modal-body">
+                <p id="permission-message"></p>
+                <div id="permission-details" style="font-size: 0.8125rem; color: var(--app-text-secondary);"></div>
+            </div>
+            <div class="modal-footer d-flex flex-wrap gap-2 justify-content-end">
+                <button class="btn btn-app-ghost btn-sm" onclick="respondPermission('denied')" title="Block this tool call">
+                    <i class="bi bi-x-circle me-1"></i>Deny
+                </button>
+                <button class="btn btn-app-outline btn-sm" onclick="respondPermission('once')" title="Allow this single call only">
+                    <i class="bi bi-check me-1"></i>Approve Once
+                </button>
+                <button class="btn btn-app-primary btn-sm" onclick="respondPermission('allowed')" title="Allow this tool for the rest of this conversation">
+                    <i class="bi bi-check-lg me-1"></i>Always (Conversation)
+                </button>
+                <button class="btn btn-app-primary btn-sm" onclick="respondPermission('allowed_global')" title="Allow this tool in all conversations">
+                    <i class="bi bi-check-all me-1"></i>Always (Global)
+                </button>
             </div>
         </div>
     </div>
