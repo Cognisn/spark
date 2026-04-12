@@ -958,7 +958,16 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "help": "Maximum file size in megabytes for document reading.",
                 },
             ],
-            "tools": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
+            "tools": [
+                "read_word",
+                "read_excel",
+                "read_pdf",
+                "read_powerpoint",
+                "create_word",
+                "create_excel",
+                "create_powerpoint",
+                "create_pdf",
+            ],
         },
         {
             "id": "archives",

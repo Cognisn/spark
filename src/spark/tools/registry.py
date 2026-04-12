@@ -89,6 +89,12 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(doc_tools(mode=doc_config.get("mode", "read")))
 
+        # Document creation tools (when mode is read_write)
+        if doc_config.get("mode", "read") == "read_write":
+            from spark.tools.document_creation import get_tools as doc_create_tools
+
+            tools.extend(doc_create_tools())
+
     # Archives — requires filesystem allowed_paths
     arc_config = embedded.get("archives", {})
     if arc_config.get("enabled", True) and _has_paths(fs_config):
@@ -161,9 +167,9 @@ def execute_builtin_tool(
             mode = fs_config.get("mode", "read")
             return execute(tool_name, tool_input, allowed_paths=allowed, mode=mode), False
 
-        # Documents
-        doc_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
-        if tool_name in doc_tools:
+        # Documents (read)
+        doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
+        if tool_name in doc_read_tools:
             fs_config = embedded.get("filesystem", {})
             if not _has_paths(fs_config):
                 return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
@@ -171,6 +177,20 @@ def execute_builtin_tool(
             from spark.tools.documents import execute
 
             return execute(tool_name, tool_input), False
+
+        # Documents (create)
+        doc_create_tools = {"create_word", "create_excel", "create_powerpoint", "create_pdf"}
+        if tool_name in doc_create_tools:
+            fs_config = embedded.get("filesystem", {})
+            allowed = fs_config.get("allowed_paths", [])
+            if isinstance(allowed, str):
+                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
+            if not allowed:
+                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+
+            from spark.tools.document_creation import execute as doc_create_execute
+
+            return doc_create_execute(tool_name, tool_input, allowed), False
 
         # Archives
         if tool_name in ("list_archive", "extract_archive"):
