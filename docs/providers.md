@@ -83,16 +83,21 @@ providers:
   aws_bedrock:
     enabled: true
     region: us-east-1
-    profile: default             # Optional AWS profile name
+    auth_method: sso             # sso, iam, or session
+    profile: default             # Optional — for SSO auth method
+    # For iam/session auth methods, credentials are stored in the OS keychain:
+    # access_key: secret://aws_bedrock_access_key
+    # secret_key: secret://aws_bedrock_secret_key
+    # session_token: secret://aws_bedrock_session_token  # session method only
 ```
 
 ### Authentication
 
-Bedrock uses your existing AWS credential chain:
+Three authentication methods are supported:
 
-- **SSO:** Configure via `aws sso login` -- set the `profile` to your SSO profile name
-- **IAM:** Uses default credentials from `~/.aws/credentials`
-- **Session:** Temporary session tokens
+- **SSO:** Configure via `aws sso login` — set the `profile` to your SSO profile name. Recommended for organisations using AWS IAM Identity Centre.
+- **IAM:** Enter an Access Key ID and Secret Access Key directly in the settings UI. Credentials are stored in the OS keychain. The IAM user needs `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions.
+- **Session:** Enter an Access Key ID, Secret Access Key, and Session Token for temporary credentials.
 
 ### Available Models
 
