@@ -363,6 +363,8 @@ class ActionExecutor:
             from spark.tools.registry import get_builtin_tools
 
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
+            # Resolve secret:// URIs in embedded tools config
+            self._resolve_embedded_secrets(config.get("embedded_tools", {}))
             tools = get_builtin_tools(config)
 
             # Add MCP server tools if configured
@@ -397,6 +399,8 @@ class ActionExecutor:
             from spark.tools.registry import execute_builtin_tool
 
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
+            # Resolve secret:// URIs in embedded tools config
+            self._resolve_embedded_secrets(config.get("embedded_tools", {}))
 
             # Inject memory index for memory tools
             try:
@@ -447,6 +451,14 @@ class ActionExecutor:
             return f"Tool '{tool_name}' is not available."
         except Exception as e:
             return f"Tool error: {e}"
+
+    def _resolve_embedded_secrets(self, embedded: dict) -> None:
+        """Resolve secret:// URIs in embedded tools config subtrees in-place."""
+        for _category, cat_config in embedded.items():
+            if isinstance(cat_config, dict):
+                for key, val in cat_config.items():
+                    if isinstance(val, str) and val.startswith("secret://"):
+                        cat_config[key] = self._resolve_secret(val)
 
     def _resolve_secret(self, value: str | None) -> str:
         """Resolve a secret:// URI."""
