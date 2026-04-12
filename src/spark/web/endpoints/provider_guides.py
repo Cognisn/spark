@@ -699,6 +699,37 @@ PROVIDER_GUIDES: dict[str, dict] = {
 }
 
 
+def _mark_safe(guide: dict) -> dict:
+    """Pre-mark HTML content fields as Markup so the template renders them safely.
+
+    All content originates from the hardcoded PROVIDER_GUIDES dict above — there
+    is no user input involved, so marking as safe is appropriate.
+    """
+    import copy
+
+    from markupsafe import Markup
+
+    g = copy.deepcopy(guide)
+
+    for step_list_key in ("steps", "spark_config"):
+        for step in g.get(step_list_key, []):
+            if "description" in step:
+                step["description"] = Markup(step["description"])
+            if "tip" in step:
+                step["tip"] = Markup(step["tip"])
+            for i, sub in enumerate(step.get("substeps", [])):
+                step["substeps"][i] = Markup(sub)
+
+    for prereq_idx, prereq in enumerate(g.get("prerequisites", [])):
+        g["prerequisites"][prereq_idx] = Markup(prereq)
+
+    for item in g.get("troubleshooting", []):
+        item["problem"] = Markup(item["problem"])
+        item["solution"] = Markup(item["solution"])
+
+    return g
+
+
 @router.get("/{provider_id}", response_class=HTMLResponse)
 async def provider_guide(provider_id: str, request: Request) -> HTMLResponse:
     """Render a provider setup guide page."""
@@ -710,5 +741,5 @@ async def provider_guide(provider_id: str, request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "provider_guide.html",
-        {"guide": guide},
+        {"guide": _mark_safe(guide)},
     )

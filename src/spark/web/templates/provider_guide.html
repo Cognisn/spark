@@ -145,7 +145,7 @@
         <div class="card-body">
             <ul class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">
                 {% for prereq in guide.prerequisites %}
-                <li class="mb-1">{{ prereq|safe }}</li>
+                <li class="mb-1">{{ prereq }}</li>
                 {% endfor %}
             </ul>
         </div>
@@ -161,12 +161,12 @@
             {% for step in guide.steps %}
             <div class="guide-step" data-step="{{ loop.index }}">
                 <h6>{{ step.title }}</h6>
-                <p>{{ step.description|safe }}</p>
+                <p>{{ step.description }}</p>
 
                 {% if step.substeps %}
                 <ol style="font-size: 0.875rem; color: var(--app-text-secondary); padding-left: 1.25rem;">
                     {% for sub in step.substeps %}
-                    <li class="mb-1">{{ sub|safe }}</li>
+                    <li class="mb-1">{{ sub }}</li>
                     {% endfor %}
                 </ol>
                 {% endif %}
@@ -185,7 +185,7 @@
 
                 {% if step.tip %}
                 <div class="guide-tip">
-                    <strong><i class="bi bi-lightbulb me-1"></i>Tip:</strong> {{ step.tip|safe }}
+                    <strong><i class="bi bi-lightbulb me-1"></i>Tip:</strong> {{ step.tip }}
                 </div>
                 {% endif %}
             </div>
@@ -203,7 +203,7 @@
             {% for step in guide.spark_config %}
             <div class="guide-step" data-step="{{ loop.index }}">
                 <h6>{{ step.title }}</h6>
-                <p>{{ step.description|safe }}</p>
+                <p>{{ step.description }}</p>
                 {% if step.screenshot_placeholder %}
                 <div class="screenshot-placeholder">
                     <i class="bi bi-image"></i>
@@ -227,10 +227,10 @@
             <div class="mb-3{% if not loop.last %} pb-3{% endif %}" {% if not loop.last %}style="border-bottom: 1px solid var(--app-border);"{% endif %}>
                 <strong style="font-size: 0.875rem; color: var(--app-text-primary);">
                     <i class="bi bi-question-circle me-1" style="color: var(--app-warning);"></i>
-                    {{ item.problem|safe }}
+                    {{ item.problem }}
                 </strong>
                 <p class="mb-0 mt-1" style="font-size: 0.8125rem; color: var(--app-text-secondary);">
-                    {{ item.solution|safe }}
+                    {{ item.solution }}
                 </p>
             </div>
             {% endfor %}
