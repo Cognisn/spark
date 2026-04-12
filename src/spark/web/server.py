@@ -339,8 +339,32 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 ),
                 embedded_tools_config=embedded_tools_config,
                 mcp_manager=mcp_manager,
+                user_guid=app.state.user_guid,
                 prompt_caching=bool(ctx.settings.get("conversation.prompt_caching", True)),
             )
+
+            # Migrate any orphaned memories stored under "default" user_guid
+            if app.state.user_guid != "default":
+                try:
+                    ph = database.connection.placeholder
+                    cursor = database.connection.execute(
+                        f"SELECT COUNT(*) FROM user_memories WHERE user_guid = {ph}",
+                        ("default",),
+                    )
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        database.connection.execute(
+                            f"UPDATE user_memories SET user_guid = {ph} WHERE user_guid = {ph}",
+                            (app.state.user_guid, "default"),
+                        )
+                        database.connection.commit()
+                        logger.info(
+                            "Migrated %d memories from 'default' to user %s",
+                            count,
+                            app.state.user_guid[:8] + "...",
+                        )
+                except Exception as e:
+                    logger.debug("Memory migration check: %s", e)
 
             # Step 4: Embedding model (warm up)
             status["stage"] = "Loading embedding model..."
