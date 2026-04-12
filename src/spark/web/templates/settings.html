@@ -96,9 +96,19 @@
 
                         {% for group in section.groups %}
                         {% if section.groups|length > 1 %}
-                        <h6 class="mb-3 mt-4" style="font-weight: 600; color: var(--app-text-primary);">
-                            {{ group.title }}
-                        </h6>
+                        <div class="d-flex align-items-center justify-content-between mb-3 mt-4">
+                            <h6 class="mb-0" style="font-weight: 600; color: var(--app-text-primary);">
+                                {{ group.title }}
+                            </h6>
+                            {% if group.help_url %}
+                            <a href="{{ group.help_url }}"
+                               class="btn btn-app-ghost btn-sm d-flex align-items-center gap-1"
+                               style="font-size: 0.75rem; color: var(--app-accent);"
+                               title="Open setup guide for {{ group.title }}">
+                                <i class="bi bi-question-circle"></i> Setup Guide
+                            </a>
+                            {% endif %}
+                        </div>
                         {% endif %}
 
                         {% for field in group.fields %}
