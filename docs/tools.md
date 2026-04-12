@@ -163,13 +163,14 @@ Documentation files are stored in `src/spark/resources/tool_docs/` as markdown f
 
 ## Tool Permissions
 
-When the AI first uses a tool in a conversation, Spark prompts for permission:
+When the AI first uses a tool in a conversation, Spark prompts for permission with four options:
 
-- **Allow Once** -- Permit this single invocation
-- **Always Allow** -- Approve this tool and all tools in the same category
-- **Deny** -- Block the tool call
+- **Deny** -- Block this tool call
+- **Approve Once** -- Permit this single invocation only (not persisted)
+- **Always (Conversation)** -- Approve this tool and all tools in the same category for the rest of this conversation
+- **Always (Global)** -- Approve this tool and its category across all conversations
 
-Permissions are stored per conversation in the database. When you approve a tool with "Always Allow", all tools in the same category are also approved. The categories are:
+Conversation-level permissions are checked first, then global permissions. When you approve with either "Always" option, all tools in the same category are also approved. The categories are:
 
 | Category | Tools |
 |----------|-------|

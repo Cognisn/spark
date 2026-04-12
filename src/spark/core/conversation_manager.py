@@ -779,18 +779,26 @@ class ConversationManager:
                     },
                 )
 
-            # Check permissions
-            permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
+            # Check permissions (conversation-level, then global)
+            permission = tool_permissions.is_tool_allowed(
+                self._db, conversation_id, tool_name, user_guid=user_guid
+            )
             if permission is None:
                 # First use — prompt user
                 if self._tool_permission_callback:
                     decision = self._tool_permission_callback(tool_name, tool_input)
-                    if decision in ("allowed", "once"):
+                    if decision in ("allowed", "allowed_global", "once"):
                         if decision == "allowed":
-                            # Approve this tool and all tools in the same category
+                            # Approve this tool and category siblings for this conversation
                             for sibling in _get_tool_category_siblings(tool_name):
                                 tool_permissions.set_tool_permission(
                                     self._db, conversation_id, sibling, "allowed", user_guid
+                                )
+                        elif decision == "allowed_global":
+                            # Approve this tool and category siblings globally
+                            for sibling in _get_tool_category_siblings(tool_name):
+                                tool_permissions.set_global_tool_permission(
+                                    self._db, user_guid, sibling, "allowed"
                                 )
                     else:
                         tool_permissions.set_tool_permission(
