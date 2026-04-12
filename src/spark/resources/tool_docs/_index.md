@@ -25,13 +25,21 @@ This directory contains comprehensive documentation for all embedded tools avail
 |------|-------------|
 | `write_file` | Write content to a file (when write mode enabled) |
 
-### Office Documents
+### Office Documents — Reading
 | Tool | Description |
 |------|-------------|
 | `read_word` | Extract text from Word documents (.docx) |
 | `read_excel` | Read Excel spreadsheet data (.xlsx) |
 | `read_pdf` | Extract text from PDF documents |
 | `read_powerpoint` | Extract content from PowerPoint presentations (.pptx) |
+
+### Office Documents — Creating (when read_write mode enabled)
+| Tool | Description |
+|------|-------------|
+| `create_word` | Create Word documents with headings, tables, lists, images, formatting |
+| `create_excel` | Create Excel workbooks with multiple sheets, headers, formulas, formatting |
+| `create_powerpoint` | Create PowerPoint presentations with multiple slide layouts |
+| `create_pdf` | Create PDF documents with headings, tables, lists, images, page layout |
 
 ### Archives
 | Tool | Description |
