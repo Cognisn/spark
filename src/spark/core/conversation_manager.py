@@ -43,6 +43,7 @@ class ConversationManager:
         compaction_model: str | None = None,
         mcp_manager: Any | None = None,
         user_guid: str = "default",
+        mcp_loop: Any | None = None,
         tool_permission_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
@@ -57,6 +58,7 @@ class ConversationManager:
         self._max_tool_result_tokens = max_tool_result_tokens
         self._mcp_manager = mcp_manager
         self._user_guid = user_guid
+        self._mcp_loop = mcp_loop
         self._tool_permission_callback = tool_permission_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
@@ -281,21 +283,31 @@ class ConversationManager:
             try:
                 import asyncio
 
-                # list_all_tools is async — run it synchronously
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # We're in an async context, use a thread
-                        import concurrent.futures
+                # list_all_tools is async — dispatch on the persistent MCP loop
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                    )
+                    mcp_tools = future.result(timeout=10)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
 
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            mcp_tools = pool.submit(
-                                lambda: asyncio.run(self._mcp_manager.list_all_tools())
-                            ).result(timeout=10)
-                    else:
-                        mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
-                except RuntimeError:
-                    mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
+                            with concurrent.futures.ThreadPoolExecutor() as pool:
+                                mcp_tools = pool.submit(
+                                    lambda: asyncio.run(
+                                        self._mcp_manager.list_all_tools()
+                                    )
+                                ).result(timeout=10)
+                        else:
+                            mcp_tools = loop.run_until_complete(
+                                self._mcp_manager.list_all_tools()
+                            )
+                    except RuntimeError:
+                        mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 
                 for t in mcp_tools:
                     tools.append(
@@ -882,23 +894,22 @@ class ConversationManager:
             config["_memory_index"] = self._get_memory_index_for_tools()
             return execute_builtin_tool(tool_name, tool_input, config)
 
-        # Try MCP manager (async — run synchronously)
+        # Try MCP manager (async — dispatch on the persistent MCP event loop)
         if self._mcp_manager:
             try:
                 import asyncio
-                import concurrent.futures
 
                 async def _call() -> dict:
                     return await self._mcp_manager.call_tool(tool_name, tool_input)
 
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            result = pool.submit(lambda: asyncio.run(_call())).result(timeout=60)
-                    else:
-                        result = loop.run_until_complete(_call())
-                except RuntimeError:
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    # Dispatch onto the persistent MCP loop where the sessions live.
+                    # This is critical: MCP stdio transports are bound to the loop
+                    # they were created on — calling from a different loop will fail.
+                    future = asyncio.run_coroutine_threadsafe(_call(), self._mcp_loop)
+                    result = future.result(timeout=60)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
                     result = asyncio.run(_call())
 
                 # Extract text from result content
