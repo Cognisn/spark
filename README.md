@@ -46,6 +46,7 @@
 ### Autonomous Actions
 - **Scheduled Tasks** -- Cron or one-off schedules via APScheduler
 - **AI-Assisted Creation** -- Describe what you want and the AI builds the action
+- **Create from Conversation** -- Turn any conversation into an autonomous action with AI-guided setup
 - **Background Daemon** -- System tray icon (macOS/Windows) runs actions independently
 - **Run History** -- Track execution status, results, and token usage
 
