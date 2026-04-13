@@ -158,9 +158,8 @@ def _validate_recurring(value: str) -> str:
     if len(parts) != 5:
         return f"Invalid cron: expected 5 fields (minute hour day month day_of_week), got {len(parts)}."
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
         import tzlocal
+        from apscheduler.triggers.cron import CronTrigger
 
         local_tz = tzlocal.get_localzone()
         trigger = CronTrigger(
