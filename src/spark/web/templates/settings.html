@@ -77,6 +77,15 @@
                     </nav>
                 </div>
             </div>
+            <!-- Save/Discard buttons -->
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-app-primary btn-sm flex-grow-1" id="btn-save" onclick="saveSettings()" disabled>
+                    <i class="bi bi-check-lg me-1"></i> Save
+                </button>
+                <button class="btn btn-app-secondary btn-sm flex-grow-1" id="btn-discard" onclick="window.location.reload()" disabled>
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
+                </button>
+            </div>
           </div>
         </div>
 
@@ -596,15 +605,8 @@
                 </div>
             </div>
 
-            <!-- Save -->
-            <div class="text-start mb-5">
-                <button class="btn btn-app-primary me-2" id="btn-save" onclick="saveSettings()" disabled>
-                    <i class="bi bi-check-lg me-1"></i> Save Settings
-                </button>
-                <button class="btn btn-app-secondary" id="btn-discard" onclick="window.location.reload()" disabled>
-                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
-                </button>
-            </div>
+            <!-- Bottom spacer -->
+            <div class="mb-5"></div>
         </div>
     </div>
 </div>
