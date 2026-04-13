@@ -191,12 +191,16 @@ class ActionRunner:
                     )
                     return
 
+                import tzlocal
+
+                local_tz = tzlocal.get_localzone()
                 trigger = CronTrigger(
                     minute=parts[0],
                     hour=parts[1],
                     day=parts[2],
                     month=parts[3],
                     day_of_week=parts[4],
+                    timezone=local_tz,
                 )
                 self._scheduler.add_job(
                     self._execute_action,
@@ -206,20 +210,26 @@ class ActionRunner:
                     replace_existing=True,
                 )
 
-                # Calculate and store next_run_at
-                next_fire = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+                # Calculate and store next_run_at in UTC for consistent DB storage
+                next_fire = trigger.get_next_fire_time(None, datetime.now(local_tz))
                 if next_fire:
                     from spark.database import autonomous_actions as aa
 
+                    # Store as UTC in database
+                    next_fire_utc = next_fire.astimezone(timezone.utc)
                     aa.update_action(
-                        self._get_db(), action["id"], user_guid, next_run_at=next_fire.isoformat()
+                        self._get_db(),
+                        action["id"],
+                        user_guid,
+                        next_run_at=next_fire_utc.isoformat(),
                     )
 
+                local_str = next_fire.strftime("%Y-%m-%d %H:%M %Z") if next_fire else "N/A"
                 logger.info(
                     "Scheduled recurring action: '%s' (cron: %s, next: %s)",
                     action["name"],
                     cron,
-                    next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A",
+                    local_str,
                 )
 
             elif schedule_type == "one_off":
@@ -269,11 +279,13 @@ class ActionRunner:
             user_guid = get_user_guid(self._ctx)
             job = self._scheduler.get_job(f"action_{action_id}")
             if job and job.next_run_time:
+                # Store as UTC for consistent DB storage
+                next_utc = job.next_run_time.astimezone(timezone.utc)
                 aa.update_action(
                     self._get_db(),
                     action_id,
                     user_guid,
-                    next_run_at=job.next_run_time.isoformat(),
+                    next_run_at=next_utc.isoformat(),
                 )
                 logger.info("Next run for action %d: %s", action_id, job.next_run_time)
         except Exception as e:
