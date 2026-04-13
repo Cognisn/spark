@@ -238,14 +238,21 @@ class ActionExecutor:
 
         from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        import tzlocal
+
+        local_tz = tzlocal.get_localzone()
+        now_local = datetime.now(local_tz)
+        now_str = now_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+
         system = (
             f"You are Spark executing an autonomous action.\n"
             f"Action: {action['name']}\n"
             f"Description: {action.get('description', '')}\n"
-            f"Current time: {now}\n\n"
-            f"You have access to tools. Use them as needed to complete the action."
+            f"Current time: {now_str}\n\n"
         )
+
+        # Build tool context for the system prompt
+        system += self._build_tool_context(tools)
 
         # Build context from previous runs if cumulative mode
         if context_mode == "cumulative":
@@ -351,6 +358,96 @@ class ActionExecutor:
         except Exception as e:
             logger.warning("Failed to load cumulative context: %s", e)
             return ""
+
+    def _build_tool_context(self, tools: list[dict]) -> str:
+        """Build system prompt context describing available tools and constraints."""
+        settings = self._ctx.settings
+        lines = ["## Available Tools\n"]
+        lines.append(
+            "You have access to the tools listed below. Use "
+            "`get_tool_documentation(tool_name)` to retrieve detailed usage "
+            "instructions, parameters, and examples for any tool before using it.\n"
+        )
+
+        tool_names = [t.get("name", "") for t in tools]
+
+        # Group tools by category for clarity
+        categories = {
+            "Filesystem": [
+                "read_file",
+                "write_file",
+                "list_directory",
+                "search_files",
+                "get_file_info",
+                "find_in_file",
+                "get_directory_tree",
+            ],
+            "Documents": [
+                "read_word",
+                "read_excel",
+                "read_pdf",
+                "read_powerpoint",
+                "create_word",
+                "create_excel",
+                "create_powerpoint",
+                "create_pdf",
+            ],
+            "Archives": ["list_archive", "extract_archive"],
+            "Web": ["web_search", "web_fetch"],
+            "Email": ["send_email", "draft_email"],
+            "Memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+            "Core": ["get_current_datetime", "get_tool_documentation"],
+        }
+
+        for cat_name, cat_tools in categories.items():
+            active = [t for t in cat_tools if t in tool_names]
+            if active:
+                lines.append(f"**{cat_name}:** {', '.join(active)}")
+
+        # Add MCP tools if any
+        mcp_tools = [
+            t.get("name", "")
+            for t in tools
+            if t.get("name", "") not in {n for cat in categories.values() for n in cat}
+        ]
+        if mcp_tools:
+            lines.append(f"**MCP Server Tools:** {', '.join(mcp_tools)}")
+
+        lines.append("")
+
+        # Filesystem allowed paths
+        fs_config = settings.get("embedded_tools.filesystem") or {}
+        if isinstance(fs_config, str):
+            fs_config = {}
+        allowed_paths = settings.get("embedded_tools.filesystem.allowed_paths", [])
+        if isinstance(allowed_paths, str):
+            allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
+        if allowed_paths:
+            lines.append("## Filesystem Constraints\n")
+            lines.append(
+                "All file operations (read, write, search, document creation) are "
+                "restricted to the following allowed paths. Do NOT use paths outside "
+                "these directories — the tool will deny access.\n"
+            )
+            for p in allowed_paths:
+                lines.append(f"- `{p}`")
+            lines.append("")
+
+        # Email configuration hint
+        if "send_email" in tool_names:
+            sender = settings.get("embedded_tools.email.sender", "")
+            if sender:
+                lines.append(f"## Email\n\nEmail is configured with sender address: {sender}\n")
+
+        lines.append(
+            "## Tool Documentation\n\n"
+            "Before using a tool for the first time, call "
+            "`get_tool_documentation(tool_name)` to understand its parameters, "
+            "return format, and best practices. Call "
+            "`get_tool_documentation('_index')` for the full tool index.\n"
+        )
+
+        return "\n".join(lines)
 
     def _get_tools(self) -> list[dict]:
         """Get available tools for the action (builtin + MCP)."""

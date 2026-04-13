@@ -31,7 +31,14 @@ class ActionRunner:
         logging.getLogger("apscheduler").setLevel(logging.DEBUG)
 
         self._scheduler = BackgroundScheduler(
-            job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                # Large grace time to handle macOS sleep/wake — if the system
+                # sleeps through a scheduled time, the job should still fire
+                # when the system wakes within this window.
+                "misfire_grace_time": 7200,
+            },
             timezone=tzlocal.get_localzone(),
         )
         self._poll_interval = 30
@@ -92,6 +99,11 @@ class ActionRunner:
         while self._running:
             try:
                 self._reload_all()
+                # Wake up the scheduler to check for misfired jobs.
+                # This is critical after macOS sleep/wake — APScheduler's
+                # internal timer may not recover, but this nudge forces it
+                # to re-evaluate pending triggers.
+                self._scheduler.wakeup()
             except Exception as e:
                 logger.error("Poll error: %s", e)
             time.sleep(self._poll_interval)
