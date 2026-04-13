@@ -306,6 +306,36 @@ class ActionExecutor:
             if iter_text:
                 activity_log.append(f"[Assistant] {iter_text[:500]}")
 
+            # Detect truncated tool calls — the LLM tried to call a tool but
+            # ran out of output tokens. Inject a continuation message so the
+            # LLM retries with more concise output.
+            if stop_reason == "max_tokens":
+                logger.warning(
+                    "Action '%s' iteration %d hit max_tokens (%d). "
+                    "Prompting LLM to retry with concise output.",
+                    action["name"],
+                    iteration + 1,
+                    max_tokens,
+                )
+                messages.append(
+                    {"role": "assistant", "content": response.get("content_blocks", [])}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your response was truncated because it exceeded the output "
+                            f"token limit ({max_tokens} tokens). You MUST call the output "
+                            "tool (send_email, write_file, create_word, etc.) with a "
+                            "shorter, more concise version of the content. Focus on key "
+                            "findings, use simple HTML tables, and remove excessive styling. "
+                            "Call the tool NOW."
+                        ),
+                    },
+                )
+                activity_log.append(f"[System] Output truncated at {max_tokens} tokens — retrying")
+                continue
+
             if stop_reason == "tool_use" and response.get("tool_use"):
                 # Execute tools
                 tool_results = []
