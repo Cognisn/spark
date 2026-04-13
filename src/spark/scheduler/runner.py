@@ -27,6 +27,9 @@ class ActionRunner:
         self._daemon_id = daemon_id
         import tzlocal
 
+        # Enable APScheduler logging to capture trigger/misfire events
+        logging.getLogger("apscheduler").setLevel(logging.DEBUG)
+
         self._scheduler = BackgroundScheduler(
             job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
             timezone=tzlocal.get_localzone(),
@@ -103,6 +106,10 @@ class ActionRunner:
             from spark.core.user_guid import get_user_guid
 
             user_guid = get_user_guid(self._ctx)
+
+            # Clear stale locks (locked for more than 30 minutes)
+            self._clear_stale_locks(db)
+
             actions = autonomous_actions.get_enabled_actions(db, user_guid)
             scheduled_ids = {job.id for job in self._scheduler.get_jobs()}
             current_action_ids = set()
@@ -262,6 +269,32 @@ class ActionRunner:
 
         except Exception as e:
             logger.error("Failed to schedule action '%s': %s", action.get("name"), e)
+
+    def _clear_stale_locks(self, db: Any) -> None:
+        """Clear action locks older than 30 minutes to prevent stuck actions."""
+        try:
+            ph = db.placeholder
+            cursor = db.execute(f"""SELECT id, name, locked_by, locked_at FROM autonomous_actions
+                    WHERE locked_by IS NOT NULL AND locked_at IS NOT NULL
+                    AND locked_at < datetime('now', '-30 minutes')""")
+            stale = cursor.fetchall()
+            for row in stale:
+                row_dict = dict(row)
+                logger.warning(
+                    "Clearing stale lock on action '%s' (id=%d, locked_by=%s, locked_at=%s)",
+                    row_dict.get("name"),
+                    row_dict.get("id"),
+                    row_dict.get("locked_by"),
+                    row_dict.get("locked_at"),
+                )
+                db.execute(
+                    f"UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = {ph}",
+                    (row_dict["id"],),
+                )
+            if stale:
+                db.commit()
+        except Exception as e:
+            logger.debug("Stale lock check: %s", e)
 
     def _execute_action(self, action_id: int) -> None:
         """Execute an action."""
