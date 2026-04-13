@@ -223,7 +223,9 @@ class ActionExecutor:
         """Run the action's prompt through the LLM with tools."""
         model_id = action["model_id"]
         prompt = action["action_prompt"]
-        max_tokens = action.get("max_tokens", 8192)
+        # Use a higher default for actions that generate documents/emails.
+        # 8192 is often too small for tool calls containing HTML reports.
+        max_tokens = action.get("max_tokens", 16384)
         context_mode = action.get("context_mode", "fresh")
 
         # Initialise LLM
@@ -258,7 +260,10 @@ class ActionExecutor:
             f"to save documents to the filesystem\n"
             f"- Use `write_file` to save HTML or text reports\n\n"
             f"Do NOT write report content in your text response. "
-            f"Always call the appropriate tool to create/send the output.\n\n"
+            f"Always call the appropriate tool to create/send the output.\n"
+            f"If your output is large (e.g. a detailed HTML report), you may need "
+            f"to keep the content concise to fit within the output token limit "
+            f"({max_tokens} tokens). Prioritise key findings over verbose formatting.\n\n"
         )
 
         # Build tool context for the system prompt
