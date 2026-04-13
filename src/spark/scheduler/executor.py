@@ -223,9 +223,7 @@ class ActionExecutor:
         """Run the action's prompt through the LLM with tools."""
         model_id = action["model_id"]
         prompt = action["action_prompt"]
-        # Use a higher default for actions that generate documents/emails.
-        # 8192 is often too small for tool calls containing HTML reports.
-        max_tokens = action.get("max_tokens", 16384)
+        max_tokens = action.get("max_tokens", 8192)
         context_mode = action.get("context_mode", "fresh")
 
         # Initialise LLM
