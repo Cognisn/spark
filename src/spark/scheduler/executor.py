@@ -262,10 +262,13 @@ class ActionExecutor:
 
         messages: list[dict] = [{"role": "user", "content": prompt}]
 
-        # Tool use loop (max 10 iterations)
+        # Tool use loop — use the configured max_tool_iterations (default 25)
+        max_iterations = action.get("max_tool_iterations", 25)
         total_input = 0
         total_output = 0
-        for iteration in range(10):
+        activity_log: list[str] = []  # Full activity record for run history
+
+        for iteration in range(max_iterations):
             response = llm.invoke_model(
                 messages,
                 max_tokens=max_tokens,
@@ -279,6 +282,11 @@ class ActionExecutor:
             total_output += usage.get("output_tokens", 0)
 
             stop_reason = response.get("stop_reason", "end_turn")
+
+            # Record any text the LLM produced in this iteration
+            iter_text = response.get("content", "").strip()
+            if iter_text:
+                activity_log.append(f"[Assistant] {iter_text[:500]}")
 
             if stop_reason == "tool_use" and response.get("tool_use"):
                 # Execute tools
@@ -306,6 +314,7 @@ class ActionExecutor:
                             "content": result_text,
                         }
                     )
+                    activity_log.append(f"[Tool: {tool_name}] {result_text[:300]}")
 
                 # Add to conversation
                 messages.append(
@@ -314,15 +323,29 @@ class ActionExecutor:
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
-            # Final response
+            # Final response — include full activity log
+            final_content = response.get("content", "")
+            full_record = "\n\n".join(activity_log)
+            if full_record:
+                full_record += f"\n\n---\n\n[Final Response]\n{final_content}"
+            else:
+                full_record = final_content
+
             return {
-                "content": response.get("content", ""),
+                "content": full_record,
                 "input_tokens": total_input,
                 "output_tokens": total_output,
             }
 
+        logger.warning(
+            "Action '%s' hit max tool iterations (%d). "
+            "The action may not have completed its full workflow.",
+            action["name"],
+            max_iterations,
+        )
+        full_record = "\n\n".join(activity_log)
         return {
-            "content": "Max tool iterations reached.",
+            "content": f"{full_record}\n\n---\n\nMax tool iterations ({max_iterations}) reached.",
             "input_tokens": total_input,
             "output_tokens": total_output,
         }
