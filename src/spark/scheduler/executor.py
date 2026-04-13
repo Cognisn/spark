@@ -249,6 +249,16 @@ class ActionExecutor:
             f"Action: {action['name']}\n"
             f"Description: {action.get('description', '')}\n"
             f"Current time: {now_str}\n\n"
+            f"## CRITICAL: You Must Use Tools to Deliver Output\n\n"
+            f"You are running autonomously with no user present. Your text responses "
+            f"are only recorded in logs — the user will NOT see them. To deliver "
+            f"results you MUST use output tools:\n"
+            f"- Use `send_email` to email reports to the user\n"
+            f"- Use `create_word`, `create_excel`, `create_powerpoint`, or `create_pdf` "
+            f"to save documents to the filesystem\n"
+            f"- Use `write_file` to save HTML or text reports\n\n"
+            f"Do NOT write report content in your text response. "
+            f"Always call the appropriate tool to create/send the output.\n\n"
         )
 
         # Build tool context for the system prompt
