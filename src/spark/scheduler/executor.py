@@ -317,19 +317,20 @@ class ActionExecutor:
                     iteration + 1,
                     max_tokens,
                 )
-                messages.append(
-                    {"role": "assistant", "content": response.get("content_blocks", [])}
-                )
+                # Do NOT append the truncated assistant response — it may
+                # contain incomplete tool_use blocks without matching
+                # tool_result, which the API will reject.
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "Your response was truncated because it exceeded the output "
-                            f"token limit ({max_tokens} tokens). You MUST call the output "
-                            "tool (send_email, write_file, create_word, etc.) with a "
-                            "shorter, more concise version of the content. Focus on key "
-                            "findings, use simple HTML tables, and remove excessive styling. "
-                            "Call the tool NOW."
+                            "[SYSTEM] Your previous response was truncated because it "
+                            f"exceeded the output token limit ({max_tokens} tokens). "
+                            "You MUST call the output tool (send_email, write_file, "
+                            "create_word, etc.) with a MUCH shorter, more concise "
+                            "version of the content. Use minimal HTML styling, short "
+                            "tables, and focus only on the most critical findings. "
+                            "Call the tool NOW in this response."
                         ),
                     },
                 )
