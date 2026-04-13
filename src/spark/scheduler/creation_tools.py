@@ -160,16 +160,20 @@ def _validate_recurring(value: str) -> str:
     try:
         from apscheduler.triggers.cron import CronTrigger
 
+        import tzlocal
+
+        local_tz = tzlocal.get_localzone()
         trigger = CronTrigger(
             minute=parts[0],
             hour=parts[1],
             day=parts[2],
             month=parts[3],
             day_of_week=parts[4],
+            timezone=local_tz,
         )
-        next_fire = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+        next_fire = trigger.get_next_fire_time(None, datetime.now(local_tz))
         human = _cron_to_human(parts)
-        next_str = next_fire.strftime("%A, %d %B %Y at %H:%M UTC") if next_fire else "N/A"
+        next_str = next_fire.strftime("%A, %d %B %Y at %H:%M %Z") if next_fire else "N/A"
         return f"Valid recurring schedule: {human}\nNext run: {next_str}"
     except Exception as e:
         return f"Invalid cron expression: {e}"

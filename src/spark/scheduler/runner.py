@@ -25,8 +25,11 @@ class ActionRunner:
     def __init__(self, ctx: Any, daemon_id: str) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        import tzlocal
+
         self._scheduler = BackgroundScheduler(
             job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
+            timezone=tzlocal.get_localzone(),
         )
         self._poll_interval = 30
         self._poll_thread: threading.Thread | None = None
