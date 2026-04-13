@@ -268,6 +268,10 @@ class ActionExecutor:
         total_output = 0
         activity_log: list[str] = []  # Full activity record for run history
 
+        # Enable prompt caching if the global setting is on — caches the system
+        # prompt and tool definitions across iterations, reducing input token costs.
+        use_caching = bool(self._ctx.settings.get("conversation.prompt_caching", True))
+
         for iteration in range(max_iterations):
             response = llm.invoke_model(
                 messages,
@@ -275,6 +279,7 @@ class ActionExecutor:
                 temperature=0.7,
                 tools=tools if tools else None,
                 system=system,
+                prompt_caching=use_caching,
             )
 
             usage = response.get("usage", {})
