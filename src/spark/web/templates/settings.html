@@ -597,12 +597,12 @@
             </div>
 
             <!-- Save -->
-            <div class="text-end mb-5">
-                <button class="btn btn-app-secondary me-2" onclick="window.location.reload()">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
-                </button>
-                <button class="btn btn-app-primary" id="btn-save" onclick="saveSettings()">
+            <div class="text-start mb-5">
+                <button class="btn btn-app-primary me-2" id="btn-save" onclick="saveSettings()" disabled>
                     <i class="bi bi-check-lg me-1"></i> Save Settings
+                </button>
+                <button class="btn btn-app-secondary" id="btn-discard" onclick="window.location.reload()" disabled>
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
                 </button>
             </div>
         </div>
@@ -714,6 +714,9 @@ async function saveSettings() {
         });
         if (resp.ok) {
             AppToast.success('Settings saved', 'Configuration updated. Some changes may require a restart.');
+            // Reset dirty state
+            document.getElementById('btn-save').disabled = true;
+            document.getElementById('btn-discard').disabled = true;
         } else {
             const data = await resp.json();
             AppToast.danger('Error', data.detail || 'Failed to save settings.');
@@ -721,7 +724,6 @@ async function saveSettings() {
     } catch (err) {
         AppToast.danger('Error', 'Network error while saving settings.');
     } finally {
-        btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save Settings';
     }
 }
@@ -884,6 +886,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load MCP servers
     loadMCPServers();
+
+    // Track changes — enable Save/Discard buttons when anything changes
+    function markDirty() {
+        document.getElementById('btn-save').disabled = false;
+        document.getElementById('btn-discard').disabled = false;
+    }
+    document.querySelectorAll('.setting-input').forEach(el => {
+        el.addEventListener('change', markDirty);
+        el.addEventListener('input', markDirty);
+    });
+    // Tool category toggles and radio buttons
+    document.querySelectorAll('.tool-category-toggle, input[type="radio"].setting-input').forEach(el => {
+        el.addEventListener('change', markDirty);
+    });
+    // Path list add/remove will call markDirty via MutationObserver
+    document.querySelectorAll('.path-list-control').forEach(el => {
+        const obs = new MutationObserver(markDirty);
+        obs.observe(el, { childList: true, subtree: true });
+    });
 });
 
 // -- MCP Server Management --
