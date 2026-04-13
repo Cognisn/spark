@@ -147,9 +147,18 @@ class ActionRunner:
                 if job_id not in scheduled_ids:
                     self._schedule_action(action, job_id, user_guid)
                 else:
-                    # Log existing scheduled jobs
+                    # Sync next_run_at in DB from scheduler's actual next fire time.
+                    # This keeps the tray display accurate after sleep/wake or misfires.
                     job = self._scheduler.get_job(job_id)
                     if job and job.next_run_time:
+                        next_utc = job.next_run_time.astimezone(timezone.utc)
+                        stored = action.get("next_run_at", "")
+                        if stored != next_utc.isoformat():
+                            from spark.database import autonomous_actions as aa
+
+                            aa.update_action(
+                                db, action_id, user_guid, next_run_at=next_utc.isoformat()
+                            )
                         logger.debug(
                             "  '%s' already scheduled, next: %s",
                             action.get("name"),
