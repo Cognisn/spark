@@ -14,6 +14,7 @@ graph TD
     Builtin --> Doc[Documents]
     Builtin --> Arc[Archives]
     Builtin --> Web[Web]
+    Builtin --> Cmd[System Commands]
     Builtin --> Mem[Memory]
     Builtin --> DT[DateTime]
     Builtin --> TD[Tool Docs]
@@ -36,6 +37,8 @@ graph TD
 
     Web --> web_search
     Web --> web_fetch
+
+    Cmd --> run_command
 
     Mem --> store_memory
     Mem --> query_memory
@@ -137,6 +140,35 @@ Search the web and fetch page content. No path configuration required.
 
 See [Web Search](web-search.md) for search engine configuration.
 
+### System Commands
+
+Execute shell commands on the host system. Disabled by default — must be explicitly enabled in Settings. OS-aware: uses zsh on macOS, bash on Linux, cmd.exe on Windows.
+
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute a shell command, returning stdout and stderr |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  system_commands:
+    enabled: true
+    timeout: 30                    # Default timeout per command (seconds)
+    max_timeout: 300               # Maximum allowed timeout
+    max_output_chars: 50000        # Truncate output beyond this
+    blocked_commands: []            # Commands to block (e.g. rm, shutdown)
+    require_approval: true         # Always prompt before running
+```
+
+**Security:**
+- Disabled by default — must be explicitly enabled
+- Dangerous commands (mkfs, fdisk, dd, format) are always blocked
+- Configurable blocked command list for additional restrictions
+- When `require_approval` is enabled (default), every command prompts for user approval
+- Commands run under the same OS permissions as the Spark process
+- Output is truncated to prevent excessive token usage
+
 ### Memory
 
 Always available. Manages persistent cross-conversation memories.
@@ -177,6 +209,7 @@ Permissions are stored per conversation in the database. When you approve a tool
 | documents | read_word, read_excel, read_pdf, read_powerpoint |
 | archives | list_archive, extract_archive |
 | web | web_search, web_fetch |
+| system_commands | run_command |
 | memory | store_memory, query_memory, list_memories, delete_memory |
 | core | get_current_datetime, get_tool_documentation |
 

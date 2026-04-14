@@ -35,6 +35,7 @@
 - **Tool Activity Sidecar Panel** -- Dedicated panel for tool call visibility, replacing inline tool groups
 - **Tool Documentation** -- Built-in `get_tool_documentation` tool for querying tool usage information
 - **Web Search Engines** -- DuckDuckGo, Brave, Google/SerpAPI, Bing/Azure, SearXNG
+- **System Commands** -- Execute shell commands and CLI tools (git, docker, aws, etc.) with approval prompts
 
 ### Memory
 - **Persistent Storage** -- Facts, preferences, projects, instructions, relationships
