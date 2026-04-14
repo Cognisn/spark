@@ -1109,8 +1109,14 @@ class ConversationManager:
                 tc, conversation_id, user_guid, status_callback=status_callback
             )
 
-        # 2. Execute agent tools — in parallel when there are multiple.
-        if len(agent_calls) > 1:
+        # 2. Execute agent tools — in parallel when there are multiple,
+        # but only if model auto-select is NOT active (auto-select requires
+        # sequential user approval modals).
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        agent_config = embedded.get("agents", {})
+        auto_select = agent_config.get("model_selection", "same") == "auto_select"
+
+        if len(agent_calls) > 1 and not auto_select:
             import concurrent.futures
 
             logger.info("Dispatching %d spawn_agent calls in parallel", len(agent_calls))

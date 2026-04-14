@@ -176,9 +176,11 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "name": conv.get("name"),
             "model_id": model_id,
             "created_at": conv.get("created_at"),
-            "tokens_sent": conv.get("tokens_sent", 0),
-            "tokens_received": conv.get("tokens_received", 0),
-            "total_tokens": conv.get("total_tokens", 0),
+            "tokens_sent": (conv.get("tokens_sent", 0) or 0) + agent_input_tokens,
+            "tokens_received": (conv.get("tokens_received", 0) or 0) + agent_output_tokens,
+            "total_tokens": (conv.get("total_tokens", 0) or 0)
+            + agent_input_tokens
+            + agent_output_tokens,
             "context_window": context_window,
             "instructions": conv.get("instructions"),
             "compaction_threshold": conv.get("compaction_threshold"),
@@ -194,8 +196,6 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "agents_enabled": bool(conv.get("agents_enabled", False)),
             "agent_mode": conv.get("agent_mode") or "",
             "agent_model_selection": conv.get("agent_model_selection") or "",
-            "agent_input_tokens": agent_input_tokens,
-            "agent_output_tokens": agent_output_tokens,
         }
     )
 
