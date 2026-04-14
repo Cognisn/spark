@@ -721,6 +721,16 @@ function showAgentModelApproval(data) {
         `Agent "${data.agent_name}" wants to use the following model:`;
     document.getElementById('agent-model-task').textContent = data.task;
 
+    // Show justification if provided
+    const justWrap = document.getElementById('agent-model-justification-wrap');
+    const justText = document.getElementById('agent-model-justification');
+    if (data.justification) {
+        justText.textContent = data.justification;
+        justWrap.style.display = '';
+    } else {
+        justWrap.style.display = 'none';
+    }
+
     const select = document.getElementById('agent-model-select');
     select.innerHTML = '';
     (data.available_models || []).forEach(m => {
@@ -844,7 +854,7 @@ function _updateAgentPanelBadge() {
     }
 }
 
-function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCallsJson, timestamp, inputTokens, outputTokens) {
+function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCallsJson, timestamp, inputTokens, outputTokens, modelId) {
     const panel = document.getElementById('agent-panel-body');
     const empty = document.getElementById('agent-panel-empty');
     if (empty) empty.style.display = 'none';
@@ -908,7 +918,10 @@ function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCa
         </div>
         <div class="ap-task">${escapeHtml(taskTrunc)}</div>
         <div class="ap-detail" id="${itemId}-detail">
-            <div id="${itemId}-tools">${toolCallsHtml}</div>
+            ${modelId ? `<div style="font-size: 0.6875rem; color: var(--app-text-muted); margin-bottom: 0.375rem;"><strong>Model:</strong> ${escapeHtml(modelId)}</div>` : ''}
+            <div class="tp-detail-section">Task</div>
+            <div class="tp-detail-code">${escapeHtml(task || '')}</div>
+            ${toolCallsHtml ? `<div class="tp-detail-section" style="margin-top: 0.375rem;">Tool Calls</div><div id="${itemId}-tools">${toolCallsHtml}</div>` : `<div id="${itemId}-tools"></div>`}
             ${resultHtml}
             ${tokenHtml}
         </div>
@@ -1030,7 +1043,8 @@ async function loadAgentHistory(conversationId) {
             _addAgentPanelItem(
                 run.agent_name, run.agent_id, run.task_description,
                 run.status, run.result_text, run.tool_calls_json,
-                run.created_at, run.input_tokens, run.output_tokens
+                run.created_at, run.input_tokens, run.output_tokens,
+                run.model_id
             );
         });
     } catch (err) { /* Non-critical */ }

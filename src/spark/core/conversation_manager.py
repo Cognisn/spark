@@ -318,6 +318,15 @@ class ConversationManager:
                                 "model is used. Use list_provider_models to see available options."
                             ),
                         },
+                        "model_justification": {
+                            "type": "string",
+                            "description": (
+                                "When specifying a model_id, explain why this model was chosen "
+                                "over others (e.g. 'Choosing a faster model for simple data "
+                                "gathering' or 'Using the most capable model for complex analysis'). "
+                                "This is shown to the user for approval."
+                            ),
+                        },
                     },
                     "required": ["task", "agent_name"],
                 },
@@ -1153,6 +1162,7 @@ class ConversationManager:
             if provider_name and provider_name in self._llm.providers:
                 available_models = self._llm.providers[provider_name].list_available_models()
 
+            model_justification = tool_input.get("model_justification", "")
             approved_model = self._agent_model_callback(
                 agent_name,
                 task,
@@ -1165,6 +1175,7 @@ class ConversationManager:
                     }
                     for m in available_models
                 ],
+                model_justification,
             )
             if approved_model:
                 model_id = approved_model

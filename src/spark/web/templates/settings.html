@@ -716,17 +716,18 @@ async function saveSettings() {
         });
         if (resp.ok) {
             AppToast.success('Settings saved', 'Configuration updated. Some changes may require a restart.');
-            // Reset dirty state
-            document.getElementById('btn-save').disabled = true;
+            // Show "Saved" state and disable buttons
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Saved';
+            btn.disabled = true;
             document.getElementById('btn-discard').disabled = true;
         } else {
             const data = await resp.json();
             AppToast.danger('Error', data.detail || 'Failed to save settings.');
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save';
         }
     } catch (err) {
         AppToast.danger('Error', 'Network error while saving settings.');
-    } finally {
-        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save Settings';
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save';
     }
 }
 
@@ -891,7 +892,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Track changes — enable Save/Discard buttons when anything changes
     function markDirty() {
-        document.getElementById('btn-save').disabled = false;
+        const btn = document.getElementById('btn-save');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save';
         document.getElementById('btn-discard').disabled = false;
     }
     document.querySelectorAll('.setting-input').forEach(el => {

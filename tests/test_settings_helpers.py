@@ -96,7 +96,7 @@ class TestBuildToolCategories:
         settings.get = MagicMock(return_value=None)
         cats = _build_tool_categories(settings)
         assert isinstance(cats, list)
-        assert len(cats) == 7
+        assert len(cats) == 6
 
     def test_category_ids(self) -> None:
         settings = MagicMock()
@@ -110,7 +110,6 @@ class TestBuildToolCategories:
             "web",
             "system_commands",
             "email",
-            "agents",
         }
 
     def test_category_structure(self) -> None:

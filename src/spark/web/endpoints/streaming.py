@@ -112,7 +112,11 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             return decision
 
         def agent_model_callback(
-            agent_name: str, task: str, suggested_model: str, available_models: list[dict]
+            agent_name: str,
+            task: str,
+            suggested_model: str,
+            available_models: list[dict],
+            justification: str = "",
         ) -> str:
             """Called from the agent spawn thread when auto_select model approval is needed.
 
@@ -130,6 +134,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                         "task": task,
                         "suggested_model": suggested_model,
                         "available_models": available_models,
+                        "justification": justification,
                     },
                 }
             )

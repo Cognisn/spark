@@ -820,6 +820,47 @@ def _build_sections(settings: object) -> list[dict]:
             ],
         },
         {
+            "id": "agents",
+            "title": "Agents",
+            "icon": "bi-robot",
+            "description": "Allow the AI to spawn sub-agents for independent task execution within conversations.",
+            "groups": [
+                {
+                    "id": "agent_settings",
+                    "title": "Agent Settings",
+                    "fields": [
+                        _toggle("embedded_tools.agents.enabled", "Enable Agent Spawning", settings),
+                        _select(
+                            "embedded_tools.agents.default_mode",
+                            "Default Mode",
+                            settings,
+                            ["orchestrator", "chain"],
+                            "orchestrator",
+                        ),
+                        _select(
+                            "embedded_tools.agents.model_selection",
+                            "Model Selection",
+                            settings,
+                            ["same", "auto_select"],
+                            "same",
+                        ),
+                        _number(
+                            "embedded_tools.agents.max_concurrent",
+                            "Max Concurrent Agents",
+                            settings,
+                            5,
+                        ),
+                        _number(
+                            "embedded_tools.agents.max_iterations",
+                            "Max Iterations per Agent",
+                            settings,
+                            15,
+                        ),
+                    ],
+                },
+            ],
+        },
+        {
             "id": "autonomous_actions",
             "title": "Autonomous Actions",
             "icon": "bi-play-circle",
@@ -863,6 +904,17 @@ def _build_sections(settings: object) -> list[dict]:
 
 def _get_val(settings: object, key: str, default: object = None) -> object:
     return settings.get(key, default)  # type: ignore[union-attr]
+
+
+def _ensure_list(value: object) -> list:
+    """Ensure a value is a list. Handles string (comma-separated) and None."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        return [p.strip() for p in value.split(",") if p.strip()]
+    if value is None:
+        return []
+    return []
 
 
 def _toggle(key: str, label: str, settings: object) -> dict:
@@ -933,7 +985,7 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "key": "embedded_tools.filesystem.allowed_paths",
                     "label": "Allowed Paths",
                     "type": "path_list",
-                    "value": get("embedded_tools.filesystem.allowed_paths", []) or [],
+                    "value": _ensure_list(get("embedded_tools.filesystem.allowed_paths", [])),
                     "help": "Directories the AI can access. Empty = working directory only.",
                 },
             ],
@@ -1181,63 +1233,5 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 },
             ],
             "tools": ["send_email", "draft_email"],
-        },
-        {
-            "id": "agents",
-            "title": "Agents",
-            "icon": "bi-robot",
-            "description": "Allow the AI to spawn sub-agents for independent task execution within conversations.",
-            "enabled": bool(get("embedded_tools.agents.enabled", False)),
-            "mode": None,
-            "mode_options": [],
-            "mode_descriptions": {},
-            "extra_fields": [
-                {
-                    "key": "embedded_tools.agents.default_mode",
-                    "label": "Default Mode",
-                    "type": "select",
-                    "value": get("embedded_tools.agents.default_mode", "orchestrator"),
-                    "options": [
-                        {
-                            "value": "orchestrator",
-                            "label": "Orchestrator-Workers (fresh context per agent)",
-                        },
-                        {
-                            "value": "chain",
-                            "label": "Chain (agents see conversation context)",
-                        },
-                    ],
-                    "help": "Orchestrator: agents work independently with just their task. Chain: agents see the full conversation history.",
-                },
-                {
-                    "key": "embedded_tools.agents.model_selection",
-                    "label": "Model Selection",
-                    "type": "select",
-                    "value": get("embedded_tools.agents.model_selection", "same"),
-                    "options": [
-                        {"value": "same", "label": "Same as conversation model"},
-                        {
-                            "value": "auto_select",
-                            "label": "LLM chooses model (with user approval)",
-                        },
-                    ],
-                    "help": "Same: agents use the conversation's model. Auto-select: the LLM picks the best model from the same provider and presents its choice for approval.",
-                },
-                {
-                    "key": "embedded_tools.agents.max_concurrent",
-                    "label": "Max Concurrent Agents",
-                    "type": "number",
-                    "value": get("embedded_tools.agents.max_concurrent", 5),
-                    "help": "Maximum number of agents that can run simultaneously.",
-                },
-                {
-                    "key": "embedded_tools.agents.max_iterations",
-                    "label": "Max Iterations per Agent",
-                    "type": "number",
-                    "value": get("embedded_tools.agents.max_iterations", 15),
-                    "help": "Maximum tool-use loop iterations for each agent.",
-                },
-            ],
-            "tools": ["spawn_agent", "list_provider_models"],
         },
     ]
