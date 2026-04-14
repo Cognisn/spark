@@ -34,7 +34,7 @@
             </button>
             <button class="btn btn-app-ghost btn-sm" title="Tool Activity" onclick="toggleToolPanel()" id="btn-tool-panel">
                 <i class="bi bi-tools"></i>
-                <span id="tool-panel-badge" class="badge rounded-pill" style="display: none; position: absolute; top: -2px; right: -2px; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px;"></span>
+                <span id="tool-panel-toolbar-badge" class="badge rounded-pill" style="display: none; position: absolute; top: -2px; right: -2px; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px;"></span>
             </button>
             <button class="btn btn-app-ghost btn-sm" title="Info" onclick="showInfoModal()"><i class="bi bi-info-circle"></i></button>
             <button class="btn btn-app-ghost btn-sm" title="Create Action from Conversation" onclick="showCreateActionFromConv()"><i class="bi bi-play-circle"></i></button>
@@ -88,28 +88,40 @@
     <!-- Tool Activity Sidecar Panel -->
     <div id="tool-panel" style="display: none; width: 380px; flex-shrink: 0;
          border-left: 1px solid var(--app-border); background: var(--app-bg-primary);
-         display: none; flex-direction: column;">
-        <!-- Panel header -->
-        <div class="d-flex align-items-center justify-content-between px-3 py-2"
-             style="border-bottom: 1px solid var(--app-border); min-height: 45px;">
-            <div class="d-flex align-items-center gap-2">
-                <i class="bi bi-tools" style="color: var(--app-accent);"></i>
-                <strong style="font-size: 0.875rem;">Tool Activity</strong>
-                <span id="tool-panel-total" class="badge rounded-pill"
-                      style="font-size: 0.65rem; background: var(--app-bg-tertiary); color: var(--app-text-secondary);">0</span>
-            </div>
-            <div>
-                <button class="btn btn-app-ghost btn-sm" onclick="toggleToolPanel()" title="Close">
-                    <i class="bi bi-x-lg" style="font-size: 0.75rem;"></i>
-                </button>
-            </div>
+         display: none; flex-direction: column; position: relative;">
+        <!-- Resize handle -->
+        <div id="sidecar-resize-handle"
+             style="width: 4px; cursor: col-resize; position: absolute; left: 0; top: 0; bottom: 0; z-index: 10; background: transparent;"
+             onmousedown="startSidecarResize(event)"></div>
+        <!-- Tabbed header -->
+        <div style="display: flex; border-bottom: 1px solid var(--app-border);">
+            <button class="sidecar-tab active" id="sidecar-tab-tools" onclick="switchSidecarTab('tools')"
+                    style="flex: 1; padding: 0.5rem; border: none; background: none; font-size: 0.8125rem; font-weight: 600; cursor: pointer; color: var(--app-accent); border-bottom: 2px solid var(--app-accent);">
+                <i class="bi bi-tools me-1"></i>Tools
+                <span id="tool-panel-badge" class="badge rounded-pill" style="display: none; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px; vertical-align: top;"></span>
+            </button>
+            <button class="sidecar-tab" id="sidecar-tab-agents" onclick="switchSidecarTab('agents')"
+                    style="flex: 1; padding: 0.5rem; border: none; background: none; font-size: 0.8125rem; font-weight: 600; cursor: pointer; color: var(--app-text-muted); border-bottom: 2px solid transparent;">
+                <i class="bi bi-robot me-1"></i>Agents
+                <span id="agent-panel-badge" class="badge rounded-pill" style="display: none; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px; vertical-align: top;"></span>
+            </button>
+            <button class="btn btn-app-ghost btn-sm" onclick="toggleToolPanel()" style="flex-shrink: 0; padding: 0.5rem;" title="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
         </div>
-        <!-- Panel body — scrollable -->
+        <!-- Tools panel body -->
         <div id="tool-panel-body" class="flex-grow-1 overflow-auto px-2 py-2"
              style="font-size: 0.8125rem;">
             <div id="tool-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
                 <i class="bi bi-tools" style="font-size: 1.5rem; opacity: 0.3;"></i>
                 <p class="mt-2 mb-0" style="font-size: 0.75rem;">No tool calls yet</p>
+            </div>
+        </div>
+        <!-- Agents panel body -->
+        <div id="agent-panel-body" class="flex-grow-1 overflow-auto px-2 py-2" style="display: none;">
+            <div id="agent-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
+                <i class="bi bi-robot" style="font-size: 1.5rem; opacity: 0.3;"></i>
+                <p class="mt-2 mb-0" style="font-size: 0.75rem;">No agents spawned yet</p>
             </div>
         </div>
     </div>
@@ -422,10 +434,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     initMermaid();
     loadChatHistory(conversationId);
 
-    // Restore tool panel state
+    // Restore tool panel state and saved width
     if (sessionStorage.getItem('spark-tool-panel') === 'open') {
         document.getElementById('tool-panel').style.display = 'flex';
     }
+    const savedWidth = sessionStorage.getItem('spark-sidecar-width');
+    if (savedWidth) document.getElementById('tool-panel').style.width = savedWidth;
 
     // Seed token counter from stored values
     try {

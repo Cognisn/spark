@@ -86,6 +86,8 @@ async function loadChatHistory(conversationId) {
 
         // Load tool activity into the sidecar panel from the database
         await loadToolActivity(conversationId);
+        // Load agent run history into the agents tab
+        await loadAgentHistory(conversationId);
     } catch (err) {
         container.innerHTML = `<div class="alert-app alert-app-danger">Failed to load history.</div>`;
     }
@@ -759,18 +761,271 @@ async function approveAction(toolUseId, decision) {
 
 
 /* ==========================================================================
-   7. Agent Panel Stubs — implemented fully in Task 6
+   7. Agent Panel — sidecar tab for agent runs
    ========================================================================== */
 
+let _agentPanelCount = 0;
+
+function switchSidecarTab(tab) {
+    const toolsTab = document.getElementById('sidecar-tab-tools');
+    const agentsTab = document.getElementById('sidecar-tab-agents');
+    const toolsBody = document.getElementById('tool-panel-body');
+    const agentsBody = document.getElementById('agent-panel-body');
+
+    if (tab === 'tools') {
+        toolsTab.style.color = 'var(--app-accent)';
+        toolsTab.style.borderBottom = '2px solid var(--app-accent)';
+        agentsTab.style.color = 'var(--app-text-muted)';
+        agentsTab.style.borderBottom = '2px solid transparent';
+        toolsBody.style.display = '';
+        agentsBody.style.display = 'none';
+    } else {
+        agentsTab.style.color = 'var(--app-accent)';
+        agentsTab.style.borderBottom = '2px solid var(--app-accent)';
+        toolsTab.style.color = 'var(--app-text-muted)';
+        toolsTab.style.borderBottom = '2px solid transparent';
+        agentsBody.style.display = '';
+        toolsBody.style.display = 'none';
+    }
+}
+
+function _updateAgentPanelBadge() {
+    const badge = document.getElementById('agent-panel-badge');
+    if (badge) {
+        if (_agentPanelCount > 0) {
+            badge.textContent = _agentPanelCount;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
+function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCallsJson, timestamp, inputTokens, outputTokens) {
+    const panel = document.getElementById('agent-panel-body');
+    const empty = document.getElementById('agent-panel-empty');
+    if (empty) empty.style.display = 'none';
+
+    _agentPanelCount++;
+    _updateAgentPanelBadge();
+
+    const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
+    const statusIcons = {
+        running: '<i class="bi bi-arrow-repeat ap-status running"></i>',
+        completed: '<i class="bi bi-check-circle-fill ap-status success"></i>',
+        error: '<i class="bi bi-x-circle-fill ap-status error"></i>',
+    };
+    const statusIcon = statusIcons[status] || statusIcons['running'];
+    const taskTrunc = (task || '').length > 80 ? task.substring(0, 80) + '…' : (task || '');
+    const timeStr = timestamp ? _formatToolTime(timestamp) : _formatToolTime(null);
+
+    // Build tool calls detail if available
+    let toolCallsHtml = '';
+    if (toolCallsJson) {
+        try {
+            const calls = typeof toolCallsJson === 'string' ? JSON.parse(toolCallsJson) : toolCallsJson;
+            if (Array.isArray(calls) && calls.length) {
+                calls.forEach(tc => {
+                    const tcStatus = tc.status === 'error' ? 'error' : 'success';
+                    const tcIcon = tcStatus === 'error'
+                        ? '<i class="bi bi-x-circle-fill" style="color: var(--app-danger); font-size: 0.625rem;"></i>'
+                        : '<i class="bi bi-check-circle-fill" style="color: var(--app-success); font-size: 0.625rem;"></i>';
+                    toolCallsHtml += `<div class="ap-tool-entry d-flex align-items-center gap-1">
+                        ${tcIcon}
+                        <span>${escapeHtml(tc.tool_name || tc.name || 'tool')}</span>
+                    </div>`;
+                });
+            }
+        } catch (e) { /* ignore parse errors */ }
+    }
+
+    let resultHtml = '';
+    if (resultText) {
+        const truncResult = resultText.length > 200 ? resultText.substring(0, 200) + '…' : resultText;
+        resultHtml = `<div class="tp-detail-section" style="margin-top: 0.375rem;">Result</div>
+            <div class="tp-detail-code">${escapeHtml(truncResult)}</div>`;
+    }
+
+    let tokenHtml = '';
+    if (inputTokens || outputTokens) {
+        tokenHtml = `<div style="font-size: 0.625rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+            Tokens: ${(inputTokens || 0).toLocaleString()} in / ${(outputTokens || 0).toLocaleString()} out
+        </div>`;
+    }
+
+    const item = document.createElement('div');
+    item.className = 'agent-panel-item';
+    item.id = itemId;
+    item.innerHTML = `
+        <div class="ap-header" onclick="toggleAgentPanelItem('${itemId}')">
+            <i class="bi bi-robot" style="color: var(--app-accent); font-size: 0.875rem;"></i>
+            <span class="ap-name">${escapeHtml(agentName || 'Agent')}</span>
+            <span class="tp-time">${timeStr}</span>
+            ${statusIcon}
+        </div>
+        <div class="ap-task">${escapeHtml(taskTrunc)}</div>
+        <div class="ap-detail" id="${itemId}-detail">
+            <div id="${itemId}-tools">${toolCallsHtml}</div>
+            ${resultHtml}
+            ${tokenHtml}
+        </div>
+    `;
+
+    panel.appendChild(item);
+    panel.scrollTop = panel.scrollHeight;
+    return itemId;
+}
+
+function toggleAgentPanelItem(itemId) {
+    const detail = document.getElementById(itemId + '-detail');
+    if (!detail) return;
+    const isHidden = getComputedStyle(detail).display === 'none';
+    detail.style.display = isHidden ? 'block' : 'none';
+}
+
 function appendStreamingAgentStart(agentName, agentId, task, modelId) {
-    console.log('Agent started:', agentName, agentId);
+    // Switch to agents tab and auto-open panel
+    switchSidecarTab('agents');
+    const panel = document.getElementById('tool-panel');
+    if (panel.style.display !== 'flex') toggleToolPanel();
+
+    _addAgentPanelItem(agentName, agentId, task, 'running', null, null, null, 0, 0);
 }
+
 function updateStreamingAgentToolCall(agentId, toolName, params) {
-    console.log('Agent tool call:', agentId, toolName);
+    const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
+    const toolsContainer = document.getElementById(itemId + '-tools');
+    if (!toolsContainer) return;
+
+    const entryId = itemId + '-tool-' + Math.random().toString(36).substr(2, 6);
+    const entry = document.createElement('div');
+    entry.className = 'ap-tool-entry d-flex align-items-center gap-1';
+    entry.id = entryId;
+    entry.dataset.toolName = toolName;
+    entry.innerHTML = `
+        <i class="bi bi-arrow-repeat" style="color: var(--app-accent); font-size: 0.625rem; animation: app-spin 0.75s linear infinite;"></i>
+        <span>${escapeHtml(toolName || 'tool')}</span>
+    `;
+    toolsContainer.appendChild(entry);
+
+    // Auto-expand the detail section
+    const detail = document.getElementById(itemId + '-detail');
+    if (detail) detail.style.display = 'block';
 }
+
 function updateStreamingAgentToolResult(agentId, toolName, result, status) {
-    console.log('Agent tool result:', agentId, toolName, status);
+    const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
+    const toolsContainer = document.getElementById(itemId + '-tools');
+    if (!toolsContainer) return;
+
+    // Find the last matching running tool entry
+    const entries = toolsContainer.querySelectorAll('.ap-tool-entry');
+    for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
+        if (entry.dataset.toolName === toolName && entry.querySelector('.bi-arrow-repeat')) {
+            const icon = entry.querySelector('i');
+            if (status === 'error') {
+                icon.className = 'bi bi-x-circle-fill';
+                icon.style.color = 'var(--app-danger)';
+            } else {
+                icon.className = 'bi bi-check-circle-fill';
+                icon.style.color = 'var(--app-success)';
+            }
+            icon.style.animation = '';
+            break;
+        }
+    }
 }
+
 function updateStreamingAgentComplete(agentId, agentName, status, result) {
-    console.log('Agent complete:', agentId, status);
+    const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
+    const item = document.getElementById(itemId);
+    if (!item) return;
+
+    // Update status icon in header
+    const oldStatus = item.querySelector('.ap-status');
+    if (oldStatus) {
+        if (status === 'error') {
+            oldStatus.className = 'bi bi-x-circle-fill ap-status error';
+        } else {
+            oldStatus.className = 'bi bi-check-circle-fill ap-status success';
+        }
+    }
+
+    // Add result summary
+    if (result) {
+        const detail = document.getElementById(itemId + '-detail');
+        if (detail) {
+            const truncResult = typeof result === 'string'
+                ? (result.length > 200 ? result.substring(0, 200) + '…' : result)
+                : JSON.stringify(result).substring(0, 200);
+            detail.insertAdjacentHTML('beforeend',
+                `<div class="tp-detail-section" style="margin-top: 0.375rem;">Result</div>
+                 <div class="tp-detail-code">${escapeHtml(truncResult)}</div>`);
+        }
+    }
+
+    _updateAgentPanelBadge();
+}
+
+async function loadAgentHistory(conversationId) {
+    try {
+        const resp = await fetch(`/chat/${conversationId}/api/agent-history`);
+        const runs = await resp.json();
+        if (!runs.length) return;
+
+        const panel = document.getElementById('agent-panel-body');
+        const empty = document.getElementById('agent-panel-empty');
+        if (empty) empty.style.display = 'none';
+
+        // Update badge
+        const badge = document.getElementById('agent-panel-badge');
+        if (badge) { badge.textContent = runs.length; badge.style.display = ''; }
+
+        runs.reverse(); // Oldest first
+        runs.forEach(run => {
+            _addAgentPanelItem(
+                run.agent_name, run.agent_id, run.task_description,
+                run.status, run.result_text, run.tool_calls_json,
+                run.created_at, run.input_tokens, run.output_tokens
+            );
+        });
+    } catch (err) { /* Non-critical */ }
+}
+
+
+/* ==========================================================================
+   8. Sidecar Resize
+   ========================================================================== */
+
+let _sidecarResizing = false;
+let _sidecarStartX = 0;
+let _sidecarStartWidth = 0;
+
+function startSidecarResize(event) {
+    _sidecarResizing = true;
+    _sidecarStartX = event.clientX;
+    const panel = document.getElementById('tool-panel');
+    _sidecarStartWidth = panel.offsetWidth;
+    document.addEventListener('mousemove', doSidecarResize);
+    document.addEventListener('mouseup', stopSidecarResize);
+    event.preventDefault();
+}
+
+function doSidecarResize(event) {
+    if (!_sidecarResizing) return;
+    const panel = document.getElementById('tool-panel');
+    // Dragging left = wider, dragging right = narrower
+    const diff = _sidecarStartX - event.clientX;
+    const newWidth = Math.max(250, Math.min(800, _sidecarStartWidth + diff));
+    panel.style.width = newWidth + 'px';
+}
+
+function stopSidecarResize() {
+    _sidecarResizing = false;
+    document.removeEventListener('mousemove', doSidecarResize);
+    document.removeEventListener('mouseup', stopSidecarResize);
+    // Save width preference
+    const panel = document.getElementById('tool-panel');
+    sessionStorage.setItem('spark-sidecar-width', panel.style.width);
 }

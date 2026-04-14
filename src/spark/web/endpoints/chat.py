@@ -91,6 +91,29 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
     return JSONResponse(result)
 
 
+@router.get("/{conversation_id}/api/agent-history")
+async def get_agent_history(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get agent run history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import agents as agent_db
+
+    runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+    # Serialise datetime and JSON fields for the frontend.
+    result = []
+    for r in runs:
+        entry = dict(r)
+        # Ensure datetimes are strings
+        for key in ("created_at", "completed_at"):
+            val = entry.get(key)
+            if val and not isinstance(val, str):
+                entry[key] = str(val)
+        result.append(entry)
+    return JSONResponse(result)
+
+
 @router.post("/{conversation_id}/api/send")
 async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     """API: send a message (non-streaming fallback)."""
