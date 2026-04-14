@@ -781,6 +781,18 @@ class ConversationManager:
 
             # Check permissions
             permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
+
+            # System commands: always prompt when require_approval is on,
+            # unless running without a callback (autonomous actions).
+            if (
+                tool_name == "run_command"
+                and self._tool_permission_callback
+                and self._embedded_tools_config.get("embedded_tools", {})
+                .get("system_commands", {})
+                .get("require_approval", True)
+            ):
+                permission = None  # Force re-prompt
+
             if permission is None:
                 # First use — prompt user
                 if self._tool_permission_callback:
