@@ -219,6 +219,9 @@ def _send_email(
     username = email_config.get("username", "")
     password = email_config.get("password", "")
     use_tls = email_config.get("use_tls", True)
+    # Normalise — config may store as string "true"/"false"
+    if isinstance(use_tls, str):
+        use_tls = use_tls.lower() == "true"
 
     msg, _, error = _prepare_message(tool_input, email_config, config)
     if error:
