@@ -903,8 +903,18 @@ def _get_val(settings: object, key: str, default: object = None) -> object:
 
 
 def _ensure_list(value: object) -> list:
-    """Ensure a value is a list. Handles string (comma-separated) and None."""
+    """Ensure a value is a list of path strings.
+
+    Handles: proper list, comma-separated string, None, and the corruption
+    case where a path was split into individual characters (e.g.
+    ['/', 'U', 's', ...] instead of ['/Users/...']).
+    """
     if isinstance(value, list):
+        # Detect character-split corruption: if most entries are single chars,
+        # join them back into a single path string.
+        if len(value) > 3 and all(isinstance(v, str) and len(v) <= 1 for v in value):
+            rejoined = "".join(value)
+            return [rejoined] if rejoined else []
         return value
     if isinstance(value, str):
         return [p.strip() for p in value.split(",") if p.strip()]
