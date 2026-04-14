@@ -649,6 +649,58 @@ class ConversationManager:
 
     # -- System instructions --------------------------------------------------
 
+    def _build_conversation_tool_context(self) -> str:
+        """Build additional system prompt context for enabled tools."""
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        parts: list[str] = []
+
+        # Filesystem allowed paths
+        fs_config = embedded.get("filesystem", {})
+        allowed_paths = fs_config.get("allowed_paths", [])
+        if isinstance(allowed_paths, str):
+            allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
+        if fs_config.get("enabled", True) and allowed_paths:
+            path_list = ", ".join(f"`{p}`" for p in allowed_paths)
+            parts.append(
+                f"**Filesystem access:** You can read"
+                + (" and write" if fs_config.get("mode") == "read_write" else "")
+                + f" files within these paths: {path_list}\n"
+            )
+
+        # System commands
+        cmd_config = embedded.get("system_commands", {})
+        if cmd_config.get("enabled", False):
+            import platform
+            import sys
+
+            if sys.platform == "darwin":
+                os_desc = "macOS with zsh shell"
+            elif sys.platform == "win32":
+                os_desc = "Windows with PowerShell/cmd"
+            else:
+                os_desc = "Linux with bash shell"
+
+            parts.append(
+                f"**System commands:** You can execute shell commands on the host system "
+                f"({os_desc}, {platform.machine()}). Use `run_command` to run CLI tools "
+                f"like git, docker, aws, curl, etc. Use `get_tool_documentation('run_command')` "
+                f"for the full usage guide. Commands require user approval by default.\n"
+            )
+
+        # Email
+        email_config = embedded.get("email", {})
+        if email_config.get("enabled", False) and email_config.get("host"):
+            sender = email_config.get("sender", "")
+            if sender:
+                parts.append(
+                    f"**Email:** You can send emails via `send_email` (sender: {sender}) "
+                    f"or save drafts via `draft_email`.\n"
+                )
+
+        if parts:
+            return "\n".join(parts) + "\n"
+        return ""
+
     def _build_system_instructions(
         self, conv: dict, *, retrieved_context: str | None = None
     ) -> str:
@@ -669,9 +721,10 @@ class ConversationManager:
             f"- `delete_memory` — Remove a specific memory by ID.\n\n"
             f"**When the user tells you something about themselves, their work, or their preferences, proactively use `store_memory` to remember it.**\n"
             f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
-            f"**Other tools:** You may also have access to filesystem, document, web search, and other tools. "
+            f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
-            f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
+            + self._build_conversation_tool_context()
+            + f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
             f"parameter references, examples, and best practices for any tool before using it. "
             f"Pass `_index` as the tool name to see all available documentation.\n\n"
             f"**Linked conversations:** If this conversation is linked to others, relevant context from those conversations "
