@@ -65,6 +65,11 @@ class ConversationManager:
         self._prompt_caching_enabled = prompt_caching
         self._in_tool_use_loop = False
 
+        # Per-request state for agent tool execution
+        self._current_conversation_id: int | None = None
+        self._current_user_guid: str | None = None
+        self._current_status_callback: Callable | None = None
+
         # Cache embedded tool definitions
         self._builtin_tools: list[dict[str, Any]] | None = None
         # Set of builtin tool names for fast lookup
@@ -275,6 +280,59 @@ class ConversationManager:
             self._get_builtin_tools()
         return tool_name in (self._builtin_tool_names or set())
 
+    def _get_agent_tools(self) -> list[dict[str, Any]]:
+        """Return tool definitions for agent spawning when agents are enabled."""
+        enabled = (
+            self._embedded_tools_config.get("embedded_tools", {})
+            .get("agents", {})
+            .get("enabled", False)
+        )
+        if not enabled:
+            return []
+
+        return [
+            {
+                "name": "spawn_agent",
+                "description": (
+                    "Spawn a sub-agent to execute a task independently. The agent runs "
+                    "with its own context and returns a result when finished. Use this to "
+                    "delegate research, analysis, or multi-step tasks."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "A clear description of the task for the agent to perform.",
+                        },
+                        "agent_name": {
+                            "type": "string",
+                            "description": "A short descriptive name for this agent (e.g. 'Researcher', 'Analyst').",
+                        },
+                        "model_id": {
+                            "type": "string",
+                            "description": (
+                                "Optional model ID to use. If omitted, the current conversation's "
+                                "model is used. Use list_provider_models to see available options."
+                            ),
+                        },
+                    },
+                    "required": ["task", "agent_name"],
+                },
+            },
+            {
+                "name": "list_provider_models",
+                "description": (
+                    "List all models available from the current LLM provider. "
+                    "Useful for choosing a model when spawning an agent."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        ]
+
     def _get_all_tools(self) -> list[dict[str, Any]]:
         """Get all tools: built-in + MCP server tools."""
         tools = list(self._get_builtin_tools())
@@ -321,6 +379,9 @@ class ConversationManager:
                     )
             except Exception as e:
                 logger.warning("Failed to load MCP tools: %s", e)
+
+        # Agent tools (spawn_agent, list_provider_models)
+        tools.extend(self._get_agent_tools())
 
         return tools
 
@@ -825,6 +886,11 @@ class ConversationManager:
         """Execute a batch of tool calls and return results."""
         from spark.database import mcp_ops, tool_permissions
 
+        # Store per-request context so _call_tool can access it for agent tools
+        self._current_conversation_id = conversation_id
+        self._current_user_guid = user_guid
+        self._current_status_callback = status_callback
+
         results: list[dict] = []
 
         for tool_call in tool_calls:
@@ -963,8 +1029,136 @@ class ConversationManager:
                 self._memory_index_instance = None
         return self._memory_index_instance
 
+    def _list_provider_models(self) -> tuple[str, bool]:
+        """List models from the conversation's current LLM provider."""
+        try:
+            provider_name = self._llm.active_provider
+            if not provider_name or provider_name not in self._llm.providers:
+                return "No active provider.", True
+            models = self._llm.providers[provider_name].list_available_models()
+            if not models:
+                return f"No models available from {provider_name}.", False
+            lines = [f"Available models from {provider_name}:\n"]
+            for m in models:
+                ctx = m.get("context_length", "?")
+                tools_support = "Yes" if m.get("supports_tools") else "No"
+                lines.append(
+                    f"- {m['id']} ({m.get('name', '')}) — context: {ctx}, tools: {tools_support}"
+                )
+            return "\n".join(lines), False
+        except Exception as e:
+            return f"Error listing models: {e}", True
+
+    def _execute_agent_spawn(
+        self, tool_input: dict, conversation_id: int, user_guid: str
+    ) -> tuple[str, bool]:
+        """Spawn a sub-agent to execute a task."""
+        import uuid
+
+        from spark.core.agent_executor import AgentExecutor
+        from spark.database import agents as agent_db
+
+        task = tool_input.get("task", "").strip()
+        agent_name = tool_input.get("agent_name", "Agent").strip()
+        model_id = tool_input.get("model_id", "")
+
+        if not task:
+            return "Error: task description is required.", True
+
+        # Determine model — fall back to the current conversation's model
+        if not model_id:
+            try:
+                from spark.database import conversations
+
+                conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+                if conv:
+                    model_id = conv.get("model_id", "")
+            except Exception:
+                pass
+
+        # Determine mode from settings
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        agent_config = embedded.get("agents", {})
+        mode = agent_config.get("default_mode", "orchestrator")
+        max_iterations = agent_config.get("max_iterations", 15)
+
+        agent_id = str(uuid.uuid4())[:12]
+
+        # Record in database
+        agent_db.create_agent_run(
+            self._db,
+            agent_id,
+            conversation_id,
+            agent_name,
+            task,
+            mode,
+            model_id,
+            user_guid,
+        )
+
+        # Get parent messages if chain mode
+        parent_messages = None
+        if mode == "chain":
+            parent_messages = self._get_messages_for_model(conversation_id)
+
+        # Create and run agent
+        try:
+            executor = AgentExecutor(
+                self._llm.active_service,
+                self._db,
+                self._embedded_tools_config,
+                mcp_manager=self._mcp_manager,
+                mcp_loop=getattr(self, "_mcp_loop", None),
+                user_guid=user_guid,
+                tool_permission_callback=self._tool_permission_callback,
+                status_callback=self._current_status_callback,
+            )
+
+            result = executor.execute(
+                agent_id,
+                agent_name,
+                task,
+                model_id,
+                mode=mode,
+                parent_messages=parent_messages,
+                max_iterations=max_iterations,
+            )
+
+            # Record completion
+            agent_db.complete_agent_run(
+                self._db,
+                agent_id,
+                status="completed",
+                result_text=result.get("content", ""),
+                input_tokens=result.get("input_tokens", 0),
+                output_tokens=result.get("output_tokens", 0),
+                tool_calls_json=json.dumps(result.get("tool_calls", [])),
+            )
+
+            return result.get("content", "Agent completed with no output."), False
+
+        except Exception as e:
+            logger.error("Agent '%s' failed: %s", agent_name, e, exc_info=True)
+            agent_db.complete_agent_run(
+                self._db,
+                agent_id,
+                status="failed",
+                result_text=str(e),
+            )
+            return f"Agent '{agent_name}' failed: {e}", True
+
     def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
         """Execute a single tool. Returns (result_text, is_error)."""
+        # Agent tools — these need conversation context stored on the instance
+        if tool_name == "spawn_agent":
+            cid = self._current_conversation_id
+            uid = self._current_user_guid
+            if cid is None or uid is None:
+                return "Error: no active conversation context for agent spawn.", True
+            return self._execute_agent_spawn(tool_input, cid, uid)
+        if tool_name == "list_provider_models":
+            return self._list_provider_models()
+
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):
             from spark.tools.registry import execute_builtin_tool
@@ -1053,6 +1247,7 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
     "email": ["send_email", "draft_email"],
     "core": ["get_current_datetime", "get_tool_documentation"],
+    "agents": ["spawn_agent", "list_provider_models"],
 }
 
 
