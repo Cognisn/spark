@@ -934,6 +934,135 @@ class ConversationManager:
 
     # -- Tool execution -------------------------------------------------------
 
+    def _execute_single_tool(
+        self,
+        tool_call: dict,
+        conversation_id: int,
+        user_guid: str,
+        *,
+        status_callback: Callable | None = None,
+    ) -> dict:
+        """Execute a single tool call and return the tool_result dict.
+
+        Extracted from _execute_tools so that agent calls can be dispatched
+        to a thread pool for parallel execution.
+        """
+        from spark.database import mcp_ops, tool_permissions
+
+        tool_name = tool_call.get("name", "")
+        tool_id = tool_call.get("id", "")
+        tool_input = tool_call.get("input", {})
+
+        if status_callback:
+            status_callback(
+                "tool_call",
+                {
+                    "tool_use_id": tool_id,
+                    "tool_name": tool_name,
+                    "params": tool_input,
+                },
+            )
+
+        # Check permissions (conversation-level, then global)
+        permission = tool_permissions.is_tool_allowed(
+            self._db, conversation_id, tool_name, user_guid=user_guid
+        )
+
+        # System commands: always prompt when require_approval is on,
+        # unless running without a callback (autonomous actions).
+        if (
+            tool_name == "run_command"
+            and self._tool_permission_callback
+            and self._embedded_tools_config.get("embedded_tools", {})
+            .get("system_commands", {})
+            .get("require_approval", True)
+        ):
+            permission = None  # Force re-prompt
+
+        # Email send_email: always prompt when require_approval is on,
+        # unless running without a callback (autonomous actions).
+        if (
+            tool_name == "send_email"
+            and self._tool_permission_callback
+            and self._embedded_tools_config.get("embedded_tools", {})
+            .get("email", {})
+            .get("require_approval", True)
+        ):
+            permission = None  # Force re-prompt
+
+        if permission is None:
+            # First use — prompt user
+            if self._tool_permission_callback:
+                decision = self._tool_permission_callback(tool_name, tool_input)
+                if decision in ("allowed", "allowed_global", "once"):
+                    if decision == "allowed":
+                        # Approve this tool and category siblings for this conversation
+                        for sibling in _get_tool_category_siblings(tool_name):
+                            tool_permissions.set_tool_permission(
+                                self._db, conversation_id, sibling, "allowed", user_guid
+                            )
+                    elif decision == "allowed_global":
+                        # Approve this tool and category siblings globally
+                        for sibling in _get_tool_category_siblings(tool_name):
+                            tool_permissions.set_global_tool_permission(
+                                self._db, user_guid, sibling, "allowed"
+                            )
+                else:
+                    tool_permissions.set_tool_permission(
+                        self._db, conversation_id, tool_name, "denied", user_guid
+                    )
+                    return _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
+            # No callback — auto-allow (for testing or auto-approve mode)
+        elif permission is False:
+            return _tool_result(tool_id, "Tool execution denied.", is_error=True)
+
+        # Execute
+        logger.info(
+            "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
+        )
+        start_time = time.monotonic()
+        try:
+            result_text, is_error = self._call_tool(tool_name, tool_input)
+        except Exception as e:
+            result_text = f"Tool execution error: {e}"
+            is_error = True
+
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+        if is_error:
+            logger.warning("Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200])
+        else:
+            logger.info("Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100])
+
+        # Truncate large results
+        if len(result_text) > self._max_tool_result_tokens * 4:
+            result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+
+        # Record transaction
+        mcp_ops.record_transaction(
+            self._db,
+            conversation_id,
+            tool_name,
+            json.dumps(tool_input),
+            result_text,
+            user_guid,
+            is_error=is_error,
+            execution_time_ms=elapsed_ms,
+        )
+
+        if status_callback:
+            status_callback(
+                "tool_result",
+                {
+                    "tool_use_id": tool_id,
+                    "tool_name": tool_name,
+                    "result": result_text[:500],
+                    "status": "error" if is_error else "success",
+                },
+            )
+
+        return _tool_result(tool_id, result_text, is_error=is_error)
+
     def _execute_tools(
         self,
         conversation_id: int,
@@ -942,140 +1071,75 @@ class ConversationManager:
         *,
         status_callback: Callable | None = None,
     ) -> list[dict]:
-        """Execute a batch of tool calls and return results."""
-        from spark.database import mcp_ops, tool_permissions
+        """Execute a batch of tool calls and return results.
 
+        Non-agent tools are processed sequentially (preserving existing
+        behaviour).  Multiple ``spawn_agent`` calls are dispatched in
+        parallel via a thread pool so that independent agents can run
+        concurrently.
+        """
         # Store per-request context so _call_tool can access it for agent tools
         self._current_conversation_id = conversation_id
         self._current_user_guid = user_guid
         self._current_status_callback = status_callback
 
-        results: list[dict] = []
+        # Separate agent calls from other tool calls, preserving order.
+        non_agent_calls: list[tuple[int, dict]] = []
+        agent_calls: list[tuple[int, dict]] = []
 
-        for tool_call in tool_calls:
-            tool_name = tool_call.get("name", "")
-            tool_id = tool_call.get("id", "")
-            tool_input = tool_call.get("input", {})
-
-            if status_callback:
-                status_callback(
-                    "tool_call",
-                    {
-                        "tool_use_id": tool_id,
-                        "tool_name": tool_name,
-                        "params": tool_input,
-                    },
-                )
-
-            # Check permissions (conversation-level, then global)
-            permission = tool_permissions.is_tool_allowed(
-                self._db, conversation_id, tool_name, user_guid=user_guid
-            )
-
-            # System commands: always prompt when require_approval is on,
-            # unless running without a callback (autonomous actions).
-            if (
-                tool_name == "run_command"
-                and self._tool_permission_callback
-                and self._embedded_tools_config.get("embedded_tools", {})
-                .get("system_commands", {})
-                .get("require_approval", True)
-            ):
-                permission = None  # Force re-prompt
-
-            # Email send_email: always prompt when require_approval is on,
-            # unless running without a callback (autonomous actions).
-            if (
-                tool_name == "send_email"
-                and self._tool_permission_callback
-                and self._embedded_tools_config.get("embedded_tools", {})
-                .get("email", {})
-                .get("require_approval", True)
-            ):
-                permission = None  # Force re-prompt
-
-            if permission is None:
-                # First use — prompt user
-                if self._tool_permission_callback:
-                    decision = self._tool_permission_callback(tool_name, tool_input)
-                    if decision in ("allowed", "allowed_global", "once"):
-                        if decision == "allowed":
-                            # Approve this tool and category siblings for this conversation
-                            for sibling in _get_tool_category_siblings(tool_name):
-                                tool_permissions.set_tool_permission(
-                                    self._db, conversation_id, sibling, "allowed", user_guid
-                                )
-                        elif decision == "allowed_global":
-                            # Approve this tool and category siblings globally
-                            for sibling in _get_tool_category_siblings(tool_name):
-                                tool_permissions.set_global_tool_permission(
-                                    self._db, user_guid, sibling, "allowed"
-                                )
-                    else:
-                        tool_permissions.set_tool_permission(
-                            self._db, conversation_id, tool_name, "denied", user_guid
-                        )
-                        results.append(
-                            _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
-                        )
-                        continue
-                # No callback — auto-allow (for testing or auto-approve mode)
-            elif permission is False:
-                results.append(_tool_result(tool_id, "Tool execution denied.", is_error=True))
-                continue
-
-            # Execute
-            logger.info(
-                "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
-            )
-            start_time = time.monotonic()
-            try:
-                result_text, is_error = self._call_tool(tool_name, tool_input)
-            except Exception as e:
-                result_text = f"Tool execution error: {e}"
-                is_error = True
-
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-
-            if is_error:
-                logger.warning(
-                    "Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200]
-                )
+        for idx, tc in enumerate(tool_calls):
+            if tc.get("name") == "spawn_agent":
+                agent_calls.append((idx, tc))
             else:
-                logger.info(
-                    "Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100]
-                )
+                non_agent_calls.append((idx, tc))
 
-            # Truncate large results
-            if len(result_text) > self._max_tool_result_tokens * 4:
-                result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+        # Dict to collect results keyed by original index for correct ordering.
+        result_map: dict[int, dict] = {}
 
-            # Record transaction
-            mcp_ops.record_transaction(
-                self._db,
-                conversation_id,
-                tool_name,
-                json.dumps(tool_input),
-                result_text,
-                user_guid,
-                is_error=is_error,
-                execution_time_ms=elapsed_ms,
+        # 1. Execute non-agent tools sequentially.
+        for idx, tc in non_agent_calls:
+            result_map[idx] = self._execute_single_tool(
+                tc, conversation_id, user_guid, status_callback=status_callback
             )
 
-            if status_callback:
-                status_callback(
-                    "tool_result",
-                    {
-                        "tool_use_id": tool_id,
-                        "tool_name": tool_name,
-                        "result": result_text[:500],
-                        "status": "error" if is_error else "success",
-                    },
-                )
+        # 2. Execute agent tools — in parallel when there are multiple.
+        if len(agent_calls) > 1:
+            import concurrent.futures
 
-            results.append(_tool_result(tool_id, result_text, is_error=is_error))
+            logger.info("Dispatching %d spawn_agent calls in parallel", len(agent_calls))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agent_calls)) as pool:
+                future_to_idx: dict[concurrent.futures.Future, int] = {}
+                for idx, tc in agent_calls:
+                    future = pool.submit(
+                        self._execute_single_tool,
+                        tc,
+                        conversation_id,
+                        user_guid,
+                        status_callback=status_callback,
+                    )
+                    future_to_idx[future] = idx
 
-        return results
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        result_map[idx] = future.result()
+                    except Exception as e:
+                        tool_id = agent_calls[0][1].get("id", "")
+                        for ai, atc in agent_calls:
+                            if ai == idx:
+                                tool_id = atc.get("id", "")
+                                break
+                        result_map[idx] = _tool_result(
+                            tool_id, f"Agent execution error: {e}", is_error=True
+                        )
+        elif len(agent_calls) == 1:
+            idx, tc = agent_calls[0]
+            result_map[idx] = self._execute_single_tool(
+                tc, conversation_id, user_guid, status_callback=status_callback
+            )
+
+        # 3. Reassemble results in the original tool_calls order.
+        return [result_map[i] for i in range(len(tool_calls))]
 
     def _get_memory_index_for_tools(self) -> Any:
         """Get or create a MemoryIndex for tool use."""

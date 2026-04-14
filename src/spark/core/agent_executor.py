@@ -225,18 +225,32 @@ class AgentExecutor:
         else:
             os_info = f"Linux ({platform.machine()})"
 
-        return (
+        base = (
             f"You are a Spark sub-agent named '{agent_name}'.\n"
             f"Current time: {now}\n"
             f"Operating system: {os_info}\n\n"
             f"## Your Task\n\n{task}\n\n"
             f"## Instructions\n\n"
+        )
+
+        if mode == "orchestrator":
+            base += (
+                "You have been given a specific task. Complete it directly using the "
+                "most appropriate tools. Do not perform unnecessary steps.\n"
+            )
+
+        base += (
             f"- Complete the task using the tools available to you\n"
             f"- Be thorough but concise in your work\n"
             f"- When done, provide a clear summary of your findings/results\n"
             f"- You have access to all tools that the parent conversation has\n"
             f"- Use `get_tool_documentation(tool_name)` if you need help with any tool\n"
+            f"- The current date/time is already provided above — do NOT call "
+            f"get_current_datetime unless you need a specific timezone\n"
+            f"- Focus exclusively on your assigned task — do not perform unrelated lookups\n"
         )
+
+        return base
 
     def _get_tools(self) -> list[dict]:
         """Get available tools, excluding spawn_agent to prevent recursive spawning."""

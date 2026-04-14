@@ -818,6 +818,36 @@ async function approveAction(toolUseId, decision) {
    ========================================================================== */
 
 let _agentPanelCount = 0;
+let _agentDateGroupCounts = {};
+
+function _ensureAgentDateGroup(dateKey, initialCount) {
+    const groupId = 'ap-date-' + dateKey.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+    if (document.getElementById(groupId)) return groupId;
+
+    const panel = document.getElementById('agent-panel-body');
+    const count = initialCount || 0;
+    _agentDateGroupCounts[groupId] = count;
+
+    const group = document.createElement('div');
+    group.className = 'tp-date-group';
+    group.id = groupId;
+    group.innerHTML = `
+        <div class="tp-date-header" onclick="toggleDateGroup('${groupId}')">
+            <i class="bi bi-chevron-down tp-date-chevron" id="${groupId}-chevron"></i>
+            ${escapeHtml(dateKey)}
+            <span class="tp-date-count" id="${groupId}-count">(${count} run${count !== 1 ? 's' : ''})</span>
+        </div>
+        <div class="tp-date-body" id="${groupId}-body"></div>
+    `;
+    panel.appendChild(group);
+    return groupId;
+}
+
+function _updateAgentDateGroupCount(groupId) {
+    const countEl = document.getElementById(groupId + '-count');
+    const count = _agentDateGroupCounts[groupId] || 0;
+    if (countEl) countEl.textContent = `(${count} run${count !== 1 ? 's' : ''})`;
+}
 
 function switchSidecarTab(tab) {
     const toolsTab = document.getElementById('sidecar-tab-tools');
@@ -861,6 +891,14 @@ function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCa
 
     _agentPanelCount++;
     _updateAgentPanelBadge();
+
+    // Determine the date group and target container
+    const dateKey = _formatToolDate(timestamp);
+    const groupId = _ensureAgentDateGroup(dateKey, 0);
+    if (!_agentDateGroupCounts[groupId]) _agentDateGroupCounts[groupId] = 0;
+    _agentDateGroupCounts[groupId]++;
+    _updateAgentDateGroupCount(groupId);
+    const targetContainer = document.getElementById(groupId + '-body') || panel;
 
     const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
     const statusIcons = {
@@ -927,7 +965,7 @@ function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCa
         </div>
     `;
 
-    panel.appendChild(item);
+    targetContainer.appendChild(item);
     panel.scrollTop = panel.scrollHeight;
     return itemId;
 }
@@ -1030,7 +1068,6 @@ async function loadAgentHistory(conversationId) {
         const runs = await resp.json();
         if (!runs.length) return;
 
-        const panel = document.getElementById('agent-panel-body');
         const empty = document.getElementById('agent-panel-empty');
         if (empty) empty.style.display = 'none';
 
@@ -1039,13 +1076,26 @@ async function loadAgentHistory(conversationId) {
         if (badge) { badge.textContent = runs.length; badge.style.display = ''; }
 
         runs.reverse(); // Oldest first
+
+        // Group runs by date
+        const groups = {};
         runs.forEach(run => {
-            _addAgentPanelItem(
-                run.agent_name, run.agent_id, run.task_description,
-                run.status, run.result_text, run.tool_calls_json,
-                run.created_at, run.input_tokens, run.output_tokens,
-                run.model_id
-            );
+            const dateKey = _formatToolDate(run.created_at);
+            if (!groups[dateKey]) groups[dateKey] = [];
+            groups[dateKey].push(run);
+        });
+
+        // Render each date group
+        Object.entries(groups).forEach(([dateKey, items]) => {
+            _ensureAgentDateGroup(dateKey, 0);
+            items.forEach(run => {
+                _addAgentPanelItem(
+                    run.agent_name, run.agent_id, run.task_description,
+                    run.status, run.result_text, run.tool_calls_json,
+                    run.created_at, run.input_tokens, run.output_tokens,
+                    run.model_id
+                );
+            });
         });
     } catch (err) { /* Non-critical */ }
 }

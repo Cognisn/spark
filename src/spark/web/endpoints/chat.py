@@ -157,6 +157,19 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     model_id = conv.get("model_id", "")
     context_window = resolver.get_context_window(model_id)
 
+    # Sum token usage from agent runs for this conversation
+    agent_input_tokens = 0
+    agent_output_tokens = 0
+    try:
+        from spark.database import agents as agent_db
+
+        runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+        for r in runs:
+            agent_input_tokens += r.get("input_tokens", 0) or 0
+            agent_output_tokens += r.get("output_tokens", 0) or 0
+    except Exception:
+        pass
+
     return JSONResponse(
         {
             "id": conv.get("id"),
@@ -181,6 +194,8 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "agents_enabled": bool(conv.get("agents_enabled", False)),
             "agent_mode": conv.get("agent_mode") or "",
             "agent_model_selection": conv.get("agent_model_selection") or "",
+            "agent_input_tokens": agent_input_tokens,
+            "agent_output_tokens": agent_output_tokens,
         }
     )
 
