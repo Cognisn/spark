@@ -837,7 +837,7 @@ def _build_sections(settings: object) -> list[dict]:
                             "embedded_tools.agents.model_selection",
                             "Model Selection",
                             settings,
-                            ["same", "auto_select"],
+                            ["same", "auto_select", "auto_select_approved"],
                             "same",
                         ),
                         _number(

@@ -804,11 +804,17 @@ class ConversationManager:
                 f"Use `get_tool_documentation('spawn_agent')` for the full guide.\n"
             )
 
-            if model_selection == "auto_select":
+            if model_selection in ("auto_select", "auto_select_approved"):
+                approval_note = (
+                    "The user will be asked to approve your model choice before the agent starts."
+                    if model_selection == "auto_select"
+                    else "Your model choice will be used directly without user confirmation."
+                )
                 agent_desc += (
                     f"**Agent model selection:** You can choose the model for each agent. "
                     f"Use `list_provider_models` to see available models from the current provider, "
-                    f"then pass your chosen model_id to `spawn_agent`. Consider using:\n"
+                    f"then pass your chosen model_id and model_justification to `spawn_agent`. "
+                    f"{approval_note} Consider using:\n"
                     f"- Faster/cheaper models for simple data gathering tasks\n"
                     f"- More capable models for complex analysis or reasoning\n"
                 )
@@ -1110,13 +1116,15 @@ class ConversationManager:
             )
 
         # 2. Execute agent tools — in parallel when there are multiple,
-        # but only if model auto-select is NOT active (auto-select requires
-        # sequential user approval modals).
+        # but only if model auto-select with approval is NOT active (the modal
+        # requires sequential execution). "auto_select_approved" trusts the
+        # LLM's model choice without a modal, allowing parallel execution.
         embedded = self._embedded_tools_config.get("embedded_tools", {})
         agent_config = embedded.get("agents", {})
-        auto_select = agent_config.get("model_selection", "same") == "auto_select"
+        model_selection = agent_config.get("model_selection", "same")
+        needs_sequential = model_selection == "auto_select"
 
-        if len(agent_calls) > 1 and not auto_select:
+        if len(agent_calls) > 1 and not needs_sequential:
             import concurrent.futures
 
             logger.info("Dispatching %d spawn_agent calls in parallel", len(agent_calls))
