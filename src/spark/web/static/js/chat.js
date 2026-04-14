@@ -291,13 +291,23 @@ function appendContentBlocks(role, blocks, timestamp) {
 let _toolPanelCount = 0;
 let _dateGroupCounts = {};
 
+function _parseTimestamp(timestamp) {
+    if (!timestamp) return new Date();
+    // Database timestamps may lack timezone — append Z to treat as UTC
+    let ts = String(timestamp);
+    if (ts.length > 10 && !ts.endsWith('Z') && !ts.includes('+') && !ts.includes('-', 10)) {
+        ts += 'Z';
+    }
+    return new Date(ts);
+}
+
 function _formatToolTime(timestamp) {
-    const d = timestamp ? new Date(timestamp) : new Date();
+    const d = _parseTimestamp(timestamp);
     return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function _formatToolDate(timestamp) {
-    const d = timestamp ? new Date(timestamp) : new Date();
+    const d = _parseTimestamp(timestamp);
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 }
 

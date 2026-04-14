@@ -791,9 +791,16 @@ class ConversationManager:
             model_selection = agent_config.get("model_selection", "same")
 
             agent_desc = (
-                f"**Agent spawning:** You can spawn sub-agents via `spawn_agent` to delegate "
-                f"independent tasks (research, analysis, data gathering, etc.). "
-                f"Current mode: {mode_desc}. Agents have access to all enabled tools. "
+                f"**Agent spawning:** You can spawn independent sub-agents via `spawn_agent` "
+                f"to work on tasks in parallel. Current mode: {mode_desc}.\n\n"
+                f"**When to use agents:** You should proactively consider spawning agents when:\n"
+                f"- The user's request involves multiple independent tasks (e.g. research + analysis + writing)\n"
+                f"- Tasks can be done in parallel (e.g. gathering data from different sources)\n"
+                f"- A sub-task is complex enough to benefit from focused, independent work\n"
+                f"- You want to delegate research while continuing to interact with the user\n\n"
+                f"**When NOT to use agents:** Simple single-step tasks, quick tool calls, "
+                f"or tasks that require back-and-forth with the user.\n\n"
+                f"Agents have access to all enabled tools. "
                 f"Use `get_tool_documentation('spawn_agent')` for the full guide.\n"
             )
 
