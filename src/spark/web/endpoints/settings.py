@@ -178,10 +178,6 @@ _BOOL_STRING_KEYS = {
 # Keys whose UI value is a comma-separated string but stored as a list in config.yaml
 _LIST_KEYS = {
     "embedded_tools.filesystem.allowed_paths",
-}
-
-# Keys whose values are comma-separated lists — split before storing
-_LIST_KEYS = {
     "embedded_tools.system_commands.blocked_commands",
 }
 
