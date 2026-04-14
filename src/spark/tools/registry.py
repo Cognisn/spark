@@ -103,6 +103,13 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(web_tools())
 
+    # System Commands — requires explicit enable
+    cmd_config = embedded.get("system_commands", {})
+    if cmd_config.get("enabled", False):
+        from spark.tools.system_command import get_tools as cmd_tools
+
+        tools.extend(cmd_tools())
+
     # Memory — always available
     from spark.tools.memory_tools import TOOLS as mem_tools
 
@@ -178,6 +185,15 @@ def execute_builtin_tool(
             from spark.tools.web import execute
 
             return execute(tool_name, tool_input, config), False
+
+        # System Commands
+        if tool_name == "run_command":
+            cmd_config = embedded.get("system_commands", {})
+            if not cmd_config.get("enabled", False):
+                return "System command tool is disabled. Enable in Settings.", True
+            from spark.tools.system_command import execute as cmd_execute
+
+            return cmd_execute(tool_name, tool_input, cmd_config), False
 
         # Memory
         memory_tool_names = {"store_memory", "query_memory", "list_memories", "delete_memory"}

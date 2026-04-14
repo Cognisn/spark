@@ -947,6 +947,7 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
     "documents": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
     "archives": ["list_archive", "extract_archive"],
     "web": ["web_search", "web_fetch"],
+    "system_commands": ["run_command"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
     "core": ["get_current_datetime", "get_tool_documentation"],
 }
