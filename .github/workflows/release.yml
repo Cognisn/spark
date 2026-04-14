@@ -156,12 +156,17 @@ jobs:
           SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
           SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
         run: |
-          # Download and extract CodeSignTool
-          curl -LO https://www.ssl.com/download/codesigntool-for-windows/
-          unzip -o CodeSignTool-v*.zip -d CodeSignTool || true
+          # Download CodeSignTool with a predictable filename
+          curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          unzip -o CodeSignTool.zip -d CodeSignTool
+          ls -la CodeSignTool/
+
+          # Find the actual CodeSignTool directory (may be nested)
+          CST_DIR=$(find CodeSignTool -name "CodeSignTool.bat" -printf '%h' -quit 2>/dev/null || find CodeSignTool -name "CodeSignTool.bat" | head -1 | xargs dirname)
+          echo "CodeSignTool found at: $CST_DIR"
 
           # Sign the binary
-          cd CodeSignTool
+          cd "$CST_DIR"
           ./CodeSignTool.bat sign \
             -username="${SSL_COM_USERNAME}" \
             -password="${SSL_COM_PASSWORD}" \
@@ -510,13 +515,16 @@ jobs:
           SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
           SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
         run: |
-          # Download and extract CodeSignTool
-          curl -LO https://www.ssl.com/download/codesigntool-for-windows/
-          unzip -o CodeSignTool-v*.zip -d CodeSignTool || true
+          # Download CodeSignTool with a predictable filename
+          curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          unzip -o CodeSignTool.zip -d CodeSignTool
+
+          # Find the actual CodeSignTool directory (may be nested)
+          CST_DIR=$(find CodeSignTool -name "CodeSignTool.bat" -printf '%h' -quit 2>/dev/null || find CodeSignTool -name "CodeSignTool.bat" | head -1 | xargs dirname)
 
           # Find and sign the installer
           INSTALLER=$(ls *-setup.exe | head -1)
-          cd CodeSignTool
+          cd "$CST_DIR"
           ./CodeSignTool.bat sign \
             -username="${SSL_COM_USERNAME}" \
             -password="${SSL_COM_PASSWORD}" \
