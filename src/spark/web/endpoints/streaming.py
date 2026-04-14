@@ -167,6 +167,48 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                         }
                     elif event_type == "tool_iteration_complete":
                         yield {"event": "progress", "data": json.dumps(event_data)}
+                    elif event_type == "agent_start":
+                        yield {
+                            "event": "agent_start",
+                            "data": json.dumps({
+                                "agent_id": event_data.get("agent_id", ""),
+                                "agent_name": event_data.get("agent_name", ""),
+                                "task": event_data.get("task", ""),
+                                "model_id": event_data.get("model_id", ""),
+                                "mode": event_data.get("mode", ""),
+                            }),
+                        }
+                    elif event_type == "agent_tool_call":
+                        yield {
+                            "event": "agent_tool_call",
+                            "data": json.dumps({
+                                "agent_id": event_data.get("agent_id", ""),
+                                "tool_name": event_data.get("tool_name", ""),
+                                "params": event_data.get("params", {}),
+                            }),
+                        }
+                    elif event_type == "agent_tool_result":
+                        yield {
+                            "event": "agent_tool_result",
+                            "data": json.dumps({
+                                "agent_id": event_data.get("agent_id", ""),
+                                "tool_name": event_data.get("tool_name", ""),
+                                "result": event_data.get("result", ""),
+                                "status": event_data.get("status", "success"),
+                            }),
+                        }
+                    elif event_type == "agent_complete":
+                        yield {
+                            "event": "agent_complete",
+                            "data": json.dumps({
+                                "agent_id": event_data.get("agent_id", ""),
+                                "agent_name": event_data.get("agent_name", ""),
+                                "status": event_data.get("status", "completed"),
+                                "result": event_data.get("result", ""),
+                                "input_tokens": event_data.get("input_tokens", 0),
+                                "output_tokens": event_data.get("output_tokens", 0),
+                            }),
+                        }
 
                 if final_content:
                     yield {

@@ -756,3 +756,21 @@ async function approveAction(toolUseId, decision) {
         AppToast.danger('Error', 'Failed to send response.');
     }
 }
+
+
+/* ==========================================================================
+   7. Agent Panel Stubs — implemented fully in Task 6
+   ========================================================================== */
+
+function appendStreamingAgentStart(agentName, agentId, task, modelId) {
+    console.log('Agent started:', agentName, agentId);
+}
+function updateStreamingAgentToolCall(agentId, toolName, params) {
+    console.log('Agent tool call:', agentId, toolName);
+}
+function updateStreamingAgentToolResult(agentId, toolName, result, status) {
+    console.log('Agent tool result:', agentId, toolName, status);
+}
+function updateStreamingAgentComplete(agentId, agentName, status, result) {
+    console.log('Agent complete:', agentId, status);
+}
