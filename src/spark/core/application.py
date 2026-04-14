@@ -191,5 +191,13 @@ def _default_settings() -> dict:
                 "max_attachment_mb": 25,
                 "require_approval": True,
             },
+            "agents": {
+                "enabled": False,
+                "default_mode": "orchestrator",
+                "model_selection": "same",
+                "max_concurrent": 5,
+                "max_depth": 2,
+                "max_iterations": 15,
+            },
         },
     }

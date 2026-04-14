@@ -155,6 +155,9 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "max_history_messages": conv.get("max_history_messages"),
             "include_tool_results": bool(conv.get("include_tool_results", True)),
             "prompt_caching": bool(conv.get("prompt_caching", True)),
+            "agents_enabled": bool(conv.get("agents_enabled", False)),
+            "agent_mode": conv.get("agent_mode") or "",
+            "agent_model_selection": conv.get("agent_model_selection") or "",
         }
     )
 
@@ -183,6 +186,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "max_history_messages",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
+        "agent_mode",
+        "agent_model_selection",
     }
     _BOOL_FIELDS = {
         "memory_enabled",
@@ -190,6 +196,7 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "rag_tool_enabled",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
     }
 
     updates: dict[str, Any] = {}

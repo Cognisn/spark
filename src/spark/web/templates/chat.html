@@ -140,6 +140,7 @@
                             <a class="nav-link settings-tab-link" href="#" data-tab="tab-context"><i class="bi bi-diagram-3 me-2"></i>Context</a>
                             <a class="nav-link settings-tab-link" href="#" data-tab="tab-compaction"><i class="bi bi-layers me-2"></i>Compaction</a>
                             <a class="nav-link settings-tab-link" href="#" data-tab="tab-tools"><i class="bi bi-tools me-2"></i>Tools</a>
+                            <a class="nav-link settings-tab-link" href="#" data-tab="tab-agents"><i class="bi bi-robot me-2"></i>Agents</a>
                             <a class="nav-link settings-tab-link" href="#" data-tab="tab-export"><i class="bi bi-download me-2"></i>Export</a>
                             <a class="nav-link settings-tab-link" href="#" data-tab="tab-links"><i class="bi bi-link-45deg me-2"></i>Linked Conversations</a>
                         </nav>
@@ -240,6 +241,34 @@
                         <div class="settings-tab-panel" id="tab-tools" style="display:none;">
                             <h6 style="font-weight: 600;"><i class="bi bi-tools me-1"></i> Tool Control</h6>
                             <div id="tools-list"><div class="text-center py-3"><div class="app-spinner mx-auto"></div></div></div>
+                        </div>
+                        <!-- Agents -->
+                        <div class="settings-tab-panel" id="tab-agents" style="display:none;">
+                            <h6 style="font-weight: 600;"><i class="bi bi-robot me-1"></i> Agent Settings</h6>
+                            <div class="mb-3">
+                                <div class="form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="conv-agents-enabled">
+                                    <label class="form-check-label" for="conv-agents-enabled">Enable agent spawning in this conversation</label>
+                                </div>
+                                <div class="form-text">When enabled, the AI can delegate tasks to independent sub-agents.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="conv-agent-mode" style="font-size: 0.8125rem;">Agent Mode</label>
+                                <select class="form-select form-select-sm" id="conv-agent-mode">
+                                    <option value="">Use global default</option>
+                                    <option value="orchestrator">Orchestrator-Workers</option>
+                                    <option value="chain">Chain</option>
+                                </select>
+                                <div class="form-text">Orchestrator: agents work with fresh context. Chain: agents see conversation history.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="conv-agent-model-selection" style="font-size: 0.8125rem;">Model Selection</label>
+                                <select class="form-select form-select-sm" id="conv-agent-model-selection">
+                                    <option value="">Use global default</option>
+                                    <option value="same">Same as conversation model</option>
+                                    <option value="auto_select">LLM chooses model</option>
+                                </select>
+                            </div>
                         </div>
                         <!-- Export -->
                         <div class="settings-tab-panel" id="tab-export" style="display:none;">
@@ -499,6 +528,11 @@ async function showSettingsModal() {
         const ragOn = document.getElementById('conv-rag-enabled').checked;
         ragEl.style.opacity = ragOn ? '1' : '0.35';
         ragEl.style.pointerEvents = ragOn ? '' : 'none';
+
+        // Agent settings
+        document.getElementById('conv-agents-enabled').checked = !!info.agents_enabled;
+        document.getElementById('conv-agent-mode').value = info.agent_mode || '';
+        document.getElementById('conv-agent-model-selection').value = info.agent_model_selection || '';
     } catch (err) {}
     new bootstrap.Modal(document.getElementById('settingsModal')).show();
     loadToolsTab();
@@ -519,6 +553,9 @@ async function saveConversationSettings() {
         include_tool_results: document.getElementById('conv-include-tools').checked,
         prompt_caching: document.getElementById('conv-prompt-caching').checked,
         max_history_messages: historyMode === 'last' ? parseInt(document.getElementById('conv-max-messages').value) || 20 : null,
+        agents_enabled: document.getElementById('conv-agents-enabled').checked,
+        agent_mode: document.getElementById('conv-agent-mode').value || null,
+        agent_model_selection: document.getElementById('conv-agent-model-selection').value || null,
     };
     try {
         const resp = await fetch(`/chat/${conversationId}/api/settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });

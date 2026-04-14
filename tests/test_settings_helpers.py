@@ -96,14 +96,22 @@ class TestBuildToolCategories:
         settings.get = MagicMock(return_value=None)
         cats = _build_tool_categories(settings)
         assert isinstance(cats, list)
-        assert len(cats) == 6
+        assert len(cats) == 7
 
     def test_category_ids(self) -> None:
         settings = MagicMock()
         settings.get = MagicMock(return_value=None)
         cats = _build_tool_categories(settings)
         ids = {c["id"] for c in cats}
-        assert ids == {"filesystem", "documents", "archives", "web", "system_commands", "email"}
+        assert ids == {
+            "filesystem",
+            "documents",
+            "archives",
+            "web",
+            "system_commands",
+            "email",
+            "agents",
+        }
 
     def test_category_structure(self) -> None:
         settings = MagicMock()

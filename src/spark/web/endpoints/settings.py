@@ -1182,4 +1182,62 @@ def _build_tool_categories(settings: object) -> list[dict]:
             ],
             "tools": ["send_email", "draft_email"],
         },
+        {
+            "id": "agents",
+            "title": "Agents",
+            "icon": "bi-robot",
+            "description": "Allow the AI to spawn sub-agents for independent task execution within conversations.",
+            "enabled": bool(get("embedded_tools.agents.enabled", False)),
+            "mode": None,
+            "mode_options": [],
+            "mode_descriptions": {},
+            "extra_fields": [
+                {
+                    "key": "embedded_tools.agents.default_mode",
+                    "label": "Default Mode",
+                    "type": "select",
+                    "value": get("embedded_tools.agents.default_mode", "orchestrator"),
+                    "options": [
+                        {
+                            "value": "orchestrator",
+                            "label": "Orchestrator-Workers (fresh context per agent)",
+                        },
+                        {
+                            "value": "chain",
+                            "label": "Chain (agents see conversation context)",
+                        },
+                    ],
+                    "help": "Orchestrator: agents work independently with just their task. Chain: agents see the full conversation history.",
+                },
+                {
+                    "key": "embedded_tools.agents.model_selection",
+                    "label": "Model Selection",
+                    "type": "select",
+                    "value": get("embedded_tools.agents.model_selection", "same"),
+                    "options": [
+                        {"value": "same", "label": "Same as conversation model"},
+                        {
+                            "value": "auto_select",
+                            "label": "LLM chooses model (with user approval)",
+                        },
+                    ],
+                    "help": "Same: agents use the conversation's model. Auto-select: the LLM picks the best model from the same provider and presents its choice for approval.",
+                },
+                {
+                    "key": "embedded_tools.agents.max_concurrent",
+                    "label": "Max Concurrent Agents",
+                    "type": "number",
+                    "value": get("embedded_tools.agents.max_concurrent", 5),
+                    "help": "Maximum number of agents that can run simultaneously.",
+                },
+                {
+                    "key": "embedded_tools.agents.max_iterations",
+                    "label": "Max Iterations per Agent",
+                    "type": "number",
+                    "value": get("embedded_tools.agents.max_iterations", 15),
+                    "help": "Maximum tool-use loop iterations for each agent.",
+                },
+            ],
+            "tools": ["spawn_agent", "list_provider_models"],
+        },
     ]
