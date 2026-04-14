@@ -100,6 +100,11 @@ function sendMessageWithSSE(conversationId, message) {
         // Tool iteration progress — could update UI indicator
     });
 
+    currentEventSource.addEventListener('agent_model_approval', (e) => {
+        const data = JSON.parse(e.data);
+        showAgentModelApproval(data);
+    });
+
     currentEventSource.addEventListener('agent_start', (e) => {
         const data = JSON.parse(e.data);
         appendStreamingAgentStart(data.agent_name, data.agent_id, data.task, data.model_id);

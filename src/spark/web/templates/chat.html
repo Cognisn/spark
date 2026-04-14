@@ -392,6 +392,28 @@
     </div>
 </div>
 
+<!-- Agent model approval modal -->
+<div class="modal fade" id="agentModelModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-robot me-2"></i>Agent Model Selection</h5>
+            </div>
+            <div class="modal-body">
+                <p id="agent-model-message" style="font-size: 0.875rem;"></p>
+                <div id="agent-model-task" style="font-size: 0.8125rem; color: var(--app-text-secondary); margin-bottom: 1rem; padding: 0.5rem; background: var(--app-bg-tertiary); border-radius: 0.5rem;"></div>
+                <label class="form-label" for="agent-model-select">Model</label>
+                <select class="form-select" id="agent-model-select"></select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-app-primary" onclick="approveAgentModel()">
+                    <i class="bi bi-check-lg me-1"></i>Start Agent
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Tool permission modal -->
 <div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog">

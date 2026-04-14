@@ -38,11 +38,19 @@ async def stream_chat(request: Request) -> EventSourceResponse:
     pending_permissions: dict[str, threading.Event] = {}
     permission_responses: dict[str, str] = {}
 
+    # Shared state for agent model approval requests
+    agent_model_events: dict[str, threading.Event] = {}
+    agent_model_responses: dict[str, str] = {}
+
     # Store on app state so the /permission/respond endpoint can access them
     if not hasattr(request.app.state, "permission_events"):
         request.app.state.permission_events = {}
     if not hasattr(request.app.state, "permission_responses"):
         request.app.state.permission_responses = {}
+    if not hasattr(request.app.state, "agent_model_events"):
+        request.app.state.agent_model_events = {}
+    if not hasattr(request.app.state, "agent_model_responses"):
+        request.app.state.agent_model_responses = {}
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         yield {"event": "status", "data": json.dumps({"status": "processing"})}
@@ -103,9 +111,63 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             logger.info("Permission for %s: %s", tool_name, decision)
             return decision
 
+        def agent_model_callback(
+            agent_name: str, task: str, suggested_model: str, available_models: list[dict]
+        ) -> str:
+            """Called from the agent spawn thread when auto_select model approval is needed.
+
+            Emits an approval event and blocks until the user responds via
+            the /agent/model-approve endpoint.
+            """
+            request_id = str(uuid.uuid4())[:8]
+
+            tool_events.append(
+                {
+                    "event": "agent_model_approval",
+                    "data": {
+                        "request_id": request_id,
+                        "agent_name": agent_name,
+                        "task": task,
+                        "suggested_model": suggested_model,
+                        "available_models": available_models,
+                    },
+                }
+            )
+
+            wait_event = threading.Event()
+            request.app.state.agent_model_events[request_id] = wait_event
+            request.app.state.agent_model_responses[request_id] = None
+
+            logger.info(
+                "Agent model approval requested for '%s' (model=%s, id=%s), waiting...",
+                agent_name,
+                suggested_model,
+                request_id,
+            )
+
+            # Block until user responds (timeout after 120s)
+            if wait_event.wait(timeout=120):
+                approved = request.app.state.agent_model_responses.get(request_id, suggested_model)
+            else:
+                approved = suggested_model
+                logger.warning(
+                    "Agent model approval %s timed out — using suggested model %s",
+                    request_id,
+                    suggested_model,
+                )
+
+            # Cleanup
+            request.app.state.agent_model_events.pop(request_id, None)
+            request.app.state.agent_model_responses.pop(request_id, None)
+
+            logger.info("Agent model approved: %s", approved)
+            return approved
+
         # Inject the permission callback into the conversation manager for this request
         original_callback = conv_mgr._tool_permission_callback
+        original_model_callback = conv_mgr._agent_model_callback
         conv_mgr._tool_permission_callback = permission_callback
+        conv_mgr._agent_model_callback = agent_model_callback
 
         try:
             loop = asyncio.get_event_loop()
@@ -170,44 +232,57 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     elif event_type == "agent_start":
                         yield {
                             "event": "agent_start",
-                            "data": json.dumps({
-                                "agent_id": event_data.get("agent_id", ""),
-                                "agent_name": event_data.get("agent_name", ""),
-                                "task": event_data.get("task", ""),
-                                "model_id": event_data.get("model_id", ""),
-                                "mode": event_data.get("mode", ""),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "agent_name": event_data.get("agent_name", ""),
+                                    "task": event_data.get("task", ""),
+                                    "model_id": event_data.get("model_id", ""),
+                                    "mode": event_data.get("mode", ""),
+                                }
+                            ),
                         }
                     elif event_type == "agent_tool_call":
                         yield {
                             "event": "agent_tool_call",
-                            "data": json.dumps({
-                                "agent_id": event_data.get("agent_id", ""),
-                                "tool_name": event_data.get("tool_name", ""),
-                                "params": event_data.get("params", {}),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "params": event_data.get("params", {}),
+                                }
+                            ),
                         }
                     elif event_type == "agent_tool_result":
                         yield {
                             "event": "agent_tool_result",
-                            "data": json.dumps({
-                                "agent_id": event_data.get("agent_id", ""),
-                                "tool_name": event_data.get("tool_name", ""),
-                                "result": event_data.get("result", ""),
-                                "status": event_data.get("status", "success"),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "result": event_data.get("result", ""),
+                                    "status": event_data.get("status", "success"),
+                                }
+                            ),
                         }
                     elif event_type == "agent_complete":
                         yield {
                             "event": "agent_complete",
-                            "data": json.dumps({
-                                "agent_id": event_data.get("agent_id", ""),
-                                "agent_name": event_data.get("agent_name", ""),
-                                "status": event_data.get("status", "completed"),
-                                "result": event_data.get("result", ""),
-                                "input_tokens": event_data.get("input_tokens", 0),
-                                "output_tokens": event_data.get("output_tokens", 0),
-                            }),
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "agent_name": event_data.get("agent_name", ""),
+                                    "status": event_data.get("status", "completed"),
+                                    "result": event_data.get("result", ""),
+                                    "input_tokens": event_data.get("input_tokens", 0),
+                                    "output_tokens": event_data.get("output_tokens", 0),
+                                }
+                            ),
+                        }
+                    elif event_type == "agent_model_approval":
+                        yield {
+                            "event": "agent_model_approval",
+                            "data": json.dumps(event_data),
                         }
 
                 if final_content:
@@ -250,7 +325,8 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
         finally:
-            # Restore original callback
+            # Restore original callbacks
             conv_mgr._tool_permission_callback = original_callback
+            conv_mgr._agent_model_callback = original_model_callback
 
     return EventSourceResponse(event_generator())

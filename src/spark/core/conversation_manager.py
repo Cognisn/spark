@@ -45,6 +45,7 @@ class ConversationManager:
         user_guid: str = "default",
         mcp_loop: Any | None = None,
         tool_permission_callback: Callable | None = None,
+        agent_model_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
         prompt_caching: bool = True,
@@ -60,6 +61,7 @@ class ConversationManager:
         self._user_guid = user_guid
         self._mcp_loop = mcp_loop
         self._tool_permission_callback = tool_permission_callback
+        self._agent_model_callback = agent_model_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
         self._prompt_caching_enabled = prompt_caching
@@ -1076,11 +1078,48 @@ class ConversationManager:
             except Exception:
                 pass
 
-        # Determine mode from settings
+        # Determine mode and model selection policy from settings
         embedded = self._embedded_tools_config.get("embedded_tools", {})
         agent_config = embedded.get("agents", {})
         mode = agent_config.get("default_mode", "orchestrator")
         max_iterations = agent_config.get("max_iterations", 15)
+
+        # Check per-conversation override, then fall back to global config
+        model_selection = agent_config.get("model_selection", "same")
+        try:
+            from spark.database import conversations as conv_db
+
+            conv_row = conv_db.get_conversation(self._db, conversation_id, user_guid)
+            per_conv = (conv_row or {}).get("agent_model_selection")
+            if per_conv:
+                model_selection = per_conv
+        except Exception:
+            pass
+
+        # When auto_select is enabled and the LLM chose a model, request user
+        # approval before execution.  The callback blocks this thread until the
+        # user responds (mirroring the permission_request pattern).
+        if model_selection == "auto_select" and model_id and self._agent_model_callback:
+            provider_name = self._llm.active_provider
+            available_models: list[dict] = []
+            if provider_name and provider_name in self._llm.providers:
+                available_models = self._llm.providers[provider_name].list_available_models()
+
+            approved_model = self._agent_model_callback(
+                agent_name,
+                task,
+                model_id,
+                [
+                    {
+                        "id": m["id"],
+                        "name": m.get("name", m["id"]),
+                        "context_length": m.get("context_length", 0),
+                    }
+                    for m in available_models
+                ],
+            )
+            if approved_model:
+                model_id = approved_model
 
         agent_id = str(uuid.uuid4())[:12]
 

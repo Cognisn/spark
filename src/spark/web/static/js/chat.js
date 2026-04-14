@@ -712,6 +712,49 @@ function handleSubmit(event) {
 
 // showInfoModal() and showSettingsModal() are defined in the chat template
 
+// Agent model approval handling
+let _pendingAgentModelRequestId = null;
+
+function showAgentModelApproval(data) {
+    _pendingAgentModelRequestId = data.request_id;
+    document.getElementById('agent-model-message').textContent =
+        `Agent "${data.agent_name}" wants to use the following model:`;
+    document.getElementById('agent-model-task').textContent = data.task;
+
+    const select = document.getElementById('agent-model-select');
+    select.innerHTML = '';
+    (data.available_models || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        const ctxLabel = m.context_length > 0 ? ` (${Math.round(m.context_length / 1000)}K ctx)` : '';
+        opt.textContent = `${m.name}${ctxLabel}`;
+        if (m.id === data.suggested_model) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    new bootstrap.Modal(document.getElementById('agentModelModal')).show();
+}
+
+async function approveAgentModel() {
+    if (!_pendingAgentModelRequestId) return;
+    const modelId = document.getElementById('agent-model-select').value;
+
+    try {
+        await fetch('/chat/agent/model-approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                request_id: _pendingAgentModelRequestId,
+                model_id: modelId,
+            }),
+        });
+    } catch (err) {
+        console.error('Failed to send agent model approval:', err);
+    }
+    _pendingAgentModelRequestId = null;
+    bootstrap.Modal.getInstance(document.getElementById('agentModelModal'))?.hide();
+}
+
 // Permission handling
 async function respondPermission(decision) {
     if (pendingPermissionRequestId) {

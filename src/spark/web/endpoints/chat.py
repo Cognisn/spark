@@ -448,6 +448,30 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
 # -- Permission ---------------------------------------------------------------
 
 
+@router.post("/agent/model-approve")
+async def approve_agent_model(request: Request) -> JSONResponse:
+    """API: respond to an agent model approval request.
+
+    Signals the streaming thread that is waiting for the user to approve or
+    override the model selected for a sub-agent.
+    """
+    data = await request.json()
+    request_id = data.get("request_id")
+    model_id = data.get("model_id", "")
+
+    events = getattr(request.app.state, "agent_model_events", {})
+    responses = getattr(request.app.state, "agent_model_responses", {})
+
+    if request_id in events:
+        responses[request_id] = model_id
+        events[request_id].set()
+        logger.info("Agent model approval for %s: %s", request_id, model_id)
+    else:
+        logger.warning("Agent model approval for unknown request %s", request_id)
+
+    return JSONResponse({"status": "ok"})
+
+
 @router.post("/permission/respond")
 async def permission_respond(request: Request) -> JSONResponse:
     """API: respond to a tool permission request.
