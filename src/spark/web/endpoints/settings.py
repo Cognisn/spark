@@ -165,6 +165,16 @@ _SECRET_KEYS = {
     "database.password",
 }
 
+# Keys whose values are comma-separated lists — split before storing
+_LIST_KEYS = {
+    "embedded_tools.system_commands.blocked_commands",
+}
+
+# Keys sent as "true"/"false" strings — convert to bool before storing
+_BOOL_STRING_KEYS = {
+    "embedded_tools.system_commands.require_approval",
+}
+
 
 def _secret_name(dotted_key: str) -> str:
     """Derive a secret store key name from a dotted settings key.
@@ -769,5 +779,57 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 },
             ],
             "tools": ["web_search", "web_fetch"],
+        },
+        {
+            "id": "system_commands",
+            "title": "System Commands",
+            "icon": "bi-terminal",
+            "description": "Execute shell commands on the host system. The LLM can run CLI tools, scripts, and system utilities.",
+            "enabled": bool(get("embedded_tools.system_commands.enabled", False)),
+            "mode": None,
+            "mode_options": [],
+            "mode_descriptions": {},
+            "extra_fields": [
+                {
+                    "key": "embedded_tools.system_commands.timeout",
+                    "label": "Default Timeout (seconds)",
+                    "type": "number",
+                    "value": get("embedded_tools.system_commands.timeout", 30),
+                    "help": "Maximum time a single command can run. Range: 1-300 seconds.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.max_output_chars",
+                    "label": "Max Output (characters)",
+                    "type": "number",
+                    "value": get("embedded_tools.system_commands.max_output_chars", 50000),
+                    "help": "Maximum output length returned to the LLM. Longer output is truncated.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.blocked_commands",
+                    "label": "Blocked Commands",
+                    "type": "text",
+                    "value": ", ".join(
+                        get("embedded_tools.system_commands.blocked_commands", []) or []
+                    ),
+                    "help": "Comma-separated list of command names to block (e.g. rm, shutdown, reboot). Some dangerous commands are always blocked.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.require_approval",
+                    "label": "Always Require Approval",
+                    "type": "select",
+                    "value": str(
+                        get("embedded_tools.system_commands.require_approval", True)
+                    ).lower(),
+                    "options": [
+                        {"value": "true", "label": "Yes — prompt for every command"},
+                        {
+                            "value": "false",
+                            "label": "No — respect tool permission settings",
+                        },
+                    ],
+                    "help": "When enabled, every command requires user approval even if previously approved. Disable for autonomous actions.",
+                },
+            ],
+            "tools": ["run_command"],
         },
     ]

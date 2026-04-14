@@ -138,5 +138,13 @@ def _default_settings() -> dict:
             "documents": {"enabled": True, "mode": "read", "max_file_size_mb": 50},
             "archives": {"enabled": True, "mode": "list"},
             "web": {"enabled": True, "search_engine": "duckduckgo"},
+            "system_commands": {
+                "enabled": False,
+                "timeout": 30,
+                "max_timeout": 300,
+                "max_output_chars": 50000,
+                "blocked_commands": [],
+                "require_approval": True,
+            },
         },
     }
