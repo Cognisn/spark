@@ -58,6 +58,12 @@ This directory contains comprehensive documentation for all embedded tools avail
 | `web_search` | Search the web using configured engine (DuckDuckGo, Brave, Google, Bing, SearXNG) |
 | `web_fetch` | Fetch a URL and return clean, readable text content |
 
+### Agents (when enabled)
+| Tool | Description |
+|------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on an independent task |
+| `list_provider_models` | List available models from the current provider |
+
 ### Memory (always available)
 | Tool | Description |
 |------|-------------|

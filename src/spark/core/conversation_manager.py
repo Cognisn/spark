@@ -770,6 +770,54 @@ class ConversationManager:
                     f"or save drafts via `draft_email`.\n"
                 )
 
+        # Agents
+        agent_config = embedded.get("agents", {})
+        if agent_config.get("enabled", False):
+            mode = agent_config.get("default_mode", "orchestrator")
+            mode_desc = (
+                "orchestrator-workers (agents get fresh context with just the task)"
+                if mode == "orchestrator"
+                else "chain (agents see the full conversation context)"
+            )
+            model_selection = agent_config.get("model_selection", "same")
+
+            agent_desc = (
+                f"**Agent spawning:** You can spawn sub-agents via `spawn_agent` to delegate "
+                f"independent tasks (research, analysis, data gathering, etc.). "
+                f"Current mode: {mode_desc}. Agents have access to all enabled tools. "
+                f"Use `get_tool_documentation('spawn_agent')` for the full guide.\n"
+            )
+
+            if model_selection == "auto_select":
+                agent_desc += (
+                    f"**Agent model selection:** You can choose the model for each agent. "
+                    f"Use `list_provider_models` to see available models from the current provider, "
+                    f"then pass your chosen model_id to `spawn_agent`. Consider using:\n"
+                    f"- Faster/cheaper models for simple data gathering tasks\n"
+                    f"- More capable models for complex analysis or reasoning\n"
+                )
+                # List models for quick reference
+                try:
+                    provider_name = self._llm.active_provider
+                    if provider_name and provider_name in self._llm.providers:
+                        models = self._llm.providers[provider_name].list_available_models()
+                        if models:
+                            model_lines = []
+                            for m in models[:10]:
+                                ctx = m.get("context_length", "?")
+                                if isinstance(ctx, int) and ctx >= 1000:
+                                    ctx = f"{ctx // 1000}K"
+                                model_lines.append(
+                                    f"  - `{m['id']}` ({m.get('name', '')}, {ctx} ctx)"
+                                )
+                            agent_desc += "Available models:\n" + "\n".join(model_lines) + "\n"
+                except Exception:
+                    pass
+            else:
+                agent_desc += "Agents will use the same model as this conversation.\n"
+
+            parts.append(agent_desc)
+
         if parts:
             return "\n".join(parts) + "\n"
         return ""

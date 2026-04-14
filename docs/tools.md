@@ -16,6 +16,7 @@ graph TD
     Builtin --> Web[Web]
     Builtin --> Cmd[System Commands]
     Builtin --> Email[Email]
+    Builtin --> Agent[Agents]
     Builtin --> Mem[Memory]
     Builtin --> DT[DateTime]
     Builtin --> TD[Tool Docs]
@@ -48,6 +49,9 @@ graph TD
     Mem --> query_memory
     Mem --> list_memories
     Mem --> delete_memory
+
+    Agent --> spawn_agent
+    Agent --> list_provider_models
 
     DT --> get_current_datetime
     TD --> get_tool_documentation
@@ -152,6 +156,35 @@ Execute shell commands on the host system. Disabled by default — must be expli
 |------|-------------|
 | `run_command` | Execute a shell command, returning stdout and stderr |
 
+### Agents
+
+Spawn independent sub-agents within conversations. Disabled by default.
+
+| Tool | Description |
+|------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on a task independently |
+| `list_provider_models` | List models from the current provider for agent model selection |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  agents:
+    enabled: true
+    default_mode: orchestrator    # orchestrator or chain
+    model_selection: same         # same or auto_select
+    max_concurrent: 5
+    max_iterations: 15
+```
+
+**Modes:**
+- **Orchestrator-Workers:** Each agent gets fresh context with just the task description. Best for independent research, data gathering, and parallel work.
+- **Chain:** Agents inherit the full conversation history. Best for contextual follow-up tasks.
+
+**Model Selection:**
+- **Same:** Agents use the conversation's current model.
+- **Auto-select:** The LLM chooses the best model from the same provider. The user approves via a modal before the agent starts.
+
 ### Email
 
 Send and draft emails via SMTP. Disabled by default — requires SMTP configuration in Settings.
@@ -252,6 +285,7 @@ Conversation-level permissions are checked first, then global permissions. When 
 | system_commands | run_command |
 | email | send_email, draft_email |
 | memory | store_memory, query_memory, list_memories, delete_memory |
+| agents | spawn_agent, list_provider_models |
 | core | get_current_datetime, get_tool_documentation |
 
 To auto-approve all tools without prompting:

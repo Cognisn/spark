@@ -34,6 +34,7 @@
 - **Per-Conversation Control** -- Enable/disable tools at the server or individual level
 - **Tool Approval** -- Permission prompts for first-use with allow once/always/deny
 - **Tool Activity Sidecar Panel** -- Dedicated panel for tool call visibility, replacing inline tool groups
+- **Agent Spawning** -- Spawn independent sub-agents for parallel research, analysis, and data gathering
 - **Tool Documentation** -- Built-in `get_tool_documentation` tool for querying tool usage information
 - **Web Search Engines** -- DuckDuckGo, Brave, Google/SerpAPI, Bing/Azure, SearXNG
 - **System Commands** -- Execute shell commands and CLI tools (git, docker, aws, etc.) with approval prompts
