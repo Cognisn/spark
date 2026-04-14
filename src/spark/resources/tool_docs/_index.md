@@ -39,6 +39,11 @@ This directory contains comprehensive documentation for all embedded tools avail
 | `list_archive` | List contents of ZIP/TAR archives |
 | `extract_archive` | Extract archive contents (when extract mode enabled) |
 
+### System Commands (when enabled)
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute shell commands, CLI tools, and scripts on the host system |
+
 ### Web Search & Retrieval (when enabled)
 | Tool | Description |
 |------|-------------|
