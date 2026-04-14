@@ -1173,6 +1173,49 @@ class ConversationManager:
                 self._memory_index_instance = None
         return self._memory_index_instance
 
+    def _get_llm_service_for_model(self, model_id: str) -> Any:
+        """Get a dedicated LLM service instance for a specific model.
+
+        Creates a fresh provider instance to avoid conflicts with concurrent
+        conversations or agents that use different models on the same provider.
+        """
+        # Find which provider type owns this model
+        for name, provider in self._llm.providers.items():
+            try:
+                models = provider.list_available_models()
+                if any(m.get("id") == model_id for m in models):
+                    # Create a fresh instance of the same provider type
+                    fresh = self._clone_provider(name, provider)
+                    if fresh:
+                        fresh.set_model(model_id)
+                        return fresh
+                    # Fallback: use the shared instance (less safe but functional)
+                    provider.set_model(model_id)
+                    return provider
+            except Exception:
+                continue
+        return None
+
+    def _clone_provider(self, name: str, provider: Any) -> Any:
+        """Create a fresh instance of an LLM provider with the same config."""
+        try:
+            provider_type = type(provider)
+            if name == "Anthropic" or "anthropic" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "Ollama" or "ollama" in str(provider_type).lower():
+                return provider_type(
+                    base_url=getattr(provider, "_base_url", "http://localhost:11434")
+                )
+            elif name == "Google Gemini" or "gemini" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "X.AI" or "xai" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "AWS Bedrock" or "bedrock" in str(provider_type).lower():
+                return provider_type(region=getattr(provider, "_region", "us-east-1"))
+        except Exception as e:
+            logger.debug("Could not clone provider %s: %s", name, e)
+        return None
+
     def _list_provider_models(self) -> tuple[str, bool]:
         """List models from the conversation's current LLM provider."""
         try:
@@ -1284,10 +1327,21 @@ class ConversationManager:
         if mode == "chain":
             parent_messages = self._get_messages_for_model(conversation_id)
 
-        # Create and run agent
+        # Create and run agent — get a dedicated LLM service for the model
+        # to avoid conflicts with concurrent conversations using different providers.
         try:
+            agent_llm = self._get_llm_service_for_model(model_id)
+            if not agent_llm:
+                agent_db.complete_agent_run(
+                    self._db,
+                    agent_id,
+                    status="failed",
+                    result_text=f"Could not find provider for model '{model_id}'",
+                )
+                return f"Agent failed: no provider found for model '{model_id}'.", True
+
             executor = AgentExecutor(
-                self._llm.active_service,
+                agent_llm,
                 self._db,
                 self._embedded_tools_config,
                 mcp_manager=self._mcp_manager,
