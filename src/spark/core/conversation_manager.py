@@ -42,6 +42,8 @@ class ConversationManager:
         emergency_rollup_threshold: float = 0.95,
         compaction_model: str | None = None,
         mcp_manager: Any | None = None,
+        user_guid: str = "default",
+        mcp_loop: Any | None = None,
         tool_permission_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
@@ -55,6 +57,8 @@ class ConversationManager:
         self._max_tool_selections = max_tool_selections
         self._max_tool_result_tokens = max_tool_result_tokens
         self._mcp_manager = mcp_manager
+        self._user_guid = user_guid
+        self._mcp_loop = mcp_loop
         self._tool_permission_callback = tool_permission_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
@@ -279,21 +283,27 @@ class ConversationManager:
             try:
                 import asyncio
 
-                # list_all_tools is async — run it synchronously
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # We're in an async context, use a thread
-                        import concurrent.futures
+                # list_all_tools is async — dispatch on the persistent MCP loop
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                    )
+                    mcp_tools = future.result(timeout=10)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
 
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            mcp_tools = pool.submit(
-                                lambda: asyncio.run(self._mcp_manager.list_all_tools())
-                            ).result(timeout=10)
-                    else:
-                        mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
-                except RuntimeError:
-                    mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
+                            with concurrent.futures.ThreadPoolExecutor() as pool:
+                                mcp_tools = pool.submit(
+                                    lambda: asyncio.run(self._mcp_manager.list_all_tools())
+                                ).result(timeout=10)
+                        else:
+                            mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
+                    except RuntimeError:
+                        mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 
                 for t in mcp_tools:
                     tools.append(
@@ -832,8 +842,10 @@ class ConversationManager:
                     },
                 )
 
-            # Check permissions
-            permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
+            # Check permissions (conversation-level, then global)
+            permission = tool_permissions.is_tool_allowed(
+                self._db, conversation_id, tool_name, user_guid=user_guid
+            )
 
             # System commands: always prompt when require_approval is on,
             # unless running without a callback (autonomous actions).
@@ -846,16 +858,33 @@ class ConversationManager:
             ):
                 permission = None  # Force re-prompt
 
+            # Email send_email: always prompt when require_approval is on,
+            # unless running without a callback (autonomous actions).
+            if (
+                tool_name == "send_email"
+                and self._tool_permission_callback
+                and self._embedded_tools_config.get("embedded_tools", {})
+                .get("email", {})
+                .get("require_approval", True)
+            ):
+                permission = None  # Force re-prompt
+
             if permission is None:
                 # First use — prompt user
                 if self._tool_permission_callback:
                     decision = self._tool_permission_callback(tool_name, tool_input)
-                    if decision in ("allowed", "once"):
+                    if decision in ("allowed", "allowed_global", "once"):
                         if decision == "allowed":
-                            # Approve this tool and all tools in the same category
+                            # Approve this tool and category siblings for this conversation
                             for sibling in _get_tool_category_siblings(tool_name):
                                 tool_permissions.set_tool_permission(
                                     self._db, conversation_id, sibling, "allowed", user_guid
+                                )
+                        elif decision == "allowed_global":
+                            # Approve this tool and category siblings globally
+                            for sibling in _get_tool_category_siblings(tool_name):
+                                tool_permissions.set_global_tool_permission(
+                                    self._db, user_guid, sibling, "allowed"
                                 )
                     else:
                         tool_permissions.set_tool_permission(
@@ -929,7 +958,7 @@ class ConversationManager:
             try:
                 from spark.index.memory_index import MemoryIndex
 
-                self._memory_index_instance = MemoryIndex(self._db, "default")
+                self._memory_index_instance = MemoryIndex(self._db, self._user_guid)
             except Exception:
                 self._memory_index_instance = None
         return self._memory_index_instance
@@ -945,23 +974,22 @@ class ConversationManager:
             config["_memory_index"] = self._get_memory_index_for_tools()
             return execute_builtin_tool(tool_name, tool_input, config)
 
-        # Try MCP manager (async — run synchronously)
+        # Try MCP manager (async — dispatch on the persistent MCP event loop)
         if self._mcp_manager:
             try:
                 import asyncio
-                import concurrent.futures
 
                 async def _call() -> dict:
                     return await self._mcp_manager.call_tool(tool_name, tool_input)
 
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            result = pool.submit(lambda: asyncio.run(_call())).result(timeout=60)
-                    else:
-                        result = loop.run_until_complete(_call())
-                except RuntimeError:
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    # Dispatch onto the persistent MCP loop where the sessions live.
+                    # This is critical: MCP stdio transports are bound to the loop
+                    # they were created on — calling from a different loop will fail.
+                    future = asyncio.run_coroutine_threadsafe(_call(), self._mcp_loop)
+                    result = future.result(timeout=60)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
                     result = asyncio.run(_call())
 
                 # Extract text from result content
@@ -1009,11 +1037,21 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
         "find_in_file",
         "get_directory_tree",
     ],
-    "documents": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
+    "documents": [
+        "read_word",
+        "read_excel",
+        "read_pdf",
+        "read_powerpoint",
+        "create_word",
+        "create_excel",
+        "create_powerpoint",
+        "create_pdf",
+    ],
     "archives": ["list_archive", "extract_archive"],
     "web": ["web_search", "web_fetch"],
     "system_commands": ["run_command"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+    "email": ["send_email", "draft_email"],
     "core": ["get_current_datetime", "get_tool_documentation"],
 }
 

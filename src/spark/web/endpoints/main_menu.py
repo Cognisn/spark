@@ -159,6 +159,22 @@ async def provider_models(request: Request) -> JSONResponse:
     return JSONResponse({"provider": display_name, "models": models})
 
 
+@router.get("/api/embedded-tools")
+async def list_embedded_tools(request: Request) -> JSONResponse:
+    """API: list all currently enabled embedded tools."""
+    ctx = getattr(request.app.state, "ctx", None)
+    if not ctx:
+        return JSONResponse({"tools": []})
+
+    from spark.tools.registry import get_builtin_tools
+
+    config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+    tools = get_builtin_tools(config)
+
+    result = [{"name": t.get("name", ""), "description": t.get("description", "")} for t in tools]
+    return JSONResponse({"tools": result})
+
+
 @router.get("/menu", response_class=HTMLResponse)
 async def main_menu(request: Request) -> HTMLResponse:
     """Main menu / dashboard."""
@@ -377,7 +393,8 @@ def _get_recent_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        all_convs = conv_mgr.get_conversations("default")
+        user_guid = getattr(request.app.state, "user_guid", "default")
+        all_convs = conv_mgr.get_conversations(user_guid)
         non_favs = [c for c in all_convs if not c.get("is_favourite")]
         return non_favs[:5]
     except Exception:
@@ -390,7 +407,8 @@ def _get_favourite_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        all_convs = conv_mgr.get_conversations("default")
+        user_guid = getattr(request.app.state, "user_guid", "default")
+        all_convs = conv_mgr.get_conversations(user_guid)
         return [c for c in all_convs if c.get("is_favourite")]
     except Exception:
         return []

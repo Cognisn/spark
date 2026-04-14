@@ -179,6 +179,15 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             FOREIGN KEY (conversation_id) REFERENCES conversations(id),
             UNIQUE(conversation_id, tool_name)
         )""",
+        f"""CREATE TABLE IF NOT EXISTS global_tool_permissions (
+            id {auto},
+            user_guid TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            permission_state TEXT NOT NULL,
+            granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_guid, tool_name)
+        )""",
         f"""CREATE TABLE IF NOT EXISTS autonomous_actions (
             id {auto},
             name TEXT UNIQUE NOT NULL,
@@ -288,6 +297,8 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_violations_timestamp ON prompt_inspection_violations(timestamp)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_conv ON conversation_tool_permissions(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_tool ON conversation_tool_permissions(tool_name)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_user ON global_tool_permissions(user_guid)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_tool ON global_tool_permissions(tool_name)",
         "CREATE INDEX IF NOT EXISTS idx_actions_enabled ON autonomous_actions(is_enabled)",
         "CREATE INDEX IF NOT EXISTS idx_actions_next_run ON autonomous_actions(next_run_at)",
         "CREATE INDEX IF NOT EXISTS idx_action_runs_action ON action_runs(action_id)",

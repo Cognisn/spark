@@ -19,9 +19,115 @@ class ActionExecutor:
     def __init__(self, ctx: Any, daemon_id: str) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        self._mcp_manager: Any | None = None
+        self._mcp_loop: Any | None = None
+        self._mcp_thread: Any | None = None
         from spark.core.user_guid import get_user_guid
 
         self._user_guid = get_user_guid(ctx)
+
+    def _init_mcp(self) -> None:
+        """Initialise independent MCP connections for this executor."""
+        import asyncio
+        import threading
+
+        import yaml
+
+        from spark.core.application import _get_config_path
+
+        config_path = _get_config_path()
+        if not config_path.exists():
+            logger.info("Executor MCP: config file not found at %s", config_path)
+            return
+
+        try:
+            raw_config = yaml.safe_load(config_path.read_text()) or {}
+            mcp_config = raw_config.get("mcp", {})
+            servers_list = mcp_config.get("servers", [])
+            if not servers_list:
+                logger.info("Executor MCP: no MCP servers configured in config.yaml")
+                return
+
+            enabled_count = sum(1 for s in servers_list if s.get("enabled", True))
+            logger.info(
+                "Executor MCP: found %d server(s) in config (%d enabled)",
+                len(servers_list),
+                enabled_count,
+            )
+            for srv in servers_list:
+                logger.info(
+                    "  - %s (transport=%s, enabled=%s, command=%s)",
+                    srv.get("name", "?"),
+                    srv.get("transport", "?"),
+                    srv.get("enabled", True),
+                    srv.get("command", srv.get("url", "n/a")),
+                )
+
+            from spark.mcp_integration.manager import MCPManager
+
+            self._mcp_manager = MCPManager.from_config(raw_config)
+            logger.info(
+                "Executor MCP: MCPManager created with %d client(s)",
+                len(self._mcp_manager.servers),
+            )
+
+            # Create a persistent event loop for MCP connections
+            self._mcp_loop = asyncio.new_event_loop()
+
+            def _run_loop() -> None:
+                asyncio.set_event_loop(self._mcp_loop)
+                self._mcp_loop.run_forever()
+
+            self._mcp_thread = threading.Thread(target=_run_loop, daemon=True)
+            self._mcp_thread.start()
+            logger.info("Executor MCP: event loop thread started")
+
+            # Connect all servers
+            logger.info("Executor MCP: connecting to servers...")
+            future = asyncio.run_coroutine_threadsafe(
+                self._mcp_manager.connect_all(), self._mcp_loop
+            )
+            results = future.result(timeout=60)
+            for name, success in results.items():
+                logger.info("  - %s: %s", name, "connected" if success else "FAILED")
+            connected = sum(1 for v in results.values() if v)
+            failed = sum(1 for v in results.values() if not v)
+            logger.info("Executor MCP: %d connected, %d failed", connected, failed)
+
+            # Populate tool cache
+            tools_future = asyncio.run_coroutine_threadsafe(
+                self._mcp_manager.list_all_tools(), self._mcp_loop
+            )
+            tools = tools_future.result(timeout=10)
+            tool_names = [t.get("name", "?") for t in tools]
+            logger.info("Executor MCP: %d tools available: %s", len(tools), ", ".join(tool_names))
+
+        except Exception as e:
+            logger.error("Executor MCP init failed: %s", e, exc_info=True)
+            self._mcp_manager = None
+
+    def _cleanup_mcp(self) -> None:
+        """Disconnect MCP servers and stop the event loop."""
+        if self._mcp_manager and self._mcp_loop:
+            import asyncio
+
+            logger.info("Executor MCP: disconnecting servers...")
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._mcp_manager.disconnect_all(), self._mcp_loop
+                )
+                future.result(timeout=10)
+                logger.info("Executor MCP: all servers disconnected")
+            except Exception as e:
+                logger.warning("Executor MCP cleanup error: %s", e)
+
+        if self._mcp_loop:
+            self._mcp_loop.call_soon_threadsafe(self._mcp_loop.stop)
+            if self._mcp_thread:
+                self._mcp_thread.join(timeout=5)
+            self._mcp_loop = None
+
+        self._mcp_manager = None
 
     def execute(self, action_id: int) -> None:
         """Execute an action by ID."""
@@ -33,6 +139,15 @@ class ActionExecutor:
         backend = create_backend(self._ctx.settings)
         db = DatabaseConnection(backend)
         initialise_schema(db)
+
+        # Initialise MCP connections for this execution
+        logger.info("Executor: initialising MCP connections for action %d", action_id)
+        self._init_mcp()
+        logger.info(
+            "Executor: MCP init complete (manager=%s, loop=%s)",
+            "ready" if self._mcp_manager else "none",
+            "running" if self._mcp_loop and self._mcp_loop.is_running() else "none",
+        )
 
         try:
             action = autonomous_actions.get_action(db, action_id, self._user_guid)
@@ -101,6 +216,7 @@ class ActionExecutor:
                 autonomous_actions.unlock_action(db, action_id)
 
         finally:
+            self._cleanup_mcp()
             db.close()
 
     def _run_action(self, db: Any, action: dict) -> dict[str, Any]:
@@ -122,14 +238,34 @@ class ActionExecutor:
 
         from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        import tzlocal
+
+        local_tz = tzlocal.get_localzone()
+        now_local = datetime.now(local_tz)
+        now_str = now_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+
         system = (
             f"You are Spark executing an autonomous action.\n"
             f"Action: {action['name']}\n"
             f"Description: {action.get('description', '')}\n"
-            f"Current time: {now}\n\n"
-            f"You have access to tools. Use them as needed to complete the action."
+            f"Current time: {now_str}\n\n"
+            f"## CRITICAL: You Must Use Tools to Deliver Output\n\n"
+            f"You are running autonomously with no user present. Your text responses "
+            f"are only recorded in logs — the user will NOT see them. To deliver "
+            f"results you MUST use output tools:\n"
+            f"- Use `send_email` to email reports to the user\n"
+            f"- Use `create_word`, `create_excel`, `create_powerpoint`, or `create_pdf` "
+            f"to save documents to the filesystem\n"
+            f"- Use `write_file` to save HTML or text reports\n\n"
+            f"Do NOT write report content in your text response. "
+            f"Always call the appropriate tool to create/send the output.\n"
+            f"If your output is large (e.g. a detailed HTML report), you may need "
+            f"to keep the content concise to fit within the output token limit "
+            f"({max_tokens} tokens). Prioritise key findings over verbose formatting.\n\n"
         )
+
+        # Build tool context for the system prompt
+        system += self._build_tool_context(tools)
 
         # Build context from previous runs if cumulative mode
         if context_mode == "cumulative":
@@ -139,16 +275,24 @@ class ActionExecutor:
 
         messages: list[dict] = [{"role": "user", "content": prompt}]
 
-        # Tool use loop (max 10 iterations)
+        # Tool use loop — use the configured max_tool_iterations (default 25)
+        max_iterations = action.get("max_tool_iterations", 25)
         total_input = 0
         total_output = 0
-        for iteration in range(10):
+        activity_log: list[str] = []  # Full activity record for run history
+
+        # Enable prompt caching if the global setting is on — caches the system
+        # prompt and tool definitions across iterations, reducing input token costs.
+        use_caching = bool(self._ctx.settings.get("conversation.prompt_caching", True))
+
+        for iteration in range(max_iterations):
             response = llm.invoke_model(
                 messages,
                 max_tokens=max_tokens,
                 temperature=0.7,
                 tools=tools if tools else None,
                 system=system,
+                prompt_caching=use_caching,
             )
 
             usage = response.get("usage", {})
@@ -157,15 +301,61 @@ class ActionExecutor:
 
             stop_reason = response.get("stop_reason", "end_turn")
 
+            # Record any text the LLM produced in this iteration
+            iter_text = response.get("content", "").strip()
+            if iter_text:
+                activity_log.append(f"[Assistant] {iter_text[:500]}")
+
+            # Detect truncated tool calls — the LLM tried to call a tool but
+            # ran out of output tokens. Inject a continuation message so the
+            # LLM retries with more concise output.
+            if stop_reason == "max_tokens":
+                logger.warning(
+                    "Action '%s' iteration %d hit max_tokens (%d). "
+                    "Prompting LLM to retry with concise output.",
+                    action["name"],
+                    iteration + 1,
+                    max_tokens,
+                )
+                # Do NOT append the truncated assistant response — it may
+                # contain incomplete tool_use blocks without matching
+                # tool_result, which the API will reject.
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[SYSTEM] Your previous response was truncated because it "
+                            f"exceeded the output token limit ({max_tokens} tokens). "
+                            "You MUST call the output tool (send_email, write_file, "
+                            "create_word, etc.) with a MUCH shorter, more concise "
+                            "version of the content. Use minimal HTML styling, short "
+                            "tables, and focus only on the most critical findings. "
+                            "Call the tool NOW in this response."
+                        ),
+                    },
+                )
+                activity_log.append(f"[System] Output truncated at {max_tokens} tokens — retrying")
+                continue
+
             if stop_reason == "tool_use" and response.get("tool_use"):
                 # Execute tools
                 tool_results = []
                 for tc in response["tool_use"]:
                     tool_name = tc.get("name", "")
                     tool_input = tc.get("input", {})
-                    logger.info("Action tool call: %s", tool_name)
+                    logger.info(
+                        "Action tool call: %s (params=%s)",
+                        tool_name,
+                        json.dumps(tool_input)[:200],
+                    )
 
                     result_text = self._execute_tool(tool_name, tool_input)
+                    logger.info(
+                        "Action tool %s result (%d chars): %s",
+                        tool_name,
+                        len(result_text),
+                        result_text[:200],
+                    )
                     tool_results.append(
                         {
                             "type": "tool_result",
@@ -173,6 +363,7 @@ class ActionExecutor:
                             "content": result_text,
                         }
                     )
+                    activity_log.append(f"[Tool: {tool_name}] {result_text[:300]}")
 
                 # Add to conversation
                 messages.append(
@@ -181,15 +372,29 @@ class ActionExecutor:
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
-            # Final response
+            # Final response — include full activity log
+            final_content = response.get("content", "")
+            full_record = "\n\n".join(activity_log)
+            if full_record:
+                full_record += f"\n\n---\n\n[Final Response]\n{final_content}"
+            else:
+                full_record = final_content
+
             return {
-                "content": response.get("content", ""),
+                "content": full_record,
                 "input_tokens": total_input,
                 "output_tokens": total_output,
             }
 
+        logger.warning(
+            "Action '%s' hit max tool iterations (%d). "
+            "The action may not have completed its full workflow.",
+            action["name"],
+            max_iterations,
+        )
+        full_record = "\n\n".join(activity_log)
         return {
-            "content": "Max tool iterations reached.",
+            "content": f"{full_record}\n\n---\n\nMax tool iterations ({max_iterations}) reached.",
             "input_tokens": total_input,
             "output_tokens": total_output,
         }
@@ -226,13 +431,133 @@ class ActionExecutor:
             logger.warning("Failed to load cumulative context: %s", e)
             return ""
 
+    def _build_tool_context(self, tools: list[dict]) -> str:
+        """Build system prompt context describing available tools and constraints."""
+        settings = self._ctx.settings
+        lines = ["## Available Tools\n"]
+        lines.append(
+            "You have access to the tools listed below. Use "
+            "`get_tool_documentation(tool_name)` to retrieve detailed usage "
+            "instructions, parameters, and examples for any tool before using it.\n"
+        )
+
+        tool_names = [t.get("name", "") for t in tools]
+
+        # Group tools by category for clarity
+        categories = {
+            "Filesystem": [
+                "read_file",
+                "write_file",
+                "list_directory",
+                "search_files",
+                "get_file_info",
+                "find_in_file",
+                "get_directory_tree",
+            ],
+            "Documents": [
+                "read_word",
+                "read_excel",
+                "read_pdf",
+                "read_powerpoint",
+                "create_word",
+                "create_excel",
+                "create_powerpoint",
+                "create_pdf",
+            ],
+            "Archives": ["list_archive", "extract_archive"],
+            "Web": ["web_search", "web_fetch"],
+            "Email": ["send_email", "draft_email"],
+            "Memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+            "Core": ["get_current_datetime", "get_tool_documentation"],
+        }
+
+        for cat_name, cat_tools in categories.items():
+            active = [t for t in cat_tools if t in tool_names]
+            if active:
+                lines.append(f"**{cat_name}:** {', '.join(active)}")
+
+        # Add MCP tools if any
+        mcp_tools = [
+            t.get("name", "")
+            for t in tools
+            if t.get("name", "") not in {n for cat in categories.values() for n in cat}
+        ]
+        if mcp_tools:
+            lines.append(f"**MCP Server Tools:** {', '.join(mcp_tools)}")
+
+        lines.append("")
+
+        # Filesystem allowed paths
+        fs_config = settings.get("embedded_tools.filesystem") or {}
+        if isinstance(fs_config, str):
+            fs_config = {}
+        allowed_paths = settings.get("embedded_tools.filesystem.allowed_paths", [])
+        if isinstance(allowed_paths, str):
+            allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
+        if allowed_paths:
+            lines.append("## Filesystem Constraints\n")
+            lines.append(
+                "All file operations (read, write, search, document creation) are "
+                "restricted to the following allowed paths. Do NOT use paths outside "
+                "these directories — the tool will deny access.\n"
+            )
+            for p in allowed_paths:
+                lines.append(f"- `{p}`")
+            lines.append("")
+
+        # Email configuration hint
+        if "send_email" in tool_names:
+            sender = settings.get("embedded_tools.email.sender", "")
+            if sender:
+                lines.append(f"## Email\n\nEmail is configured with sender address: {sender}\n")
+
+        lines.append(
+            "## Tool Documentation\n\n"
+            "Before using a tool for the first time, call "
+            "`get_tool_documentation(tool_name)` to understand its parameters, "
+            "return format, and best practices. Call "
+            "`get_tool_documentation('_index')` for the full tool index.\n"
+        )
+
+        return "\n".join(lines)
+
     def _get_tools(self) -> list[dict]:
-        """Get available tools for the action."""
+        """Get available tools for the action (builtin + MCP)."""
+        logger.info(
+            "Executor _get_tools: mcp_manager=%s, mcp_loop=%s",
+            "present" if self._mcp_manager else "none",
+            "running" if self._mcp_loop and self._mcp_loop.is_running() else "none",
+        )
         try:
             from spark.tools.registry import get_builtin_tools
 
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
-            return get_builtin_tools(config)
+            # Resolve secret:// URIs in embedded tools config
+            self._resolve_embedded_secrets(config.get("embedded_tools", {}))
+            tools = get_builtin_tools(config)
+
+            # Add MCP server tools if configured
+            if self._mcp_manager:
+                try:
+                    import asyncio
+
+                    mcp_tools = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                    ).result(timeout=10)
+                    for t in mcp_tools:
+                        tools.append(
+                            {
+                                "name": t.get("name", ""),
+                                "description": t.get("description", ""),
+                                "inputSchema": t.get("inputSchema", {}),
+                            }
+                        )
+                    if mcp_tools:
+                        logger.info("Daemon loaded %d MCP tools", len(mcp_tools))
+                except Exception as e:
+                    logger.warning("Failed to load MCP tools in daemon: %s", e)
+
+            return tools
         except Exception as e:
             logger.warning("Failed to load tools: %s", e)
             return []
@@ -243,6 +568,8 @@ class ActionExecutor:
             from spark.tools.registry import execute_builtin_tool
 
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
+            # Resolve secret:// URIs in embedded tools config
+            self._resolve_embedded_secrets(config.get("embedded_tools", {}))
 
             # Inject memory index for memory tools
             try:
@@ -258,12 +585,49 @@ class ActionExecutor:
             except Exception:
                 pass
 
-            result, is_error = execute_builtin_tool(tool_name, tool_input, config)
-            if is_error:
-                logger.warning("Action tool %s error: %s", tool_name, result[:200])
-            return result
+            # Try builtin tools first
+            from spark.tools.registry import get_builtin_tools
+
+            builtin_names = {t["name"] for t in get_builtin_tools(config)}
+            if tool_name in builtin_names:
+                result, is_error = execute_builtin_tool(tool_name, tool_input, config)
+                if is_error:
+                    logger.warning("Action tool %s error: %s", tool_name, result[:200])
+                return result
+
+            # Try MCP tools
+            if self._mcp_manager:
+                try:
+                    import asyncio
+
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.call_tool(tool_name, tool_input),
+                        self._mcp_loop,
+                    )
+                    mcp_result = future.result(timeout=60)
+                    content = mcp_result.get("content", [])
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif isinstance(item, str):
+                            text_parts.append(item)
+                    return "\n".join(text_parts) if text_parts else str(mcp_result)
+                except Exception as e:
+                    logger.warning("MCP tool %s failed in daemon: %s", tool_name, e)
+                    return f"MCP tool error: {e}"
+
+            return f"Tool '{tool_name}' is not available."
         except Exception as e:
             return f"Tool error: {e}"
+
+    def _resolve_embedded_secrets(self, embedded: dict) -> None:
+        """Resolve secret:// URIs in embedded tools config subtrees in-place."""
+        for _category, cat_config in embedded.items():
+            if isinstance(cat_config, dict):
+                for key, val in cat_config.items():
+                    if isinstance(val, str) and val.startswith("secret://"):
+                        cat_config[key] = self._resolve_secret(val)
 
     def _resolve_secret(self, value: str | None) -> str:
         """Resolve a secret:// URI."""

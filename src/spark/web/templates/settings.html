@@ -77,6 +77,15 @@
                     </nav>
                 </div>
             </div>
+            <!-- Save/Discard buttons -->
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-app-primary btn-sm flex-grow-1" id="btn-save" onclick="saveSettings()" disabled>
+                    <i class="bi bi-check-lg me-1"></i> Save
+                </button>
+                <button class="btn btn-app-secondary btn-sm flex-grow-1" id="btn-discard" onclick="window.location.reload()" disabled>
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
+                </button>
+            </div>
           </div>
         </div>
 
@@ -96,14 +105,25 @@
 
                         {% for group in section.groups %}
                         {% if section.groups|length > 1 %}
-                        <h6 class="mb-3 mt-4" style="font-weight: 600; color: var(--app-text-primary);">
-                            {{ group.title }}
-                        </h6>
+                        <div class="d-flex align-items-center justify-content-between mb-3 mt-4">
+                            <h6 class="mb-0" style="font-weight: 600; color: var(--app-text-primary);">
+                                {{ group.title }}
+                            </h6>
+                            {% if group.help_url %}
+                            <a href="{{ group.help_url }}"
+                               class="btn btn-app-ghost btn-sm d-flex align-items-center gap-1"
+                               style="font-size: 0.75rem; color: var(--app-accent);"
+                               title="Open setup guide for {{ group.title }}">
+                                <i class="bi bi-question-circle"></i> Setup Guide
+                            </a>
+                            {% endif %}
+                        </div>
                         {% endif %}
 
                         {% for field in group.fields %}
                         <div class="mb-3 row align-items-center"
-                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}>
+                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}
+                             {% if field.bedrock_auth is defined and field.bedrock_auth %}data-bedrock-auth="{{ field.bedrock_auth }}"{% endif %}>
                             <label class="col-sm-4 form-label mb-0" for="field-{{ field.key|replace('.', '-') }}">
                                 {{ field.label }}
                             </label>
@@ -180,6 +200,12 @@
                                        id="field-{{ field.key|replace('.', '-') }}"
                                        data-key="{{ field.key }}"
                                        value="{{ field.value }}">
+                                {% endif %}
+
+                                {% if field.help is defined and field.help and field.type != 'textarea' %}
+                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {{ field.help }}
+                                </div>
                                 {% endif %}
                             </div>
                         </div>
@@ -277,18 +303,38 @@
                                                 {% endfor %}
                                             </select>
                                             {% elif field.type == 'secret' %}
+                                            {% set has_val = field.value and field.value|string != '' and not field.value|string|truncate(9, True, '') == 'secret://' %}
                                             <div class="input-group input-group-sm">
                                                 <input type="password"
                                                        class="form-control form-control-sm setting-input"
                                                        data-key="{{ field.key }}"
-                                                       value="{{ field.value }}"
+                                                       data-is-secret="true"
+                                                       {% if field.value and field.value|string != '' %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
+                                                       placeholder="{% if field.value and field.value|string != '' %}{% else %}Enter value{% endif %}"
                                                        autocomplete="off">
-                                                <button class="btn btn-outline-secondary" type="button"
-                                                        onclick="toggleSecretField(this)"
+                                                <button class="btn btn-app-ghost" type="button"
+                                                        onclick="togglePasswordVisibility(this)"
                                                         title="Show/hide">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
                                             </div>
+                                            {% elif field.type == 'path_list' %}
+                                            <div class="path-list-control" data-key="{{ field.key }}" id="pathlist-{{ field.key | replace('.', '-') }}">
+                                                <div class="path-list-items">
+                                                    {% for p in field.value %}
+                                                    <div class="path-list-entry d-flex align-items-center gap-2 mb-1">
+                                                        <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p }}</code>
+                                                        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
+                                                            <i class="bi bi-dash-circle"></i>
+                                                        </button>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                                <button class="btn btn-app-outline btn-sm mt-1" onclick="openPathBrowser('{{ field.key }}')" title="Add directory">
+                                                    <i class="bi bi-plus-circle me-1"></i>Add Path
+                                                </button>
+                                            </div>
+
                                             {% elif field.type == 'number' %}
                                             <input type="number"
                                                    class="form-control form-control-sm setting-input"
@@ -323,6 +369,14 @@
                                             {% endfor %}
                                         </div>
                                     </div>
+
+                                    {% if cat.id == 'email' %}
+                                    <div style="margin-top: 0.75rem; border-top: 1px solid var(--app-border); padding-top: 0.75rem;">
+                                        <button class="btn btn-app-outline btn-sm" onclick="testEmailConnection()">
+                                            <i class="bi bi-plug me-1"></i>Test Email Connection
+                                        </button>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -522,18 +576,58 @@
                 </div>
             </div>
 
-            <!-- Save -->
-            <div class="text-end mb-5">
-                <button class="btn btn-app-secondary me-2" onclick="window.location.reload()">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
-                </button>
-                <button class="btn btn-app-primary" id="btn-save" onclick="saveSettings()">
-                    <i class="bi bi-check-lg me-1"></i> Save Settings
-                </button>
+            <!-- Directory Browser Modal -->
+            <div class="modal fade" id="pathBrowserModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-folder2-open me-2"></i>Select Directory</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <button class="btn btn-app-ghost btn-sm" onclick="pathBrowserUp()" title="Parent directory" id="pathBrowserUpBtn">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <code id="pathBrowserCurrent" class="flex-grow-1" style="font-size: 0.75rem; padding: 0.375rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></code>
+                            </div>
+                            <div id="pathBrowserList" style="max-height: 350px; overflow-y: auto;">
+                                <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                            <button class="btn btn-app-primary" onclick="selectCurrentPath()">
+                                <i class="bi bi-check-lg me-1"></i>Select This Folder
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom spacer -->
+            <div class="mb-5"></div>
+        </div>
+    </div>
+</div>
+<!-- Email Test Results Modal -->
+<div class="modal fade" id="emailTestModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-envelope me-2"></i>Email Connection Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="emailTestBody">
+                <div class="text-center py-3"><div class="app-spinner mx-auto"></div><p class="mt-2" style="font-size: 0.875rem; color: var(--app-text-muted);">Testing connection...</p></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-app-ghost" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -594,6 +688,18 @@ function collectSettings() {
         }
         settings[key] = value;
     });
+
+    // Collect path list controls
+    document.querySelectorAll('.path-list-control').forEach(el => {
+        const key = el.dataset.key;
+        const paths = [];
+        el.querySelectorAll('.path-list-entry code').forEach(code => {
+            const p = code.textContent.trim();
+            if (p) paths.push(p);
+        });
+        settings[key] = paths;
+    });
+
     return settings;
 }
 
@@ -610,6 +716,9 @@ async function saveSettings() {
         });
         if (resp.ok) {
             AppToast.success('Settings saved', 'Configuration updated. Some changes may require a restart.');
+            // Reset dirty state
+            document.getElementById('btn-save').disabled = true;
+            document.getElementById('btn-discard').disabled = true;
         } else {
             const data = await resp.json();
             AppToast.danger('Error', data.detail || 'Failed to save settings.');
@@ -617,7 +726,6 @@ async function saveSettings() {
     } catch (err) {
         AppToast.danger('Error', 'Network error while saving settings.');
     } finally {
-        btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Save Settings';
     }
 }
@@ -641,6 +749,33 @@ function updateDatabaseFields() {
         } else {
             row.style.opacity = '0.35';
             row.style.pointerEvents = 'none';
+            inputs.forEach(el => el.disabled = true);
+        }
+    });
+}
+
+// Bedrock auth method field toggling
+function updateBedrockAuthFields() {
+    const authSelect = document.getElementById('field-providers-aws_bedrock-auth_method');
+    if (!authSelect) return;
+    const method = authSelect.value;
+
+    document.querySelectorAll('[data-bedrock-auth]').forEach(row => {
+        const authType = row.dataset.bedrockAuth;
+        // 'sso' shows for sso only, 'keys' shows for iam & session, 'session' shows for session only
+        const shouldShow =
+            (authType === 'sso' && method === 'sso') ||
+            (authType === 'keys' && (method === 'iam' || method === 'session')) ||
+            (authType === 'session' && method === 'session');
+
+        const inputs = row.querySelectorAll('input, select, button');
+        if (shouldShow) {
+            row.style.display = '';
+            row.style.opacity = '1';
+            row.style.pointerEvents = '';
+            inputs.forEach(el => el.disabled = false);
+        } else {
+            row.style.display = 'none';
             inputs.forEach(el => el.disabled = true);
         }
     });
@@ -701,6 +836,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Init Bedrock auth field visibility
+    updateBedrockAuthFields();
+    const bedrockAuthEl = document.getElementById('field-providers-aws_bedrock-auth_method');
+    if (bedrockAuthEl) bedrockAuthEl.addEventListener('change', updateBedrockAuthFields);
+
     // Init tool category toggling
     updateToolCategories();
     document.querySelectorAll('.tool-category-toggle').forEach(toggle => {
@@ -748,6 +888,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load MCP servers
     loadMCPServers();
+
+    // Track changes — enable Save/Discard buttons when anything changes
+    function markDirty() {
+        document.getElementById('btn-save').disabled = false;
+        document.getElementById('btn-discard').disabled = false;
+    }
+    document.querySelectorAll('.setting-input').forEach(el => {
+        el.addEventListener('change', markDirty);
+        el.addEventListener('input', markDirty);
+    });
+    // Tool category toggles and radio buttons
+    document.querySelectorAll('.tool-category-toggle, input[type="radio"].setting-input').forEach(el => {
+        el.addEventListener('change', markDirty);
+    });
+    // Path list add/remove will call markDirty via MutationObserver
+    document.querySelectorAll('.path-list-control').forEach(el => {
+        const obs = new MutationObserver(markDirty);
+        obs.observe(el, { childList: true, subtree: true });
+    });
 });
 
 // -- MCP Server Management --
@@ -781,6 +940,9 @@ async function loadMCPServers() {
                     </div>
                 </div>
                 <div class="d-flex align-items-center gap-1">
+                    <button class="btn btn-app-ghost btn-sm" onclick="editMCPServer('${escapeHtml(s.name)}')" title="Edit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
                     <div class="form-switch">
                         <input class="form-check-input" type="checkbox" ${s.enabled !== false ? 'checked' : ''}
                                onchange="toggleMCPServer('${escapeHtml(s.name)}', this.checked)" title="Enable/disable">
@@ -798,6 +960,7 @@ async function loadMCPServers() {
 function showAddMCPServer() {
     document.getElementById('mcpModalTitle').innerHTML = '<i class="bi bi-hdd-network me-2"></i>Add MCP Server';
     document.getElementById('mcp-name').value = '';
+    document.getElementById('mcp-name').readOnly = false;
     document.getElementById('mcp-transport').value = 'stdio';
     document.getElementById('mcp-command').value = '';
     document.getElementById('mcp-args').value = '';
@@ -814,6 +977,39 @@ function showAddMCPServer() {
     updateMCPTransportFields();
     updateMCPAuthFields();
     new bootstrap.Modal(document.getElementById('mcpServerModal')).show();
+}
+
+async function editMCPServer(name) {
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/config`);
+        if (!resp.ok) { AppToast.danger('Error', 'Failed to load server configuration.'); return; }
+        const config = await resp.json();
+
+        document.getElementById('mcpModalTitle').innerHTML = '<i class="bi bi-hdd-network me-2"></i>Edit MCP Server';
+        document.getElementById('mcp-name').value = config.name || '';
+        document.getElementById('mcp-name').readOnly = true;
+        document.getElementById('mcp-transport').value = config.transport || 'stdio';
+        document.getElementById('mcp-command').value = config.command || '';
+        document.getElementById('mcp-args').value = (config.args || []).join(', ');
+        document.getElementById('mcp-env').value = config.env && Object.keys(config.env).length ? JSON.stringify(config.env, null, 2) : '';
+        document.getElementById('mcp-url').value = config.url || '';
+        document.getElementById('mcp-custom-headers').value = config.custom_headers && Object.keys(config.custom_headers).length ? JSON.stringify(config.custom_headers, null, 2) : '';
+        document.getElementById('mcp-auth-type').value = config.auth_type || 'none';
+        document.getElementById('mcp-auth-token').value = config.auth_token || '';
+        if (document.getElementById('mcp-auth-header')) {
+            document.getElementById('mcp-auth-header').value = config.auth_header_name || 'X-API-Key';
+        }
+        document.getElementById('mcp-basic-user').value = config.basic_username || '';
+        document.getElementById('mcp-basic-pass').value = config.basic_password || '';
+        document.getElementById('mcp-timeout').value = config.timeout || 30;
+        document.getElementById('mcp-ssl-verify').checked = config.ssl_verify !== false;
+        document.getElementById('mcp-test-result').style.display = 'none';
+        updateMCPTransportFields();
+        updateMCPAuthFields();
+        new bootstrap.Modal(document.getElementById('mcpServerModal')).show();
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to load server configuration.');
+    }
 }
 
 function updateMCPTransportFields() {
@@ -969,6 +1165,139 @@ async function deleteMCPServer(name) {
 }
 
 function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// -- Path List (Allowed Paths) --
+
+let _pathBrowserTargetKey = null;
+let _pathBrowserCurrentPath = null;
+let _pathBrowserParentPath = null;
+
+function removePathEntry(btn) {
+    btn.closest('.path-list-entry').remove();
+}
+
+function openPathBrowser(fieldKey) {
+    _pathBrowserTargetKey = fieldKey;
+    _pathBrowserCurrentPath = null;
+    const modal = new bootstrap.Modal(document.getElementById('pathBrowserModal'));
+    modal.show();
+    loadPathBrowser('');
+}
+
+async function loadPathBrowser(path) {
+    const list = document.getElementById('pathBrowserList');
+    list.innerHTML = '<div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>';
+    try {
+        const url = path ? `/settings/api/browse-directory?path=${encodeURIComponent(path)}` : '/settings/api/browse-directory';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        _pathBrowserCurrentPath = data.current;
+        _pathBrowserParentPath = data.parent;
+        document.getElementById('pathBrowserCurrent').textContent = data.current;
+        document.getElementById('pathBrowserUpBtn').disabled = !data.parent;
+
+        if (!data.directories.length) {
+            list.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted); font-size:0.8125rem;">No subdirectories</div>';
+            return;
+        }
+        list.innerHTML = data.directories.map(d => `
+            <div class="d-flex align-items-center gap-2 py-1 px-2 rounded" style="cursor:pointer; font-size:0.8125rem; transition: background 0.1s;"
+                 onmouseover="this.style.background='var(--app-hover-bg)'" onmouseout="this.style.background=''"
+                 onclick="loadPathBrowser('${escapeHtml(d.path).replace(/'/g, "\\'")}')">
+                <i class="bi bi-folder-fill" style="color:var(--app-accent);"></i>
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(d.name)}</span>
+            </div>
+        `).join('');
+    } catch (err) {
+        list.innerHTML = '<div class="alert-app alert-app-danger">Failed to load directories.</div>';
+    }
+}
+
+function pathBrowserUp() {
+    if (_pathBrowserParentPath) loadPathBrowser(_pathBrowserParentPath);
+}
+
+function selectCurrentPath() {
+    if (!_pathBrowserCurrentPath || !_pathBrowserTargetKey) return;
+    const containerId = 'pathlist-' + _pathBrowserTargetKey.replace(/\./g, '-');
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Check for duplicates
+    const existing = container.querySelectorAll('.path-list-entry code');
+    for (const el of existing) {
+        if (el.textContent.trim() === _pathBrowserCurrentPath) {
+            AppToast.warning('Duplicate', 'This path is already in the list.');
+            return;
+        }
+    }
+
+    const items = container.querySelector('.path-list-items');
+    const entry = document.createElement('div');
+    entry.className = 'path-list-entry d-flex align-items-center gap-2 mb-1';
+    entry.innerHTML = `
+        <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(_pathBrowserCurrentPath)}</code>
+        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
+            <i class="bi bi-dash-circle"></i>
+        </button>
+    `;
+    items.appendChild(entry);
+    bootstrap.Modal.getInstance(document.getElementById('pathBrowserModal'))?.hide();
+}
+
+// -- Email Test Connection --
+
+async function testEmailConnection(sendTest) {
+    const body = document.getElementById('emailTestBody');
+    const label = sendTest ? 'Sending test email...' : 'Testing connection...';
+    body.innerHTML = `<div class="text-center py-3"><div class="app-spinner mx-auto"></div><p class="mt-2" style="font-size:0.875rem; color:var(--app-text-muted);">${label}</p></div>`;
+    // Only open modal if not already visible (avoids stacking when called from within)
+    const modalEl = document.getElementById('emailTestModal');
+    if (!bootstrap.Modal.getInstance(modalEl)) {
+        new bootstrap.Modal(modalEl).show();
+    }
+
+    try {
+        const resp = await fetch('/settings/api/test-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ send_test: !!sendTest }),
+        });
+        const data = await resp.json();
+
+        const statusClass = data.status === 'ok' ? 'success' : 'danger';
+        const statusIcon = data.status === 'ok' ? 'bi-check-circle-fill' : 'bi-x-circle-fill';
+        const statusLabel = data.status === 'ok'
+            ? (sendTest ? 'Test Email Sent' : 'Connection Successful')
+            : 'Connection Failed';
+
+        let html = `
+            <div class="text-center mb-3">
+                <i class="bi ${statusIcon}" style="font-size: 2rem; color: var(--app-${statusClass});"></i>
+                <h6 class="mt-2" style="color: var(--app-${statusClass});">${statusLabel}</h6>
+            </div>
+            <div style="font-size: 0.8125rem;">
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Host</div><div class="col-8"><code>${escapeHtml(data.host || '—')}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Port</div><div class="col-8"><code>${data.port || '—'}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">TLS</div><div class="col-8">${data.use_tls ? 'Yes (STARTTLS)' : 'No'}</div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Username</div><div class="col-8"><code>${escapeHtml(data.username || '—')}</code></div></div>
+                <div class="row mb-1"><div class="col-4" style="color: var(--app-text-muted);">Sender</div><div class="col-8"><code>${escapeHtml(data.sender || '—')}</code></div></div>
+            </div>`;
+
+        if (data.message) {
+            html += `<div class="alert-app alert-app-${statusClass} mt-3" style="font-size: 0.8125rem;">${escapeHtml(data.message)}</div>`;
+        }
+
+        // Show "Send Test Email" button if connection succeeded but we didn't send yet
+        if (data.status === 'ok' && !sendTest) {
+            html += `<div class="text-center mt-3"><button class="btn btn-app-primary btn-sm" onclick="testEmailConnection(true)"><i class="bi bi-send me-1"></i>Send Test Email</button></div>`;
+        }
+
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = '<div class="alert-app alert-app-danger">Network error while testing connection.</div>';
+    }
+}
 
 // -- Settings Lock --
 

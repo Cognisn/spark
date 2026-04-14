@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
+import sys
 from pathlib import Path
 
 from konfig import AppContext
@@ -13,6 +15,39 @@ from konfig.paths import config_dir, data_dir
 import spark
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_macos_path() -> None:
+    """Ensure common tool directories are on PATH for macOS app bundles.
+
+    When launched from Finder (e.g. as a PyApp binary), the process inherits a
+    minimal PATH that excludes directories like /usr/local/bin and Homebrew
+    paths where tools such as docker, npx, and node typically live.  This
+    prevents MCP stdio servers (and any other subprocess) from finding their
+    commands.
+
+    This is a no-op on non-macOS platforms.
+    """
+    if sys.platform != "darwin":
+        return
+
+    # Directories commonly missing from Finder-launched processes.
+    extra_dirs = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        str(Path.home() / ".docker" / "bin"),
+    ]
+
+    current = os.environ.get("PATH", "")
+    current_set = set(current.split(os.pathsep))
+
+    additions = [d for d in extra_dirs if d not in current_set and Path(d).is_dir()]
+    if additions:
+        os.environ["PATH"] = current + os.pathsep + os.pathsep.join(additions)
+        logger.debug("Extended PATH with: %s", ", ".join(additions))
+
 
 _APP_ID = "spark"
 _RESOURCES = Path(__file__).resolve().parent.parent / "resources"
@@ -52,6 +87,7 @@ def _ensure_config(config_path: Path) -> bool:
 
 def run() -> None:
     """Main entry point — initialise konfig and start the web server."""
+    _ensure_macos_path()
     config_path = _get_config_path()
     first_run = _ensure_config(config_path)
 
@@ -71,8 +107,6 @@ def run() -> None:
 
     try:
         # On Windows, uvicorn needs the SelectorEventLoop (ProactorEventLoop has issues)
-        import sys
-
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -144,6 +178,17 @@ def _default_settings() -> dict:
                 "max_timeout": 300,
                 "max_output_chars": 50000,
                 "blocked_commands": [],
+                "require_approval": True,
+            },
+            "email": {
+                "enabled": False,
+                "host": "",
+                "port": 587,
+                "username": "",
+                "password": "",
+                "sender": "",
+                "use_tls": True,
+                "max_attachment_mb": 25,
                 "require_approval": True,
             },
         },

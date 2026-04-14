@@ -15,6 +15,7 @@ graph TD
     Builtin --> Arc[Archives]
     Builtin --> Web[Web]
     Builtin --> Cmd[System Commands]
+    Builtin --> Email[Email]
     Builtin --> Mem[Memory]
     Builtin --> DT[DateTime]
     Builtin --> TD[Tool Docs]
@@ -39,6 +40,9 @@ graph TD
     Web --> web_fetch
 
     Cmd --> run_command
+
+    Email --> send_email
+    Email --> draft_email
 
     Mem --> store_memory
     Mem --> query_memory
@@ -148,6 +152,15 @@ Execute shell commands on the host system. Disabled by default — must be expli
 |------|-------------|
 | `run_command` | Execute a shell command, returning stdout and stderr |
 
+### Email
+
+Send and draft emails via SMTP. Disabled by default — requires SMTP configuration in Settings.
+
+| Tool | Description |
+|------|-------------|
+| `send_email` | Send an email with to/cc/bcc recipients, subject, HTML or plain text body, and file attachments |
+| `draft_email` | Compose an email and save it as a .eml file instead of sending |
+
 **Configuration:**
 
 ```yaml
@@ -168,6 +181,32 @@ embedded_tools:
 - When `require_approval` is enabled (default), every command prompts for user approval
 - Commands run under the same OS permissions as the Spark process
 - Output is truncated to prevent excessive token usage
+
+### Email
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  email:
+    enabled: true
+    host: smtp.gmail.com
+    port: 587
+    username: you@gmail.com
+    password: secret://email_password    # Stored in OS keychain
+    sender: you@gmail.com
+    use_tls: true
+    max_attachment_mb: 25
+    require_approval: true               # Always prompt before sending
+```
+
+**Settings UI:** Configure SMTP credentials in **Settings → Embedded Tools → Email**. The password is stored securely in the OS keychain via the secrets backend. Use the **Test Email Connection** button to verify your SMTP settings and optionally send a test email.
+
+**Security:**
+- `send_email` is a high-stakes mutation tool. When `require_approval` is enabled (default), it always prompts for user approval before sending — even if the tool has been globally approved.
+- File attachments are restricted to the filesystem `allowed_paths`. The attachment size is capped by `max_attachment_mb`.
+- When `require_approval` is disabled, `send_email` respects the standard tool permission system. This is required for autonomous actions where no user is present to approve.
+- `draft_email` saves to disk instead of sending, providing a lower-risk alternative for composing emails.
 
 ### Memory
 
@@ -195,13 +234,14 @@ Documentation files are stored in `src/spark/resources/tool_docs/` as markdown f
 
 ## Tool Permissions
 
-When the AI first uses a tool in a conversation, Spark prompts for permission:
+When the AI first uses a tool in a conversation, Spark prompts for permission with four options:
 
-- **Allow Once** -- Permit this single invocation
-- **Always Allow** -- Approve this tool and all tools in the same category
-- **Deny** -- Block the tool call
+- **Deny** -- Block this tool call
+- **Approve Once** -- Permit this single invocation only (not persisted)
+- **Always (Conversation)** -- Approve this tool and all tools in the same category for the rest of this conversation
+- **Always (Global)** -- Approve this tool and its category across all conversations
 
-Permissions are stored per conversation in the database. When you approve a tool with "Always Allow", all tools in the same category are also approved. The categories are:
+Conversation-level permissions are checked first, then global permissions. When you approve with either "Always" option, all tools in the same category are also approved. The categories are:
 
 | Category | Tools |
 |----------|-------|
@@ -210,6 +250,7 @@ Permissions are stored per conversation in the database. When you approve a tool
 | archives | list_archive, extract_archive |
 | web | web_search, web_fetch |
 | system_commands | run_command |
+| email | send_email, draft_email |
 | memory | store_memory, query_memory, list_memories, delete_memory |
 | core | get_current_datetime, get_tool_documentation |
 

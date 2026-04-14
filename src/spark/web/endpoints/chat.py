@@ -62,6 +62,35 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
     return JSONResponse(messages)
 
 
+@router.get("/{conversation_id}/api/tool-activity")
+async def get_tool_activity(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get tool call history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import mcp_ops
+
+    transactions = mcp_ops.get_transactions(conv_mgr._db, conversation_id)
+    # Return newest-last so the panel renders in chronological order.
+    transactions.reverse()
+    # Strip the embedding-sized binary blob; keep only display fields.
+    result = []
+    for t in transactions:
+        result.append(
+            {
+                "id": t.get("id"),
+                "tool_name": t.get("tool_name", ""),
+                "tool_input": t.get("tool_input", "{}"),
+                "tool_response": t.get("tool_response", ""),
+                "is_error": bool(t.get("is_error")),
+                "execution_time_ms": t.get("execution_time_ms"),
+                "timestamp": t.get("transaction_timestamp"),
+            }
+        )
+    return JSONResponse(result)
+
+
 @router.post("/{conversation_id}/api/send")
 async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     """API: send a message (non-streaming fallback)."""

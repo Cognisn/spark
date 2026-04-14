@@ -28,7 +28,8 @@
 
 ### Tools
 - **MCP Integration** -- Connect external tool servers via stdio, HTTP, or SSE
-- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
+- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives, email
+- **Email Tools** -- Send and draft emails via SMTP with HTML/plain text, attachments, and cc/bcc
 - **Memory Tools** -- Persistent semantic memory across conversations
 - **Per-Conversation Control** -- Enable/disable tools at the server or individual level
 - **Tool Approval** -- Permission prompts for first-use with allow once/always/deny
@@ -46,6 +47,7 @@
 ### Autonomous Actions
 - **Scheduled Tasks** -- Cron or one-off schedules via APScheduler
 - **AI-Assisted Creation** -- Describe what you want and the AI builds the action
+- **Create from Conversation** -- Turn any conversation into an autonomous action with AI-guided setup
 - **Background Daemon** -- System tray icon (macOS/Windows) runs actions independently
 - **Run History** -- Track execution status, results, and token usage
 
@@ -136,6 +138,7 @@ graph TB
         Builtin["Built-in Tools"]
         Memory["Memory"]
         WebSearch["Web Search"]
+        EmailTool["Email (SMTP)"]
     end
 
     subgraph Foundation ["cognisn-konfig"]
