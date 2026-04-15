@@ -131,6 +131,10 @@ jobs:
           PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/pyapp-src/splash-screen.png
         run: |
           cd pyapp-src
+          # On Windows, set the subsystem to WINDOWS to suppress the console window
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            export RUSTFLAGS="-C link-args=/SUBSYSTEM:WINDOWS"
+          fi
           cargo build --release --features splash --target ${{ matrix.target }}
 
       - name: Prepare binary (Unix)
@@ -156,24 +160,55 @@ jobs:
           SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
           SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
         run: |
-          # Download CodeSignTool with a predictable filename
+          EXE_PATH="${GITHUB_WORKSPACE}/release/${{ matrix.name }}.exe"
+          echo "Binary to sign: $EXE_PATH"
+          echo "Binary size before signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
+
+          # Skip signing if secrets are not configured
+          if [ -z "$SSL_COM_USERNAME" ] || [ -z "$SSL_COM_CREDENTIAL_ID" ]; then
+            echo "::warning::SSL.com secrets not configured — skipping code signing"
+            exit 0
+          fi
+
+          # Download CodeSignTool
           curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
           unzip -o CodeSignTool.zip -d CodeSignTool
-          ls -la CodeSignTool/
 
-          # Find the actual CodeSignTool directory (may be nested)
-          CST_DIR=$(find CodeSignTool -name "CodeSignTool.bat" -printf '%h' -quit 2>/dev/null || find CodeSignTool -name "CodeSignTool.bat" | head -1 | xargs dirname)
+          # Find CodeSignTool.bat
+          CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
+          if [ -z "$CST_BAT" ]; then
+            echo "::error::CodeSignTool.bat not found after extraction"
+            find CodeSignTool -type f | head -20
+            exit 1
+          fi
+          CST_DIR=$(dirname "$CST_BAT")
           echo "CodeSignTool found at: $CST_DIR"
 
           # Sign the binary
           cd "$CST_DIR"
+          echo "Running CodeSignTool sign..."
           ./CodeSignTool.bat sign \
             -username="${SSL_COM_USERNAME}" \
             -password="${SSL_COM_PASSWORD}" \
             -totp_secret="${SSL_COM_TOTP_SECRET}" \
             -credential_id="${SSL_COM_CREDENTIAL_ID}" \
-            -input_file_path="${GITHUB_WORKSPACE}/release/${{ matrix.name }}.exe" \
-            -output_dir_path="${GITHUB_WORKSPACE}/release/"
+            -input_file_path="$EXE_PATH" \
+            -output_dir_path="${GITHUB_WORKSPACE}/release/" \
+            2>&1 | tee signing_output.log
+
+          SIGN_EXIT=$?
+          echo "CodeSignTool exit code: $SIGN_EXIT"
+          echo "Binary size after signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
+
+          if [ $SIGN_EXIT -ne 0 ]; then
+            echo "::error::Code signing failed with exit code $SIGN_EXIT"
+            cat signing_output.log
+            exit 1
+          fi
+
+          # Verify the signature using PowerShell
+          echo "Verifying digital signature..."
+          powershell -Command "Get-AuthenticodeSignature '$EXE_PATH' | Format-List" || true
 
       - name: Upload binary
         uses: actions/upload-artifact@v5
@@ -515,15 +550,24 @@ jobs:
           SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
           SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
         run: |
-          # Download CodeSignTool with a predictable filename
+          INSTALLER=$(ls *-setup.exe | head -1)
+          echo "Installer to sign: $INSTALLER"
+
+          # Skip signing if secrets are not configured
+          if [ -z "$SSL_COM_USERNAME" ] || [ -z "$SSL_COM_CREDENTIAL_ID" ]; then
+            echo "::warning::SSL.com secrets not configured — skipping installer signing"
+            exit 0
+          fi
+
+          # Download CodeSignTool
           curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
           unzip -o CodeSignTool.zip -d CodeSignTool
 
-          # Find the actual CodeSignTool directory (may be nested)
-          CST_DIR=$(find CodeSignTool -name "CodeSignTool.bat" -printf '%h' -quit 2>/dev/null || find CodeSignTool -name "CodeSignTool.bat" | head -1 | xargs dirname)
+          CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
+          CST_DIR=$(dirname "$CST_BAT")
 
-          # Find and sign the installer
-          INSTALLER=$(ls *-setup.exe | head -1)
+          # Sign the installer
+          echo "Running CodeSignTool sign on installer..."
           cd "$CST_DIR"
           ./CodeSignTool.bat sign \
             -username="${SSL_COM_USERNAME}" \
@@ -531,7 +575,21 @@ jobs:
             -totp_secret="${SSL_COM_TOTP_SECRET}" \
             -credential_id="${SSL_COM_CREDENTIAL_ID}" \
             -input_file_path="${GITHUB_WORKSPACE}/${INSTALLER}" \
-            -output_dir_path="${GITHUB_WORKSPACE}/"
+            -output_dir_path="${GITHUB_WORKSPACE}/" \
+            2>&1 | tee signing_output.log
+
+          SIGN_EXIT=$?
+          echo "CodeSignTool exit code: $SIGN_EXIT"
+
+          if [ $SIGN_EXIT -ne 0 ]; then
+            echo "::error::Installer signing failed with exit code $SIGN_EXIT"
+            cat signing_output.log
+            exit 1
+          fi
+
+          # Verify
+          echo "Verifying installer signature..."
+          powershell -Command "Get-AuthenticodeSignature '${GITHUB_WORKSPACE}/${INSTALLER}' | Format-List" || true
 
       - name: Upload installer
         uses: actions/upload-artifact@v5
