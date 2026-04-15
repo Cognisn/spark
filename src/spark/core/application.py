@@ -113,6 +113,9 @@ def run() -> None:
         asyncio.run(_start())
     except KeyboardInterrupt:
         logger.info("Spark shut down by user")
+    except Exception:
+        logger.exception("Spark failed to start")
+        raise
 
 
 def _log_startup_paths(ctx: AppContext, config_path: Path) -> None:

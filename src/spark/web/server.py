@@ -544,6 +544,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
                 logger.warning("Failed to generate SSL certificate: %s", e)
 
     logger.debug("Creating uvicorn config...")
+    logger.info("Event loop type: %s", type(asyncio.get_event_loop()).__name__)
     config = uvicorn.Config(
         app,
         host=host,
