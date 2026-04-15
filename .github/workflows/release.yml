@@ -184,7 +184,10 @@ jobs:
           CST_DIR=$(dirname "$CST_BAT")
           echo "CodeSignTool found at: $CST_DIR"
 
-          # Sign the binary
+          # Sign the binary — output to a temp dir then move back
+          SIGNED_DIR="${GITHUB_WORKSPACE}/signed_output"
+          mkdir -p "$SIGNED_DIR"
+
           cd "$CST_DIR"
           echo "Running CodeSignTool sign..."
           ./CodeSignTool.bat sign \
@@ -193,15 +196,21 @@ jobs:
             -totp_secret="${SSL_COM_TOTP_SECRET}" \
             -credential_id="${SSL_COM_CREDENTIAL_ID}" \
             -input_file_path="$EXE_PATH" \
-            -output_dir_path="${GITHUB_WORKSPACE}/release/" \
+            -output_dir_path="$SIGNED_DIR" \
             2>&1 | tee signing_output.log
 
           SIGN_EXIT=$?
           echo "CodeSignTool exit code: $SIGN_EXIT"
-          echo "Binary size after signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
 
-          if [ $SIGN_EXIT -ne 0 ]; then
-            echo "::error::Code signing failed with exit code $SIGN_EXIT"
+          # Check if signed file was produced
+          SIGNED_FILE="$SIGNED_DIR/${{ matrix.name }}.exe"
+          if [ -f "$SIGNED_FILE" ]; then
+            echo "Signed binary found, replacing original..."
+            cp "$SIGNED_FILE" "$EXE_PATH"
+            echo "Binary size after signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
+          else
+            echo "::error::Signed binary not found at $SIGNED_FILE"
+            ls -la "$SIGNED_DIR/" || true
             cat signing_output.log
             exit 1
           fi
@@ -592,7 +601,10 @@ jobs:
           CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
           CST_DIR=$(dirname "$CST_BAT")
 
-          # Sign the installer
+          # Sign the installer — output to temp dir then move back
+          SIGNED_DIR="${GITHUB_WORKSPACE}/signed_output"
+          mkdir -p "$SIGNED_DIR"
+
           echo "Running CodeSignTool sign on installer..."
           cd "$CST_DIR"
           ./CodeSignTool.bat sign \
@@ -601,15 +613,17 @@ jobs:
             -totp_secret="${SSL_COM_TOTP_SECRET}" \
             -credential_id="${SSL_COM_CREDENTIAL_ID}" \
             -input_file_path="${GITHUB_WORKSPACE}/${INSTALLER}" \
-            -output_dir_path="${GITHUB_WORKSPACE}/" \
+            -output_dir_path="$SIGNED_DIR" \
             2>&1 | tee signing_output.log
 
-          SIGN_EXIT=$?
-          echo "CodeSignTool exit code: $SIGN_EXIT"
-
-          if [ $SIGN_EXIT -ne 0 ]; then
-            echo "::error::Installer signing failed with exit code $SIGN_EXIT"
-            cat signing_output.log
+          # Check if signed file was produced
+          SIGNED_FILE="$SIGNED_DIR/${INSTALLER}"
+          if [ -f "$SIGNED_FILE" ]; then
+            echo "Signed installer found, replacing original..."
+            cp "$SIGNED_FILE" "${GITHUB_WORKSPACE}/${INSTALLER}"
+          else
+            echo "::error::Signed installer not found at $SIGNED_FILE"
+            ls -la "$SIGNED_DIR/" || true
             exit 1
           fi
 
