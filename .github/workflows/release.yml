@@ -131,10 +131,6 @@ jobs:
           PYAPP_SPLASH_IMAGE: ${{ github.workspace }}/pyapp-src/splash-screen.png
         run: |
           cd pyapp-src
-          # On Windows, set the subsystem to WINDOWS to suppress the console window
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            export RUSTFLAGS="-C link-args=/SUBSYSTEM:WINDOWS"
-          fi
           cargo build --release --features splash --target ${{ matrix.target }}
 
       - name: Prepare binary (Unix)
