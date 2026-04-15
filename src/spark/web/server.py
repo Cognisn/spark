@@ -488,7 +488,18 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     _background_init(app, ctx)
 
     host = ctx.settings.get("interface.host", "127.0.0.1")
-    port = _find_free_port(host)
+    # Use a fixed default port so localStorage (theme, panel state) persists
+    # across restarts. Fall back to a random port if the default is occupied.
+    default_port = int(ctx.settings.get("interface.port", 9700))
+    try:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, default_port))
+        port = default_port
+    except OSError:
+        port = _find_free_port(host)
+        logger.info("Default port %d in use, using %d instead", default_port, port)
     ssl_enabled = ctx.settings.get("interface.ssl.enabled", False)
 
     # Generate auth code and build auto-login URL
@@ -532,16 +543,19 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
             ssl_kwargs["ssl_certfile"] = cert_file
             ssl_kwargs["ssl_keyfile"] = key_file
             logger.info("SSL enabled with certificate: %s", cert_file)
-        elif auto_generate:
+        else:
+            # Auto-generate a self-signed certificate if no cert files provided
             try:
                 from spark.web.ssl_utils import generate_self_signed_cert
 
                 cert_path, key_path = generate_self_signed_cert()
                 ssl_kwargs["ssl_certfile"] = str(cert_path)
                 ssl_kwargs["ssl_keyfile"] = str(key_path)
-                logger.info("SSL enabled with auto-generated certificate")
+                logger.info("SSL enabled with auto-generated self-signed certificate")
             except Exception as e:
-                logger.warning("Failed to generate SSL certificate: %s", e)
+                logger.warning("Failed to generate SSL certificate: %s — falling back to HTTP", e)
+                ssl_enabled = False
+                scheme = "http"
 
     logger.debug("Creating uvicorn config...")
     try:
