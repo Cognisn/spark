@@ -479,8 +479,7 @@ jobs:
           !define MUI_WELCOMEPAGE_TEXT "This will install Spark — Secure Personal AI Research Kit by Cognisn.\$\\r\$\\n\$\\r\$\\nSpark provides a multi-provider LLM interface with MCP tool integration, autonomous actions, and a built-in security layer.\$\\r\$\\n\$\\r\$\\nClick Next to continue."
           !define MUI_FINISHPAGE_TITLE "Spark Installation Complete"
           !define MUI_FINISHPAGE_TEXT "Spark has been installed successfully.\$\\r\$\\n\$\\r\$\\nClick Finish to close the installer."
-          !define MUI_FINISHPAGE_RUN "wscript.exe"
-          !define MUI_FINISHPAGE_RUN_PARAMETERS '"\$INSTDIR\\launcher.vbs"'
+          !define MUI_FINISHPAGE_RUN "\$INSTDIR\\launcher.vbs"
           !define MUI_FINISHPAGE_RUN_TEXT "Launch Spark"
 
           !insertmacro MUI_PAGE_WELCOME
@@ -641,6 +640,7 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        continue-on-error: true  # Allow re-releases when version already exists
 
   # Step 7: Attach all artifacts to the GitHub Release
   attach-release:
