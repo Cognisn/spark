@@ -103,10 +103,14 @@ jobs:
         id: pyapp_config
         shell: bash
         run: |
-          # GUI mode: uses pythonw.exe on Windows (no console window)
-          # The WindowsSelectorEventLoopPolicy in application.py prevents the
-          # asyncio hang that previously required IS_GUI=0
-          echo "is_gui=1" >> $GITHUB_OUTPUT
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Windows: use IS_GUI=0 (python.exe) because pythonw.exe
+            # swallows errors and breaks uvicorn. The NSIS installer
+            # hides the console via a VBS launcher script.
+            echo "is_gui=0" >> $GITHUB_OUTPUT
+          else
+            echo "is_gui=1" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate icons and splash image
         run: |
@@ -438,6 +442,15 @@ jobs:
             fi
           done
 
+      - name: Create VBS launcher script
+        shell: bash
+        run: |
+          # VBS script hides the console window when launching spark-engine.exe
+          cat > launcher.vbs <<'VBSEOF'
+          Set WshShell = CreateObject("WScript.Shell")
+          WshShell.Run """" & Replace(WScript.ScriptFullName, "launcher.vbs", "spark-engine.exe") & """", 0, False
+          VBSEOF
+
       - name: Create NSIS installer script
         shell: bash
         env:
@@ -466,7 +479,8 @@ jobs:
           !define MUI_WELCOMEPAGE_TEXT "This will install Spark — Secure Personal AI Research Kit by Cognisn.\$\\r\$\\n\$\\r\$\\nSpark provides a multi-provider LLM interface with MCP tool integration, autonomous actions, and a built-in security layer.\$\\r\$\\n\$\\r\$\\nClick Next to continue."
           !define MUI_FINISHPAGE_TITLE "Spark Installation Complete"
           !define MUI_FINISHPAGE_TEXT "Spark has been installed successfully.\$\\r\$\\n\$\\r\$\\nClick Finish to close the installer."
-          !define MUI_FINISHPAGE_RUN "\$INSTDIR\\spark.exe"
+          !define MUI_FINISHPAGE_RUN "wscript.exe"
+          !define MUI_FINISHPAGE_RUN_PARAMETERS '"\$INSTDIR\\launcher.vbs"'
           !define MUI_FINISHPAGE_RUN_TEXT "Launch Spark"
 
           !insertmacro MUI_PAGE_WELCOME
@@ -481,7 +495,6 @@ jobs:
 
           Section "Install"
             ; Clean previous installation (preserve user config in %APPDATA%\spark)
-            ; Remove old binaries and launcher scripts
             Delete "\$INSTDIR\\spark-engine.exe"
             Delete "\$INSTDIR\\spark.exe"
             Delete "\$INSTDIR\\launcher.vbs"
@@ -493,16 +506,32 @@ jobs:
             ; Clear PyApp cache so the new wheel is extracted fresh
             RMDir /r "\$LOCALAPPDATA\\pyapp"
 
+            ; Check and install Visual C++ Redistributable if needed
+            ReadRegStr \$0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\X64" "Installed"
+            StrCmp \$0 "1" vcredist_done
+              DetailPrint "Installing Visual C++ Redistributable..."
+              NSISdl::download "https://aka.ms/vs/17/release/vc_redist.x64.exe" "\$TEMP\\vc_redist.x64.exe"
+              Pop \$0
+              StrCmp \$0 "success" vcredist_install
+                DetailPrint "Warning: Could not download VC++ Redistributable. Some features may not work."
+                Goto vcredist_done
+              vcredist_install:
+                ExecWait '"\$TEMP\\vc_redist.x64.exe" /install /quiet /norestart' \$0
+                DetailPrint "VC++ Redistributable installer returned: \$0"
+                Delete "\$TEMP\\vc_redist.x64.exe"
+            vcredist_done:
+
             ; Install new files
             SetOutPath \$INSTDIR
             File "binary\\spark-windows-x86_64.exe"
             Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark-engine.exe"
+            File "launcher.vbs"
             File "assets\\icons\\spark.ico"
 
-            ; Shortcuts launch spark-engine.exe directly (splash screen is built into PyApp)
+            ; Shortcuts use the VBS launcher to hide the console window
             CreateDirectory "\$SMPROGRAMS\\Cognisn"
-            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
-            CreateShortCut "\$DESKTOP\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$DESKTOP\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
 
             WriteUninstaller "\$INSTDIR\\Uninstall.exe"
 
@@ -510,6 +539,7 @@ jobs:
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "UninstallString" "\$INSTDIR\\Uninstall.exe"
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "Publisher" "Cognisn"
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayIcon" "\$INSTDIR\\spark.ico"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayVersion" "${VERSION}"
           SectionEnd
 
           Section "Uninstall"
@@ -518,6 +548,7 @@ jobs:
 
             ; Remove all installed files
             Delete "\$INSTDIR\\spark-engine.exe"
+            Delete "\$INSTDIR\\launcher.vbs"
             Delete "\$INSTDIR\\spark.ico"
             Delete "\$INSTDIR\\Uninstall.exe"
             RMDir "\$INSTDIR"
