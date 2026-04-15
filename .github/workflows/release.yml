@@ -171,7 +171,9 @@ jobs:
           fi
 
           # Download CodeSignTool
-          curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          curl -L --retry 3 --retry-delay 5 -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          # Verify we got a valid zip (not an HTML error page)
+          file CodeSignTool.zip | grep -q "Zip archive" || { echo "::error::Downloaded file is not a valid zip"; file CodeSignTool.zip; exit 1; }
           unzip -o CodeSignTool.zip -d CodeSignTool
 
           # Find CodeSignTool.bat
@@ -595,7 +597,9 @@ jobs:
           fi
 
           # Download CodeSignTool
-          curl -L -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          curl -L --retry 3 --retry-delay 5 -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          # Verify we got a valid zip (not an HTML error page)
+          file CodeSignTool.zip | grep -q "Zip archive" || { echo "::error::Downloaded file is not a valid zip"; file CodeSignTool.zip; exit 1; }
           unzip -o CodeSignTool.zip -d CodeSignTool
 
           CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
