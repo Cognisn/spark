@@ -488,18 +488,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     _background_init(app, ctx)
 
     host = ctx.settings.get("interface.host", "127.0.0.1")
-    # Use a fixed default port so localStorage (theme, panel state) persists
-    # across restarts. Fall back to a random port if the default is occupied.
-    default_port = int(ctx.settings.get("interface.port", 9700))
-    try:
-        import socket
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, default_port))
-        port = default_port
-    except OSError:
-        port = _find_free_port(host)
-        logger.info("Default port %d in use, using %d instead", default_port, port)
+    port = _find_free_port(host)
     ssl_enabled = ctx.settings.get("interface.ssl.enabled", False)
 
     # Generate auth code and build auto-login URL

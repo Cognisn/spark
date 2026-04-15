@@ -18,6 +18,45 @@ async def heartbeat(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@router.get("/api/theme")
+async def get_theme(request: Request) -> JSONResponse:
+    """Get the saved theme preference."""
+    ctx = getattr(request.app.state, "ctx", None)
+    if ctx:
+        theme = ctx.settings.get("interface.theme", "dark")
+        return JSONResponse({"theme": theme})
+    return JSONResponse({"theme": "dark"})
+
+
+@router.post("/api/theme")
+async def set_theme(request: Request) -> JSONResponse:
+    """Save the theme preference to config.yaml."""
+    import yaml
+
+    data = await request.json()
+    theme = data.get("theme", "dark")
+    if theme not in ("dark", "light"):
+        return JSONResponse({"error": "Invalid theme"}, status_code=400)
+
+    from spark.core.application import _get_config_path
+
+    config_path = _get_config_path()
+    try:
+        raw = yaml.safe_load(config_path.read_text()) or {} if config_path.exists() else {}
+        if "interface" not in raw:
+            raw["interface"] = {}
+        raw["interface"]["theme"] = theme
+        config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+
+        ctx = getattr(request.app.state, "ctx", None)
+        if ctx:
+            ctx.settings.reload()
+
+        return JSONResponse({"status": "ok", "theme": theme})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @router.post("/api/open-folder")
 async def open_folder(request: Request) -> JSONResponse:
     """Open a system folder in the file browser."""
