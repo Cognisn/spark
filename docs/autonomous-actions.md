@@ -108,7 +108,7 @@ sequenceDiagram
     Executor->>Executor: Record run start
     Executor->>LLM: invoke_model(prompt)
 
-    loop Tool Use (max 10 iterations)
+    loop Tool Use (max 25 iterations)
         LLM->>Executor: Tool call
         Executor->>Tools: Execute tool
         Tools-->>Executor: Result
@@ -162,13 +162,26 @@ Or via Python:
 python -m spark.daemon.tray
 ```
 
+## Run Now
+
+Each action card on the Actions page includes a **Run Now** button that triggers immediate execution regardless of the action's schedule.
+
+- The action runs in a background thread using the same executor as the daemon (including independent MCP connections)
+- A toast notification confirms the action has been queued
+- Results appear in the action's **Run History** alongside scheduled runs, tagged with a "manual" trigger type
+- Run Now respects the action's configured model, prompt, context mode, and tool permissions
+- If the action is currently running (from a scheduled trigger or a previous Run Now), the request is rejected to prevent concurrent execution
+
+This is useful for testing actions after creation, re-running a failed action, or triggering an action outside its normal schedule.
+
 ## Managing Actions
 
 The **Actions** page provides:
 
 - **Enable/disable** toggle per action
+- **Run Now** button for immediate execution
 - **Edit** action configuration (prompt, schedule, tools, settings)
-- **Run history** with results, token usage, and error details
+- **Run history** with results, tool activity log, token usage, and error details
 - **Delete** actions
 - **Tool permissions** per action (separate from conversation permissions)
 

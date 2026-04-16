@@ -34,6 +34,12 @@ graph TD
     Doc --> read_pdf
     Doc --> read_powerpoint
 
+    Builtin --> DocCreate[Document Creation]
+    DocCreate --> create_word
+    DocCreate --> create_excel
+    DocCreate --> create_powerpoint
+    DocCreate --> create_pdf
+
     Arc --> list_archive
     Arc --> extract_archive
 
@@ -118,6 +124,29 @@ embedded_tools:
     mode: read
     max_file_size_mb: 50
 ```
+
+### Document Creation
+
+Create Word, Excel, PowerPoint, and PDF documents with advanced formatting. Requires `allowed_paths` to be configured and Documents mode set to `read_write`.
+
+| Tool | Description |
+|------|-------------|
+| `create_word` | Create .docx files with headings, paragraphs, tables, lists, images, and custom styles |
+| `create_excel` | Create .xlsx spreadsheets with multiple sheets, formulas, column widths, and cell formatting |
+| `create_powerpoint` | Create .pptx presentations with titled slides, bullet points, images, and speaker notes |
+| `create_pdf` | Create PDF documents with headings, paragraphs, tables, images, and page layout options |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  documents:
+    enabled: true
+    mode: read_write               # Must be read_write for document creation
+    max_file_size_mb: 50
+```
+
+> **Note:** When the documents mode is set to `read` (the default), only the read tools (`read_word`, `read_excel`, etc.) are available. Set the mode to `read_write` to enable both reading and creation tools.
 
 ### Archives
 
@@ -279,7 +308,7 @@ Conversation-level permissions are checked first, then global permissions. When 
 | Category | Tools |
 |----------|-------|
 | filesystem | read_file, write_file, list_directory, search_files, get_file_info, find_in_file, get_directory_tree |
-| documents | read_word, read_excel, read_pdf, read_powerpoint |
+| documents | read_word, read_excel, read_pdf, read_powerpoint, create_word, create_excel, create_powerpoint, create_pdf |
 | archives | list_archive, extract_archive |
 | web | web_search, web_fetch |
 | system_commands | run_command |
