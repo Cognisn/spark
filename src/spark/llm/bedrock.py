@@ -225,11 +225,11 @@ class BedrockProvider(LLMService):
                 logger.debug("Resolved model %s to inference profile %s", model_id, resolved)
             return resolved
 
-        # Try cross-region inference profile format
-        # Region prefixes: us-* → us, eu-* → eu, ap-* → ap, etc.
-        region_prefix = self._region.split("-")[0]
-        # Check if the model ID already has a region prefix (e.g. "ap.anthropic...")
-        known_prefixes = {"us", "eu", "ap", "me", "sa", "af", "ca"}
+        # Try cross-region inference profile format using the correct
+        # region-to-prefix mapping (e.g. ap-southeast-2 → au, not ap).
+        region_prefix = _region_to_profile_prefix(self._region)
+        # Check if the model ID already has a region prefix (e.g. "au.anthropic...")
+        known_prefixes = {"us", "eu", "ap", "au", "apac", "me", "sa", "af", "ca"}
         first_segment = model_id.split(".")[0] if "." in model_id else ""
         if first_segment not in known_prefixes:
             cross_region_id = f"{region_prefix}.{model_id}"

@@ -1211,7 +1211,7 @@ class ConversationManager:
             elif name == "X.AI" or "xai" in str(provider_type).lower():
                 return provider_type(api_key=getattr(provider, "_api_key", ""))
             elif name == "AWS Bedrock" or "bedrock" in str(provider_type).lower():
-                return provider_type(
+                clone = provider_type(
                     region=getattr(provider, "_region", "us-east-1"),
                     profile=getattr(provider, "_profile", None),
                     access_key=getattr(provider, "_access_key", None),
@@ -1219,6 +1219,12 @@ class ConversationManager:
                     session_token=getattr(provider, "_session_token", None),
                     read_timeout=getattr(provider, "_read_timeout", 300),
                 )
+                # Copy the inference profile cache so the clone can resolve
+                # model IDs without re-listing profiles from the API.
+                profiles = getattr(provider, "_inference_profiles", {})
+                if profiles:
+                    clone._inference_profiles = dict(profiles)
+                return clone
         except Exception as e:
             logger.debug("Could not clone provider %s: %s", name, e)
         return None
