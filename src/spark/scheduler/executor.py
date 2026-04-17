@@ -679,9 +679,13 @@ class ActionExecutor:
     def _init_bedrock(self, settings: Any) -> Any:
         from spark.llm.bedrock import BedrockProvider
 
+        read_timeout = int(
+            settings.get("providers.aws_bedrock.read_timeout", 300) or 300
+        )
         return BedrockProvider(
             region=settings.get("providers.aws_bedrock.region", "us-east-1"),
             profile=settings.get("providers.aws_bedrock.profile"),
+            read_timeout=read_timeout,
         )
 
     def _init_ollama(self, settings: Any) -> Any:

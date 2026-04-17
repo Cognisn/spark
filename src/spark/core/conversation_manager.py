@@ -1217,6 +1217,7 @@ class ConversationManager:
                     access_key=getattr(provider, "_access_key", None),
                     secret_key=getattr(provider, "_secret_key", None),
                     session_token=getattr(provider, "_session_token", None),
+                    read_timeout=getattr(provider, "_read_timeout", 300),
                 )
         except Exception as e:
             logger.debug("Could not clone provider %s: %s", name, e)

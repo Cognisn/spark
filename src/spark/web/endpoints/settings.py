@@ -548,6 +548,16 @@ def _build_sections(settings: object) -> list[dict]:
                             "bedrock_auth": "session",
                             "help": "Required for temporary session credentials only.",
                         },
+                        {
+                            **_number(
+                                "providers.aws_bedrock.read_timeout",
+                                "Read Timeout (seconds)",
+                                settings,
+                                300,
+                            ),
+                            "help": "Maximum time to wait for a response from Bedrock. "
+                            "Increase for large contexts or complex tool-use conversations.",
+                        },
                     ],
                 },
                 {

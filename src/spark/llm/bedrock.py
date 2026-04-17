@@ -66,6 +66,7 @@ class BedrockProvider(LLMService):
         access_key: str | None = None,
         secret_key: str | None = None,
         session_token: str | None = None,
+        read_timeout: int = 300,
     ) -> None:
         import boto3
         from botocore.config import Config
@@ -81,8 +82,8 @@ class BedrockProvider(LLMService):
             session_kwargs["profile_name"] = profile
         session = boto3.Session(**session_kwargs)
         # LLM responses can take well over 60s for large contexts or
-        # tool-heavy conversations — increase the read timeout.
-        client_config = Config(read_timeout=300, retries={"max_attempts": 2})
+        # tool-heavy conversations — use configurable read timeout.
+        client_config = Config(read_timeout=read_timeout, retries={"max_attempts": 2})
         self._client = session.client("bedrock-runtime", config=client_config)
         self._bedrock = session.client("bedrock")
         self._region = region
@@ -90,6 +91,7 @@ class BedrockProvider(LLMService):
         self._access_key = access_key
         self._secret_key = secret_key
         self._session_token = session_token
+        self._read_timeout = read_timeout
         self._model_id: str | None = None
         self._cached_models: list[dict[str, Any]] | None = None
         # Map model IDs to inference profile IDs/ARNs for on-demand invocation

@@ -132,6 +132,9 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             session_token = _resolve_secret(
                 ctx, settings.get("providers.aws_bedrock.session_token")
             )
+            read_timeout = int(
+                settings.get("providers.aws_bedrock.read_timeout", 300) or 300
+            )
 
             # Only pass explicit keys when auth method is not SSO.
             if auth_method in ("iam", "session") and access_key and secret_key:
@@ -140,9 +143,12 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
                     access_key=access_key,
                     secret_key=secret_key,
                     session_token=session_token or None,
+                    read_timeout=read_timeout,
                 )
             else:
-                provider = BedrockProvider(region=region, profile=profile)
+                provider = BedrockProvider(
+                    region=region, profile=profile, read_timeout=read_timeout
+                )
             mgr.register_provider(provider)
         except Exception as e:
             logger.warning("Failed to init AWS Bedrock provider: %s", e)
