@@ -40,6 +40,8 @@ class BedrockProvider(LLMService):
         self._region = region
         self._model_id: str | None = None
         self._cached_models: list[dict[str, Any]] | None = None
+        # Map model IDs to inference profile IDs/ARNs for on-demand invocation
+        self._inference_profiles: dict[str, str] = {}
 
     def get_provider_name(self) -> str:
         return "AWS Bedrock"
@@ -48,28 +50,96 @@ class BedrockProvider(LLMService):
         return f"AWS Bedrock ({self._region})"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        """List models available in Bedrock (cached after first call)."""
+        """List models available in Bedrock via inference profiles.
+
+        AWS Bedrock requires inference profiles for on-demand model invocation.
+        We list inference profiles (which wrap foundation models) and use the
+        profile ID for API calls instead of the raw model ID.
+        """
         if self._cached_models is not None:
             return self._cached_models
         try:
-            resp = self._bedrock.list_foundation_models()
             models = []
-            for m in resp.get("modelSummaries", []):
-                model_id = m.get("modelId", "")
-                models.append(
-                    {
-                        "id": model_id,
-                        "name": m.get("modelName", model_id),
-                        "provider": "AWS Bedrock",
-                        "supports_tools": "anthropic" in model_id.lower(),
-                        "context_length": 200_000 if "claude" in model_id.lower() else 8_192,
-                    }
-                )
+
+            # First try inference profiles — required for on-demand invocation
+            try:
+                profiles = self._list_inference_profiles()
+                for p in profiles:
+                    profile_id = p.get("inferenceProfileId", "")
+                    profile_name = p.get("inferenceProfileName", profile_id)
+                    # Extract the underlying model IDs from the profile
+                    model_ids = [m.get("modelArn", "").split("/")[-1] for m in p.get("models", [])]
+                    base_model = model_ids[0] if model_ids else profile_id
+
+                    models.append(
+                        {
+                            "id": profile_id,
+                            "name": profile_name,
+                            "provider": "AWS Bedrock",
+                            "supports_tools": any(
+                                "anthropic" in mid.lower() or "claude" in mid.lower()
+                                for mid in model_ids
+                            ),
+                            "context_length": (
+                                200_000
+                                if any("claude" in mid.lower() for mid in model_ids)
+                                else 8_192
+                            ),
+                        }
+                    )
+                    # Map profile ID to itself for use in API calls
+                    self._inference_profiles[profile_id] = profile_id
+                    # Also map any underlying model IDs to this profile
+                    for mid in model_ids:
+                        self._inference_profiles[mid] = profile_id
+
+                if models:
+                    logger.info("Loaded %d Bedrock inference profiles", len(models))
+            except Exception as e:
+                logger.debug("Inference profiles not available: %s", e)
+
+            # Fall back to foundation models if no profiles found
+            if not models:
+                resp = self._bedrock.list_foundation_models()
+                for m in resp.get("modelSummaries", []):
+                    model_id = m.get("modelId", "")
+                    models.append(
+                        {
+                            "id": model_id,
+                            "name": m.get("modelName", model_id),
+                            "provider": "AWS Bedrock",
+                            "supports_tools": "anthropic" in model_id.lower(),
+                            "context_length": (200_000 if "claude" in model_id.lower() else 8_192),
+                        }
+                    )
+
             self._cached_models = models
             return models
         except Exception as e:
             logger.error("Failed to list Bedrock models: %s", e)
             return []
+
+    def _list_inference_profiles(self) -> list[dict]:
+        """List available inference profiles with pagination."""
+        profiles: list[dict] = []
+        params: dict[str, Any] = {"maxResults": 100}
+        while True:
+            resp = self._bedrock.list_inference_profiles(**params)
+            profiles.extend(resp.get("inferenceProfileSummaries", []))
+            next_token = resp.get("nextToken")
+            if not next_token:
+                break
+            params["nextToken"] = next_token
+        return profiles
+
+    def _resolve_model_id(self, model_id: str) -> str:
+        """Resolve a model ID to its inference profile ID if available."""
+        if model_id in self._inference_profiles:
+            resolved = self._inference_profiles[model_id]
+            if resolved != model_id:
+                logger.debug("Resolved model %s to inference profile %s", model_id, resolved)
+            return resolved
+        return model_id
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -100,10 +170,13 @@ class BedrockProvider(LLMService):
         if not self._model_id:
             raise RuntimeError("No model selected — call set_model() first")
 
+        # Resolve model ID to inference profile if available
+        resolved_id = self._resolve_model_id(self._model_id)
+
         # Build Converse API request
         converse_messages = _convert_messages(messages)
         req: dict[str, Any] = {
-            "modelId": self._model_id,
+            "modelId": resolved_id,
             "messages": converse_messages,
             "inferenceConfig": {
                 "maxTokens": max_tokens,
