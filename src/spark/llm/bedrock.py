@@ -408,21 +408,32 @@ def _normalise_response(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert standard messages to Bedrock Converse format."""
+    """Convert standard messages to Bedrock Converse format.
+
+    Bedrock's Converse API is strict about empty text fields — any message
+    with a blank text content block is rejected. This function filters out
+    empty text blocks and skips messages that would be empty after filtering.
+    """
     converted = []
     for msg in messages:
         role = msg["role"]
         content = msg["content"]
 
         if isinstance(content, str):
+            # Skip completely empty string messages
+            if not content.strip():
+                continue
             converted.append({"role": role, "content": [{"text": content}]})
         elif isinstance(content, list):
             blocks = []
             for block in content:
                 if isinstance(block, str):
-                    blocks.append({"text": block})
+                    if block.strip():
+                        blocks.append({"text": block})
                 elif block.get("type") == "text":
-                    blocks.append({"text": block["text"]})
+                    text = block.get("text", "")
+                    if text.strip():
+                        blocks.append({"text": text})
                 elif block.get("type") == "tool_use":
                     blocks.append(
                         {
@@ -441,6 +452,9 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         )
                     else:
                         result_text = str(result_content)
+                    # Bedrock requires non-empty tool result text
+                    if not result_text.strip():
+                        result_text = "(no output)"
                     blocks.append(
                         {
                             "toolResult": {
@@ -450,11 +464,15 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         }
                     )
                 else:
-                    blocks.append({"text": str(block)})
+                    text = str(block)
+                    if text.strip():
+                        blocks.append({"text": text})
             if blocks:
                 converted.append({"role": role, "content": blocks})
         else:
-            converted.append({"role": role, "content": [{"text": str(content)}]})
+            text = str(content)
+            if text.strip():
+                converted.append({"role": role, "content": [{"text": text}]})
 
     return converted
 
