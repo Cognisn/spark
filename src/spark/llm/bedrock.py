@@ -196,6 +196,12 @@ class BedrockProvider(LLMService):
 
         # Resolve model ID to inference profile if available
         resolved_id = self._resolve_model_id(self._model_id)
+        logger.info(
+            "Bedrock invoke: model_id=%s → resolved=%s (profiles=%d)",
+            self._model_id,
+            resolved_id,
+            len(self._inference_profiles),
+        )
 
         # Build Converse API request
         converse_messages = _convert_messages(messages)
