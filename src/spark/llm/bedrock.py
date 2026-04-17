@@ -64,6 +64,7 @@ class BedrockProvider(LLMService):
             # First try inference profiles — required for on-demand invocation
             try:
                 profiles = self._list_inference_profiles()
+                logger.info("Found %d inference profiles in %s", len(profiles), self._region)
                 for p in profiles:
                     profile_id = p.get("inferenceProfileId", "")
                     profile_name = p.get("inferenceProfileName", profile_id)
@@ -96,7 +97,7 @@ class BedrockProvider(LLMService):
                 if models:
                     logger.info("Loaded %d Bedrock inference profiles", len(models))
             except Exception as e:
-                logger.debug("Inference profiles not available: %s", e)
+                logger.warning("Inference profiles not available: %s", e)
 
             # Fall back to foundation models if no profiles found
             if not models:
@@ -133,12 +134,33 @@ class BedrockProvider(LLMService):
         return profiles
 
     def _resolve_model_id(self, model_id: str) -> str:
-        """Resolve a model ID to its inference profile ID if available."""
+        """Resolve a model ID to its inference profile ID if available.
+
+        AWS Bedrock cross-region inference profiles use a regional prefix
+        (e.g. ``us.anthropic.claude-3-5-sonnet-20240620-v1:0`` for us-east-1).
+        If no explicit mapping exists, we try constructing the cross-region
+        profile ID from the model ID and the current region.
+        """
+        # Direct mapping from list_inference_profiles
         if model_id in self._inference_profiles:
             resolved = self._inference_profiles[model_id]
             if resolved != model_id:
                 logger.debug("Resolved model %s to inference profile %s", model_id, resolved)
             return resolved
+
+        # Try cross-region inference profile format
+        # Region prefixes: us-* → us, eu-* → eu, ap-* → ap, etc.
+        region_prefix = self._region.split("-")[0]
+        if "." not in model_id:
+            # Model ID like "anthropic.claude-3-5-sonnet-20240620-v1:0"
+            cross_region_id = f"{region_prefix}.{model_id}"
+            logger.info(
+                "No inference profile mapping for %s — trying cross-region ID: %s",
+                model_id,
+                cross_region_id,
+            )
+            return cross_region_id
+
         return model_id
 
     def set_model(self, model_id: str) -> None:
