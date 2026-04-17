@@ -1211,7 +1211,13 @@ class ConversationManager:
             elif name == "X.AI" or "xai" in str(provider_type).lower():
                 return provider_type(api_key=getattr(provider, "_api_key", ""))
             elif name == "AWS Bedrock" or "bedrock" in str(provider_type).lower():
-                return provider_type(region=getattr(provider, "_region", "us-east-1"))
+                return provider_type(
+                    region=getattr(provider, "_region", "us-east-1"),
+                    profile=getattr(provider, "_profile", None),
+                    access_key=getattr(provider, "_access_key", None),
+                    secret_key=getattr(provider, "_secret_key", None),
+                    session_token=getattr(provider, "_session_token", None),
+                )
         except Exception as e:
             logger.debug("Could not clone provider %s: %s", name, e)
         return None

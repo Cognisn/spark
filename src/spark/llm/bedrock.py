@@ -82,6 +82,10 @@ class BedrockProvider(LLMService):
         self._client = session.client("bedrock-runtime")
         self._bedrock = session.client("bedrock")
         self._region = region
+        self._profile = profile
+        self._access_key = access_key
+        self._secret_key = secret_key
+        self._session_token = session_token
         self._model_id: str | None = None
         self._cached_models: list[dict[str, Any]] | None = None
         # Map model IDs to inference profile IDs/ARNs for on-demand invocation
