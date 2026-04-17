@@ -68,6 +68,7 @@ class BedrockProvider(LLMService):
         session_token: str | None = None,
     ) -> None:
         import boto3
+        from botocore.config import Config
 
         session_kwargs: dict[str, Any] = {"region_name": region}
         if access_key and secret_key:
@@ -79,7 +80,10 @@ class BedrockProvider(LLMService):
         elif profile:
             session_kwargs["profile_name"] = profile
         session = boto3.Session(**session_kwargs)
-        self._client = session.client("bedrock-runtime")
+        # LLM responses can take well over 60s for large contexts or
+        # tool-heavy conversations — increase the read timeout.
+        client_config = Config(read_timeout=300, retries={"max_attempts": 2})
+        self._client = session.client("bedrock-runtime", config=client_config)
         self._bedrock = session.client("bedrock")
         self._region = region
         self._profile = profile
