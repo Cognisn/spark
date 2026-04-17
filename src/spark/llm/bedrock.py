@@ -11,6 +11,50 @@ from spark.llm.base import LLMService
 logger = logging.getLogger(__name__)
 
 
+def _region_to_profile_prefix(region: str) -> str:
+    """Map an AWS region to its Bedrock inference profile prefix.
+
+    AWS Bedrock inference profiles use region-specific prefixes:
+    - ``us`` for US regions (us-east-1, us-west-2)
+    - ``eu`` for European regions (eu-west-1, eu-central-1)
+    - ``ap`` for some Asia-Pacific regions (ap-southeast-1, ap-northeast-1)
+    - ``au`` for Australia (ap-southeast-2)
+    - ``apac`` for broader APAC coverage
+    - etc.
+
+    The exact prefix depends on the profile — AWS creates profiles with
+    different regional scopes. We match the most specific prefix for the
+    configured region so that models stay within the user's allowed region.
+    """
+    # Map specific regions to their local profile prefixes
+    _REGION_PREFIX_MAP: dict[str, str] = {
+        "us-east-1": "us",
+        "us-east-2": "us",
+        "us-west-1": "us",
+        "us-west-2": "us",
+        "eu-west-1": "eu",
+        "eu-west-2": "eu",
+        "eu-west-3": "eu",
+        "eu-central-1": "eu",
+        "eu-central-2": "eu",
+        "eu-north-1": "eu",
+        "ap-southeast-2": "au",
+        "ap-southeast-1": "ap",
+        "ap-northeast-1": "ap",
+        "ap-northeast-2": "ap",
+        "ap-south-1": "ap",
+        "ca-central-1": "ca",
+        "sa-east-1": "sa",
+        "me-south-1": "me",
+        "me-central-1": "me",
+        "af-south-1": "af",
+    }
+    if region in _REGION_PREFIX_MAP:
+        return _REGION_PREFIX_MAP[region]
+    # Fallback: use the first segment of the region (us, eu, ap, etc.)
+    return region.split("-")[0]
+
+
 class BedrockProvider(LLMService):
     """AWS Bedrock provider using boto3."""
 
@@ -65,12 +109,25 @@ class BedrockProvider(LLMService):
             try:
                 profiles = self._list_inference_profiles()
                 logger.info("Found %d inference profiles in %s", len(profiles), self._region)
+
+                # Filter profiles to those that route to the configured region.
+                # Cross-region profiles use prefixes (us, eu, ap, apac, etc.)
+                # that may route to regions blocked by SCPs. Only include
+                # profiles whose prefix matches the configured region.
+                local_prefix = _region_to_profile_prefix(self._region)
+                logger.info("Filtering profiles for region prefix: %s", local_prefix)
+
                 for p in profiles:
                     profile_id = p.get("inferenceProfileId", "")
                     profile_name = p.get("inferenceProfileName", profile_id)
+
+                    # Only include profiles that route locally
+                    prefix = profile_id.split(".")[0] if "." in profile_id else ""
+                    if prefix and prefix != local_prefix:
+                        continue
+
                     # Extract the underlying model IDs from the profile
                     model_ids = [m.get("modelArn", "").split("/")[-1] for m in p.get("models", [])]
-                    base_model = model_ids[0] if model_ids else profile_id
 
                     models.append(
                         {
@@ -95,7 +152,17 @@ class BedrockProvider(LLMService):
                         self._inference_profiles[mid] = profile_id
 
                 if models:
-                    logger.info("Loaded %d Bedrock inference profiles", len(models))
+                    logger.info(
+                        "Loaded %d Bedrock inference profiles (filtered for %s)",
+                        len(models),
+                        local_prefix,
+                    )
+                else:
+                    logger.info(
+                        "No inference profiles matched prefix %s out of %d total",
+                        local_prefix,
+                        len(profiles),
+                    )
             except Exception as e:
                 logger.warning("Inference profiles not available: %s", e)
 
