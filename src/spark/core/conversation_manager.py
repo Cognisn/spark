@@ -720,7 +720,7 @@ class ConversationManager:
             self._in_tool_use_loop = False
 
         # Check for deferred compaction
-        self._check_compaction(conversation_id, model_id, status_callback)
+        self._check_compaction(conversation_id, model_id, user_guid, status_callback)
 
         return {
             "content": final_content,
@@ -1459,6 +1459,7 @@ class ConversationManager:
         self,
         conversation_id: int,
         model_id: str,
+        user_guid: str,
         status_callback: Callable | None = None,
     ) -> None:
         """Check and perform context compaction if needed."""
@@ -1466,6 +1467,7 @@ class ConversationManager:
             self._compactor.check_and_compact(
                 conversation_id,
                 model_id,
+                user_guid,
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
             )
