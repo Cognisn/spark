@@ -11,6 +11,50 @@ from spark.llm.base import LLMService
 logger = logging.getLogger(__name__)
 
 
+def _region_to_profile_prefix(region: str) -> str:
+    """Map an AWS region to its Bedrock inference profile prefix.
+
+    AWS Bedrock inference profiles use region-specific prefixes:
+    - ``us`` for US regions (us-east-1, us-west-2)
+    - ``eu`` for European regions (eu-west-1, eu-central-1)
+    - ``ap`` for some Asia-Pacific regions (ap-southeast-1, ap-northeast-1)
+    - ``au`` for Australia (ap-southeast-2)
+    - ``apac`` for broader APAC coverage
+    - etc.
+
+    The exact prefix depends on the profile — AWS creates profiles with
+    different regional scopes. We match the most specific prefix for the
+    configured region so that models stay within the user's allowed region.
+    """
+    # Map specific regions to their local profile prefixes
+    _REGION_PREFIX_MAP: dict[str, str] = {
+        "us-east-1": "us",
+        "us-east-2": "us",
+        "us-west-1": "us",
+        "us-west-2": "us",
+        "eu-west-1": "eu",
+        "eu-west-2": "eu",
+        "eu-west-3": "eu",
+        "eu-central-1": "eu",
+        "eu-central-2": "eu",
+        "eu-north-1": "eu",
+        "ap-southeast-2": "au",
+        "ap-southeast-1": "ap",
+        "ap-northeast-1": "ap",
+        "ap-northeast-2": "ap",
+        "ap-south-1": "ap",
+        "ca-central-1": "ca",
+        "sa-east-1": "sa",
+        "me-south-1": "me",
+        "me-central-1": "me",
+        "af-south-1": "af",
+    }
+    if region in _REGION_PREFIX_MAP:
+        return _REGION_PREFIX_MAP[region]
+    # Fallback: use the first segment of the region (us, eu, ap, etc.)
+    return region.split("-")[0]
+
+
 class BedrockProvider(LLMService):
     """AWS Bedrock provider using boto3."""
 
@@ -19,18 +63,39 @@ class BedrockProvider(LLMService):
         region: str = "us-east-1",
         *,
         profile: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        session_token: str | None = None,
+        read_timeout: int = 300,
     ) -> None:
         import boto3
+        from botocore.config import Config
 
         session_kwargs: dict[str, Any] = {"region_name": region}
-        if profile:
+        if access_key and secret_key:
+            # Explicit IAM / session credentials supplied via settings.
+            session_kwargs["aws_access_key_id"] = access_key
+            session_kwargs["aws_secret_access_key"] = secret_key
+            if session_token:
+                session_kwargs["aws_session_token"] = session_token
+        elif profile:
             session_kwargs["profile_name"] = profile
         session = boto3.Session(**session_kwargs)
-        self._client = session.client("bedrock-runtime")
+        # LLM responses can take well over 60s for large contexts or
+        # tool-heavy conversations — use configurable read timeout.
+        client_config = Config(read_timeout=read_timeout, retries={"max_attempts": 2})
+        self._client = session.client("bedrock-runtime", config=client_config)
         self._bedrock = session.client("bedrock")
         self._region = region
+        self._profile = profile
+        self._access_key = access_key
+        self._secret_key = secret_key
+        self._session_token = session_token
+        self._read_timeout = read_timeout
         self._model_id: str | None = None
         self._cached_models: list[dict[str, Any]] | None = None
+        # Map model IDs to inference profile IDs/ARNs for on-demand invocation
+        self._inference_profiles: dict[str, str] = {}
 
     def get_provider_name(self) -> str:
         return "AWS Bedrock"
@@ -39,28 +104,143 @@ class BedrockProvider(LLMService):
         return f"AWS Bedrock ({self._region})"
 
     def list_available_models(self) -> list[dict[str, Any]]:
-        """List models available in Bedrock (cached after first call)."""
+        """List models available in Bedrock via inference profiles.
+
+        AWS Bedrock requires inference profiles for on-demand model invocation.
+        We list inference profiles (which wrap foundation models) and use the
+        profile ID for API calls instead of the raw model ID.
+        """
         if self._cached_models is not None:
             return self._cached_models
         try:
-            resp = self._bedrock.list_foundation_models()
             models = []
-            for m in resp.get("modelSummaries", []):
-                model_id = m.get("modelId", "")
-                models.append(
-                    {
-                        "id": model_id,
-                        "name": m.get("modelName", model_id),
-                        "provider": "AWS Bedrock",
-                        "supports_tools": "anthropic" in model_id.lower(),
-                        "context_length": 200_000 if "claude" in model_id.lower() else 8_192,
-                    }
-                )
+
+            # First try inference profiles — required for on-demand invocation
+            try:
+                profiles = self._list_inference_profiles()
+                logger.info("Found %d inference profiles in %s", len(profiles), self._region)
+
+                # Filter profiles to those that route to the configured region.
+                # Cross-region profiles use prefixes (us, eu, ap, apac, etc.)
+                # that may route to regions blocked by SCPs. Only include
+                # profiles whose prefix matches the configured region.
+                local_prefix = _region_to_profile_prefix(self._region)
+                logger.info("Filtering profiles for region prefix: %s", local_prefix)
+
+                for p in profiles:
+                    profile_id = p.get("inferenceProfileId", "")
+                    profile_name = p.get("inferenceProfileName", profile_id)
+
+                    # Only include profiles that route locally
+                    prefix = profile_id.split(".")[0] if "." in profile_id else ""
+                    if prefix and prefix != local_prefix:
+                        continue
+
+                    # Extract the underlying model IDs from the profile
+                    model_ids = [m.get("modelArn", "").split("/")[-1] for m in p.get("models", [])]
+
+                    models.append(
+                        {
+                            "id": profile_id,
+                            "name": profile_name,
+                            "provider": "AWS Bedrock",
+                            "supports_tools": any(
+                                "anthropic" in mid.lower() or "claude" in mid.lower()
+                                for mid in model_ids
+                            ),
+                            "context_length": (
+                                200_000
+                                if any("claude" in mid.lower() for mid in model_ids)
+                                else 8_192
+                            ),
+                        }
+                    )
+                    # Map profile ID to itself for use in API calls
+                    self._inference_profiles[profile_id] = profile_id
+                    # Also map any underlying model IDs to this profile
+                    for mid in model_ids:
+                        self._inference_profiles[mid] = profile_id
+
+                if models:
+                    logger.info(
+                        "Loaded %d Bedrock inference profiles (filtered for %s)",
+                        len(models),
+                        local_prefix,
+                    )
+                else:
+                    logger.info(
+                        "No inference profiles matched prefix %s out of %d total",
+                        local_prefix,
+                        len(profiles),
+                    )
+            except Exception as e:
+                logger.warning("Inference profiles not available: %s", e)
+
+            # Fall back to foundation models if no profiles found
+            if not models:
+                resp = self._bedrock.list_foundation_models()
+                for m in resp.get("modelSummaries", []):
+                    model_id = m.get("modelId", "")
+                    models.append(
+                        {
+                            "id": model_id,
+                            "name": m.get("modelName", model_id),
+                            "provider": "AWS Bedrock",
+                            "supports_tools": "anthropic" in model_id.lower(),
+                            "context_length": (200_000 if "claude" in model_id.lower() else 8_192),
+                        }
+                    )
+
             self._cached_models = models
             return models
         except Exception as e:
             logger.error("Failed to list Bedrock models: %s", e)
             return []
+
+    def _list_inference_profiles(self) -> list[dict]:
+        """List available inference profiles with pagination."""
+        profiles: list[dict] = []
+        params: dict[str, Any] = {"maxResults": 100}
+        while True:
+            resp = self._bedrock.list_inference_profiles(**params)
+            profiles.extend(resp.get("inferenceProfileSummaries", []))
+            next_token = resp.get("nextToken")
+            if not next_token:
+                break
+            params["nextToken"] = next_token
+        return profiles
+
+    def _resolve_model_id(self, model_id: str) -> str:
+        """Resolve a model ID to its inference profile ID if available.
+
+        AWS Bedrock cross-region inference profiles use a regional prefix
+        (e.g. ``us.anthropic.claude-3-5-sonnet-20240620-v1:0`` for us-east-1).
+        If no explicit mapping exists, we try constructing the cross-region
+        profile ID from the model ID and the current region.
+        """
+        # Direct mapping from list_inference_profiles
+        if model_id in self._inference_profiles:
+            resolved = self._inference_profiles[model_id]
+            if resolved != model_id:
+                logger.debug("Resolved model %s to inference profile %s", model_id, resolved)
+            return resolved
+
+        # Try cross-region inference profile format using the correct
+        # region-to-prefix mapping (e.g. ap-southeast-2 → au, not ap).
+        region_prefix = _region_to_profile_prefix(self._region)
+        # Check if the model ID already has a region prefix (e.g. "au.anthropic...")
+        known_prefixes = {"us", "eu", "ap", "au", "apac", "me", "sa", "af", "ca"}
+        first_segment = model_id.split(".")[0] if "." in model_id else ""
+        if first_segment not in known_prefixes:
+            cross_region_id = f"{region_prefix}.{model_id}"
+            logger.info(
+                "No inference profile mapping for %s — trying cross-region ID: %s",
+                model_id,
+                cross_region_id,
+            )
+            return cross_region_id
+
+        return model_id
 
     def set_model(self, model_id: str) -> None:
         self._model_id = model_id
@@ -91,10 +271,19 @@ class BedrockProvider(LLMService):
         if not self._model_id:
             raise RuntimeError("No model selected — call set_model() first")
 
+        # Resolve model ID to inference profile if available
+        resolved_id = self._resolve_model_id(self._model_id)
+        logger.info(
+            "Bedrock invoke: model_id=%s → resolved=%s (profiles=%d)",
+            self._model_id,
+            resolved_id,
+            len(self._inference_profiles),
+        )
+
         # Build Converse API request
         converse_messages = _convert_messages(messages)
         req: dict[str, Any] = {
-            "modelId": self._model_id,
+            "modelId": resolved_id,
             "messages": converse_messages,
             "inferenceConfig": {
                 "maxTokens": max_tokens,
@@ -225,21 +414,32 @@ def _normalise_response(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert standard messages to Bedrock Converse format."""
+    """Convert standard messages to Bedrock Converse format.
+
+    Bedrock's Converse API is strict about empty text fields — any message
+    with a blank text content block is rejected. This function filters out
+    empty text blocks and skips messages that would be empty after filtering.
+    """
     converted = []
     for msg in messages:
         role = msg["role"]
         content = msg["content"]
 
         if isinstance(content, str):
+            # Skip completely empty string messages
+            if not content.strip():
+                continue
             converted.append({"role": role, "content": [{"text": content}]})
         elif isinstance(content, list):
             blocks = []
             for block in content:
                 if isinstance(block, str):
-                    blocks.append({"text": block})
+                    if block.strip():
+                        blocks.append({"text": block})
                 elif block.get("type") == "text":
-                    blocks.append({"text": block["text"]})
+                    text = block.get("text", "")
+                    if text.strip():
+                        blocks.append({"text": text})
                 elif block.get("type") == "tool_use":
                     blocks.append(
                         {
@@ -258,6 +458,9 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         )
                     else:
                         result_text = str(result_content)
+                    # Bedrock requires non-empty tool result text
+                    if not result_text.strip():
+                        result_text = "(no output)"
                     blocks.append(
                         {
                             "toolResult": {
@@ -267,11 +470,15 @@ def _convert_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         }
                     )
                 else:
-                    blocks.append({"text": str(block)})
+                    text = str(block)
+                    if text.strip():
+                        blocks.append({"text": text})
             if blocks:
                 converted.append({"role": role, "content": blocks})
         else:
-            converted.append({"role": role, "content": [{"text": str(content)}]})
+            text = str(content)
+            if text.strip():
+                converted.append({"role": role, "content": [{"text": text}]})
 
     return converted
 

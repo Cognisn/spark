@@ -27,14 +27,18 @@
 - **Speech-to-Text Input** -- Dictate messages using the microphone button
 
 ### Tools
-- **MCP Integration** -- Connect external tool servers via stdio, HTTP, or SSE
-- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives
+- **MCP Integration** -- Connect external tool servers via stdio, HTTP, or SSE; edit server configurations and view tools from the dashboard
+- **Built-in Tools** -- Filesystem, documents (Word/Excel/PDF/PowerPoint), web search, archives, email, system commands
+- **Document Creation** -- Create Word (.docx), Excel (.xlsx), PowerPoint (.pptx), and PDF documents with advanced formatting (headings, tables, lists, images, styles)
+- **Email Tools** -- Send and draft emails via SMTP with HTML/plain text, attachments, and cc/bcc; SMTP test connection button
 - **Memory Tools** -- Persistent semantic memory across conversations
 - **Per-Conversation Control** -- Enable/disable tools at the server or individual level
-- **Tool Approval** -- Permission prompts for first-use with allow once/always/deny
-- **Tool Activity Sidecar Panel** -- Dedicated panel for tool call visibility, replacing inline tool groups
+- **4-Level Tool Approval** -- Deny, Approve Once, Always (Conversation), Always (Global) with category-based grouping
+- **Resizable Sidecar** -- Tools and Agents tabs with drag-to-resize handle; entries grouped by date with collapsible headers; width persists in session
+- **Agent Spawning** -- Spawn independent sub-agents for parallel research, analysis, and data gathering with dedicated Agents tab; supports orchestrator-workers and chain modes
 - **Tool Documentation** -- Built-in `get_tool_documentation` tool for querying tool usage information
 - **Web Search Engines** -- DuckDuckGo, Brave, Google/SerpAPI, Bing/Azure, SearXNG
+- **System Commands** -- Execute shell commands and CLI tools (git, docker, aws, etc.) with OS-aware execution and configurable approval prompts
 
 ### Memory
 - **Persistent Storage** -- Facts, preferences, projects, instructions, relationships
@@ -43,13 +47,17 @@
 - **Import/Export** -- JSON format for backup and sharing
 
 ### Autonomous Actions
-- **Scheduled Tasks** -- Cron or one-off schedules via APScheduler
+- **Scheduled Tasks** -- Cron or one-off schedules via APScheduler with local timezone support
 - **AI-Assisted Creation** -- Describe what you want and the AI builds the action
-- **Background Daemon** -- System tray icon (macOS/Windows) runs actions independently
-- **Run History** -- Track execution status, results, and token usage
+- **Create from Conversation** -- Turn any conversation into an autonomous action with AI-guided setup
+- **Run Now** -- Execute any action immediately from the Actions page
+- **Background Daemon** -- System tray icon (macOS/Windows) runs actions independently with sleep/wake recovery
+- **Run History** -- Track execution status, results, tool activity log, and token usage
 
 ### Dashboard
 - **Provider Models Modal** -- Click any provider on the dashboard to view its available models
+- **MCP Tools View** -- View tools provided by each MCP server directly from the dashboard
+- **Provider Setup Guides** -- In-app step-by-step setup guides for all LLM providers
 
 ### Security
 - **Prompt Inspection** -- Pattern and keyword-based threat detection
@@ -68,9 +76,9 @@ Pre-built binaries with an embedded Python runtime and a native splash screen fo
 
 | Platform | Architecture | Format | Download |
 |----------|-------------|--------|----------|
-| macOS | ARM64 (Apple Silicon) | Signed + notarized DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| macOS | x86_64 (Intel) | Signed + notarized DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Windows | x86_64 | NSIS installer | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| macOS | ARM64 (Apple Silicon) | Signed + notarised DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| macOS | x86_64 (Intel) | Signed + notarised DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
+| Windows | x86_64 | Signed NSIS installer | [Download](https://github.com/Cognisn/spark/releases/latest) |
 | Linux | Any | pip install (see below) | -- |
 
 ### Install from PyPI
@@ -135,6 +143,10 @@ graph TB
         Builtin["Built-in Tools"]
         Memory["Memory"]
         WebSearch["Web Search"]
+        EmailTool["Email (SMTP)"]
+        DocCreate["Document Creation"]
+        Agents["Sub-Agents"]
+        SysCmd["System Commands"]
     end
 
     subgraph Foundation ["cognisn-konfig"]

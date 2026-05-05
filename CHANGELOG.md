@@ -5,6 +5,48 @@ All notable changes to Spark will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-04-16
+
+### Added
+- **System Command Tool** — Execute shell commands (git, docker, aws, curl, etc.) with OS-aware execution, blocked command list, and configurable approval prompts
+- **Agent Spawning** — LLM can spawn independent sub-agents via `spawn_agent` tool with dedicated Agents tab in resizable sidecar panel; supports orchestrator-workers and chain modes; model auto-selection with user approval
+- **Email Tool** — Send and draft emails via SMTP with HTML/plain text, to/cc/bcc, file attachments; SMTP test connection button; passwords stored in OS keychain
+- **Document Creation** — Create Word (.docx), Excel (.xlsx), PowerPoint (.pptx), and PDF documents with advanced formatting (headings, tables, lists, images, styles)
+- **Provider Setup Guides** — In-app setup guides for all LLM providers (Anthropic, AWS Bedrock, Ollama, Google Gemini, X.AI) with step-by-step instructions
+- **Conversation to Action** — Create autonomous actions directly from conversations with AI-guided setup
+- **AWS Bedrock API Key Auth** — Support for explicit Access Key / Secret Key / Session Token authentication alongside SSO
+- **Windows Code Signing** — Release workflow signs Windows exe and NSIS installer with SSL.com eSigner
+- **4-Level Tool Approval** — Deny, Approve Once, Always (Conversation), Always (Global) with global_tool_permissions table
+- **MCP UI Enhancements** — Edit MCP server configurations, view tools from dashboard, manage servers link
+- **Tool Activity Date Grouping** — Sidecar entries grouped by date with collapsible headers and call counts
+- **Resizable Sidecar** — Tools and Agents tabs with drag-to-resize handle; width persists in session
+- **Run Now** — Execute autonomous actions immediately from the Actions page
+- **Theme Persistence** — Dark/light theme preference saved to config.yaml, persists across restarts
+- **Directory Browser** — Filesystem allowed_paths uses folder browser modal instead of text input
+- **Skill Documentation** — Comprehensive tool docs for run_command, spawn_agent, list_provider_models, create_word, create_excel, create_powerpoint, create_pdf
+
+### Fixed
+- MCP stdio tool execution failing during conversations (event loop mismatch)
+- Memory storage and dashboard using wrong user GUID
+- Tool activity sidecar empty when reopening past conversations
+- Filesystem allowed_paths stored as string instead of list
+- macOS app PATH missing common tool directories (Homebrew, Docker)
+- Daemon MCP connections — independent connections per action execution
+- Scheduler timezone — cron schedules now use local timezone
+- Scheduler sleep/wake recovery with stale lock clearing
+- Email TLS string normalisation and secret resolution
+- Agent provider isolation — concurrent conversations no longer conflict
+- Settings tool config refresh without restart
+- SSL auto-generates self-signed certificate when enabled without cert files
+
+### Changed
+- Autonomous action system prompt includes tool context, filesystem paths, OS info
+- Autonomous action max_tokens guidance dynamically reflects configured limit
+- Autonomous action tool iterations increased to 25 (was 10)
+- Action run history records full activity log (tool calls + results)
+- Max_tokens truncation triggers automatic retry with concise output instruction
+- Prompt caching enabled for daemon action executor
+
 ## [0.1.0] - 2026-04-06
 
 First production release of Spark -- Secure Personal AI Research Kit.
@@ -105,4 +147,5 @@ First production release of Spark -- Secure Personal AI Research Kit.
 - SonarCloud: all A ratings (0 bugs, 0 vulnerabilities, 0 hotspots)
 - CI on Ubuntu, macOS, Windows (Python 3.12, 3.13)
 
+[0.2.0]: https://github.com/Cognisn/spark/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Cognisn/spark/releases/tag/v0.1.0

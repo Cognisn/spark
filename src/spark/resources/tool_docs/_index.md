@@ -25,7 +25,7 @@ This directory contains comprehensive documentation for all embedded tools avail
 |------|-------------|
 | `write_file` | Write content to a file (when write mode enabled) |
 
-### Office Documents
+### Office Documents — Reading
 | Tool | Description |
 |------|-------------|
 | `read_word` | Extract text from Word documents (.docx) |
@@ -33,17 +33,36 @@ This directory contains comprehensive documentation for all embedded tools avail
 | `read_pdf` | Extract text from PDF documents |
 | `read_powerpoint` | Extract content from PowerPoint presentations (.pptx) |
 
+### Office Documents — Creating (when read_write mode enabled)
+| Tool | Description |
+|------|-------------|
+| `create_word` | Create Word documents with headings, tables, lists, images, formatting |
+| `create_excel` | Create Excel workbooks with multiple sheets, headers, formulas, formatting |
+| `create_powerpoint` | Create PowerPoint presentations with multiple slide layouts |
+| `create_pdf` | Create PDF documents with headings, tables, lists, images, page layout |
+
 ### Archives
 | Tool | Description |
 |------|-------------|
 | `list_archive` | List contents of ZIP/TAR archives |
 | `extract_archive` | Extract archive contents (when extract mode enabled) |
 
+### System Commands (when enabled)
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute shell commands, CLI tools, and scripts on the host system |
+
 ### Web Search & Retrieval (when enabled)
 | Tool | Description |
 |------|-------------|
 | `web_search` | Search the web using configured engine (DuckDuckGo, Brave, Google, Bing, SearXNG) |
 | `web_fetch` | Fetch a URL and return clean, readable text content |
+
+### Agents (when enabled)
+| Tool | Description |
+|------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on an independent task |
+| `list_provider_models` | List available models from the current provider |
 
 ### Memory (always available)
 | Tool | Description |

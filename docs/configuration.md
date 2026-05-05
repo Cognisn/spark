@@ -104,6 +104,15 @@ interface:
 
 The port is randomly chosen on each startup. The browser heartbeat monitor shuts down the server when no browser tabs are connected (after `miss_threshold` consecutive missed heartbeats at `interval_seconds` intervals).
 
+#### Theme Persistence
+
+```yaml
+interface:
+  theme: dark                    # dark or light — persists across restarts
+```
+
+The selected theme is saved to `config.yaml` when changed via the UI toggle, so it persists across application restarts.
+
 ### LLM Providers
 
 ```yaml
@@ -216,6 +225,51 @@ embedded_tools:
     google_api_key: ""
     bing_api_key: ""
     searxng_url: ""
+```
+
+#### System Commands
+
+```yaml
+embedded_tools:
+  system_commands:
+    enabled: false                 # Disabled by default — must be explicitly enabled
+    timeout: 30                    # Default timeout per command (seconds)
+    max_timeout: 300               # Maximum allowed timeout
+    max_output_chars: 50000        # Truncate output beyond this
+    blocked_commands: []            # Additional commands to block (e.g. rm, shutdown)
+    require_approval: true         # Always prompt before running
+```
+
+OS-aware execution: uses zsh on macOS, bash on Linux, cmd.exe on Windows. Dangerous commands (mkfs, fdisk, dd, format) are always blocked regardless of configuration.
+
+#### Email
+
+```yaml
+embedded_tools:
+  email:
+    enabled: false                 # Disabled by default — requires SMTP configuration
+    host: smtp.gmail.com
+    port: 587
+    username: you@gmail.com
+    password: secret://email_password    # Stored in OS keychain
+    sender: you@gmail.com
+    use_tls: true
+    max_attachment_mb: 25
+    require_approval: true         # Always prompt before sending
+```
+
+Passwords are stored securely in the OS keychain via the secrets backend. Use the **Test Email Connection** button in Settings to verify your SMTP settings.
+
+#### Agents
+
+```yaml
+embedded_tools:
+  agents:
+    enabled: false                 # Disabled by default
+    default_mode: orchestrator     # orchestrator or chain
+    model_selection: same          # same or auto_select
+    max_concurrent: 5              # Maximum concurrent sub-agents
+    max_iterations: 15             # Max tool iterations per agent
 ```
 
 See [Tools](tools.md) and [Web Search](web-search.md) for details.

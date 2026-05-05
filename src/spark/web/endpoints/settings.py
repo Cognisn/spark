@@ -160,9 +160,30 @@ def _handle_daemon_settings(data: dict, ctx: Any) -> None:
 # Keys that hold secret values — stored in secrets backend, not config.yaml
 _SECRET_KEYS = {
     "providers.anthropic.api_key",
+    "providers.aws_bedrock.access_key",
+    "providers.aws_bedrock.secret_key",
+    "providers.aws_bedrock.session_token",
     "providers.google_gemini.api_key",
     "providers.xai.api_key",
     "database.password",
+    "embedded_tools.email.password",
+}
+
+# Keys whose UI value is a string "true"/"false" but stored as a boolean in config.yaml
+_BOOL_STRING_KEYS = {
+    "embedded_tools.email.use_tls",
+    "embedded_tools.email.require_approval",
+}
+
+# Keys whose UI value is a comma-separated string but stored as a list in config.yaml
+_LIST_KEYS = {
+    "embedded_tools.filesystem.allowed_paths",
+    "embedded_tools.system_commands.blocked_commands",
+}
+
+# Keys sent as "true"/"false" strings — convert to bool before storing
+_BOOL_STRING_KEYS = {
+    "embedded_tools.system_commands.require_approval",
 }
 
 
@@ -191,7 +212,180 @@ async def reveal_secret(request: Request) -> JSONResponse:
     if val is None or str(val) == "":
         return JSONResponse({"value": ""})
 
-    return JSONResponse({"value": str(val)})
+    # Resolve secret:// URIs to their actual values
+    val_str = str(val)
+    if val_str.startswith("secret://") and hasattr(ctx, "secrets") and ctx.secrets:
+        from spark.web.server import _resolve_secret
+
+        val_str = _resolve_secret(ctx, val_str)
+
+    return JSONResponse({"value": val_str})
+
+
+@router.post("/api/test-email")
+async def test_email(request: Request) -> JSONResponse:
+    """Test the SMTP email connection and optionally send a test email."""
+    import smtplib
+    import ssl as _ssl
+    from email.mime.text import MIMEText
+
+    ctx = request.app.state.ctx
+    settings = ctx.settings
+
+    host = settings.get("embedded_tools.email.host", "")
+    port = int(settings.get("embedded_tools.email.port", 587))
+    username = settings.get("embedded_tools.email.username", "")
+    sender = settings.get("embedded_tools.email.sender", "")
+    use_tls = settings.get("embedded_tools.email.use_tls", True)
+
+    # Resolve password from secrets backend
+    from spark.web.server import _resolve_secret
+
+    raw_password = settings.get("embedded_tools.email.password", "")
+    password = _resolve_secret(ctx, raw_password) if raw_password else ""
+
+    # Normalise boolean (may be string from config)
+    if isinstance(use_tls, str):
+        use_tls = use_tls.lower() == "true"
+
+    # Check if a test send was requested
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    send_test = data.get("send_test", False)
+
+    base = {
+        "host": host,
+        "port": port,
+        "username": username,
+        "sender": sender,
+        "use_tls": use_tls,
+    }
+
+    if not host:
+        return JSONResponse({**base, "status": "error", "message": "SMTP host is not configured."})
+
+    try:
+        server = smtplib.SMTP(host, port, timeout=15)
+        if use_tls:
+            context = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+            context.minimum_version = _ssl.TLSVersion.TLSv1_2
+            context.load_default_certs()
+            server.starttls(context=context)
+
+        auth_msg = "no authentication"
+        if username and password:
+            server.login(username, password)
+            auth_msg = f"authenticated as {username}"
+
+        result_msg = f"Connected and {auth_msg}."
+
+        # Send a test email if requested
+        if send_test and sender:
+            test_msg = MIMEText(
+                "This is a test email from Spark to verify your SMTP configuration.\n\n"
+                "If you received this, your email settings are working correctly.",
+                "plain",
+            )
+            test_msg["From"] = sender
+            test_msg["To"] = sender
+            test_msg["Subject"] = "Spark — Email Configuration Test"
+            server.sendmail(sender, [sender], test_msg.as_string())
+            result_msg += f" Test email sent to {sender}."
+
+        server.quit()
+        return JSONResponse({**base, "status": "ok", "message": result_msg})
+
+    except smtplib.SMTPAuthenticationError:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": "Authentication failed. Check username and password.",
+            }
+        )
+    except smtplib.SMTPConnectError as e:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Could not connect to {host}:{port} — {e}",
+            }
+        )
+    except smtplib.SMTPRecipientsRefused as e:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connected but test send failed — recipients refused: {e}",
+            }
+        )
+    except smtplib.SMTPSenderRefused as e:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connected but sender address rejected: {e}",
+            }
+        )
+    except ConnectionRefusedError:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connection refused at {host}:{port}. Check the host and port.",
+            }
+        )
+    except TimeoutError:
+        return JSONResponse(
+            {
+                **base,
+                "status": "error",
+                "message": f"Connection timed out connecting to {host}:{port}.",
+            }
+        )
+    except Exception as e:
+        return JSONResponse({**base, "status": "error", "message": str(e)})
+
+
+@router.get("/api/browse-directory")
+async def browse_directory(request: Request) -> JSONResponse:
+    """List subdirectories at a given path for the folder browser.
+
+    Restricted to the user's home directory tree to prevent path traversal.
+    """
+    from pathlib import Path
+
+    home = Path.home().resolve()
+    path_str = request.query_params.get("path", "")
+    if not path_str:
+        path_str = str(home)
+
+    target = Path(path_str).resolve()  # NOSONAR — validated below against home dir
+
+    # Prevent path traversal outside the home directory
+    if not str(target).startswith(str(home)):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    if not target.is_dir():
+        return JSONResponse({"error": "Not a directory"}, status_code=400)
+
+    dirs = []
+    try:
+        for entry in sorted(target.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                dirs.append({"name": entry.name, "path": str(entry)})
+    except PermissionError:
+        pass
+
+    return JSONResponse(
+        {
+            "current": str(target),
+            "parent": str(target.parent) if target != target.parent else None,
+            "directories": dirs,
+        }
+    )
 
 
 @router.post("/api/save")
@@ -221,6 +415,15 @@ async def save_settings(request: Request) -> JSONResponse:
                 # Write a secret:// URI reference in the config
                 _set_nested(raw, dotted_key, f"secret://{name}")
                 logger.info("Stored secret for %s", dotted_key)
+            elif dotted_key in _LIST_KEYS:
+                # Ensure list keys are stored as lists in config.yaml
+                if isinstance(value, str):
+                    value = [p.strip() for p in value.split(",") if p.strip()]
+                elif not isinstance(value, list):
+                    value = []
+                _set_nested(raw, dotted_key, value)
+            elif dotted_key in _BOOL_STRING_KEYS and isinstance(value, str):
+                _set_nested(raw, dotted_key, value.lower() == "true")
             else:
                 _set_nested(raw, dotted_key, value)
 
@@ -229,6 +432,22 @@ async def save_settings(request: Request) -> JSONResponse:
 
         # Reload settings in memory
         ctx.settings.reload()
+
+        # Update conversation manager's embedded tools config so new tools
+        # (e.g. email) are visible without a restart.
+        conv_mgr = getattr(request.app.state, "conversation_manager", None)
+        if conv_mgr:
+            new_embedded = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+            # Resolve secret:// URIs that konfig doesn't resolve in subtree gets
+            _resolve_embedded_secrets(new_embedded.get("embedded_tools", {}), ctx)
+            # Preserve runtime-injected keys (memory index, prompt inspection, etc.)
+            for k, v in conv_mgr._embedded_tools_config.items():
+                if k.startswith("_"):
+                    new_embedded[k] = v
+            conv_mgr._embedded_tools_config = new_embedded
+            # Invalidate cached tool definitions so they're rebuilt on next use
+            conv_mgr._builtin_tools = None
+            conv_mgr._builtin_tool_names = None
 
         # Clear first-run flag
         request.app.state.first_run = False
@@ -251,6 +470,17 @@ def _set_nested(d: dict, dotted_key: str, value: object) -> None:
     d[keys[-1]] = value
 
 
+def _resolve_embedded_secrets(embedded: dict, ctx: object) -> None:
+    """Resolve secret:// URIs in embedded tools config subtrees in-place."""
+    from spark.web.server import _resolve_secret
+
+    for _category, cat_config in embedded.items():
+        if isinstance(cat_config, dict):
+            for key, val in cat_config.items():
+                if isinstance(val, str) and val.startswith("secret://"):
+                    cat_config[key] = _resolve_secret(ctx, val)
+
+
 def _build_sections(settings: object) -> list[dict]:
     """Build settings sections for the template."""
     return [
@@ -263,6 +493,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "anthropic",
                     "title": "Anthropic",
+                    "help_url": "/help/provider/anthropic",
                     "fields": [
                         _toggle("providers.anthropic.enabled", "Enabled", settings),
                         _secret("providers.anthropic.api_key", "API Key", settings),
@@ -271,6 +502,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "aws_bedrock",
                     "title": "AWS Bedrock",
+                    "help_url": "/help/provider/aws_bedrock",
                     "fields": [
                         _toggle("providers.aws_bedrock.enabled", "Enabled", settings),
                         _text("providers.aws_bedrock.region", "Region", settings, "us-east-1"),
@@ -281,11 +513,57 @@ def _build_sections(settings: object) -> list[dict]:
                             ["sso", "iam", "session"],
                             "sso",
                         ),
+                        {
+                            **_text(
+                                "providers.aws_bedrock.profile",
+                                "SSO Profile",
+                                settings,
+                                "",
+                            ),
+                            "bedrock_auth": "sso",
+                            "help": "AWS CLI profile name. Leave empty to use the default profile.",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.access_key",
+                                "Access Key ID",
+                                settings,
+                            ),
+                            "bedrock_auth": "keys",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.secret_key",
+                                "Secret Access Key",
+                                settings,
+                            ),
+                            "bedrock_auth": "keys",
+                        },
+                        {
+                            **_secret(
+                                "providers.aws_bedrock.session_token",
+                                "Session Token",
+                                settings,
+                            ),
+                            "bedrock_auth": "session",
+                            "help": "Required for temporary session credentials only.",
+                        },
+                        {
+                            **_number(
+                                "providers.aws_bedrock.read_timeout",
+                                "Read Timeout (seconds)",
+                                settings,
+                                300,
+                            ),
+                            "help": "Maximum time to wait for a response from Bedrock. "
+                            "Increase for large contexts or complex tool-use conversations.",
+                        },
                     ],
                 },
                 {
                     "id": "ollama",
                     "title": "Ollama",
+                    "help_url": "/help/provider/ollama",
                     "fields": [
                         _toggle("providers.ollama.enabled", "Enabled", settings),
                         _text(
@@ -299,6 +577,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "google_gemini",
                     "title": "Google Gemini",
+                    "help_url": "/help/provider/google_gemini",
                     "fields": [
                         _toggle("providers.google_gemini.enabled", "Enabled", settings),
                         _secret("providers.google_gemini.api_key", "API Key", settings),
@@ -307,6 +586,7 @@ def _build_sections(settings: object) -> list[dict]:
                 {
                     "id": "xai",
                     "title": "X.AI",
+                    "help_url": "/help/provider/xai",
                     "fields": [
                         _toggle("providers.xai.enabled", "Enabled", settings),
                         _secret("providers.xai.api_key", "API Key", settings),
@@ -546,6 +826,47 @@ def _build_sections(settings: object) -> list[dict]:
             ],
         },
         {
+            "id": "agents",
+            "title": "Agents",
+            "icon": "bi-robot",
+            "description": "Allow the AI to spawn sub-agents for independent task execution within conversations.",
+            "groups": [
+                {
+                    "id": "agent_settings",
+                    "title": "Agent Settings",
+                    "fields": [
+                        _toggle("embedded_tools.agents.enabled", "Enable Agent Spawning", settings),
+                        _select(
+                            "embedded_tools.agents.default_mode",
+                            "Default Mode",
+                            settings,
+                            ["orchestrator", "chain"],
+                            "orchestrator",
+                        ),
+                        _select(
+                            "embedded_tools.agents.model_selection",
+                            "Model Selection",
+                            settings,
+                            ["same", "auto_select", "auto_select_approved"],
+                            "same",
+                        ),
+                        _number(
+                            "embedded_tools.agents.max_concurrent",
+                            "Max Concurrent Agents",
+                            settings,
+                            5,
+                        ),
+                        _number(
+                            "embedded_tools.agents.max_iterations",
+                            "Max Iterations per Agent",
+                            settings,
+                            15,
+                        ),
+                    ],
+                },
+            ],
+        },
+        {
             "id": "autonomous_actions",
             "title": "Autonomous Actions",
             "icon": "bi-play-circle",
@@ -589,6 +910,27 @@ def _build_sections(settings: object) -> list[dict]:
 
 def _get_val(settings: object, key: str, default: object = None) -> object:
     return settings.get(key, default)  # type: ignore[union-attr]
+
+
+def _ensure_list(value: object) -> list:
+    """Ensure a value is a list of path strings.
+
+    Handles: proper list, comma-separated string, None, and the corruption
+    case where a path was split into individual characters (e.g.
+    ['/', 'U', 's', ...] instead of ['/Users/...']).
+    """
+    if isinstance(value, list):
+        # Detect character-split corruption: if most entries are single chars,
+        # join them back into a single path string.
+        if len(value) > 3 and all(isinstance(v, str) and len(v) <= 1 for v in value):
+            rejoined = "".join(value)
+            return [rejoined] if rejoined else []
+        return value
+    if isinstance(value, str):
+        return [p.strip() for p in value.split(",") if p.strip()]
+    if value is None:
+        return []
+    return []
 
 
 def _toggle(key: str, label: str, settings: object) -> dict:
@@ -658,9 +1000,9 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 {
                     "key": "embedded_tools.filesystem.allowed_paths",
                     "label": "Allowed Paths",
-                    "type": "text",
-                    "value": ", ".join(get("embedded_tools.filesystem.allowed_paths", []) or []),
-                    "help": "Comma-separated list of directories. Empty = working directory only.",
+                    "type": "path_list",
+                    "value": _ensure_list(get("embedded_tools.filesystem.allowed_paths", [])),
+                    "help": "Directories the AI can access. Empty = working directory only.",
                 },
             ],
             "tools": [
@@ -694,7 +1036,16 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "help": "Maximum file size in megabytes for document reading.",
                 },
             ],
-            "tools": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
+            "tools": [
+                "read_word",
+                "read_excel",
+                "read_pdf",
+                "read_powerpoint",
+                "create_word",
+                "create_excel",
+                "create_powerpoint",
+                "create_pdf",
+            ],
         },
         {
             "id": "archives",
@@ -769,5 +1120,134 @@ def _build_tool_categories(settings: object) -> list[dict]:
                 },
             ],
             "tools": ["web_search", "web_fetch"],
+        },
+        {
+            "id": "system_commands",
+            "title": "System Commands",
+            "icon": "bi-terminal",
+            "description": "Execute shell commands on the host system. The LLM can run CLI tools, scripts, and system utilities.",
+            "enabled": bool(get("embedded_tools.system_commands.enabled", False)),
+            "mode": None,
+            "mode_options": [],
+            "mode_descriptions": {},
+            "extra_fields": [
+                {
+                    "key": "embedded_tools.system_commands.timeout",
+                    "label": "Default Timeout (seconds)",
+                    "type": "number",
+                    "value": get("embedded_tools.system_commands.timeout", 30),
+                    "help": "Maximum time a single command can run. Range: 1-300 seconds.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.max_output_chars",
+                    "label": "Max Output (characters)",
+                    "type": "number",
+                    "value": get("embedded_tools.system_commands.max_output_chars", 50000),
+                    "help": "Maximum output length returned to the LLM. Longer output is truncated.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.blocked_commands",
+                    "label": "Blocked Commands",
+                    "type": "text",
+                    "value": ", ".join(
+                        get("embedded_tools.system_commands.blocked_commands", []) or []
+                    ),
+                    "help": "Comma-separated list of command names to block (e.g. rm, shutdown, reboot). Some dangerous commands are always blocked.",
+                },
+                {
+                    "key": "embedded_tools.system_commands.require_approval",
+                    "label": "Always Require Approval",
+                    "type": "select",
+                    "value": str(
+                        get("embedded_tools.system_commands.require_approval", True)
+                    ).lower(),
+                    "options": [
+                        {"value": "true", "label": "Yes — prompt for every command"},
+                        {
+                            "value": "false",
+                            "label": "No — respect tool permission settings",
+                        },
+                    ],
+                    "help": "When enabled, every command requires user approval even if previously approved. Disable for autonomous actions.",
+                },
+            ],
+            "tools": ["run_command"],
+        },
+        {
+            "id": "email",
+            "title": "Email",
+            "icon": "bi-envelope",
+            "description": "Send and draft emails via SMTP. Requires SMTP server configuration.",
+            "enabled": bool(get("embedded_tools.email.enabled", False)),
+            "mode": None,
+            "mode_options": [],
+            "mode_descriptions": {},
+            "extra_fields": [
+                {
+                    "key": "embedded_tools.email.host",
+                    "label": "SMTP Host",
+                    "type": "text",
+                    "value": get("embedded_tools.email.host", ""),
+                    "help": "SMTP server hostname (e.g. smtp.gmail.com, smtp.office365.com).",
+                },
+                {
+                    "key": "embedded_tools.email.port",
+                    "label": "SMTP Port",
+                    "type": "number",
+                    "value": get("embedded_tools.email.port", 587),
+                    "help": "587 for STARTTLS (recommended), 465 for SSL, 25 for unencrypted.",
+                },
+                {
+                    "key": "embedded_tools.email.username",
+                    "label": "Username",
+                    "type": "text",
+                    "value": get("embedded_tools.email.username", ""),
+                    "help": "SMTP authentication username (usually your email address).",
+                },
+                {
+                    "key": "embedded_tools.email.password",
+                    "label": "Password",
+                    "type": "secret",
+                    "value": get("embedded_tools.email.password", ""),
+                    "help": "SMTP password or app-specific password. Stored securely in the OS keychain.",
+                },
+                {
+                    "key": "embedded_tools.email.sender",
+                    "label": "Sender Address",
+                    "type": "text",
+                    "value": get("embedded_tools.email.sender", ""),
+                    "help": "The From address for outgoing emails.",
+                },
+                {
+                    "key": "embedded_tools.email.use_tls",
+                    "label": "Use TLS",
+                    "type": "select",
+                    "value": str(get("embedded_tools.email.use_tls", True)).lower(),
+                    "options": [
+                        {"value": "true", "label": "Yes (STARTTLS)"},
+                        {"value": "false", "label": "No"},
+                    ],
+                    "help": "Enable STARTTLS encryption. Recommended for port 587.",
+                },
+                {
+                    "key": "embedded_tools.email.max_attachment_mb",
+                    "label": "Max Attachment Size (MB)",
+                    "type": "number",
+                    "value": get("embedded_tools.email.max_attachment_mb", 25),
+                    "help": "Maximum total attachment size in megabytes.",
+                },
+                {
+                    "key": "embedded_tools.email.require_approval",
+                    "label": "Always Require Approval",
+                    "type": "select",
+                    "value": str(get("embedded_tools.email.require_approval", True)).lower(),
+                    "options": [
+                        {"value": "true", "label": "Yes — always prompt before sending"},
+                        {"value": "false", "label": "No — respect tool permission settings"},
+                    ],
+                    "help": "When enabled, send_email always requires approval even if the tool has been globally approved. Disable for autonomous actions.",
+                },
+            ],
+            "tools": ["send_email", "draft_email"],
         },
     ]

@@ -409,7 +409,7 @@ class TestContextCompactor:
         cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
         messages.add_message(db.connection, cid, "user", "short msg", 10, USER)
 
-        result = compactor.check_and_compact(cid, "stub-model")
+        result = compactor.check_and_compact(cid, "stub-model", USER)
         assert result is False
 
     def test_deferred_during_tool_use(self, db: Database, stub_llm: StubLLMService) -> None:
@@ -425,8 +425,27 @@ class TestContextCompactor:
         # Manually set high token count
         conversations.update_conversation(db.connection, cid, USER, total_tokens=5000)
 
-        result = compactor.check_and_compact(cid, "stub-model", in_tool_use_loop=True)
+        result = compactor.check_and_compact(cid, "stub-model", USER, in_tool_use_loop=True)
         assert result is False  # Deferred
+
+    def test_skips_when_conversation_not_found(
+        self, db: Database, stub_llm: StubLLMService
+    ) -> None:
+        """Wrong user_guid must not silently succeed — regression for empty user_guid bug."""
+        from spark.database import conversations
+
+        compactor = ContextCompactor(
+            stub_llm,
+            db.connection,
+            ContextLimitResolver(),  # type: ignore[arg-type]
+            threshold=0.01,
+        )
+        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
+        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+
+        # With a real user_guid, compaction runs (stub LLM handles it).
+        # With an empty user_guid, the conversation is not found and we skip.
+        assert compactor.check_and_compact(cid, "stub-model", "") is False
 
 
 class TestToolResult:

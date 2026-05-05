@@ -14,6 +14,14 @@ const AppTheme = {
     LIGHT: 'light',
 
     init() {
+        // Load from server (persists across port changes), fall back to localStorage
+        fetch('/api/theme').then(r => r.json()).then(data => {
+            if (data.theme && data.theme !== this.get()) {
+                this.set(data.theme);
+            }
+            localStorage.setItem(this.STORAGE_KEY, data.theme || this.DARK);
+        }).catch(() => {});
+
         const saved = localStorage.getItem(this.STORAGE_KEY);
         const preferred = window.matchMedia('(prefers-color-scheme: light)').matches ? this.LIGHT : this.DARK;
         this.set(saved || preferred);
@@ -35,6 +43,12 @@ const AppTheme = {
         this._updateToggles(theme);
         this._updateCharts(theme);
         document.dispatchEvent(new CustomEvent('app-theme-changed', { detail: { theme } }));
+        // Persist to server config so it survives port changes
+        fetch('/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ theme }),
+        }).catch(() => {});
     },
 
     toggle() {

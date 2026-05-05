@@ -100,6 +100,31 @@ function sendMessageWithSSE(conversationId, message) {
         // Tool iteration progress — could update UI indicator
     });
 
+    currentEventSource.addEventListener('agent_model_approval', (e) => {
+        const data = JSON.parse(e.data);
+        showAgentModelApproval(data);
+    });
+
+    currentEventSource.addEventListener('agent_start', (e) => {
+        const data = JSON.parse(e.data);
+        appendStreamingAgentStart(data.agent_name, data.agent_id, data.task, data.model_id);
+    });
+
+    currentEventSource.addEventListener('agent_tool_call', (e) => {
+        const data = JSON.parse(e.data);
+        updateStreamingAgentToolCall(data.agent_id, data.tool_name, data.params);
+    });
+
+    currentEventSource.addEventListener('agent_tool_result', (e) => {
+        const data = JSON.parse(e.data);
+        updateStreamingAgentToolResult(data.agent_id, data.tool_name, data.result, data.status);
+    });
+
+    currentEventSource.addEventListener('agent_complete', (e) => {
+        const data = JSON.parse(e.data);
+        updateStreamingAgentComplete(data.agent_id, data.agent_name, data.status, data.result);
+    });
+
     currentEventSource.addEventListener('complete', (e) => {
         finaliseStreamingToolGroup();
         closeStream();

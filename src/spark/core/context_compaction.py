@@ -76,6 +76,7 @@ class ContextCompactor:
         self,
         conversation_id: int,
         model_id: str,
+        user_guid: str,
         *,
         in_tool_use_loop: bool = False,
         status_callback: Any | None = None,
@@ -83,14 +84,28 @@ class ContextCompactor:
         """Check if compaction is needed and perform it. Returns True if compacted."""
         from spark.database import conversations
 
-        conv = conversations.get_conversation(self._db, conversation_id, "")
+        conv = conversations.get_conversation(self._db, conversation_id, user_guid)
         if not conv:
+            logger.warning(
+                "Compaction check skipped: conversation %d not found for user_guid=%r",
+                conversation_id,
+                user_guid,
+            )
             return False
 
         total_tokens = conv.get("total_tokens", 0)
         context_window = self._context_limits.get_context_window(model_id)
         normal_threshold = int(context_window * self._threshold)
         emergency = int(context_window * self._emergency_threshold)
+
+        logger.debug(
+            "Compaction check: conv=%d tokens=%d threshold=%d emergency=%d model=%s",
+            conversation_id,
+            total_tokens,
+            normal_threshold,
+            emergency,
+            model_id,
+        )
 
         if total_tokens < normal_threshold:
             return False
@@ -106,6 +121,12 @@ class ContextCompactor:
 
         if total_tokens >= emergency:
             logger.warning("Emergency compaction triggered (tokens=%d)", total_tokens)
+        else:
+            logger.info(
+                "Compaction triggered (tokens=%d, threshold=%d)",
+                total_tokens,
+                normal_threshold,
+            )
 
         if status_callback:
             status_callback(
@@ -113,17 +134,20 @@ class ContextCompactor:
             )
 
         try:
-            return self._perform_compaction(conversation_id, model_id, status_callback)
+            return self._perform_compaction(
+                conversation_id, model_id, user_guid, status_callback
+            )
         except Exception as e:
             logger.error("Compaction failed: %s", e)
             if total_tokens >= emergency:
-                return self._emergency_truncation(conversation_id, model_id)
+                return self._emergency_truncation(conversation_id, model_id, user_guid)
             return False
 
     def _perform_compaction(
         self,
         conversation_id: int,
         model_id: str,
+        user_guid: str,
         status_callback: Any | None = None,
     ) -> bool:
         """Execute LLM-driven context compaction."""
@@ -161,7 +185,12 @@ class ContextCompactor:
 
         # Store compacted content
         return self._store_compaction(
-            conversation_id, all_msgs, content, original_tokens, status_callback
+            conversation_id,
+            all_msgs,
+            content,
+            original_tokens,
+            user_guid,
+            status_callback,
         )
 
     def _store_compaction(
@@ -170,6 +199,7 @@ class ContextCompactor:
         original_messages: list[dict],
         compacted_content: str,
         original_tokens: int,
+        user_guid: str,
         status_callback: Any | None = None,
     ) -> bool:
         """Store compaction results and mark originals as rolled up."""
@@ -189,7 +219,9 @@ class ContextCompactor:
 
         # Add compacted content as a new message
         compacted_tokens = self._llm.count_tokens(compacted_content)
-        messages.add_message(self._db, conversation_id, "user", marker, compacted_tokens, "")
+        messages.add_message(
+            self._db, conversation_id, "user", marker, compacted_tokens, user_guid
+        )
 
         # Mark originals
         messages.mark_messages_as_rolled_up(self._db, conversation_id, rollup_ids)
@@ -202,7 +234,7 @@ class ContextCompactor:
             compacted_content,
             original_tokens,
             compacted_tokens,
-            "",
+            user_guid,
         )
 
         # Recalculate
@@ -227,7 +259,9 @@ class ContextCompactor:
 
         return True
 
-    def _emergency_truncation(self, conversation_id: int, model_id: str) -> bool:
+    def _emergency_truncation(
+        self, conversation_id: int, model_id: str, user_guid: str
+    ) -> bool:
         """Last resort: keep only recent messages."""
         from spark.database import conversations, messages
 
@@ -261,7 +295,7 @@ class ContextCompactor:
             "user",
             truncation_notice,
             self._llm.count_tokens(truncation_notice),
-            "",
+            user_guid,
         )
         messages.mark_messages_as_rolled_up(self._db, conversation_id, rollup_ids)
         conversations.recalculate_total_tokens(self._db, conversation_id)

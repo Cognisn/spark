@@ -42,7 +42,10 @@ class ConversationManager:
         emergency_rollup_threshold: float = 0.95,
         compaction_model: str | None = None,
         mcp_manager: Any | None = None,
+        user_guid: str = "default",
+        mcp_loop: Any | None = None,
         tool_permission_callback: Callable | None = None,
+        agent_model_callback: Callable | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
         prompt_caching: bool = True,
@@ -55,11 +58,19 @@ class ConversationManager:
         self._max_tool_selections = max_tool_selections
         self._max_tool_result_tokens = max_tool_result_tokens
         self._mcp_manager = mcp_manager
+        self._user_guid = user_guid
+        self._mcp_loop = mcp_loop
         self._tool_permission_callback = tool_permission_callback
+        self._agent_model_callback = agent_model_callback
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
         self._prompt_caching_enabled = prompt_caching
         self._in_tool_use_loop = False
+
+        # Per-request state for agent tool execution
+        self._current_conversation_id: int | None = None
+        self._current_user_guid: str | None = None
+        self._current_status_callback: Callable | None = None
 
         # Cache embedded tool definitions
         self._builtin_tools: list[dict[str, Any]] | None = None
@@ -271,6 +282,68 @@ class ConversationManager:
             self._get_builtin_tools()
         return tool_name in (self._builtin_tool_names or set())
 
+    def _get_agent_tools(self) -> list[dict[str, Any]]:
+        """Return tool definitions for agent spawning when agents are enabled."""
+        enabled = (
+            self._embedded_tools_config.get("embedded_tools", {})
+            .get("agents", {})
+            .get("enabled", False)
+        )
+        if not enabled:
+            return []
+
+        return [
+            {
+                "name": "spawn_agent",
+                "description": (
+                    "Spawn a sub-agent to execute a task independently. The agent runs "
+                    "with its own context and returns a result when finished. Use this to "
+                    "delegate research, analysis, or multi-step tasks."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "A clear description of the task for the agent to perform.",
+                        },
+                        "agent_name": {
+                            "type": "string",
+                            "description": "A short descriptive name for this agent (e.g. 'Researcher', 'Analyst').",
+                        },
+                        "model_id": {
+                            "type": "string",
+                            "description": (
+                                "Optional model ID to use. If omitted, the current conversation's "
+                                "model is used. Use list_provider_models to see available options."
+                            ),
+                        },
+                        "model_justification": {
+                            "type": "string",
+                            "description": (
+                                "When specifying a model_id, explain why this model was chosen "
+                                "over others (e.g. 'Choosing a faster model for simple data "
+                                "gathering' or 'Using the most capable model for complex analysis'). "
+                                "This is shown to the user for approval."
+                            ),
+                        },
+                    },
+                    "required": ["task", "agent_name"],
+                },
+            },
+            {
+                "name": "list_provider_models",
+                "description": (
+                    "List all models available from the current LLM provider. "
+                    "Useful for choosing a model when spawning an agent."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        ]
+
     def _get_all_tools(self) -> list[dict[str, Any]]:
         """Get all tools: built-in + MCP server tools."""
         tools = list(self._get_builtin_tools())
@@ -279,21 +352,27 @@ class ConversationManager:
             try:
                 import asyncio
 
-                # list_all_tools is async — run it synchronously
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # We're in an async context, use a thread
-                        import concurrent.futures
+                # list_all_tools is async — dispatch on the persistent MCP loop
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                    )
+                    mcp_tools = future.result(timeout=10)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
 
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            mcp_tools = pool.submit(
-                                lambda: asyncio.run(self._mcp_manager.list_all_tools())
-                            ).result(timeout=10)
-                    else:
-                        mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
-                except RuntimeError:
-                    mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
+                            with concurrent.futures.ThreadPoolExecutor() as pool:
+                                mcp_tools = pool.submit(
+                                    lambda: asyncio.run(self._mcp_manager.list_all_tools())
+                                ).result(timeout=10)
+                        else:
+                            mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
+                    except RuntimeError:
+                        mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 
                 for t in mcp_tools:
                     tools.append(
@@ -311,6 +390,9 @@ class ConversationManager:
                     )
             except Exception as e:
                 logger.warning("Failed to load MCP tools: %s", e)
+
+        # Agent tools (spawn_agent, list_provider_models)
+        tools.extend(self._get_agent_tools())
 
         return tools
 
@@ -638,7 +720,7 @@ class ConversationManager:
             self._in_tool_use_loop = False
 
         # Check for deferred compaction
-        self._check_compaction(conversation_id, model_id, status_callback)
+        self._check_compaction(conversation_id, model_id, user_guid, status_callback)
 
         return {
             "content": final_content,
@@ -648,6 +730,119 @@ class ConversationManager:
         }
 
     # -- System instructions --------------------------------------------------
+
+    def _build_conversation_tool_context(self) -> str:
+        """Build additional system prompt context for enabled tools."""
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        parts: list[str] = []
+
+        # Filesystem allowed paths
+        fs_config = embedded.get("filesystem", {})
+        allowed_paths = fs_config.get("allowed_paths", [])
+        if isinstance(allowed_paths, str):
+            allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
+        if fs_config.get("enabled", True) and allowed_paths:
+            path_list = ", ".join(f"`{p}`" for p in allowed_paths)
+            parts.append(
+                f"**Filesystem access:** You can read"
+                + (" and write" if fs_config.get("mode") == "read_write" else "")
+                + f" files within these paths: {path_list}\n"
+            )
+
+        # System commands
+        cmd_config = embedded.get("system_commands", {})
+        if cmd_config.get("enabled", False):
+            import platform
+            import sys
+
+            if sys.platform == "darwin":
+                os_desc = "macOS with zsh shell"
+            elif sys.platform == "win32":
+                os_desc = "Windows with PowerShell/cmd"
+            else:
+                os_desc = "Linux with bash shell"
+
+            parts.append(
+                f"**System commands:** You can execute shell commands on the host system "
+                f"({os_desc}, {platform.machine()}). Use `run_command` to run CLI tools "
+                f"like git, docker, aws, curl, etc. Use `get_tool_documentation('run_command')` "
+                f"for the full usage guide. Commands require user approval by default.\n"
+            )
+
+        # Email
+        email_config = embedded.get("email", {})
+        if email_config.get("enabled", False) and email_config.get("host"):
+            sender = email_config.get("sender", "")
+            if sender:
+                parts.append(
+                    f"**Email:** You can send emails via `send_email` (sender: {sender}) "
+                    f"or save drafts via `draft_email`.\n"
+                )
+
+        # Agents
+        agent_config = embedded.get("agents", {})
+        if agent_config.get("enabled", False):
+            mode = agent_config.get("default_mode", "orchestrator")
+            mode_desc = (
+                "orchestrator-workers (agents get fresh context with just the task)"
+                if mode == "orchestrator"
+                else "chain (agents see the full conversation context)"
+            )
+            model_selection = agent_config.get("model_selection", "same")
+
+            agent_desc = (
+                f"**Agent spawning:** You can spawn independent sub-agents via `spawn_agent` "
+                f"to work on tasks in parallel. Current mode: {mode_desc}.\n\n"
+                f"**When to use agents:** You should proactively consider spawning agents when:\n"
+                f"- The user's request involves multiple independent tasks (e.g. research + analysis + writing)\n"
+                f"- Tasks can be done in parallel (e.g. gathering data from different sources)\n"
+                f"- A sub-task is complex enough to benefit from focused, independent work\n"
+                f"- You want to delegate research while continuing to interact with the user\n\n"
+                f"**When NOT to use agents:** Simple single-step tasks, quick tool calls, "
+                f"or tasks that require back-and-forth with the user.\n\n"
+                f"Agents have access to all enabled tools. "
+                f"Use `get_tool_documentation('spawn_agent')` for the full guide.\n"
+            )
+
+            if model_selection in ("auto_select", "auto_select_approved"):
+                approval_note = (
+                    "The user will be asked to approve your model choice before the agent starts."
+                    if model_selection == "auto_select"
+                    else "Your model choice will be used directly without user confirmation."
+                )
+                agent_desc += (
+                    f"**Agent model selection:** You can choose the model for each agent. "
+                    f"Use `list_provider_models` to see available models from the current provider, "
+                    f"then pass your chosen model_id and model_justification to `spawn_agent`. "
+                    f"{approval_note} Consider using:\n"
+                    f"- Faster/cheaper models for simple data gathering tasks\n"
+                    f"- More capable models for complex analysis or reasoning\n"
+                )
+                # List models for quick reference
+                try:
+                    provider_name = self._llm.active_provider
+                    if provider_name and provider_name in self._llm.providers:
+                        models = self._llm.providers[provider_name].list_available_models()
+                        if models:
+                            model_lines = []
+                            for m in models[:10]:
+                                ctx = m.get("context_length", "?")
+                                if isinstance(ctx, int) and ctx >= 1000:
+                                    ctx = f"{ctx // 1000}K"
+                                model_lines.append(
+                                    f"  - `{m['id']}` ({m.get('name', '')}, {ctx} ctx)"
+                                )
+                            agent_desc += "Available models:\n" + "\n".join(model_lines) + "\n"
+                except Exception:
+                    pass
+            else:
+                agent_desc += "Agents will use the same model as this conversation.\n"
+
+            parts.append(agent_desc)
+
+        if parts:
+            return "\n".join(parts) + "\n"
+        return ""
 
     def _build_system_instructions(
         self, conv: dict, *, retrieved_context: str | None = None
@@ -669,9 +864,10 @@ class ConversationManager:
             f"- `delete_memory` — Remove a specific memory by ID.\n\n"
             f"**When the user tells you something about themselves, their work, or their preferences, proactively use `store_memory` to remember it.**\n"
             f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
-            f"**Other tools:** You may also have access to filesystem, document, web search, and other tools. "
+            f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
-            f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
+            + self._build_conversation_tool_context()
+            + f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
             f"parameter references, examples, and best practices for any tool before using it. "
             f"Pass `_index` as the tool name to see all available documentation.\n\n"
             f"**Linked conversations:** If this conversation is linked to others, relevant context from those conversations "
@@ -751,6 +947,135 @@ class ConversationManager:
 
     # -- Tool execution -------------------------------------------------------
 
+    def _execute_single_tool(
+        self,
+        tool_call: dict,
+        conversation_id: int,
+        user_guid: str,
+        *,
+        status_callback: Callable | None = None,
+    ) -> dict:
+        """Execute a single tool call and return the tool_result dict.
+
+        Extracted from _execute_tools so that agent calls can be dispatched
+        to a thread pool for parallel execution.
+        """
+        from spark.database import mcp_ops, tool_permissions
+
+        tool_name = tool_call.get("name", "")
+        tool_id = tool_call.get("id", "")
+        tool_input = tool_call.get("input", {})
+
+        if status_callback:
+            status_callback(
+                "tool_call",
+                {
+                    "tool_use_id": tool_id,
+                    "tool_name": tool_name,
+                    "params": tool_input,
+                },
+            )
+
+        # Check permissions (conversation-level, then global)
+        permission = tool_permissions.is_tool_allowed(
+            self._db, conversation_id, tool_name, user_guid=user_guid
+        )
+
+        # System commands: always prompt when require_approval is on,
+        # unless running without a callback (autonomous actions).
+        if (
+            tool_name == "run_command"
+            and self._tool_permission_callback
+            and self._embedded_tools_config.get("embedded_tools", {})
+            .get("system_commands", {})
+            .get("require_approval", True)
+        ):
+            permission = None  # Force re-prompt
+
+        # Email send_email: always prompt when require_approval is on,
+        # unless running without a callback (autonomous actions).
+        if (
+            tool_name == "send_email"
+            and self._tool_permission_callback
+            and self._embedded_tools_config.get("embedded_tools", {})
+            .get("email", {})
+            .get("require_approval", True)
+        ):
+            permission = None  # Force re-prompt
+
+        if permission is None:
+            # First use — prompt user
+            if self._tool_permission_callback:
+                decision = self._tool_permission_callback(tool_name, tool_input)
+                if decision in ("allowed", "allowed_global", "once"):
+                    if decision == "allowed":
+                        # Approve this tool and category siblings for this conversation
+                        for sibling in _get_tool_category_siblings(tool_name):
+                            tool_permissions.set_tool_permission(
+                                self._db, conversation_id, sibling, "allowed", user_guid
+                            )
+                    elif decision == "allowed_global":
+                        # Approve this tool and category siblings globally
+                        for sibling in _get_tool_category_siblings(tool_name):
+                            tool_permissions.set_global_tool_permission(
+                                self._db, user_guid, sibling, "allowed"
+                            )
+                else:
+                    tool_permissions.set_tool_permission(
+                        self._db, conversation_id, tool_name, "denied", user_guid
+                    )
+                    return _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
+            # No callback — auto-allow (for testing or auto-approve mode)
+        elif permission is False:
+            return _tool_result(tool_id, "Tool execution denied.", is_error=True)
+
+        # Execute
+        logger.info(
+            "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
+        )
+        start_time = time.monotonic()
+        try:
+            result_text, is_error = self._call_tool(tool_name, tool_input)
+        except Exception as e:
+            result_text = f"Tool execution error: {e}"
+            is_error = True
+
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+        if is_error:
+            logger.warning("Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200])
+        else:
+            logger.info("Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100])
+
+        # Truncate large results
+        if len(result_text) > self._max_tool_result_tokens * 4:
+            result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+
+        # Record transaction
+        mcp_ops.record_transaction(
+            self._db,
+            conversation_id,
+            tool_name,
+            json.dumps(tool_input),
+            result_text,
+            user_guid,
+            is_error=is_error,
+            execution_time_ms=elapsed_ms,
+        )
+
+        if status_callback:
+            status_callback(
+                "tool_result",
+                {
+                    "tool_use_id": tool_id,
+                    "tool_name": tool_name,
+                    "result": result_text[:500],
+                    "status": "error" if is_error else "success",
+                },
+            )
+
+        return _tool_result(tool_id, result_text, is_error=is_error)
+
     def _execute_tools(
         self,
         conversation_id: int,
@@ -759,104 +1084,83 @@ class ConversationManager:
         *,
         status_callback: Callable | None = None,
     ) -> list[dict]:
-        """Execute a batch of tool calls and return results."""
-        from spark.database import mcp_ops, tool_permissions
+        """Execute a batch of tool calls and return results.
 
-        results: list[dict] = []
+        Non-agent tools are processed sequentially (preserving existing
+        behaviour).  Multiple ``spawn_agent`` calls are dispatched in
+        parallel via a thread pool so that independent agents can run
+        concurrently.
+        """
+        # Store per-request context so _call_tool can access it for agent tools
+        self._current_conversation_id = conversation_id
+        self._current_user_guid = user_guid
+        self._current_status_callback = status_callback
 
-        for tool_call in tool_calls:
-            tool_name = tool_call.get("name", "")
-            tool_id = tool_call.get("id", "")
-            tool_input = tool_call.get("input", {})
+        # Separate agent calls from other tool calls, preserving order.
+        non_agent_calls: list[tuple[int, dict]] = []
+        agent_calls: list[tuple[int, dict]] = []
 
-            if status_callback:
-                status_callback(
-                    "tool_call",
-                    {
-                        "tool_use_id": tool_id,
-                        "tool_name": tool_name,
-                        "params": tool_input,
-                    },
-                )
-
-            # Check permissions
-            permission = tool_permissions.is_tool_allowed(self._db, conversation_id, tool_name)
-            if permission is None:
-                # First use — prompt user
-                if self._tool_permission_callback:
-                    decision = self._tool_permission_callback(tool_name, tool_input)
-                    if decision in ("allowed", "once"):
-                        if decision == "allowed":
-                            # Approve this tool and all tools in the same category
-                            for sibling in _get_tool_category_siblings(tool_name):
-                                tool_permissions.set_tool_permission(
-                                    self._db, conversation_id, sibling, "allowed", user_guid
-                                )
-                    else:
-                        tool_permissions.set_tool_permission(
-                            self._db, conversation_id, tool_name, "denied", user_guid
-                        )
-                        results.append(
-                            _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
-                        )
-                        continue
-                # No callback — auto-allow (for testing or auto-approve mode)
-            elif permission is False:
-                results.append(_tool_result(tool_id, "Tool execution denied.", is_error=True))
-                continue
-
-            # Execute
-            logger.info(
-                "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
-            )
-            start_time = time.monotonic()
-            try:
-                result_text, is_error = self._call_tool(tool_name, tool_input)
-            except Exception as e:
-                result_text = f"Tool execution error: {e}"
-                is_error = True
-
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-
-            if is_error:
-                logger.warning(
-                    "Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200]
-                )
+        for idx, tc in enumerate(tool_calls):
+            if tc.get("name") == "spawn_agent":
+                agent_calls.append((idx, tc))
             else:
-                logger.info(
-                    "Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100]
-                )
+                non_agent_calls.append((idx, tc))
 
-            # Truncate large results
-            if len(result_text) > self._max_tool_result_tokens * 4:
-                result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+        # Dict to collect results keyed by original index for correct ordering.
+        result_map: dict[int, dict] = {}
 
-            # Record transaction
-            mcp_ops.record_transaction(
-                self._db,
-                conversation_id,
-                tool_name,
-                json.dumps(tool_input),
-                result_text,
-                user_guid,
-                is_error=is_error,
-                execution_time_ms=elapsed_ms,
+        # 1. Execute non-agent tools sequentially.
+        for idx, tc in non_agent_calls:
+            result_map[idx] = self._execute_single_tool(
+                tc, conversation_id, user_guid, status_callback=status_callback
             )
 
-            if status_callback:
-                status_callback(
-                    "tool_result",
-                    {
-                        "tool_use_id": tool_id,
-                        "tool_name": tool_name,
-                        "result": result_text[:500],
-                        "status": "error" if is_error else "success",
-                    },
-                )
+        # 2. Execute agent tools — in parallel when there are multiple,
+        # but only if model auto-select with approval is NOT active (the modal
+        # requires sequential execution). "auto_select_approved" trusts the
+        # LLM's model choice without a modal, allowing parallel execution.
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        agent_config = embedded.get("agents", {})
+        model_selection = agent_config.get("model_selection", "same")
+        needs_sequential = model_selection == "auto_select"
 
-            results.append(_tool_result(tool_id, result_text, is_error=is_error))
+        if len(agent_calls) > 1 and not needs_sequential:
+            import concurrent.futures
 
-        return results
+            logger.info("Dispatching %d spawn_agent calls in parallel", len(agent_calls))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agent_calls)) as pool:
+                future_to_idx: dict[concurrent.futures.Future, int] = {}
+                for idx, tc in agent_calls:
+                    future = pool.submit(
+                        self._execute_single_tool,
+                        tc,
+                        conversation_id,
+                        user_guid,
+                        status_callback=status_callback,
+                    )
+                    future_to_idx[future] = idx
+
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        result_map[idx] = future.result()
+                    except Exception as e:
+                        tool_id = agent_calls[0][1].get("id", "")
+                        for ai, atc in agent_calls:
+                            if ai == idx:
+                                tool_id = atc.get("id", "")
+                                break
+                        result_map[idx] = _tool_result(
+                            tool_id, f"Agent execution error: {e}", is_error=True
+                        )
+        elif len(agent_calls) == 1:
+            idx, tc = agent_calls[0]
+            result_map[idx] = self._execute_single_tool(
+                tc, conversation_id, user_guid, status_callback=status_callback
+            )
+
+        # 3. Reassemble results in the original tool_calls order.
+        return [result_map[i] for i in range(len(tool_calls))]
 
     def _get_memory_index_for_tools(self) -> Any:
         """Get or create a MemoryIndex for tool use."""
@@ -864,13 +1168,247 @@ class ConversationManager:
             try:
                 from spark.index.memory_index import MemoryIndex
 
-                self._memory_index_instance = MemoryIndex(self._db, "default")
+                self._memory_index_instance = MemoryIndex(self._db, self._user_guid)
             except Exception:
                 self._memory_index_instance = None
         return self._memory_index_instance
 
+    def _get_llm_service_for_model(self, model_id: str) -> Any:
+        """Get a dedicated LLM service instance for a specific model.
+
+        Creates a fresh provider instance to avoid conflicts with concurrent
+        conversations or agents that use different models on the same provider.
+        """
+        # Find which provider type owns this model
+        for name, provider in self._llm.providers.items():
+            try:
+                models = provider.list_available_models()
+                if any(m.get("id") == model_id for m in models):
+                    # Create a fresh instance of the same provider type
+                    fresh = self._clone_provider(name, provider)
+                    if fresh:
+                        fresh.set_model(model_id)
+                        return fresh
+                    # Fallback: use the shared instance (less safe but functional)
+                    provider.set_model(model_id)
+                    return provider
+            except Exception:
+                continue
+        return None
+
+    def _clone_provider(self, name: str, provider: Any) -> Any:
+        """Create a fresh instance of an LLM provider with the same config."""
+        try:
+            provider_type = type(provider)
+            if name == "Anthropic" or "anthropic" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "Ollama" or "ollama" in str(provider_type).lower():
+                return provider_type(
+                    base_url=getattr(provider, "_base_url", "http://localhost:11434")
+                )
+            elif name == "Google Gemini" or "gemini" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "X.AI" or "xai" in str(provider_type).lower():
+                return provider_type(api_key=getattr(provider, "_api_key", ""))
+            elif name == "AWS Bedrock" or "bedrock" in str(provider_type).lower():
+                clone = provider_type(
+                    region=getattr(provider, "_region", "us-east-1"),
+                    profile=getattr(provider, "_profile", None),
+                    access_key=getattr(provider, "_access_key", None),
+                    secret_key=getattr(provider, "_secret_key", None),
+                    session_token=getattr(provider, "_session_token", None),
+                    read_timeout=getattr(provider, "_read_timeout", 300),
+                )
+                # Copy the inference profile cache so the clone can resolve
+                # model IDs without re-listing profiles from the API.
+                profiles = getattr(provider, "_inference_profiles", {})
+                if profiles:
+                    clone._inference_profiles = dict(profiles)
+                return clone
+        except Exception as e:
+            logger.debug("Could not clone provider %s: %s", name, e)
+        return None
+
+    def _list_provider_models(self) -> tuple[str, bool]:
+        """List models from the conversation's current LLM provider."""
+        try:
+            provider_name = self._llm.active_provider
+            if not provider_name or provider_name not in self._llm.providers:
+                return "No active provider.", True
+            models = self._llm.providers[provider_name].list_available_models()
+            if not models:
+                return f"No models available from {provider_name}.", False
+            lines = [f"Available models from {provider_name}:\n"]
+            for m in models:
+                ctx = m.get("context_length", "?")
+                tools_support = "Yes" if m.get("supports_tools") else "No"
+                lines.append(
+                    f"- {m['id']} ({m.get('name', '')}) — context: {ctx}, tools: {tools_support}"
+                )
+            return "\n".join(lines), False
+        except Exception as e:
+            return f"Error listing models: {e}", True
+
+    def _execute_agent_spawn(
+        self, tool_input: dict, conversation_id: int, user_guid: str
+    ) -> tuple[str, bool]:
+        """Spawn a sub-agent to execute a task."""
+        import uuid
+
+        from spark.core.agent_executor import AgentExecutor
+        from spark.database import agents as agent_db
+
+        task = tool_input.get("task", "").strip()
+        agent_name = tool_input.get("agent_name", "Agent").strip()
+        model_id = tool_input.get("model_id", "")
+
+        if not task:
+            return "Error: task description is required.", True
+
+        # Determine model — fall back to the current conversation's model
+        if not model_id:
+            try:
+                from spark.database import conversations
+
+                conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+                if conv:
+                    model_id = conv.get("model_id", "")
+            except Exception:
+                pass
+
+        # Determine mode and model selection policy from settings
+        embedded = self._embedded_tools_config.get("embedded_tools", {})
+        agent_config = embedded.get("agents", {})
+        mode = agent_config.get("default_mode", "orchestrator")
+        max_iterations = agent_config.get("max_iterations", 15)
+
+        # Check per-conversation override, then fall back to global config
+        model_selection = agent_config.get("model_selection", "same")
+        try:
+            from spark.database import conversations as conv_db
+
+            conv_row = conv_db.get_conversation(self._db, conversation_id, user_guid)
+            per_conv = (conv_row or {}).get("agent_model_selection")
+            if per_conv:
+                model_selection = per_conv
+        except Exception:
+            pass
+
+        # When auto_select is enabled and the LLM chose a model, request user
+        # approval before execution.  The callback blocks this thread until the
+        # user responds (mirroring the permission_request pattern).
+        if model_selection == "auto_select" and model_id and self._agent_model_callback:
+            provider_name = self._llm.active_provider
+            available_models: list[dict] = []
+            if provider_name and provider_name in self._llm.providers:
+                available_models = self._llm.providers[provider_name].list_available_models()
+
+            model_justification = tool_input.get("model_justification", "")
+            approved_model = self._agent_model_callback(
+                agent_name,
+                task,
+                model_id,
+                [
+                    {
+                        "id": m["id"],
+                        "name": m.get("name", m["id"]),
+                        "context_length": m.get("context_length", 0),
+                    }
+                    for m in available_models
+                ],
+                model_justification,
+            )
+            if approved_model:
+                model_id = approved_model
+
+        agent_id = str(uuid.uuid4())[:12]
+
+        # Record in database
+        agent_db.create_agent_run(
+            self._db,
+            agent_id,
+            conversation_id,
+            agent_name,
+            task,
+            mode,
+            model_id,
+            user_guid,
+        )
+
+        # Get parent messages if chain mode
+        parent_messages = None
+        if mode == "chain":
+            parent_messages = self._get_messages_for_model(conversation_id)
+
+        # Create and run agent — get a dedicated LLM service for the model
+        # to avoid conflicts with concurrent conversations using different providers.
+        try:
+            agent_llm = self._get_llm_service_for_model(model_id)
+            if not agent_llm:
+                agent_db.complete_agent_run(
+                    self._db,
+                    agent_id,
+                    status="failed",
+                    result_text=f"Could not find provider for model '{model_id}'",
+                )
+                return f"Agent failed: no provider found for model '{model_id}'.", True
+
+            executor = AgentExecutor(
+                agent_llm,
+                self._db,
+                self._embedded_tools_config,
+                mcp_manager=self._mcp_manager,
+                mcp_loop=getattr(self, "_mcp_loop", None),
+                user_guid=user_guid,
+                tool_permission_callback=self._tool_permission_callback,
+                status_callback=self._current_status_callback,
+            )
+
+            result = executor.execute(
+                agent_id,
+                agent_name,
+                task,
+                model_id,
+                mode=mode,
+                parent_messages=parent_messages,
+                max_iterations=max_iterations,
+            )
+
+            # Record completion
+            agent_db.complete_agent_run(
+                self._db,
+                agent_id,
+                status="completed",
+                result_text=result.get("content", ""),
+                input_tokens=result.get("input_tokens", 0),
+                output_tokens=result.get("output_tokens", 0),
+                tool_calls_json=json.dumps(result.get("tool_calls", [])),
+            )
+
+            return result.get("content", "Agent completed with no output."), False
+
+        except Exception as e:
+            logger.error("Agent '%s' failed: %s", agent_name, e, exc_info=True)
+            agent_db.complete_agent_run(
+                self._db,
+                agent_id,
+                status="failed",
+                result_text=str(e),
+            )
+            return f"Agent '{agent_name}' failed: {e}", True
+
     def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
         """Execute a single tool. Returns (result_text, is_error)."""
+        # Agent tools — these need conversation context stored on the instance
+        if tool_name == "spawn_agent":
+            cid = self._current_conversation_id
+            uid = self._current_user_guid
+            if cid is None or uid is None:
+                return "Error: no active conversation context for agent spawn.", True
+            return self._execute_agent_spawn(tool_input, cid, uid)
+        if tool_name == "list_provider_models":
+            return self._list_provider_models()
+
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):
             from spark.tools.registry import execute_builtin_tool
@@ -880,23 +1418,22 @@ class ConversationManager:
             config["_memory_index"] = self._get_memory_index_for_tools()
             return execute_builtin_tool(tool_name, tool_input, config)
 
-        # Try MCP manager (async — run synchronously)
+        # Try MCP manager (async — dispatch on the persistent MCP event loop)
         if self._mcp_manager:
             try:
                 import asyncio
-                import concurrent.futures
 
                 async def _call() -> dict:
                     return await self._mcp_manager.call_tool(tool_name, tool_input)
 
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            result = pool.submit(lambda: asyncio.run(_call())).result(timeout=60)
-                    else:
-                        result = loop.run_until_complete(_call())
-                except RuntimeError:
+                if self._mcp_loop and self._mcp_loop.is_running():
+                    # Dispatch onto the persistent MCP loop where the sessions live.
+                    # This is critical: MCP stdio transports are bound to the loop
+                    # they were created on — calling from a different loop will fail.
+                    future = asyncio.run_coroutine_threadsafe(_call(), self._mcp_loop)
+                    result = future.result(timeout=60)
+                else:
+                    # Fallback for cases without a persistent loop (e.g. tests)
                     result = asyncio.run(_call())
 
                 # Extract text from result content
@@ -922,6 +1459,7 @@ class ConversationManager:
         self,
         conversation_id: int,
         model_id: str,
+        user_guid: str,
         status_callback: Callable | None = None,
     ) -> None:
         """Check and perform context compaction if needed."""
@@ -929,6 +1467,7 @@ class ConversationManager:
             self._compactor.check_and_compact(
                 conversation_id,
                 model_id,
+                user_guid,
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
             )
@@ -944,11 +1483,23 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
         "find_in_file",
         "get_directory_tree",
     ],
-    "documents": ["read_word", "read_excel", "read_pdf", "read_powerpoint"],
+    "documents": [
+        "read_word",
+        "read_excel",
+        "read_pdf",
+        "read_powerpoint",
+        "create_word",
+        "create_excel",
+        "create_powerpoint",
+        "create_pdf",
+    ],
     "archives": ["list_archive", "extract_archive"],
     "web": ["web_search", "web_fetch"],
+    "system_commands": ["run_command"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+    "email": ["send_email", "draft_email"],
     "core": ["get_current_datetime", "get_tool_documentation"],
+    "agents": ["spawn_agent", "list_provider_models"],
 }
 
 

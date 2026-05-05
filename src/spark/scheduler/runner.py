@@ -25,8 +25,21 @@ class ActionRunner:
     def __init__(self, ctx: Any, daemon_id: str) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        import tzlocal
+
+        # Enable APScheduler logging to capture trigger/misfire events
+        logging.getLogger("apscheduler").setLevel(logging.DEBUG)
+
         self._scheduler = BackgroundScheduler(
-            job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600},
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                # Large grace time to handle macOS sleep/wake — if the system
+                # sleeps through a scheduled time, the job should still fire
+                # when the system wakes within this window.
+                "misfire_grace_time": 7200,
+            },
+            timezone=tzlocal.get_localzone(),
         )
         self._poll_interval = 30
         self._poll_thread: threading.Thread | None = None
@@ -86,6 +99,11 @@ class ActionRunner:
         while self._running:
             try:
                 self._reload_all()
+                # Wake up the scheduler to check for misfired jobs.
+                # This is critical after macOS sleep/wake — APScheduler's
+                # internal timer may not recover, but this nudge forces it
+                # to re-evaluate pending triggers.
+                self._scheduler.wakeup()
             except Exception as e:
                 logger.error("Poll error: %s", e)
             time.sleep(self._poll_interval)
@@ -100,6 +118,10 @@ class ActionRunner:
             from spark.core.user_guid import get_user_guid
 
             user_guid = get_user_guid(self._ctx)
+
+            # Clear stale locks (locked for more than 30 minutes)
+            self._clear_stale_locks(db)
+
             actions = autonomous_actions.get_enabled_actions(db, user_guid)
             scheduled_ids = {job.id for job in self._scheduler.get_jobs()}
             current_action_ids = set()
@@ -125,9 +147,18 @@ class ActionRunner:
                 if job_id not in scheduled_ids:
                     self._schedule_action(action, job_id, user_guid)
                 else:
-                    # Log existing scheduled jobs
+                    # Sync next_run_at in DB from scheduler's actual next fire time.
+                    # This keeps the tray display accurate after sleep/wake or misfires.
                     job = self._scheduler.get_job(job_id)
                     if job and job.next_run_time:
+                        next_utc = job.next_run_time.astimezone(timezone.utc)
+                        stored = action.get("next_run_at", "")
+                        if stored != next_utc.isoformat():
+                            from spark.database import autonomous_actions as aa
+
+                            aa.update_action(
+                                db, action_id, user_guid, next_run_at=next_utc.isoformat()
+                            )
                         logger.debug(
                             "  '%s' already scheduled, next: %s",
                             action.get("name"),
@@ -188,12 +219,16 @@ class ActionRunner:
                     )
                     return
 
+                import tzlocal
+
+                local_tz = tzlocal.get_localzone()
                 trigger = CronTrigger(
                     minute=parts[0],
                     hour=parts[1],
                     day=parts[2],
                     month=parts[3],
                     day_of_week=parts[4],
+                    timezone=local_tz,
                 )
                 self._scheduler.add_job(
                     self._execute_action,
@@ -203,20 +238,26 @@ class ActionRunner:
                     replace_existing=True,
                 )
 
-                # Calculate and store next_run_at
-                next_fire = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+                # Calculate and store next_run_at in UTC for consistent DB storage
+                next_fire = trigger.get_next_fire_time(None, datetime.now(local_tz))
                 if next_fire:
                     from spark.database import autonomous_actions as aa
 
+                    # Store as UTC in database
+                    next_fire_utc = next_fire.astimezone(timezone.utc)
                     aa.update_action(
-                        self._get_db(), action["id"], user_guid, next_run_at=next_fire.isoformat()
+                        self._get_db(),
+                        action["id"],
+                        user_guid,
+                        next_run_at=next_fire_utc.isoformat(),
                     )
 
+                local_str = next_fire.strftime("%Y-%m-%d %H:%M %Z") if next_fire else "N/A"
                 logger.info(
                     "Scheduled recurring action: '%s' (cron: %s, next: %s)",
                     action["name"],
                     cron,
-                    next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A",
+                    local_str,
                 )
 
             elif schedule_type == "one_off":
@@ -250,6 +291,32 @@ class ActionRunner:
         except Exception as e:
             logger.error("Failed to schedule action '%s': %s", action.get("name"), e)
 
+    def _clear_stale_locks(self, db: Any) -> None:
+        """Clear action locks older than 30 minutes to prevent stuck actions."""
+        try:
+            ph = db.placeholder
+            cursor = db.execute(f"""SELECT id, name, locked_by, locked_at FROM autonomous_actions
+                    WHERE locked_by IS NOT NULL AND locked_at IS NOT NULL
+                    AND locked_at < datetime('now', '-30 minutes')""")
+            stale = cursor.fetchall()
+            for row in stale:
+                row_dict = dict(row)
+                logger.warning(
+                    "Clearing stale lock on action '%s' (id=%d, locked_by=%s, locked_at=%s)",
+                    row_dict.get("name"),
+                    row_dict.get("id"),
+                    row_dict.get("locked_by"),
+                    row_dict.get("locked_at"),
+                )
+                db.execute(
+                    f"UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = {ph}",
+                    (row_dict["id"],),
+                )
+            if stale:
+                db.commit()
+        except Exception as e:
+            logger.debug("Stale lock check: %s", e)
+
     def _execute_action(self, action_id: int) -> None:
         """Execute an action."""
         logger.info("Executing action %d", action_id)
@@ -266,11 +333,13 @@ class ActionRunner:
             user_guid = get_user_guid(self._ctx)
             job = self._scheduler.get_job(f"action_{action_id}")
             if job and job.next_run_time:
+                # Store as UTC for consistent DB storage
+                next_utc = job.next_run_time.astimezone(timezone.utc)
                 aa.update_action(
                     self._get_db(),
                     action_id,
                     user_guid,
-                    next_run_at=job.next_run_time.isoformat(),
+                    next_run_at=next_utc.isoformat(),
                 )
                 logger.info("Next run for action %d: %s", action_id, job.next_run_time)
         except Exception as e:
