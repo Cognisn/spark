@@ -447,10 +447,16 @@ class ConversationManager:
     # -- Message handling -----------------------------------------------------
 
     def get_messages(self, conversation_id: int) -> list[dict]:
-        """Get active messages for a conversation."""
+        """Get messages for a conversation, for UI display.
+
+        Includes rolled-up messages so the user sees the full chat history
+        when reloading a compacted conversation. The LLM-context loader
+        (`_get_messages_for_model`) keeps the default filter and excludes
+        rolled-up messages, preserving the token-saving effect of compaction.
+        """
         from spark.database import messages
 
-        return messages.get_messages(self._db, conversation_id)
+        return messages.get_messages(self._db, conversation_id, include_rolled_up=True)
 
     def send_message(
         self,
