@@ -241,6 +241,40 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse(runs)
 
 
+@router.post("/api/{action_id}/run-now")
+async def run_action_now(request: Request, action_id: int) -> JSONResponse:
+    """Trigger an immediate action execution.
+
+    Runs the action using ActionExecutor in a background thread with its
+    own MCP connections, identical to how the daemon would execute it.
+    """
+    if r := _guard(request):
+        return r
+    db = getattr(request.app.state, "database", None)
+    ctx = getattr(request.app.state, "ctx", None)
+    if not db or not ctx:
+        return JSONResponse({"error": "Not initialised"}, status_code=503)
+
+    from spark.database import autonomous_actions
+
+    action = autonomous_actions.get_action(db.connection, action_id, _user(request))
+    if not action:
+        return JSONResponse({"error": "Action not found"}, status_code=404)
+
+    import threading
+
+    def _run() -> None:
+        from spark.scheduler.executor import ActionExecutor
+
+        executor = ActionExecutor(ctx, "web-run-now")
+        executor.execute(action_id)
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+
+    return JSONResponse({"status": "running", "message": f"Action '{action['name']}' started."})
+
+
 @router.post("/api/ai-create")
 async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
@@ -256,6 +290,7 @@ async def ai_create_message(request: Request) -> JSONResponse:
     history = data.get("history", [])
     action_name = data.get("action_name", "")
     model_id = data.get("model_id", "")
+    conversation_id = data.get("conversation_id")
 
     if not message:
         return JSONResponse({"error": "Empty message"}, status_code=400)
@@ -284,6 +319,41 @@ async def ai_create_message(request: Request) -> JSONResponse:
     system_prompt = ACTION_CREATION_SYSTEM_PROMPT
     if action_name or model_id:
         system_prompt += f"\n\nThe user has already chosen:\n- Action name: {action_name}\n- Model: {model_id}\n\nUse these values when creating the action. Do not ask the user for the name or model again."
+
+    # Inject conversation context if creating from a conversation
+    if conversation_id and conv_mgr and not history:
+        try:
+            conv_messages = conv_mgr.get_messages(int(conversation_id))
+            if conv_messages:
+                # Build a summary of the conversation for the AI to analyse
+                conv_lines = []
+                for msg in conv_messages:
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if (
+                        role in ("user", "assistant")
+                        and isinstance(content, str)
+                        and content.strip()
+                    ):
+                        # Skip tool result markers and JSON blocks
+                        if content.startswith("[TOOL_RESULTS]") or content.startswith("["):
+                            continue
+                        # Truncate very long messages
+                        if len(content) > 500:
+                            content = content[:500] + "..."
+                        conv_lines.append(f"**{role.title()}:** {content}")
+
+                if conv_lines:
+                    conv_summary = "\n".join(conv_lines[-30:])  # Last 30 messages
+                    system_prompt += (
+                        f"\n\n## Source Conversation\n"
+                        f"The user is creating this action from an existing conversation. "
+                        f"Analyse the conversation below to understand what the user has been "
+                        f"working on, and use it to suggest an appropriate action prompt, "
+                        f"schedule, and configuration.\n\n{conv_summary}"
+                    )
+        except Exception as e:
+            logger.warning("Failed to load conversation context: %s", e)
 
     all_tool_calls: list[dict] = []
     for _ in range(10):

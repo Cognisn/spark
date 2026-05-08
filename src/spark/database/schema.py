@@ -179,6 +179,15 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             FOREIGN KEY (conversation_id) REFERENCES conversations(id),
             UNIQUE(conversation_id, tool_name)
         )""",
+        f"""CREATE TABLE IF NOT EXISTS global_tool_permissions (
+            id {auto},
+            user_guid TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            permission_state TEXT NOT NULL,
+            granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_guid, tool_name)
+        )""",
         f"""CREATE TABLE IF NOT EXISTS autonomous_actions (
             id {auto},
             name TEXT UNIQUE NOT NULL,
@@ -226,6 +235,24 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             user_guid TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (action_id) REFERENCES autonomous_actions(id),
             UNIQUE(action_id, tool_name)
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS agent_runs (
+            id {auto},
+            agent_id TEXT UNIQUE NOT NULL,
+            parent_conversation_id INTEGER NOT NULL,
+            agent_name TEXT NOT NULL,
+            task_description TEXT,
+            mode TEXT NOT NULL DEFAULT 'orchestrator',
+            model_id TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            result_text TEXT,
+            tool_calls_json TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            user_guid TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (parent_conversation_id) REFERENCES conversations(id)
         )""",
         f"""CREATE TABLE IF NOT EXISTS context_index_elements (
             id {auto},
@@ -288,10 +315,13 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_violations_timestamp ON prompt_inspection_violations(timestamp)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_conv ON conversation_tool_permissions(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_tool ON conversation_tool_permissions(tool_name)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_user ON global_tool_permissions(user_guid)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_tool ON global_tool_permissions(tool_name)",
         "CREATE INDEX IF NOT EXISTS idx_actions_enabled ON autonomous_actions(is_enabled)",
         "CREATE INDEX IF NOT EXISTS idx_actions_next_run ON autonomous_actions(next_run_at)",
         "CREATE INDEX IF NOT EXISTS idx_action_runs_action ON action_runs(action_id)",
         "CREATE INDEX IF NOT EXISTS idx_action_runs_status ON action_runs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_runs_conv ON agent_runs(parent_conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_context_idx_conv ON context_index_elements(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_context_idx_hash ON context_index_elements(content_hash)",
         "CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_guid)",
@@ -319,6 +349,9 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN include_tool_results INTEGER DEFAULT 1",
         "ALTER TABLE conversations ADD COLUMN is_favourite INTEGER DEFAULT 0",
         "ALTER TABLE conversations ADD COLUMN prompt_caching INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN agents_enabled INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN agent_mode TEXT DEFAULT NULL",
+        "ALTER TABLE conversations ADD COLUMN agent_model_selection TEXT DEFAULT NULL",
     ]
 
     for sql in migrations:

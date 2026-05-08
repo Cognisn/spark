@@ -62,6 +62,58 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
     return JSONResponse(messages)
 
 
+@router.get("/{conversation_id}/api/tool-activity")
+async def get_tool_activity(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get tool call history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import mcp_ops
+
+    transactions = mcp_ops.get_transactions(conv_mgr._db, conversation_id)
+    # Return newest-last so the panel renders in chronological order.
+    transactions.reverse()
+    # Strip the embedding-sized binary blob; keep only display fields.
+    result = []
+    for t in transactions:
+        result.append(
+            {
+                "id": t.get("id"),
+                "tool_name": t.get("tool_name", ""),
+                "tool_input": t.get("tool_input", "{}"),
+                "tool_response": t.get("tool_response", ""),
+                "is_error": bool(t.get("is_error")),
+                "execution_time_ms": t.get("execution_time_ms"),
+                "timestamp": t.get("transaction_timestamp"),
+            }
+        )
+    return JSONResponse(result)
+
+
+@router.get("/{conversation_id}/api/agent-history")
+async def get_agent_history(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get agent run history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import agents as agent_db
+
+    runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+    # Serialise datetime and JSON fields for the frontend.
+    result = []
+    for r in runs:
+        entry = dict(r)
+        # Ensure datetimes are strings
+        for key in ("created_at", "completed_at"):
+            val = entry.get(key)
+            if val and not isinstance(val, str):
+                entry[key] = str(val)
+        result.append(entry)
+    return JSONResponse(result)
+
+
 @router.post("/{conversation_id}/api/send")
 async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     """API: send a message (non-streaming fallback)."""
@@ -105,15 +157,30 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     model_id = conv.get("model_id", "")
     context_window = resolver.get_context_window(model_id)
 
+    # Sum token usage from agent runs for this conversation
+    agent_input_tokens = 0
+    agent_output_tokens = 0
+    try:
+        from spark.database import agents as agent_db
+
+        runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+        for r in runs:
+            agent_input_tokens += r.get("input_tokens", 0) or 0
+            agent_output_tokens += r.get("output_tokens", 0) or 0
+    except Exception:
+        pass
+
     return JSONResponse(
         {
             "id": conv.get("id"),
             "name": conv.get("name"),
             "model_id": model_id,
             "created_at": conv.get("created_at"),
-            "tokens_sent": conv.get("tokens_sent", 0),
-            "tokens_received": conv.get("tokens_received", 0),
-            "total_tokens": conv.get("total_tokens", 0),
+            "tokens_sent": (conv.get("tokens_sent", 0) or 0) + agent_input_tokens,
+            "tokens_received": (conv.get("tokens_received", 0) or 0) + agent_output_tokens,
+            "total_tokens": (conv.get("total_tokens", 0) or 0)
+            + agent_input_tokens
+            + agent_output_tokens,
             "context_window": context_window,
             "instructions": conv.get("instructions"),
             "compaction_threshold": conv.get("compaction_threshold"),
@@ -126,6 +193,9 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "max_history_messages": conv.get("max_history_messages"),
             "include_tool_results": bool(conv.get("include_tool_results", True)),
             "prompt_caching": bool(conv.get("prompt_caching", True)),
+            "agents_enabled": bool(conv.get("agents_enabled", False)),
+            "agent_mode": conv.get("agent_mode") or "",
+            "agent_model_selection": conv.get("agent_model_selection") or "",
         }
     )
 
@@ -154,6 +224,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "max_history_messages",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
+        "agent_mode",
+        "agent_model_selection",
     }
     _BOOL_FIELDS = {
         "memory_enabled",
@@ -161,6 +234,7 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "rag_tool_enabled",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
     }
 
     updates: dict[str, Any] = {}
@@ -387,6 +461,30 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
 
 
 # -- Permission ---------------------------------------------------------------
+
+
+@router.post("/agent/model-approve")
+async def approve_agent_model(request: Request) -> JSONResponse:
+    """API: respond to an agent model approval request.
+
+    Signals the streaming thread that is waiting for the user to approve or
+    override the model selected for a sub-agent.
+    """
+    data = await request.json()
+    request_id = data.get("request_id")
+    model_id = data.get("model_id", "")
+
+    events = getattr(request.app.state, "agent_model_events", {})
+    responses = getattr(request.app.state, "agent_model_responses", {})
+
+    if request_id in events:
+        responses[request_id] = model_id
+        events[request_id].set()
+        logger.info("Agent model approval for %s: %s", request_id, model_id)
+    else:
+        logger.warning("Agent model approval for unknown request %s", request_id)
+
+    return JSONResponse({"status": "ok"})
 
 
 @router.post("/permission/respond")

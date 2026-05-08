@@ -125,8 +125,30 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             from spark.llm.bedrock import BedrockProvider
 
             region = settings.get("providers.aws_bedrock.region", "us-east-1")
+            auth_method = settings.get("providers.aws_bedrock.auth_method", "sso")
             profile = settings.get("providers.aws_bedrock.profile")
-            provider = BedrockProvider(region=region, profile=profile)
+            access_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.access_key"))
+            secret_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.secret_key"))
+            session_token = _resolve_secret(
+                ctx, settings.get("providers.aws_bedrock.session_token")
+            )
+            read_timeout = int(
+                settings.get("providers.aws_bedrock.read_timeout", 300) or 300
+            )
+
+            # Only pass explicit keys when auth method is not SSO.
+            if auth_method in ("iam", "session") and access_key and secret_key:
+                provider = BedrockProvider(
+                    region=region,
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    session_token=session_token or None,
+                    read_timeout=read_timeout,
+                )
+            else:
+                provider = BedrockProvider(
+                    region=region, profile=profile, read_timeout=read_timeout
+                )
             mgr.register_provider(provider)
         except Exception as e:
             logger.warning("Failed to init AWS Bedrock provider: %s", e)
@@ -251,6 +273,13 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             conv_settings = ctx.settings.get("conversation") or {}
             embedded_tools_config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
 
+            # Resolve secret:// URIs within embedded tools config
+            for _cat, cat_config in embedded_tools_config.get("embedded_tools", {}).items():
+                if isinstance(cat_config, dict):
+                    for key, val in cat_config.items():
+                        if isinstance(val, str) and val.startswith("secret://"):
+                            cat_config[key] = _resolve_secret(ctx, val)
+
             # Pass prompt inspection settings into the config
             if ctx.settings.get("prompt_inspection.enabled"):
                 embedded_tools_config["_prompt_inspection_enabled"] = True
@@ -339,8 +368,33 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 ),
                 embedded_tools_config=embedded_tools_config,
                 mcp_manager=mcp_manager,
+                user_guid=app.state.user_guid,
+                mcp_loop=getattr(app.state, "_mcp_loop", None),
                 prompt_caching=bool(ctx.settings.get("conversation.prompt_caching", True)),
             )
+
+            # Migrate any orphaned memories stored under "default" user_guid
+            if app.state.user_guid != "default":
+                try:
+                    ph = database.connection.placeholder
+                    cursor = database.connection.execute(
+                        f"SELECT COUNT(*) FROM user_memories WHERE user_guid = {ph}",
+                        ("default",),
+                    )
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        database.connection.execute(
+                            f"UPDATE user_memories SET user_guid = {ph} WHERE user_guid = {ph}",
+                            (app.state.user_guid, "default"),
+                        )
+                        database.connection.commit()
+                        logger.info(
+                            "Migrated %d memories from 'default' to user %s",
+                            count,
+                            app.state.user_guid[:8] + "...",
+                        )
+                except Exception as e:
+                    logger.debug("Memory migration check: %s", e)
 
             # Step 4: Embedding model (warm up)
             status["stage"] = "Loading embedding model..."
@@ -484,26 +538,41 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
             ssl_kwargs["ssl_certfile"] = cert_file
             ssl_kwargs["ssl_keyfile"] = key_file
             logger.info("SSL enabled with certificate: %s", cert_file)
-        elif auto_generate:
+        else:
+            # Auto-generate a self-signed certificate if no cert files provided
             try:
                 from spark.web.ssl_utils import generate_self_signed_cert
 
                 cert_path, key_path = generate_self_signed_cert()
                 ssl_kwargs["ssl_certfile"] = str(cert_path)
                 ssl_kwargs["ssl_keyfile"] = str(key_path)
-                logger.info("SSL enabled with auto-generated certificate")
+                logger.info("SSL enabled with auto-generated self-signed certificate")
             except Exception as e:
-                logger.warning("Failed to generate SSL certificate: %s", e)
+                logger.warning("Failed to generate SSL certificate: %s — falling back to HTTP", e)
+                ssl_enabled = False
+                scheme = "http"
 
     logger.debug("Creating uvicorn config...")
-    config = uvicorn.Config(
-        app,
-        host=host,
-        port=port,
-        log_level="warning",
-        access_log=False,
-        **ssl_kwargs,
-    )
+    try:
+        loop = asyncio.get_event_loop()
+        logger.info("Event loop type: %s", type(loop).__name__)
+    except Exception as e:
+        logger.error("Failed to get event loop: %s", e)
+
+    try:
+        config = uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level="warning",
+            access_log=False,
+            **ssl_kwargs,
+        )
+        logger.info("Uvicorn config created successfully")
+    except Exception as e:
+        logger.error("Failed to create uvicorn config: %s", e, exc_info=True)
+        raise
+
     logger.info("Starting uvicorn server on %s:%d", host, port)
     server = uvicorn.Server(config)
     try:

@@ -103,10 +103,14 @@ jobs:
         id: pyapp_config
         shell: bash
         run: |
-          # GUI mode: uses pythonw.exe on Windows (no console window)
-          # The WindowsSelectorEventLoopPolicy in application.py prevents the
-          # asyncio hang that previously required IS_GUI=0
-          echo "is_gui=1" >> $GITHUB_OUTPUT
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Windows: use IS_GUI=0 (python.exe) because pythonw.exe
+            # swallows errors and breaks uvicorn. The NSIS installer
+            # hides the console via a VBS launcher script.
+            echo "is_gui=0" >> $GITHUB_OUTPUT
+          else
+            echo "is_gui=1" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate icons and splash image
         run: |
@@ -146,6 +150,76 @@ jobs:
         run: |
           mkdir -p release
           cp pyapp-src/target/${{ matrix.target }}/release/pyapp.exe release/${{ matrix.name }}.exe
+
+      - name: Sign Windows binary
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          SSL_COM_USERNAME: ${{ secrets.SSL_COM_USERNAME }}
+          SSL_COM_PASSWORD: ${{ secrets.SSL_COM_PASSWORD }}
+          SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
+          SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
+        run: |
+          EXE_PATH="${GITHUB_WORKSPACE}/release/${{ matrix.name }}.exe"
+          echo "Binary to sign: $EXE_PATH"
+          echo "Binary size before signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
+
+          # Skip signing if secrets are not configured
+          if [ -z "$SSL_COM_USERNAME" ] || [ -z "$SSL_COM_CREDENTIAL_ID" ]; then
+            echo "::warning::SSL.com secrets not configured — skipping code signing"
+            exit 0
+          fi
+
+          # Download CodeSignTool
+          curl -L --retry 3 --retry-delay 5 -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          # Verify we got a valid zip (not an HTML error page)
+          file CodeSignTool.zip | grep -q "Zip archive" || { echo "::error::Downloaded file is not a valid zip"; file CodeSignTool.zip; exit 1; }
+          unzip -o CodeSignTool.zip -d CodeSignTool
+
+          # Find CodeSignTool.bat
+          CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
+          if [ -z "$CST_BAT" ]; then
+            echo "::error::CodeSignTool.bat not found after extraction"
+            find CodeSignTool -type f | head -20
+            exit 1
+          fi
+          CST_DIR=$(dirname "$CST_BAT")
+          echo "CodeSignTool found at: $CST_DIR"
+
+          # Sign the binary — output to a temp dir then move back
+          SIGNED_DIR="${GITHUB_WORKSPACE}/signed_output"
+          mkdir -p "$SIGNED_DIR"
+
+          cd "$CST_DIR"
+          echo "Running CodeSignTool sign..."
+          ./CodeSignTool.bat sign \
+            -username="${SSL_COM_USERNAME}" \
+            -password="${SSL_COM_PASSWORD}" \
+            -totp_secret="${SSL_COM_TOTP_SECRET}" \
+            -credential_id="${SSL_COM_CREDENTIAL_ID}" \
+            -input_file_path="$EXE_PATH" \
+            -output_dir_path="$SIGNED_DIR" \
+            2>&1 | tee signing_output.log
+
+          SIGN_EXIT=$?
+          echo "CodeSignTool exit code: $SIGN_EXIT"
+
+          # Check if signed file was produced
+          SIGNED_FILE="$SIGNED_DIR/${{ matrix.name }}.exe"
+          if [ -f "$SIGNED_FILE" ]; then
+            echo "Signed binary found, replacing original..."
+            cp "$SIGNED_FILE" "$EXE_PATH"
+            echo "Binary size after signing: $(stat -c%s "$EXE_PATH" 2>/dev/null || stat -f%z "$EXE_PATH") bytes"
+          else
+            echo "::error::Signed binary not found at $SIGNED_FILE"
+            ls -la "$SIGNED_DIR/" || true
+            cat signing_output.log
+            exit 1
+          fi
+
+          # Verify the signature using PowerShell
+          echo "Verifying digital signature..."
+          powershell -Command "Get-AuthenticodeSignature '$EXE_PATH' | Format-List" || true
 
       - name: Upload binary
         uses: actions/upload-artifact@v5
@@ -379,6 +453,15 @@ jobs:
             fi
           done
 
+      - name: Create VBS launcher script
+        shell: bash
+        run: |
+          # VBS script hides the console window when launching spark-engine.exe
+          cat > launcher.vbs <<'VBSEOF'
+          Set WshShell = CreateObject("WScript.Shell")
+          WshShell.Run """" & Replace(WScript.ScriptFullName, "launcher.vbs", "spark-engine.exe") & """", 0, False
+          VBSEOF
+
       - name: Create NSIS installer script
         shell: bash
         env:
@@ -407,7 +490,7 @@ jobs:
           !define MUI_WELCOMEPAGE_TEXT "This will install Spark — Secure Personal AI Research Kit by Cognisn.\$\\r\$\\n\$\\r\$\\nSpark provides a multi-provider LLM interface with MCP tool integration, autonomous actions, and a built-in security layer.\$\\r\$\\n\$\\r\$\\nClick Next to continue."
           !define MUI_FINISHPAGE_TITLE "Spark Installation Complete"
           !define MUI_FINISHPAGE_TEXT "Spark has been installed successfully.\$\\r\$\\n\$\\r\$\\nClick Finish to close the installer."
-          !define MUI_FINISHPAGE_RUN "\$INSTDIR\\spark.exe"
+          !define MUI_FINISHPAGE_RUN "\$INSTDIR\\launcher.vbs"
           !define MUI_FINISHPAGE_RUN_TEXT "Launch Spark"
 
           !insertmacro MUI_PAGE_WELCOME
@@ -422,7 +505,6 @@ jobs:
 
           Section "Install"
             ; Clean previous installation (preserve user config in %APPDATA%\spark)
-            ; Remove old binaries and launcher scripts
             Delete "\$INSTDIR\\spark-engine.exe"
             Delete "\$INSTDIR\\spark.exe"
             Delete "\$INSTDIR\\launcher.vbs"
@@ -434,16 +516,32 @@ jobs:
             ; Clear PyApp cache so the new wheel is extracted fresh
             RMDir /r "\$LOCALAPPDATA\\pyapp"
 
+            ; Check and install Visual C++ Redistributable if needed
+            ReadRegStr \$0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\X64" "Installed"
+            StrCmp \$0 "1" vcredist_done
+              DetailPrint "Installing Visual C++ Redistributable..."
+              NSISdl::download "https://aka.ms/vs/17/release/vc_redist.x64.exe" "\$TEMP\\vc_redist.x64.exe"
+              Pop \$0
+              StrCmp \$0 "success" vcredist_install
+                DetailPrint "Warning: Could not download VC++ Redistributable. Some features may not work."
+                Goto vcredist_done
+              vcredist_install:
+                ExecWait '"\$TEMP\\vc_redist.x64.exe" /install /quiet /norestart' \$0
+                DetailPrint "VC++ Redistributable installer returned: \$0"
+                Delete "\$TEMP\\vc_redist.x64.exe"
+            vcredist_done:
+
             ; Install new files
             SetOutPath \$INSTDIR
             File "binary\\spark-windows-x86_64.exe"
             Rename "\$INSTDIR\\spark-windows-x86_64.exe" "\$INSTDIR\\spark-engine.exe"
+            File "launcher.vbs"
             File "assets\\icons\\spark.ico"
 
-            ; Shortcuts launch spark-engine.exe directly (splash screen is built into PyApp)
+            ; Shortcuts use the VBS launcher to hide the console window
             CreateDirectory "\$SMPROGRAMS\\Cognisn"
-            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
-            CreateShortCut "\$DESKTOP\\Spark.lnk" "\$INSTDIR\\spark-engine.exe" "" "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$SMPROGRAMS\\Cognisn\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
+            CreateShortCut "\$DESKTOP\\Spark.lnk" "wscript.exe" '"\$INSTDIR\\launcher.vbs"' "\$INSTDIR\\spark.ico"
 
             WriteUninstaller "\$INSTDIR\\Uninstall.exe"
 
@@ -451,6 +549,7 @@ jobs:
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "UninstallString" "\$INSTDIR\\Uninstall.exe"
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "Publisher" "Cognisn"
             WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayIcon" "\$INSTDIR\\spark.ico"
+            WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spark" "DisplayVersion" "${VERSION}"
           SectionEnd
 
           Section "Uninstall"
@@ -459,6 +558,7 @@ jobs:
 
             ; Remove all installed files
             Delete "\$INSTDIR\\spark-engine.exe"
+            Delete "\$INSTDIR\\launcher.vbs"
             Delete "\$INSTDIR\\spark.ico"
             Delete "\$INSTDIR\\Uninstall.exe"
             RMDir "\$INSTDIR"
@@ -478,6 +578,62 @@ jobs:
       - name: Build installer
         shell: cmd
         run: makensis installer.nsi
+
+      - name: Sign Windows installer
+        shell: bash
+        env:
+          SSL_COM_USERNAME: ${{ secrets.SSL_COM_USERNAME }}
+          SSL_COM_PASSWORD: ${{ secrets.SSL_COM_PASSWORD }}
+          SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
+          SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
+        run: |
+          INSTALLER=$(ls *-setup.exe | head -1)
+          echo "Installer to sign: $INSTALLER"
+
+          # Skip signing if secrets are not configured
+          if [ -z "$SSL_COM_USERNAME" ] || [ -z "$SSL_COM_CREDENTIAL_ID" ]; then
+            echo "::warning::SSL.com secrets not configured — skipping installer signing"
+            exit 0
+          fi
+
+          # Download CodeSignTool
+          curl -L --retry 3 --retry-delay 5 -o CodeSignTool.zip https://www.ssl.com/download/codesigntool-for-windows/
+          # Verify we got a valid zip (not an HTML error page)
+          file CodeSignTool.zip | grep -q "Zip archive" || { echo "::error::Downloaded file is not a valid zip"; file CodeSignTool.zip; exit 1; }
+          unzip -o CodeSignTool.zip -d CodeSignTool
+
+          CST_BAT=$(find CodeSignTool -name "CodeSignTool.bat" | head -1)
+          CST_DIR=$(dirname "$CST_BAT")
+
+          # Sign the installer — output to temp dir then move back
+          SIGNED_DIR="${GITHUB_WORKSPACE}/signed_output"
+          mkdir -p "$SIGNED_DIR"
+
+          echo "Running CodeSignTool sign on installer..."
+          cd "$CST_DIR"
+          ./CodeSignTool.bat sign \
+            -username="${SSL_COM_USERNAME}" \
+            -password="${SSL_COM_PASSWORD}" \
+            -totp_secret="${SSL_COM_TOTP_SECRET}" \
+            -credential_id="${SSL_COM_CREDENTIAL_ID}" \
+            -input_file_path="${GITHUB_WORKSPACE}/${INSTALLER}" \
+            -output_dir_path="$SIGNED_DIR" \
+            2>&1 | tee signing_output.log
+
+          # Check if signed file was produced
+          SIGNED_FILE="$SIGNED_DIR/${INSTALLER}"
+          if [ -f "$SIGNED_FILE" ]; then
+            echo "Signed installer found, replacing original..."
+            cp "$SIGNED_FILE" "${GITHUB_WORKSPACE}/${INSTALLER}"
+          else
+            echo "::error::Signed installer not found at $SIGNED_FILE"
+            ls -la "$SIGNED_DIR/" || true
+            exit 1
+          fi
+
+          # Verify
+          echo "Verifying installer signature..."
+          powershell -Command "Get-AuthenticodeSignature '${GITHUB_WORKSPACE}/${INSTALLER}' | Format-List" || true
 
       - name: Upload installer
         uses: actions/upload-artifact@v5
@@ -502,6 +658,7 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        continue-on-error: true  # Allow re-releases when version already exists
 
   # Step 7: Attach all artifacts to the GitHub Release
   attach-release:
