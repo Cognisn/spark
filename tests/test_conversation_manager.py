@@ -302,6 +302,62 @@ class TestSendMessage:
         assert "tool_result" in event_types
         assert "tool_iteration_complete" in event_types
 
+    def test_tool_denial_wording_steers_against_retry(
+        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+    ) -> None:
+        """When the user denies a tool, the AI must receive guidance not to retry."""
+        from spark.tools.registry import get_builtin_tools
+
+        def deny_all(name: str, inp: dict) -> str:
+            return "denied"
+
+        # Pick any builtin tool that isn't auto-allowed
+        tools = get_builtin_tools({"embedded_tools": {}})
+        if not tools:
+            pytest.skip("No builtin tools available")
+        tool_name = tools[0]["name"]
+
+        mgr = ConversationManager(
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
+            tool_permission_callback=deny_all,
+        )
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+
+        stub_llm.responses = [
+            {
+                "content": "",
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "tool_use": [
+                    {"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}
+                ],
+                "content_blocks": [
+                    {"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}
+                ],
+            },
+            {
+                "content": "I will not retry. What would you like me to do instead?",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 10},
+                "tool_use": None,
+                "content_blocks": [
+                    {"type": "text", "text": "I will not retry. What would you like me to do instead?"}
+                ],
+            },
+        ]
+
+        mgr.send_message(cid, "please use the tool", USER)
+
+        # Inspect what was stored — the tool_result message contains the wording
+        # the AI sees.
+        from spark.database import messages as msg_db
+        all_msgs = msg_db.get_messages(db.connection, cid, include_rolled_up=True)
+        tool_result_text = " ".join(m.get("content", "") for m in all_msgs)
+        assert "Do not retry this exact call" in tool_result_text
+        assert "ask the user how they would like to proceed" in tool_result_text
+
 
 class TestSystemInstructions:
     def test_includes_identity(self, manager: ConversationManager) -> None:

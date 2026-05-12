@@ -1030,10 +1030,22 @@ class ConversationManager:
                     tool_permissions.set_tool_permission(
                         self._db, conversation_id, tool_name, "denied", user_guid
                     )
-                    return _tool_result(tool_id, "Tool execution denied by user.", is_error=True)
+                    return _tool_result(
+                        tool_id,
+                        "The user denied permission for this tool call. Do not retry this exact call. "
+                        "Consider whether the task can be completed without it, or ask the user how "
+                        "they would like to proceed.",
+                        is_error=True,
+                    )
             # No callback — auto-allow (for testing or auto-approve mode)
         elif permission is False:
-            return _tool_result(tool_id, "Tool execution denied.", is_error=True)
+            return _tool_result(
+                tool_id,
+                "The user denied permission for this tool call. Do not retry this exact call. "
+                "Consider whether the task can be completed without it, or ask the user how "
+                "they would like to proceed.",
+                is_error=True,
+            )
 
         # Execute
         logger.info(
