@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import ContextCompactor
 from spark.database.connection import DatabaseConnection
 from spark.llm.base import LLMService
@@ -467,6 +468,7 @@ class ConversationManager:
         tools: list[dict[str, Any]] | None = None,
         stream_callback: Callable | None = None,
         status_callback: Callable | None = None,
+        cancel_token: CancellationToken | None = None,
     ) -> dict[str, Any]:
         """Send a user message and get the assistant response.
 
@@ -519,6 +521,7 @@ class ConversationManager:
                             "tool_calls": [],
                             "iterations": 0,
                             "blocked": True,
+                            "status": "completed",
                         }
         except Exception as e:
             logger.debug("Prompt inspection error (non-fatal): %s", e)
@@ -558,9 +561,44 @@ class ConversationManager:
         final_content = ""
         iterations = 0
 
+        def _is_cancelled() -> bool:
+            return cancel_token is not None and cancel_token.is_cancelled()
+
+        def _record_cancellation_marker() -> None:
+            marker = (
+                f"[TURN CANCELLED — {datetime.now(timezone.utc).isoformat()}]\n\n"
+                "The user cancelled this turn."
+            )
+            token_count = 0
+            try:
+                if self._llm.active_service is not None:
+                    token_count = self._llm.active_service.count_tokens(marker)
+            except Exception:
+                token_count = 0
+            msg_db.add_message(
+                self._db,
+                conversation_id,
+                "user",
+                marker,
+                token_count,
+                user_guid,
+            )
+
         try:
             for iteration in range(self._max_tool_iterations):
                 iterations = iteration + 1
+
+                # Cooperative cancellation check at the top of the loop —
+                # before invoking the LLM for this iteration.
+                if _is_cancelled():
+                    _record_cancellation_marker()
+                    return {
+                        "content": final_content,
+                        "usage": total_usage,
+                        "tool_calls": all_tool_calls,
+                        "iterations": iterations,
+                        "status": "cancelled",
+                    }
 
                 # Get messages for model (respects conv settings)
                 history = self._get_messages_for_model(conversation_id, conv)
@@ -606,6 +644,20 @@ class ConversationManager:
                         "tool_calls": all_tool_calls,
                         "iterations": iterations,
                         "error": True,
+                        "status": "completed",
+                    }
+
+                # Cooperative cancellation check immediately after the LLM
+                # returns — cancellation may have been requested during the
+                # invocation (e.g. while streaming).
+                if _is_cancelled():
+                    _record_cancellation_marker()
+                    return {
+                        "content": final_content,
+                        "usage": total_usage,
+                        "tool_calls": all_tool_calls,
+                        "iterations": iterations,
+                        "status": "cancelled",
                     }
 
                 # Accumulate usage (including cache stats if present)
@@ -693,6 +745,18 @@ class ConversationManager:
                     if status_callback:
                         status_callback("tool_iteration_complete", {"iteration": iterations})
 
+                    # Cooperative cancellation check after tools have executed —
+                    # avoids re-invoking the LLM for another iteration.
+                    if _is_cancelled():
+                        _record_cancellation_marker()
+                        return {
+                            "content": final_content,
+                            "usage": total_usage,
+                            "tool_calls": all_tool_calls,
+                            "iterations": iterations,
+                            "status": "cancelled",
+                        }
+
                     continue
 
                 # Final text response
@@ -733,6 +797,7 @@ class ConversationManager:
             "usage": total_usage,
             "tool_calls": all_tool_calls,
             "iterations": iterations,
+            "status": "completed",
         }
 
     # -- System instructions --------------------------------------------------

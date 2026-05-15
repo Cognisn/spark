@@ -358,6 +358,44 @@ class TestSendMessage:
         assert "Do not retry this exact call" in tool_result_text
         assert "ask the user how they would like to proceed" in tool_result_text
 
+    def test_cancel_token_aborts_tool_use_loop(
+        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+    ) -> None:
+        """When the cancel token is set mid-loop, send_message inserts a marker and exits."""
+        from spark.core.cancellation import CancellationToken
+        from spark.database import messages as msg_db
+
+        token = CancellationToken()
+
+        # Cancel as soon as the LLM is invoked the first time.
+        original_invoke = stub_llm.invoke_model
+
+        def cancelling_invoke(messages: list[dict], **kwargs: Any) -> dict:
+            token.cancel("user")
+            return original_invoke(messages, **kwargs)
+
+        stub_llm.invoke_model = cancelling_invoke  # type: ignore[method-assign]
+
+        mgr = ConversationManager(
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
+        )
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        result = mgr.send_message(cid, "hello", USER, cancel_token=token)
+
+        assert result.get("status") == "cancelled"
+        all_msgs = msg_db.get_messages(db.connection, cid, include_rolled_up=True)
+        contents = [m["content"] for m in all_msgs]
+        assert any(c.startswith("[TURN CANCELLED") for c in contents)
+
+    def test_no_cancel_token_unchanged(self, manager: ConversationManager) -> None:
+        """Regression — None token preserves today's behaviour."""
+        cid = manager.create_conversation("Test", "stub-model", USER)
+        result = manager.send_message(cid, "hello", USER)
+        assert result.get("status", "completed") == "completed"
+        assert result["content"] == "Test response"
+
 
 class TestSystemInstructions:
     def test_includes_identity(self, manager: ConversationManager) -> None:
