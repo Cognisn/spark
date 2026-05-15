@@ -7,6 +7,8 @@ import logging
 import time
 from typing import Any, Callable
 
+from spark.core.cancellation import CancellationToken
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +47,7 @@ class AgentExecutor:
         parent_messages: list[dict] | None = None,
         max_iterations: int = 15,
         max_tokens: int = 8192,
+        cancel_token: CancellationToken | None = None,
     ) -> dict[str, Any]:
         """Run the agent's tool-use loop.
 
@@ -85,7 +88,33 @@ class AgentExecutor:
         total_output = 0
         all_tool_calls: list[dict[str, Any]] = []
 
+        def _is_cancelled() -> bool:
+            return cancel_token is not None and cancel_token.is_cancelled()
+
+        def _cancelled_result() -> dict[str, Any]:
+            if self._status_callback:
+                self._status_callback(
+                    "agent_complete",
+                    {
+                        "agent_id": agent_id,
+                        "agent_name": agent_name,
+                        "status": "cancelled",
+                        "result": "[CANCELLED]",
+                        "input_tokens": total_input,
+                        "output_tokens": total_output,
+                    },
+                )
+            return {
+                "content": "[CANCELLED]",
+                "status": "cancelled",
+                "input_tokens": total_input,
+                "output_tokens": total_output,
+                "tool_calls": all_tool_calls,
+            }
+
         for iteration in range(max_iterations):
+            if _is_cancelled():
+                return _cancelled_result()
             response = self._llm.invoke_model(
                 messages,
                 max_tokens=max_tokens,
@@ -151,6 +180,8 @@ class AgentExecutor:
                     {"role": "assistant", "content": response.get("content_blocks", [])}
                 )
                 messages.append({"role": "user", "content": tool_results})
+                if _is_cancelled():
+                    return _cancelled_result()
                 continue
 
             # Handle max_tokens truncation — ask the model to summarise
@@ -184,6 +215,7 @@ class AgentExecutor:
 
             return {
                 "content": content,
+                "status": "completed",
                 "input_tokens": total_input,
                 "output_tokens": total_output,
                 "tool_calls": all_tool_calls,
@@ -205,6 +237,7 @@ class AgentExecutor:
 
         return {
             "content": f"Agent reached max iterations ({max_iterations}).",
+            "status": "completed",
             "input_tokens": total_input,
             "output_tokens": total_output,
             "tool_calls": all_tool_calls,
