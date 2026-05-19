@@ -47,6 +47,7 @@ class ConversationManager:
         mcp_loop: Any | None = None,
         tool_permission_callback: Callable | None = None,
         agent_model_callback: Callable | None = None,
+        agent_cancel_register: Callable[[str], CancellationToken] | None = None,
         embedded_tools_config: dict[str, Any] | None = None,
         index_config: dict[str, Any] | None = None,
         prompt_caching: bool = True,
@@ -63,6 +64,7 @@ class ConversationManager:
         self._mcp_loop = mcp_loop
         self._tool_permission_callback = tool_permission_callback
         self._agent_model_callback = agent_model_callback
+        self._agent_cancel_register = agent_cancel_register
         self._embedded_tools_config = embedded_tools_config or {}
         self._index_config = index_config or {}
         self._prompt_caching_enabled = prompt_caching
@@ -1405,6 +1407,12 @@ class ConversationManager:
                 model_id = approved_model
 
         agent_id = str(uuid.uuid4())[:12]
+        agent_token: CancellationToken | None = None
+        if self._agent_cancel_register is not None:
+            try:
+                agent_token = self._agent_cancel_register(agent_id)
+            except Exception:
+                agent_token = None
 
         # Record in database
         agent_db.create_agent_run(
@@ -1455,7 +1463,24 @@ class ConversationManager:
                 mode=mode,
                 parent_messages=parent_messages,
                 max_iterations=max_iterations,
+                cancel_token=agent_token,
             )
+
+            if result.get("status") == "cancelled":
+                agent_db.complete_agent_run(
+                    self._db,
+                    agent_id,
+                    status="cancelled",
+                    result_text=result.get("content", "[CANCELLED]"),
+                    input_tokens=result.get("input_tokens", 0),
+                    output_tokens=result.get("output_tokens", 0),
+                    tool_calls_json=json.dumps(result.get("tool_calls", [])),
+                )
+                return (
+                    "The user cancelled this agent. Do not retry the same task. "
+                    "If the user wants this work done, they will provide further instructions.",
+                    True,
+                )
 
             # Record completion
             agent_db.complete_agent_run(
