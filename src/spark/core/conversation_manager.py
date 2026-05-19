@@ -1467,15 +1467,22 @@ class ConversationManager:
             )
 
             if result.get("status") == "cancelled":
-                agent_db.complete_agent_run(
-                    self._db,
-                    agent_id,
-                    status="cancelled",
-                    result_text=result.get("content", "[CANCELLED]"),
-                    input_tokens=result.get("input_tokens", 0),
-                    output_tokens=result.get("output_tokens", 0),
-                    tool_calls_json=json.dumps(result.get("tool_calls", [])),
-                )
+                try:
+                    agent_db.complete_agent_run(
+                        self._db,
+                        agent_id,
+                        status="cancelled",
+                        result_text=result.get("content", "[CANCELLED]"),
+                        input_tokens=result.get("input_tokens", 0),
+                        output_tokens=result.get("output_tokens", 0),
+                        tool_calls_json=json.dumps(result.get("tool_calls", [])),
+                    )
+                except Exception as db_err:
+                    logger.warning(
+                        "Failed to persist cancelled status for agent %s: %s",
+                        agent_id,
+                        db_err,
+                    )
                 return (
                     "The user cancelled this agent. Do not retry the same task. "
                     "If the user wants this work done, they will provide further instructions.",
