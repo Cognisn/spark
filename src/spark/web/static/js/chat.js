@@ -167,7 +167,11 @@ function appendMessage(msg) {
     }
 
     // Compacted context
-    if (content.startsWith('[COMPACTED CONTEXT') || content.startsWith('[EMERGENCY TRUNCATION')) {
+    if (
+        content.startsWith('[COMPACTED CONTEXT') ||
+        content.startsWith('[EMERGENCY TRUNCATION') ||
+        content.startsWith('[TURN CANCELLED')
+    ) {
         appendSystemMessage(content.split('\n')[0]);
         return;
     }
@@ -795,6 +799,23 @@ async function respondPermission(decision) {
     bootstrap.Modal.getInstance(document.getElementById('permissionModal'))?.hide();
 }
 
+async function cancelAgent(agentId, btnEl) {
+    if (!agentId) return;
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = 'Cancelling…';
+    }
+    try {
+        await fetch('/chat/agent/cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id: agentId }),
+        });
+    } catch (err) {
+        console.error('Failed to cancel agent:', err);
+    }
+}
+
 async function approveAction(toolUseId, decision) {
     try {
         await fetch('/chat/permission/respond', {
@@ -915,6 +936,7 @@ function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCa
         running: '<i class="bi bi-arrow-repeat ap-status running"></i>',
         completed: '<i class="bi bi-check-circle-fill ap-status success"></i>',
         error: '<i class="bi bi-x-circle-fill ap-status error"></i>',
+        cancelled: '<i class="bi bi-slash-circle ap-status" style="color: var(--app-warning);"></i>',
     };
     const statusIcon = statusIcons[status] || statusIcons['running'];
     const taskTrunc = (task || '').length > 80 ? task.substring(0, 80) + '…' : (task || '');
@@ -972,6 +994,13 @@ function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCa
             ${toolCallsHtml ? `<div class="tp-detail-section" style="margin-top: 0.375rem;">Tool Calls</div><div id="${itemId}-tools">${toolCallsHtml}</div>` : `<div id="${itemId}-tools"></div>`}
             ${resultHtml}
             ${tokenHtml}
+            ${status === 'running' ? `<div class="ap-cancel-row" id="${itemId}-cancel-row" style="margin-top: 0.5rem;">
+                <button type="button" class="btn btn-app-ghost btn-sm" id="${itemId}-cancel-btn"
+                        onclick="cancelAgent('${agentId}', this)">
+                    <i class="bi bi-x-circle"></i> Cancel
+                </button>
+                <span style="font-size: 0.6875rem; color: var(--app-text-muted); margin-left: 0.5rem;">Will stop after current step.</span>
+            </div>` : ''}
         </div>
     `;
 
@@ -1051,10 +1080,19 @@ function updateStreamingAgentComplete(agentId, agentName, status, result) {
     if (oldStatus) {
         if (status === 'error') {
             oldStatus.className = 'bi bi-x-circle-fill ap-status error';
+            oldStatus.removeAttribute('style');
+        } else if (status === 'cancelled') {
+            oldStatus.className = 'bi bi-slash-circle ap-status';
+            oldStatus.style.color = 'var(--app-warning)';
         } else {
             oldStatus.className = 'bi bi-check-circle-fill ap-status success';
+            oldStatus.removeAttribute('style');
         }
     }
+
+    // Hide the Cancel row regardless of how the agent finished.
+    const cancelRow = document.getElementById(itemId + '-cancel-row');
+    if (cancelRow) cancelRow.style.display = 'none';
 
     // Add result summary
     if (result) {
@@ -1064,7 +1102,7 @@ function updateStreamingAgentComplete(agentId, agentName, status, result) {
                 ? (result.length > 200 ? result.substring(0, 200) + '…' : result)
                 : JSON.stringify(result).substring(0, 200);
             detail.insertAdjacentHTML('beforeend',
-                `<div class="tp-detail-section" style="margin-top: 0.375rem;">Result</div>
+                `<div class="tp-detail-section" style="margin-top: 0.375rem;">${status === 'cancelled' ? 'Cancelled' : 'Result'}</div>
                  <div class="tp-detail-code">${escapeHtml(truncResult)}</div>`);
         }
     }
