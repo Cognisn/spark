@@ -511,5 +511,20 @@ async def permission_respond(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@router.post("/agent/cancel")
+async def cancel_agent(request: Request) -> JSONResponse:
+    """API: cancel a running sub-agent. Idempotent — unknown ids return 200."""
+    data = await request.json()
+    agent_id = data.get("agent_id", "")
+    tokens = getattr(request.app.state, "agent_cancel_tokens", {})
+    tok = tokens.get(agent_id)
+    if tok is not None:
+        tok.cancel("user")
+        logger.info("Agent cancel requested for %s", agent_id)
+    else:
+        logger.info("Agent cancel for unknown id %s — ignored", agent_id)
+    return JSONResponse({"status": "ok"})
+
+
 def _get_user_guid(request: Request) -> str:
     return getattr(request.app.state, "user_guid", "default")

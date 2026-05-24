@@ -11,6 +11,7 @@ import uuid
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
@@ -388,3 +389,23 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                 request.app.state.agent_cancel_tokens.pop(aid, None)
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/cancel")
+async def cancel_stream(request: Request) -> JSONResponse:
+    """API: cancel an active stream's turn and all of its child agents."""
+    data = await request.json()
+    stream_id = data.get("stream_id", "")
+    turn_tokens = getattr(request.app.state, "turn_cancel_tokens", {})
+    stream_agents = getattr(request.app.state, "stream_agent_sets", {})
+
+    tok = turn_tokens.get(stream_id)
+    if tok is not None:
+        tok.cancel("user")
+        logger.info("Turn cancel requested for stream %s", stream_id)
+
+    for agent_id, agent_tok in (stream_agents.get(stream_id) or {}).items():
+        agent_tok.cancel("user")
+        logger.info("Cascade cancel for agent %s in stream %s", agent_id, stream_id)
+
+    return JSONResponse({"status": "ok"})
