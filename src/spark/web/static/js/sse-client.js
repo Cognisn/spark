@@ -6,6 +6,7 @@ let currentEventSource = null;
 let isRequestCancelled = false;
 let accumulatedContent = '';
 let pendingPermissionRequestId = null;
+let currentStreamId = null;
 
 /**
  * Send a message and stream the response via SSE.
@@ -34,7 +35,12 @@ function sendMessageWithSSE(conversationId, message) {
     currentEventSource = new EventSource(url);
 
     currentEventSource.addEventListener('status', (e) => {
-        // Processing indicator — already shown via startStreamingMessage
+        try {
+            const data = JSON.parse(e.data);
+            if (data.stream_id) currentStreamId = data.stream_id;
+        } catch (err) {
+            // Ignore — old servers without stream_id still work.
+        }
     });
 
     currentEventSource.addEventListener('response', (e) => {
@@ -125,6 +131,10 @@ function sendMessageWithSSE(conversationId, message) {
         updateStreamingAgentComplete(data.agent_id, data.agent_name, data.status, data.result);
     });
 
+    currentEventSource.addEventListener('cancelled', (e) => {
+        appendSystemMessage('Turn cancelled by user.');
+    });
+
     currentEventSource.addEventListener('complete', (e) => {
         finaliseStreamingToolGroup();
         closeStream();
@@ -159,6 +169,18 @@ function sendMessageWithSSE(conversationId, message) {
  */
 function cancelCurrentRequest() {
     isRequestCancelled = true;
+    // Fire-and-forget server cancel. If it fails, fall through to client-side close.
+    if (currentStreamId) {
+        try {
+            fetch('/stream/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ stream_id: currentStreamId }),
+            }).catch(() => {});
+        } catch (e) {
+            // Best-effort
+        }
+    }
     closeStream();
     finaliseStreamingToolGroup();
     finaliseStreamingMessage(accumulatedContent || '_Request cancelled._');
@@ -179,6 +201,7 @@ function closeStream() {
         currentEventSource.close();
         currentEventSource = null;
     }
+    currentStreamId = null;
     accumulatedContent = '';
 
     const btn = document.getElementById('btn-send');
