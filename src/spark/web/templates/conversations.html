@@ -61,6 +61,12 @@
                             <textarea class="form-control" id="conv-instructions" rows="3"
                                       placeholder="Custom system instructions for this conversation"></textarea>
                         </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="conv-kg-local">
+                            <label class="form-check-label" for="conv-kg-local">
+                                Build a knowledge graph for this conversation
+                            </label>
+                        </div>
                     </div>
                     <div id="debate-fields" class="d-none">
                         <div class="mb-3">
@@ -231,6 +237,7 @@ function buildCreatePayload() {
             name,
             model_id: document.getElementById('conv-model').value,
             instructions: document.getElementById('conv-instructions').value.trim() || null,
+            kg_local_enabled: document.getElementById('conv-kg-local').checked,
         };
     }
     const agents = Object.fromEntries(['pro', 'con', 'judge'].map(role => [role, {

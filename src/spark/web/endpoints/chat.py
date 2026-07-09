@@ -201,6 +201,9 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "agents_enabled": bool(conv.get("agents_enabled", False)),
             "agent_mode": conv.get("agent_mode") or "",
             "agent_model_selection": conv.get("agent_model_selection") or "",
+            "kg_local_enabled": bool(conv.get("kg_local_enabled", False)),
+            "kg_use_global": conv.get("kg_use_global", 1) != 0,
+            "kg_auto_context": conv.get("kg_auto_context", 1) != 0,
         }
     )
 

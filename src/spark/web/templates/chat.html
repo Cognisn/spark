@@ -190,6 +190,28 @@
                                 </div>
                             </div>
                             <hr>
+                            <h6 class="mt-3" style="font-weight: 600;"><i class="bi bi-diagram-3 me-1"></i> Knowledge Graph</h6>
+                            <div class="mb-3">
+                                <div class="form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="conv-kg-use-global" checked>
+                                    <label class="form-check-label" for="conv-kg-use-global">Use the global knowledge graph</label>
+                                </div>
+                                <div class="form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="conv-kg-local-enabled">
+                                    <label class="form-check-label" for="conv-kg-local-enabled">Enable a knowledge graph for this conversation</label>
+                                </div>
+                                <div class="form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" id="conv-kg-auto-context" checked>
+                                    <label class="form-check-label" for="conv-kg-auto-context">Automatically add relevant graph context</label>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 mt-2">
+                                    <button class="btn btn-app-primary btn-sm" onclick="buildConversationGraph()">
+                                        <i class="bi bi-diagram-3 me-1"></i> Build / Refresh graph
+                                    </button>
+                                    <span id="conv-kg-status" style="font-size: 0.8125rem; color: var(--app-text-muted);"></span>
+                                </div>
+                            </div>
+                            <hr>
                             <h6 class="mt-3" style="font-weight: 600;">Message History</h6>
                             <div class="mb-3">
                                 <div class="form-check mb-2">
@@ -546,6 +568,10 @@ async function showSettingsModal() {
         document.getElementById('conv-rag-tool').checked = !!info.rag_tool_enabled;
         document.getElementById('conv-include-tools').checked = info.include_tool_results !== false;
         document.getElementById('conv-prompt-caching').checked = info.prompt_caching !== false;
+        document.getElementById('conv-kg-use-global').checked = info.kg_use_global !== false;
+        document.getElementById('conv-kg-local-enabled').checked = !!info.kg_local_enabled;
+        document.getElementById('conv-kg-auto-context').checked = info.kg_auto_context !== false;
+        refreshConversationGraphStatus();
 
         if (info.max_history_messages) {
             document.getElementById('history-last').checked = true;
@@ -581,6 +607,33 @@ async function showSettingsModal() {
     loadLinksTab();
 }
 
+async function refreshConversationGraphStatus() {
+    try {
+        const status = await fetch('/knowledge/api/status').then(r => r.json());
+        const mine = (status.conversation_graphs || []).find(g => g.conversation_id === parseInt(conversationId));
+        const el = document.getElementById('conv-kg-status');
+        if (!el) return;
+        if (mine) {
+            el.textContent = mine.building
+                ? 'Building...'
+                : `${mine.nodes} entities, ${mine.edges} relationships`;
+            if (mine.building) setTimeout(refreshConversationGraphStatus, 2000);
+        } else {
+            el.textContent = 'No graph built yet';
+        }
+    } catch (err) { /* status is cosmetic */ }
+}
+
+async function buildConversationGraph() {
+    const resp = await fetch('/knowledge/api/build', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ scope: 'conv:' + conversationId }),
+    });
+    if (resp.status === 409) { AppToast.warning('Busy', 'A build is already running.'); return; }
+    if (resp.ok) { AppToast.success('Building', 'Knowledge graph build started.'); }
+    refreshConversationGraphStatus();
+}
+
 async function saveConversationSettings() {
     const historyMode = document.querySelector('input[name="historyMode"]:checked')?.value;
     const data = {
@@ -598,6 +651,9 @@ async function saveConversationSettings() {
         agents_enabled: document.getElementById('conv-agents-enabled').checked,
         agent_mode: document.getElementById('conv-agent-mode').value || null,
         agent_model_selection: document.getElementById('conv-agent-model-selection').value || null,
+        kg_use_global: document.getElementById('conv-kg-use-global').checked,
+        kg_local_enabled: document.getElementById('conv-kg-local-enabled').checked,
+        kg_auto_context: document.getElementById('conv-kg-auto-context').checked,
     };
     try {
         const resp = await fetch(`/chat/${conversationId}/api/settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
