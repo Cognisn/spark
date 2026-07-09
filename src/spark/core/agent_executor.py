@@ -338,6 +338,20 @@ class AgentExecutor:
             "- You cannot spawn further sub-agents\n"
         )
 
+        # Advertise enabled skills (global state; failure must never break the run)
+        try:
+            from spark.database import skills as skills_db
+            from spark.skills.manager import get_skills_manager
+            from spark.skills.prompt import build_skills_block
+
+            block = build_skills_block(
+                skills_db.resolve_enabled(self._db, get_skills_manager(), self._user_guid)
+            )
+            if block:
+                base += "\n" + block + "\n"
+        except Exception:  # noqa: BLE001
+            logger.warning("Skills block unavailable", exc_info=True)
+
         return base
 
     def _get_tools(self) -> list[dict]:

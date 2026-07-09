@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from konfig import AppContext
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +99,11 @@ class ActionExecutor:
             )
             tools = tools_future.result(timeout=10)
             tool_names = [t.get("name", "?") for t in tools]
-            logger.info("Executor MCP: %d tools available: %s", len(tools), ", ".join(tool_names))
+            logger.info(
+                "Executor MCP: %d tools available: %s",
+                len(tools),
+                ", ".join(tool_names),
+            )
 
         except Exception as e:
             logger.error("Executor MCP init failed: %s", e, exc_info=True)
@@ -165,7 +168,9 @@ class ActionExecutor:
                 return
 
             logger.info(
-                "Executing action: '%s' (model: %s)", action["name"], action.get("model_id")
+                "Executing action: '%s' (model: %s)",
+                action["name"],
+                action.get("model_id"),
             )
             run_id = autonomous_actions.start_run(db, action_id, self._user_guid)
 
@@ -188,7 +193,9 @@ class ActionExecutor:
                 )
 
                 # Reset failure count on success
-                autonomous_actions.update_action(db, action_id, self._user_guid, failure_count=0)
+                autonomous_actions.update_action(
+                    db, action_id, self._user_guid, failure_count=0
+                )
 
             except Exception as e:
                 logger.error("Action '%s' failed: %s", action["name"], e, exc_info=True)
@@ -210,7 +217,9 @@ class ActionExecutor:
                         action["name"],
                         new_count,
                     )
-                autonomous_actions.update_action(db, action_id, self._user_guid, **updates)
+                autonomous_actions.update_action(
+                    db, action_id, self._user_guid, **updates
+                )
 
             finally:
                 autonomous_actions.unlock_action(db, action_id)
@@ -219,24 +228,11 @@ class ActionExecutor:
             self._cleanup_mcp()
             db.close()
 
-    def _run_action(self, db: Any, action: dict) -> dict[str, Any]:
-        """Run the action's prompt through the LLM with tools."""
-        model_id = action["model_id"]
-        prompt = action["action_prompt"]
-        max_tokens = action.get("max_tokens", 8192)
-        context_mode = action.get("context_mode", "fresh")
-
-        # Initialise LLM
-        llm = self._init_llm(model_id)
-        if not llm:
-            raise RuntimeError(
-                f"Could not initialise LLM for model '{model_id}'. Check provider is enabled and API key is configured."
-            )
-
-        # Get available tools
-        tools = self._get_tools()
-
-        from datetime import datetime, timezone
+    def _build_action_system(
+        self, db: Any, action: dict, tools: list[dict], max_tokens: int, context_mode: str
+    ) -> str:
+        """Assemble the autonomous action's system prompt."""
+        from datetime import datetime
 
         import tzlocal
 
@@ -267,11 +263,46 @@ class ActionExecutor:
         # Build tool context for the system prompt
         system += self._build_tool_context(tools)
 
+        # Advertise enabled skills (global state; failure must never break the run)
+        try:
+            from spark.database import skills as skills_db
+            from spark.skills.manager import get_skills_manager
+            from spark.skills.prompt import build_skills_block
+
+            block = build_skills_block(
+                skills_db.resolve_enabled(db, get_skills_manager(), self._user_guid)
+            )
+            if block:
+                system += "\n\n" + block
+        except Exception:  # noqa: BLE001
+            logger.warning("Skills block unavailable", exc_info=True)
+
         # Build context from previous runs if cumulative mode
         if context_mode == "cumulative":
             previous_context = self._build_cumulative_context(db, action)
             if previous_context:
                 system += f"\n\n## Previous Run Results\n\n{previous_context}"
+
+        return system
+
+    def _run_action(self, db: Any, action: dict) -> dict[str, Any]:
+        """Run the action's prompt through the LLM with tools."""
+        model_id = action["model_id"]
+        prompt = action["action_prompt"]
+        max_tokens = action.get("max_tokens", 8192)
+        context_mode = action.get("context_mode", "fresh")
+
+        # Initialise LLM
+        llm = self._init_llm(model_id)
+        if not llm:
+            raise RuntimeError(
+                f"Could not initialise LLM for model '{model_id}'. Check provider is enabled and API key is configured."
+            )
+
+        # Get available tools
+        tools = self._get_tools()
+
+        system = self._build_action_system(db, action, tools, max_tokens, context_mode)
 
         messages: list[dict] = [{"role": "user", "content": prompt}]
 
@@ -334,7 +365,9 @@ class ActionExecutor:
                         ),
                     },
                 )
-                activity_log.append(f"[System] Output truncated at {max_tokens} tokens — retrying")
+                activity_log.append(
+                    f"[System] Output truncated at {max_tokens} tokens — retrying"
+                )
                 continue
 
             if stop_reason == "tool_use" and response.get("tool_use"):
@@ -409,7 +442,11 @@ class ActionExecutor:
             from spark.database import autonomous_actions
 
             runs = autonomous_actions.get_action_runs(db, action["id"], limit=5)
-            completed = [r for r in runs if r.get("status") == "completed" and r.get("result_text")]
+            completed = [
+                r
+                for r in runs
+                if r.get("status") == "completed" and r.get("result_text")
+            ]
 
             if not completed:
                 return ""
@@ -467,7 +504,12 @@ class ActionExecutor:
             "Archives": ["list_archive", "extract_archive"],
             "Web": ["web_search", "web_fetch"],
             "Email": ["send_email", "draft_email"],
-            "Memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
+            "Memory": [
+                "store_memory",
+                "query_memory",
+                "list_memories",
+                "delete_memory",
+            ],
             "Core": ["get_current_datetime", "get_tool_documentation"],
         }
 
@@ -509,7 +551,9 @@ class ActionExecutor:
         if "send_email" in tool_names:
             sender = settings.get("embedded_tools.email.sender", "")
             if sender:
-                lines.append(f"## Email\n\nEmail is configured with sender address: {sender}\n")
+                lines.append(
+                    f"## Email\n\nEmail is configured with sender address: {sender}\n"
+                )
 
         lines.append(
             "## Tool Documentation\n\n"
@@ -658,7 +702,9 @@ class ActionExecutor:
                     logger.info("Initialised %s provider for model %s", key, model_id)
                     return service
                 except Exception as e:
-                    logger.debug("Provider %s failed for model %s: %s", key, model_id, e)
+                    logger.debug(
+                        "Provider %s failed for model %s: %s", key, model_id, e
+                    )
                     continue
 
         logger.error(
@@ -698,7 +744,9 @@ class ActionExecutor:
     def _init_gemini(self, settings: Any) -> Any:
         from spark.llm.google_gemini import GoogleGeminiProvider
 
-        api_key = self._resolve_secret(settings.get("providers.google_gemini.api_key", ""))
+        api_key = self._resolve_secret(
+            settings.get("providers.google_gemini.api_key", "")
+        )
         if not api_key:
             raise ValueError("Google Gemini API key not configured")
         return GoogleGeminiProvider(api_key=api_key)
