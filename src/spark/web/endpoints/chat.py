@@ -322,7 +322,32 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
                 }
             )
 
-    return JSONResponse({"embedded": embedded, "mcp_servers": mcp_servers})
+    # Skills (global enable state folded with per-conversation overrides)
+    skills_out: list[dict] = []
+    try:
+        from spark.database import skills as skills_db
+        from spark.skills.manager import get_skills_manager
+
+        manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
+        global_states = skills_db.get_skill_states(conv_mgr._db, user_guid)
+        conv_states = skills_db.get_conversation_skill_states(conv_mgr._db, conversation_id)
+        for skill in manager.list_skills():
+            enabled_flag = global_states.get(skill["name"], True) and conv_states.get(
+                skill["name"], True
+            )
+            skills_out.append(
+                {
+                    "name": skill["name"],
+                    "description": skill["description"],
+                    "enabled": enabled_flag,
+                }
+            )
+    except Exception:  # noqa: BLE001 - skills must never break the tools panel
+        logger.warning("Skills unavailable for tools panel", exc_info=True)
+
+    return JSONResponse(
+        {"embedded": embedded, "mcp_servers": mcp_servers, "skills": skills_out}
+    )
 
 
 @router.post("/{conversation_id}/api/tools")
@@ -348,6 +373,10 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
         mcp_ops.set_mcp_server_enabled(
             conv_mgr._db, conversation_id, name, enabled, user_guid
         )
+    elif tool_type == "skill":
+        from spark.database import skills as skills_db
+
+        skills_db.set_conversation_skill_enabled(conv_mgr._db, conversation_id, name, enabled)
 
     return JSONResponse({"status": "ok"})
 

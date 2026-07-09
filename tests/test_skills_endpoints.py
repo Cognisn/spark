@@ -136,3 +136,25 @@ class TestImportDownloadDelete:
     def test_page_renders(self, client) -> None:
         _auth(client)
         assert "skills" in client.get("/skills").text.lower()
+
+
+class TestConversationToggles:
+    def test_tools_api_lists_skills(self, client) -> None:
+        _auth(client)
+        cid = client.post(
+            "/conversations/api/create", json={"name": "n", "model_id": "m"}
+        ).json()["id"]
+        data = client.get(f"/chat/{cid}/api/tools").json()
+        assert any(s["name"] == "pdf-filler" and s["enabled"] for s in data["skills"])
+
+    def test_toggle_skill_for_conversation(self, client) -> None:
+        _auth(client)
+        cid = client.post(
+            "/conversations/api/create", json={"name": "n", "model_id": "m"}
+        ).json()["id"]
+        client.post(
+            f"/chat/{cid}/api/tools",
+            json={"type": "skill", "name": "pdf-filler", "enabled": False},
+        )
+        data = client.get(f"/chat/{cid}/api/tools").json()
+        assert not next(s for s in data["skills"] if s["name"] == "pdf-filler")["enabled"]
