@@ -112,3 +112,17 @@ class TestBodyAndResources:
             m.read_resource("pdf-filler", "blob.bin")
         with pytest.raises(SkillResourceError):
             m.read_resource("pdf-filler", "big.txt")
+
+
+class TestBundledSkillCreator:
+    def test_ships_and_validates(self) -> None:
+        from pathlib import Path
+
+        import spark
+        from spark.skills.manager import SkillsManager
+
+        bundled = Path(spark.__file__).parent / "resources" / "skills"
+        m = SkillsManager(Path("/nonexistent-user-skills"), bundled_dir=bundled)
+        creator = m.get_skill("skill-creator")
+        assert creator is not None and creator["source"] == "bundled"
+        assert "create_skill" in m.get_body("skill-creator")
