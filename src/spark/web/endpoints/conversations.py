@@ -34,13 +34,33 @@ async def create_conversation(request: Request) -> JSONResponse:
     data = await request.json()
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
-        return JSONResponse({"error": "Conversation manager not initialised"}, status_code=503)
+        return JSONResponse(
+            {"error": "Conversation manager not initialised"}, status_code=503
+        )
 
     name = data.get("name", "New Conversation")
     model_id = data.get("model_id", "")
     instructions = data.get("instructions")
     web_search = data.get("web_search_enabled", False)
+    conversation_type = data.get("conversation_type", "standard")
     user_guid = _get_user_guid(request)
+
+    # Validate a debate payload BEFORE creating anything, so a bad request
+    # never leaves an orphan conversation row.
+    debate = None
+    if conversation_type == "debate":
+        debate = data.get("debate") or {}
+        agents = debate.get("agents") or {}
+        if not all(
+            role in agents and (agents[role] or {}).get("model_id")
+            for role in ("pro", "con", "judge")
+        ):
+            return JSONResponse(
+                {"error": "Debate requires pro, con and judge agents with models"},
+                status_code=400,
+            )
+        if not (debate.get("topic") or "").strip():
+            return JSONResponse({"error": "Debate requires a topic"}, status_code=400)
 
     try:
         cid = conv_mgr.create_conversation(
@@ -50,7 +70,26 @@ async def create_conversation(request: Request) -> JSONResponse:
             instructions=instructions,
             web_search_enabled=web_search,
         )
-        return JSONResponse({"id": cid, "name": name})
+        if conversation_type == "debate" and debate is not None:
+            from spark.database import debates
+
+            db = conv_mgr._db
+            ph = db.placeholder
+            db.execute(
+                f"UPDATE conversations SET conversation_type = 'debate' WHERE id = {ph}",
+                (cid,),
+            )
+            db.commit()
+            debates.create_debate(
+                db,
+                cid,
+                debate["topic"].strip(),
+                debate.get("rounds_mode", "fixed"),
+                debate.get("max_rounds"),
+                user_guid,
+                debate["agents"],
+            )
+        return JSONResponse({"id": cid, "name": name, "conversation_type": conversation_type})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -100,7 +139,9 @@ async def rename_conversation(request: Request, conversation_id: int) -> JSONRes
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, name=name)
+    conversations.update_conversation(
+        conv_mgr._db, conversation_id, user_guid, name=name
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -119,7 +160,9 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, model_id=model_id)
+    conversations.update_conversation(
+        conv_mgr._db, conversation_id, user_guid, model_id=model_id
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -162,14 +205,22 @@ async def list_models(request: Request) -> JSONResponse:
         if not filtered:
             # Model not found in available models — still return it so user sees something
             filtered = [
-                {"id": default_model_id, "name": default_model_id, "provider": "configured"}
+                {
+                    "id": default_model_id,
+                    "name": default_model_id,
+                    "provider": "configured",
+                }
             ]
         return JSONResponse(
             {"models": filtered, "default_model": default_model_id, "mandatory": True}
         )
 
     return JSONResponse(
-        {"models": all_models, "default_model": default_model_id or None, "mandatory": False}
+        {
+            "models": all_models,
+            "default_model": default_model_id or None,
+            "mandatory": False,
+        }
     )
 
 
