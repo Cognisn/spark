@@ -581,9 +581,31 @@ class ConversationManager:
         except Exception:  # noqa: BLE001 - skills must never break a chat turn
             logger.warning("Skills block unavailable", exc_info=True)
 
+        # Knowledge graph context (failure-safe; graphs must never break a turn)
+        kg_block = ""
+        try:
+            from spark.knowledge.query import subgraph_for_query
+            from spark.knowledge.resolve import available_scopes, conversation_kg_settings
+            from spark.knowledge.tools import _get_embedder
+
+            kg_settings = conversation_kg_settings(self._db, conversation_id, user_guid)
+            if kg_settings["kg_auto_context"]:
+                kg_scopes = available_scopes(self._db, conversation_id, user_guid)
+                if kg_scopes:
+                    subgraph = subgraph_for_query(
+                        self._db, _get_embedder(), kg_scopes, user_message, user_guid
+                    )
+                    if subgraph:
+                        kg_block = "## Knowledge Graph Context\n" + subgraph
+        except Exception:  # noqa: BLE001
+            logger.warning("Knowledge graph context unavailable", exc_info=True)
+
         # Build system instructions (with retrieved context if available)
         system = self._build_system_instructions(
-            conv, retrieved_context=retrieved_context, skills_block=skills_block
+            conv,
+            retrieved_context=retrieved_context,
+            skills_block=skills_block,
+            kg_block=kg_block,
         )
         logger.debug(
             "System prompt: %d chars, %d messages in history",
@@ -964,6 +986,7 @@ class ConversationManager:
         *,
         retrieved_context: str | None = None,
         skills_block: str = "",
+        kg_block: str = "",
     ) -> str:
         """Assemble system instructions from all sources."""
         parts: list[str] = []
@@ -1007,6 +1030,9 @@ class ConversationManager:
 
         if skills_block:
             parts.append(skills_block)
+
+        if kg_block:
+            parts.append(kg_block)
 
         return "\n\n".join(parts)
 

@@ -89,6 +89,13 @@ async def create_conversation(request: Request) -> JSONResponse:
                 user_guid,
                 debate["agents"],
             )
+        if data.get("kg_local_enabled"):
+            db = conv_mgr._db
+            ph = db.placeholder
+            db.execute(
+                f"UPDATE conversations SET kg_local_enabled = 1 WHERE id = {ph}", (cid,)
+            )
+            db.commit()
         return JSONResponse({"id": cid, "name": name, "conversation_type": conversation_type})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)

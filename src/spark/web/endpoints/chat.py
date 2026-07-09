@@ -232,6 +232,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "agents_enabled",
         "agent_mode",
         "agent_model_selection",
+        "kg_local_enabled",
+        "kg_use_global",
+        "kg_auto_context",
     }
     _BOOL_FIELDS = {
         "memory_enabled",
@@ -240,6 +243,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "include_tool_results",
         "prompt_caching",
         "agents_enabled",
+        "kg_local_enabled",
+        "kg_use_global",
+        "kg_auto_context",
     }
 
     updates: dict[str, Any] = {}
