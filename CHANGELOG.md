@@ -5,6 +5,12 @@ All notable changes to Spark will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Debate Mode** — New conversation type where a Pro and an Against agent (each with its own model, brief, and full tool access) argue a user-defined topic across rounds, presenting structured evidence exhibits, while a Judge agent moderates, rules on the presented arguments only, and answers follow-up questions; three-pane UI with per-turn cancellation and pause/resume
+- **Conversation types** — Conversation creation now offers a type selection (Standard chat or Debate) as the framework for future chat styles
+
 ## [0.2.0] — 2026-04-16
 
 ### Added
