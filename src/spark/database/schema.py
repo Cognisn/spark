@@ -347,6 +347,40 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             skill_name TEXT NOT NULL,
             enabled INTEGER DEFAULT 1
         )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_nodes (
+            id {auto},
+            scope TEXT NOT NULL,
+            name TEXT NOT NULL,
+            name_key TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'other',
+            description TEXT,
+            embedding BLOB,
+            weight INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_edges (
+            id {auto},
+            scope TEXT NOT NULL,
+            source_node_id INTEGER NOT NULL,
+            target_node_id INTEGER NOT NULL,
+            relation TEXT NOT NULL,
+            description TEXT,
+            weight INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_builds (
+            id {auto},
+            scope TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            watermark INTEGER DEFAULT 0,
+            built_at TIMESTAMP,
+            status TEXT DEFAULT 'complete',
+            error TEXT,
+            user_guid TEXT NOT NULL
+        )""",
     ]
 
     for sql in tables:
@@ -391,6 +425,10 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_debate_exhibits_turn ON debate_exhibits(turn_id)",
         "CREATE INDEX IF NOT EXISTS idx_skills_user_name ON skills(user_guid, name)",
         "CREATE INDEX IF NOT EXISTS idx_conv_skills_conv ON conversation_skills(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_nodes_scope_key ON kg_nodes(scope, name_key)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_nodes_user ON kg_nodes(user_guid)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_scope ON kg_edges(scope)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_builds_scope_source ON kg_builds(scope, source_key)",
     ]
 
     for sql in indices:
@@ -416,6 +454,9 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN agent_mode TEXT DEFAULT NULL",
         "ALTER TABLE conversations ADD COLUMN agent_model_selection TEXT DEFAULT NULL",
         "ALTER TABLE conversations ADD COLUMN conversation_type TEXT DEFAULT 'standard'",
+        "ALTER TABLE conversations ADD COLUMN kg_local_enabled INTEGER DEFAULT 0",
+        "ALTER TABLE conversations ADD COLUMN kg_use_global INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN kg_auto_context INTEGER DEFAULT 1",
     ]
 
     for sql in migrations:
