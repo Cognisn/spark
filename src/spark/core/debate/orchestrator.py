@@ -55,6 +55,20 @@ class DebateOrchestrator:
         if self._emit_cb:
             self._emit_cb(event_type, data)
 
+    def _compute_skills_block(self, user_guid: str) -> str:
+        """Advertise enabled skills; failure must never break the debate."""
+        try:
+            from spark.database import skills as skills_db
+            from spark.skills.manager import get_skills_manager
+            from spark.skills.prompt import build_skills_block
+
+            return build_skills_block(
+                skills_db.resolve_enabled(self._db, get_skills_manager(), user_guid)
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("Skills block unavailable", exc_info=True)
+            return ""
+
     def _set_state(self, cid: int, cfg: dict, new: DebateState, **kwargs: Any) -> None:
         assert_transition(DebateState(cfg["state"]), new)
         debates.update_debate_state(self._db, cid, new.value, **kwargs)
@@ -78,6 +92,8 @@ class DebateOrchestrator:
         cfg = debates.get_debate(self._db, conversation_id)
         if not cfg:
             raise ValueError(f"No debate for conversation {conversation_id}")
+
+        self._skills_block = self._compute_skills_block(user_guid)
 
         def cancelled() -> bool:
             return cancel_token is not None and cancel_token.is_cancelled()
@@ -122,6 +138,7 @@ class DebateOrchestrator:
     def answer_qa(self, conversation_id: int, user_guid: str, question_turn_id: int) -> str:
         """Ask the judge to answer a QA question about its ruling."""
         cfg = debates.get_debate(self._db, conversation_id)
+        self._skills_block = self._compute_skills_block(user_guid)
         turns = debates.get_turns(self._db, conversation_id)
         exhibits = debates.get_exhibits(self._db, conversation_id)
         transcript = history.build_judge_transcript(turns, exhibits, include_qa=True)
@@ -247,7 +264,11 @@ class DebateOrchestrator:
                 judge.get("brief"),
                 rounds_mode=cfg["rounds_mode"],
                 max_rounds=cfg["max_rounds"],
+                skills_block=getattr(self, "_skills_block", ""),
             )
+            from spark.skills.tools import get_read_tools
+
+            judge_tools = get_read_tools() + list(tools or [])
             response = service.invoke_model(
                 [
                     {
@@ -260,7 +281,7 @@ class DebateOrchestrator:
                 ],
                 max_tokens=4096,
                 temperature=0.4,
-                tools=tools,
+                tools=judge_tools,
                 system=system,
             )
             usage = response.get("usage", {})
@@ -330,7 +351,12 @@ class DebateOrchestrator:
                 f"{role} debater",
                 task,
                 agent["model_id"],
-                system_override=prompts.debater_system(role, cfg["topic"], agent.get("brief")),
+                system_override=prompts.debater_system(
+                    role,
+                    cfg["topic"],
+                    agent.get("brief"),
+                    skills_block=getattr(self, "_skills_block", ""),
+                ),
                 exclude_tools=_DEBATER_EXCLUDED,
                 extra_tools=[SUBMIT_ARGUMENT_TOOL],
                 terminal_tool="submit_argument",

@@ -93,3 +93,65 @@ class TestActionSurface:
         system = ex._build_action_system(db, action, [], 4096, "fresh")
         assert "## Available Skills" in system
         assert "You are Spark executing an autonomous action." in system
+
+
+class TestDebateSurface:
+    def test_prompts_accept_block(self) -> None:
+        from spark.core.debate import prompts
+
+        d = prompts.debater_system("pro", "T", None, skills_block="## Available Skills\n- x: y")
+        j = prompts.judge_system(
+            "T", None, rounds_mode="fixed", max_rounds=1,
+            skills_block="## Available Skills\n- x: y",
+        )
+        assert "## Available Skills" in d and "## Available Skills" in j
+
+    def test_judge_gets_read_tools_never_run_command(self, skills_env, db) -> None:
+        from spark.core.debate.orchestrator import DebateOrchestrator
+        from tests.test_debate_orchestrator import (
+            AGENTS,
+            ScriptedService,
+            text_response,
+            tool_response,
+        )
+        from spark.database import debates
+
+        captured: list = []
+
+        class RecordingService(ScriptedService):
+            def invoke_model(self, messages, **kwargs):
+                captured.append(kwargs)
+                return super().invoke_model(messages, **kwargs)
+
+        ph = db.placeholder
+        cur = db.execute(
+            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            f"VALUES ({ph}, {ph}, {ph}, 'debate')",
+            ("D", "model-judge", "u1"),
+        )
+        db.commit()
+        cid = cur.lastrowid
+        debates.create_debate(db, cid, "Topic T", "fixed", 1, "u1", AGENTS)
+
+        services = {
+            "model-judge": RecordingService([
+                tool_response("set_speaking_order", {"first_speaker": "pro"}, "Open."),
+                text_response("Ruling."),
+            ]),
+            "model-pro": ScriptedService([
+                tool_response("submit_argument", {"argument_markdown": "P."})
+            ]),
+            "model-con": ScriptedService([
+                tool_response("submit_argument", {"argument_markdown": "C."})
+            ]),
+        }
+        orch = DebateOrchestrator(db, lambda m: services[m], {},
+                                  status_callback=lambda t, d: None)
+        orch.run(cid, "u1")
+
+        judge_tool_names = {
+            t["name"] for call in captured if call.get("tools") for t in call["tools"]
+        }
+        assert {"use_skill", "read_skill_resource"} <= judge_tool_names
+        assert "run_command" not in judge_tool_names
+        assert any("## Available Skills" in (c.get("system") or "") for c in captured)

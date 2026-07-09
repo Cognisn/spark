@@ -9,7 +9,9 @@ from __future__ import annotations
 _SIDE = {"pro": "FOR", "con": "AGAINST"}
 
 
-def debater_system(role: str, topic: str, brief: str | None) -> str:
+def debater_system(
+    role: str, topic: str, brief: str | None, *, skills_block: str = ""
+) -> str:
     side = _SIDE[role]
     parts = [
         "## Identity\n",
@@ -33,10 +35,19 @@ def debater_system(role: str, topic: str, brief: str | None) -> str:
         f"user directives shown in the transcript.\n"
         f"- Keep arguments focused; exhibits carry the detail.\n"
     )
+    if skills_block:
+        parts.append("\n" + skills_block + "\n")
     return "".join(parts)
 
 
-def judge_system(topic: str, brief: str | None, *, rounds_mode: str, max_rounds: int | None) -> str:
+def judge_system(
+    topic: str,
+    brief: str | None,
+    *,
+    rounds_mode: str,
+    max_rounds: int | None,
+    skills_block: str = "",
+) -> str:
     parts = [
         "## Identity\n",
         "You are the judge and moderator of a structured debate between a PRO "
@@ -59,6 +70,8 @@ def judge_system(topic: str, brief: str | None, *, rounds_mode: str, max_rounds:
         "- Be an active moderator: frame the topic, keep interim remarks brief "
         "and even-handed, and explain your final judgement fully.\n"
     )
+    if skills_block:
+        parts.append("\n" + skills_block + "\n")
     return "".join(parts)
 
 
