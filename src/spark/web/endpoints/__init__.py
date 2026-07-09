@@ -15,6 +15,7 @@ from spark.web.endpoints.mcp_servers import router as mcp_servers_router
 from spark.web.endpoints.memories import router as memories_router
 from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import router as settings_router
+from spark.web.endpoints.skills import router as skills_router
 from spark.web.endpoints.streaming import router as streaming_router
 
 
@@ -28,6 +29,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(streaming_router)
     app.include_router(debate_router)
     app.include_router(memories_router)
+    app.include_router(skills_router)
     app.include_router(actions_router)
     app.include_router(mcp_servers_router)
     app.include_router(help_router)

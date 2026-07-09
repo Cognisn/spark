@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - Skills{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="max-width: 900px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Skills</h4>
+        <div>
+            <button class="btn btn-app-ghost btn-sm" onclick="reloadSkills()" title="Rescan the skills folders">
+                <i class="bi bi-arrow-clockwise me-1"></i> Reload
+            </button>
+            <label class="btn btn-app-primary btn-sm mb-0">
+                <i class="bi bi-upload me-1"></i> Import
+                <input type="file" accept=".zip" hidden onchange="importSkill(this)">
+            </label>
+        </div>
+    </div>
+
+    <p style="color: var(--app-text-muted); font-size: 0.875rem;">
+        Skills are reusable capabilities the assistant loads on demand. Build one by asking
+        the assistant to use the <code>skill-creator</code> skill, or import a skill folder as a zip.
+    </p>
+
+    <div id="invalid-skills"></div>
+    <div id="skills-list">
+        <div class="text-center py-5" style="color: var(--app-text-muted);">
+            <div class="app-spinner mx-auto mb-3"></div>
+            Loading skills...
+        </div>
+    </div>
+
+    <!-- View modal -->
+    <div class="modal fade" id="skillViewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="skill-view-title"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="skill-view-body"></div>
+                    <div id="skill-view-resources" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadSkills);
+
+async function loadSkills() {
+    try {
+        const resp = await fetch('/skills/api/list');
+        const skills = (await resp.json()).skills;
+        const valid = skills.filter(s => s.valid);
+        const invalid = skills.filter(s => !s.valid);
+
+        document.getElementById('invalid-skills').innerHTML = invalid.length ? `
+            <div class="alert-app alert-app-warning mb-3">
+                <strong>Invalid skills (excluded):</strong>
+                <ul class="mb-0">${invalid.map(s =>
+                    `<li><code>${escapeHtml(s.name)}</code>: ${escapeHtml(s.error || '')}</li>`).join('')}
+                </ul>
+            </div>` : '';
+
+        const container = document.getElementById('skills-list');
+        if (!valid.length) {
+            container.innerHTML = `
+                <div class="app-card text-center py-5">
+                    <div class="card-body">
+                        <i class="bi bi-stars" style="font-size: 3rem; color: var(--app-text-muted);"></i>
+                        <p class="mt-3" style="color: var(--app-text-secondary);">No skills installed yet.</p>
+                    </div>
+                </div>`;
+            return;
+        }
+        container.innerHTML = valid.map(s => `
+            <div class="app-card d-flex align-items-center p-3 mb-2">
+                <div class="form-check form-switch me-3 mb-0">
+                    <input class="form-check-input" type="checkbox" ${s.enabled ? 'checked' : ''}
+                           onchange="toggleSkill('${escapeHtml(s.name)}', this.checked)">
+                </div>
+                <div class="flex-grow-1" style="cursor: pointer;" onclick="viewSkill('${escapeHtml(s.name)}')">
+                    <div style="font-weight: 600; color: var(--app-text-primary);">
+                        ${escapeHtml(s.name)}
+                        <span class="badge ms-2" style="background: var(--app-bg-secondary); color: var(--app-text-muted); border: 1px solid var(--app-border);">
+                            ${s.source === 'bundled' ? 'Bundled' : 'User'}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.8125rem; color: var(--app-text-muted);">${escapeHtml(s.description)}</div>
+                </div>
+                <a class="btn btn-app-ghost btn-sm" href="/skills/api/download?name=${encodeURIComponent(s.name)}" title="Download as zip">
+                    <i class="bi bi-download"></i>
+                </a>
+                ${s.source === 'user' ? `
+                <button class="btn btn-app-ghost btn-sm ms-1" style="color: var(--app-danger);"
+                        onclick="deleteSkill('${escapeHtml(s.name)}')" title="Delete">
+                    <i class="bi bi-trash"></i>
+                </button>` : ''}
+            </div>`).join('');
+    } catch (err) {
+        document.getElementById('skills-list').innerHTML =
+            '<div class="alert-app alert-app-danger">Failed to load skills.</div>';
+    }
+}
+
+async function toggleSkill(name, enabled) {
+    await fetch('/skills/api/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name, enabled }),
+    });
+}
+
+async function viewSkill(name) {
+    const resp = await fetch(`/skills/api/view?name=${encodeURIComponent(name)}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    document.getElementById('skill-view-title').textContent = data.name;
+    document.getElementById('skill-view-body').innerHTML =
+        (typeof renderMarkdown === 'function') ? renderMarkdown(data.body) : `<pre>${escapeHtml(data.body)}</pre>`;
+    document.getElementById('skill-view-resources').innerHTML = data.resources.length
+        ? `<strong>Bundled resources</strong><ul>${data.resources.map(r => `<li><code>${escapeHtml(r)}</code></li>`).join('')}</ul>`
+        : '';
+    new bootstrap.Modal(document.getElementById('skillViewModal')).show();
+}
+
+async function importSkill(input) {
+    if (!input.files.length) return;
+    const form = new FormData();
+    form.append('file', input.files[0]);
+    input.value = '';
+    const resp = await fetch('/skills/api/import', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (resp.ok) {
+        AppToast.success('Imported', `Skill "${data.name}" installed.`);
+        loadSkills();
+    } else {
+        AppToast.danger('Import failed', data.error || 'Unknown error.');
+    }
+}
+
+async function deleteSkill(name) {
+    if (!confirm(`Delete the skill "${name}"? This cannot be undone.`)) return;
+    const resp = await fetch('/skills/api/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name }),
+    });
+    if (resp.ok) { AppToast.success('Deleted', `"${name}" removed.`); loadSkills(); }
+}
+
+async function reloadSkills() {
+    await fetch('/skills/api/reload', { method: 'POST' });
+    loadSkills();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
