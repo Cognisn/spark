@@ -333,6 +333,20 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             source TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        f"""CREATE TABLE IF NOT EXISTS skills (
+            id {auto},
+            name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS conversation_skills (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            skill_name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1
+        )""",
     ]
 
     for sql in tables:
@@ -375,6 +389,8 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_debate_agents_conv ON debate_agents(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_debate_turns_conv ON debate_turns(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_debate_exhibits_turn ON debate_exhibits(turn_id)",
+        "CREATE INDEX IF NOT EXISTS idx_skills_user_name ON skills(user_guid, name)",
+        "CREATE INDEX IF NOT EXISTS idx_conv_skills_conv ON conversation_skills(conversation_id)",
     ]
 
     for sql in indices:
