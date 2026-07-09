@@ -290,6 +290,49 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             status TEXT DEFAULT 'running',
             user_guid TEXT
         )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_config (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            topic TEXT NOT NULL,
+            rounds_mode TEXT NOT NULL DEFAULT 'fixed',
+            max_rounds INTEGER,
+            state TEXT NOT NULL DEFAULT 'setup',
+            current_round INTEGER DEFAULT 0,
+            opening_speaker TEXT,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_agents (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            brief TEXT,
+            tokens_sent INTEGER DEFAULT 0,
+            tokens_received INTEGER DEFAULT 0
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_turns (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            round INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            turn_type TEXT NOT NULL,
+            content TEXT,
+            summary TEXT,
+            status TEXT DEFAULT 'complete',
+            token_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_exhibits (
+            id {auto},
+            turn_id INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            title TEXT,
+            content TEXT,
+            source TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]
 
     for sql in tables:
@@ -328,6 +371,10 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_memories_category ON user_memories(category)",
         "CREATE INDEX IF NOT EXISTS idx_memories_hash ON user_memories(content_hash)",
         "CREATE INDEX IF NOT EXISTS idx_memories_importance ON user_memories(importance)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_config_conv ON debate_config(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_agents_conv ON debate_agents(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_turns_conv ON debate_turns(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_exhibits_turn ON debate_exhibits(turn_id)",
     ]
 
     for sql in indices:
@@ -352,6 +399,7 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN agents_enabled INTEGER DEFAULT 1",
         "ALTER TABLE conversations ADD COLUMN agent_mode TEXT DEFAULT NULL",
         "ALTER TABLE conversations ADD COLUMN agent_model_selection TEXT DEFAULT NULL",
+        "ALTER TABLE conversations ADD COLUMN conversation_type TEXT DEFAULT 'standard'",
     ]
 
     for sql in migrations:
