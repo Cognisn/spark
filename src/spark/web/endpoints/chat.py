@@ -35,7 +35,11 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
             request,
             "chat.html",
             {
-                "conversation": {"id": conversation_id, "name": "Unknown", "model_id": ""},
+                "conversation": {
+                    "id": conversation_id,
+                    "name": "Unknown",
+                    "model_id": "",
+                },
             },
         )
 
@@ -177,7 +181,8 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "model_id": model_id,
             "created_at": conv.get("created_at"),
             "tokens_sent": (conv.get("tokens_sent", 0) or 0) + agent_input_tokens,
-            "tokens_received": (conv.get("tokens_received", 0) or 0) + agent_output_tokens,
+            "tokens_received": (conv.get("tokens_received", 0) or 0)
+            + agent_output_tokens,
             "total_tokens": (conv.get("total_tokens", 0) or 0)
             + agent_input_tokens
             + agent_output_tokens,
@@ -246,7 +251,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
             updates[key] = val
 
     try:
-        conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, **updates)
+        conversations.update_conversation(
+            conv_mgr._db, conversation_id, user_guid, **updates
+        )
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logger.error("Failed to update conversation settings: %s", e)
@@ -272,9 +279,15 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     all_builtin = get_builtin_tools(conv_mgr._embedded_tools_config)
     embedded = []
     for t in all_builtin:
-        enabled = mcp_ops.is_embedded_tool_enabled(conv_mgr._db, conversation_id, t["name"])
+        enabled = mcp_ops.is_embedded_tool_enabled(
+            conv_mgr._db, conversation_id, t["name"]
+        )
         embedded.append(
-            {"name": t["name"], "description": t.get("description", ""), "enabled": enabled}
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "enabled": enabled,
+            }
         )
 
     # MCP servers
@@ -328,9 +341,13 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
     from spark.database import mcp_ops
 
     if tool_type == "embedded":
-        mcp_ops.set_embedded_tool_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
+        mcp_ops.set_embedded_tool_enabled(
+            conv_mgr._db, conversation_id, name, enabled, user_guid
+        )
     elif tool_type == "mcp_server":
-        mcp_ops.set_mcp_server_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
+        mcp_ops.set_mcp_server_enabled(
+            conv_mgr._db, conversation_id, name, enabled, user_guid
+        )
 
     return JSONResponse({"status": "ok"})
 
@@ -372,14 +389,18 @@ async def add_link(request: Request, conversation_id: int) -> JSONResponse:
 
     from spark.database import conversation_links
 
-    success = conversation_links.add_link(conv_mgr._db, conversation_id, target_id, user_guid)
+    success = conversation_links.add_link(
+        conv_mgr._db, conversation_id, target_id, user_guid
+    )
     if success:
         return JSONResponse({"status": "ok"})
     return JSONResponse({"error": "Link already exists or invalid"}, status_code=400)
 
 
 @router.delete("/{conversation_id}/api/links/{target_id}")
-async def remove_link(request: Request, conversation_id: int, target_id: int) -> JSONResponse:
+async def remove_link(
+    request: Request, conversation_id: int, target_id: int
+) -> JSONResponse:
     """API: remove a conversation link."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
@@ -413,8 +434,30 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     msgs = conv_mgr.get_messages(conversation_id)
     name = conv.get("name", "conversation")
 
+    # Debates export from their structured turn record, not from messages.
+    if conv.get("conversation_type") == "debate":
+        from spark.core.debate.export import export_debate_json, export_debate_markdown
+
+        if fmt == "markdown":
+            content = export_debate_markdown(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
+            )
+        if fmt == "json":
+            content = export_debate_json(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+            )
+        return JSONResponse({"error": "Format not supported for debates"}, status_code=400)
+
     if fmt == "json":
-        content = json.dumps({"conversation": conv, "messages": msgs}, indent=2, default=str)
+        content = json.dumps(
+            {"conversation": conv, "messages": msgs}, indent=2, default=str
+        )
         return StreamingResponse(
             iter([content]),
             media_type="application/json",
@@ -426,7 +469,9 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
         writer = csv.writer(buf)
         writer.writerow(["timestamp", "role", "content"])
         for m in msgs:
-            writer.writerow([m.get("timestamp", ""), m.get("role", ""), m.get("content", "")])
+            writer.writerow(
+                [m.get("timestamp", ""), m.get("role", ""), m.get("content", "")]
+            )
         return StreamingResponse(
             iter([buf.getvalue()]),
             media_type="text/csv",
@@ -439,7 +484,9 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
         for m in msgs:
             role = m.get("role", "user")
             content = m.get("content", "").replace("<", "&lt;").replace(">", "&gt;")
-            lines.append(f'<div class="{role}"><strong>{role}:</strong><p>{content}</p></div>')
+            lines.append(
+                f'<div class="{role}"><strong>{role}:</strong><p>{content}</p></div>'
+            )
         lines.append("</body></html>")
         return StreamingResponse(
             iter(["\n".join(lines)]),
