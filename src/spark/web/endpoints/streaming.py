@@ -37,6 +37,13 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
     user_guid = getattr(request.app.state, "user_guid", "default")
 
+    # Resolve an explicit /skill-name invocation at the start of the message
+    from spark.skills.trigger import resolve_trigger_for_conversation
+
+    message = resolve_trigger_for_conversation(
+        conv_mgr._db, user_guid, conversation_id, message
+    )
+
     # Allocate a unique stream id and per-turn cancellation token.
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()

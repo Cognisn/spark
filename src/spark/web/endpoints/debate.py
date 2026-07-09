@@ -85,6 +85,10 @@ async def debate_prompt(request: Request) -> JSONResponse:
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
 
+    from spark.skills.trigger import resolve_trigger_for_conversation
+
+    message = resolve_trigger_for_conversation(db, _user_guid(request), cid, message)
+
     orch = _orchestrator(request)
     turn_id = orch.submit_user_prompt(cid, message)
     if cfg["state"] == "qa":
