@@ -77,6 +77,14 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
         }
     )
 
+    # Knowledge graph query — always available (resolves scopes at call time)
+    try:
+        from spark.knowledge.tools import get_tools as kg_get_tools
+
+        tools.extend(kg_get_tools())
+    except Exception as e:  # noqa: BLE001 - graphs must never break tool assembly
+        logger.warning("Knowledge graph tool unavailable: %s", e)
+
     # Skills — always available (degrades to none if the directory is unreadable)
     try:
         from spark.skills.tools import get_tools as skills_get_tools
@@ -153,6 +161,12 @@ def execute_builtin_tool(
         # Tool documentation
         if tool_name == "get_tool_documentation":
             return _get_tool_documentation(tool_input.get("tool_name", "")), False
+
+        # Knowledge graph
+        if tool_name == "query_knowledge_graph":
+            from spark.knowledge.tools import execute as kg_execute
+
+            return kg_execute(tool_name, tool_input, config)
 
         # Skills
         from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES

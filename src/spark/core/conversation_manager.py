@@ -1604,6 +1604,10 @@ class ConversationManager:
             # Inject memory index for memory tools
             config = dict(self._embedded_tools_config)
             config["_memory_index"] = self._get_memory_index_for_tools()
+            # Knowledge graph context for query_knowledge_graph
+            config["_kg_db"] = self._db
+            config["_kg_conversation_id"] = self._current_conversation_id
+            config["_kg_user_guid"] = self._current_user_guid or self._user_guid
             return execute_builtin_tool(tool_name, tool_input, config)
 
         # Try MCP manager (async — dispatch on the persistent MCP event loop)
