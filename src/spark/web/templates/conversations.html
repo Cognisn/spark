@@ -31,7 +31,7 @@
 
     <!-- New conversation modal -->
     <div class="modal fade" id="newConvModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>New Conversation</h5>
@@ -43,15 +43,71 @@
                         <input type="text" class="form-control" id="conv-name" placeholder="e.g. Python Help">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Model</label>
-                        <select class="form-select" id="conv-model">
-                            <option value="">Loading models...</option>
+                        <label class="form-label">Conversation type</label>
+                        <select class="form-select" id="conv-type" onchange="toggleDebateFields()">
+                            <option value="standard" selected>Standard chat</option>
+                            <option value="debate">Debate</option>
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Instructions (optional)</label>
-                        <textarea class="form-control" id="conv-instructions" rows="3"
-                                  placeholder="Custom system instructions for this conversation"></textarea>
+                    <div id="standard-fields">
+                        <div class="mb-3">
+                            <label class="form-label">Model</label>
+                            <select class="form-select" id="conv-model">
+                                <option value="">Loading models...</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Instructions (optional)</label>
+                            <textarea class="form-control" id="conv-instructions" rows="3"
+                                      placeholder="Custom system instructions for this conversation"></textarea>
+                        </div>
+                    </div>
+                    <div id="debate-fields" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Debate topic</label>
+                            <textarea class="form-control" id="debate-topic" rows="2"
+                                      placeholder="State the proposition to be debated"></textarea>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label">Rounds</label>
+                                <select class="form-select" id="debate-rounds-mode"
+                                        onchange="document.getElementById('debate-max-rounds-wrap').classList.toggle('d-none', this.value !== 'fixed')">
+                                    <option value="fixed" selected>Fixed number</option>
+                                    <option value="judge">Judge decides</option>
+                                </select>
+                            </div>
+                            <div class="col" id="debate-max-rounds-wrap">
+                                <label class="form-label">Max rounds</label>
+                                <input type="number" class="form-control" id="debate-max-rounds" value="2" min="1" max="10">
+                            </div>
+                        </div>
+                        <div class="row" id="debate-agent-cards">
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Pro</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-pro-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-pro-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Against</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-con-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-con-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Judge</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-judge-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-judge-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -97,13 +153,18 @@ async function loadConversations() {
             const isFav = c.is_favourite;
             const starIcon = isFav ? 'bi-star-fill' : 'bi-star';
             const starColor = isFav ? 'color: var(--app-warning);' : 'color: var(--app-text-muted);';
+            const isDebate = c.conversation_type === 'debate';
+            const href = isDebate ? `/debate/${c.id}` : `/chat/${c.id}`;
+            const typeBadge = isDebate
+                ? '<span class="badge ms-2" style="background: var(--app-accent); color: var(--app-bg-primary);">Debate</span>'
+                : '';
             return `
             <div class="app-card d-flex align-items-center p-3 mb-2">
                 <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${starColor}">
                     <i class="bi ${starIcon}"></i>
                 </button>
-                <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
-                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}</div>
+                <a href="${href}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
+                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}${typeBadge}</div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
                         ${c.model_id || 'No model'} &middot; ${c.total_tokens || 0} tokens
                         ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
@@ -112,13 +173,19 @@ async function loadConversations() {
                 <button class="btn btn-app-ghost btn-sm ms-2" style="color: var(--app-danger);" onclick="deleteConversation(${c.id}, '${escapeHtml(c.name)}')" title="Delete">
                     <i class="bi bi-trash"></i>
                 </button>
-                <a href="/chat/${c.id}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                <a href="${href}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
             </div>`;
         }).join('');
     } catch (err) {
         document.getElementById('conversation-list').innerHTML =
             `<div class="alert-app alert-app-danger">Failed to load conversations.</div>`;
     }
+}
+
+function toggleDebateFields() {
+    const isDebate = document.getElementById('conv-type').value === 'debate';
+    document.getElementById('debate-fields').classList.toggle('d-none', !isDebate);
+    document.getElementById('standard-fields').classList.toggle('d-none', isDebate);
 }
 
 async function showNewConversation() {
@@ -131,12 +198,16 @@ async function showNewConversation() {
         const mandatory = data.mandatory || false;
         const select = document.getElementById('conv-model');
 
-        if (!models.length) {
-            select.innerHTML = '<option value="">No models available — configure a provider first</option>';
-        } else {
-            select.innerHTML = models.map(m =>
+        const optionsHtml = models.length
+            ? models.map(m =>
                 `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.provider})</option>`
-            ).join('');
+              ).join('')
+            : '<option value="">No models available — configure a provider first</option>';
+        select.innerHTML = optionsHtml;
+
+        // Populate the per-agent debate selects from the same model list
+        for (const role of ['pro', 'con', 'judge']) {
+            document.getElementById(`debate-${role}-model`).innerHTML = optionsHtml;
         }
 
         // If mandatory, disable the select
@@ -152,13 +223,46 @@ async function showNewConversation() {
     new bootstrap.Modal(document.getElementById('newConvModal')).show();
 }
 
-async function createConversation() {
+function buildCreatePayload() {
     const name = document.getElementById('conv-name').value.trim() || 'New Conversation';
-    const model = document.getElementById('conv-model').value;
-    const instructions = document.getElementById('conv-instructions').value.trim() || null;
+    const type = document.getElementById('conv-type').value;
+    if (type !== 'debate') {
+        return {
+            name,
+            model_id: document.getElementById('conv-model').value,
+            instructions: document.getElementById('conv-instructions').value.trim() || null,
+        };
+    }
+    const agents = Object.fromEntries(['pro', 'con', 'judge'].map(role => [role, {
+        model_id: document.getElementById(`debate-${role}-model`).value,
+        brief: document.getElementById(`debate-${role}-brief`).value.trim() || null,
+    }]));
+    const roundsMode = document.getElementById('debate-rounds-mode').value;
+    return {
+        name,
+        conversation_type: 'debate',
+        // The judge's model is the conversation's display model
+        model_id: agents.judge.model_id,
+        debate: {
+            topic: document.getElementById('debate-topic').value.trim(),
+            rounds_mode: roundsMode,
+            max_rounds: roundsMode === 'fixed'
+                ? (parseInt(document.getElementById('debate-max-rounds').value) || null)
+                : null,
+            agents,
+        },
+    };
+}
 
-    if (!model) {
+async function createConversation() {
+    const payload = buildCreatePayload();
+
+    if (!payload.model_id) {
         AppToast.warning('No model', 'Please select a model.');
+        return;
+    }
+    if (payload.conversation_type === 'debate' && !payload.debate.topic) {
+        AppToast.warning('No topic', 'Please enter the debate topic.');
         return;
     }
 
@@ -166,11 +270,12 @@ async function createConversation() {
         const resp = await fetch('/conversations/api/create', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name, model_id: model, instructions }),
+            body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (data.id) {
-            window.location.href = `/chat/${data.id}`;
+            window.location.href = data.conversation_type === 'debate'
+                ? `/debate/${data.id}` : `/chat/${data.id}`;
         } else {
             AppToast.danger('Error', data.error || 'Failed to create conversation.');
         }
@@ -205,14 +310,17 @@ function searchConversations(query) {
                 container.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted);">No matches found.</div>';
                 return;
             }
-            container.innerHTML = results.map(c => `
+            container.innerHTML = results.map(c => {
+                const href = c.conversation_type === 'debate' ? `/debate/${c.id}` : `/chat/${c.id}`;
+                return `
                 <div class="app-card d-flex align-items-center p-3 mb-2">
-                    <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none">
+                    <a href="${href}" class="flex-grow-1 text-decoration-none">
                         <div style="font-weight:600; color:var(--app-text-primary);">${escapeHtml(c.name)}</div>
                         <div style="font-size:0.8125rem; color:var(--app-text-muted);">${c.model_id || ''}</div>
                     </a>
-                    <a href="/chat/${c.id}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
-                </div>`).join('');
+                    <a href="${href}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                </div>`;
+            }).join('');
         } catch (err) {}
     }, 300);
 }
