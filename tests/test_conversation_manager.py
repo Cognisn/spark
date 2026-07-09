@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -69,6 +68,7 @@ class StubLLMService:
 
     def invoke_model(self, messages: list[dict], **kwargs: Any) -> dict:
         self.invoke_count += 1
+        self.last_system = kwargs.get("system")
         if self.responses:
             return self.responses.pop(0)
         return dict(self._default_response)
@@ -176,7 +176,9 @@ class TestSendMessage:
                 "content": "",
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 30, "output_tokens": 10},
-                "tool_use": [{"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}}],
+                "tool_use": [
+                    {"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}}
+                ],
                 "content_blocks": [
                     {"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}},
                 ],
@@ -215,9 +217,21 @@ class TestSendMessage:
                 "content": "",
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 30, "output_tokens": 10},
-                "tool_use": [{"type": "tool_use", "id": "t1", "name": "blocked_tool", "input": {}}],
+                "tool_use": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "blocked_tool",
+                        "input": {},
+                    }
+                ],
                 "content_blocks": [
-                    {"type": "tool_use", "id": "t1", "name": "blocked_tool", "input": {}}
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "blocked_tool",
+                        "input": {},
+                    }
                 ],
             },
             {
@@ -252,8 +266,12 @@ class TestSendMessage:
             "content": "",
             "stop_reason": "tool_use",
             "usage": {"input_tokens": 10, "output_tokens": 5},
-            "tool_use": [{"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}],
-            "content_blocks": [{"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}],
+            "tool_use": [
+                {"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}
+            ],
+            "content_blocks": [
+                {"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}
+            ],
         }
         stub_llm.responses = [tool_response, tool_response, tool_response]
 
@@ -281,10 +299,20 @@ class TestSendMessage:
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 10, "output_tokens": 5},
                 "tool_use": [
-                    {"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "my_tool",
+                        "input": {"x": 1},
+                    }
                 ],
                 "content_blocks": [
-                    {"type": "tool_use", "id": "t1", "name": "my_tool", "input": {"x": 1}}
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "my_tool",
+                        "input": {"x": 1},
+                    }
                 ],
             },
             {
@@ -343,7 +371,10 @@ class TestSendMessage:
                 "usage": {"input_tokens": 10, "output_tokens": 10},
                 "tool_use": None,
                 "content_blocks": [
-                    {"type": "text", "text": "I will not retry. What would you like me to do instead?"}
+                    {
+                        "type": "text",
+                        "text": "I will not retry. What would you like me to do instead?",
+                    }
                 ],
             },
         ]
@@ -353,6 +384,7 @@ class TestSendMessage:
         # Inspect what was stored — the tool_result message contains the wording
         # the AI sees.
         from spark.database import messages as msg_db
+
         all_msgs = msg_db.get_messages(db.connection, cid, include_rolled_up=True)
         tool_result_text = " ".join(m.get("content", "") for m in all_msgs)
         assert "Do not retry this exact call" in tool_result_text
@@ -405,7 +437,9 @@ class TestSystemInstructions:
         assert "Spark" in system
         assert "Current date/time" in system
 
-    def test_includes_global_instructions(self, db: Database, llm_manager: LLMManager) -> None:
+    def test_includes_global_instructions(
+        self, db: Database, llm_manager: LLMManager
+    ) -> None:
         mgr = ConversationManager(
             db.connection,
             llm_manager,
@@ -417,7 +451,9 @@ class TestSystemInstructions:
         system = mgr._build_system_instructions(conv)
         assert "Always be concise." in system
 
-    def test_includes_conversation_instructions(self, manager: ConversationManager) -> None:
+    def test_includes_conversation_instructions(
+        self, manager: ConversationManager
+    ) -> None:
         cid = manager.create_conversation(
             "Test",
             "stub-model",
@@ -470,7 +506,12 @@ class TestFindInFlightToolMessages:
     def test_completed_tools(self) -> None:
         msgs = [
             {"id": 1, "content": [{"type": "tool_use", "id": "t1", "name": "a"}]},
-            {"id": 2, "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+            {
+                "id": 2,
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+                ],
+            },
         ]
         assert _find_in_flight_tool_messages(msgs) == set()
 
@@ -484,14 +525,21 @@ class TestFindInFlightToolMessages:
     def test_mixed(self) -> None:
         msgs = [
             {"id": 1, "content": [{"type": "tool_use", "id": "t1", "name": "a"}]},
-            {"id": 2, "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+            {
+                "id": 2,
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+                ],
+            },
             {"id": 3, "content": [{"type": "tool_use", "id": "t2", "name": "b"}]},
         ]
         assert _find_in_flight_tool_messages(msgs) == {3}
 
 
 class TestContextCompactor:
-    def test_no_compaction_below_threshold(self, db: Database, stub_llm: StubLLMService) -> None:
+    def test_no_compaction_below_threshold(
+        self, db: Database, stub_llm: StubLLMService
+    ) -> None:
         from spark.database import conversations, messages
 
         compactor = ContextCompactor(
@@ -500,13 +548,17 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.7,
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
+        cid = conversations.create_conversation(
+            db.connection, "Test", "stub-model", USER
+        )
         messages.add_message(db.connection, cid, "user", "short msg", 10, USER)
 
         result = compactor.check_and_compact(cid, "stub-model", USER)
         assert result is False
 
-    def test_deferred_during_tool_use(self, db: Database, stub_llm: StubLLMService) -> None:
+    def test_deferred_during_tool_use(
+        self, db: Database, stub_llm: StubLLMService
+    ) -> None:
         from spark.database import conversations
 
         compactor = ContextCompactor(
@@ -515,11 +567,15 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,  # very low threshold to trigger
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
+        cid = conversations.create_conversation(
+            db.connection, "Test", "stub-model", USER
+        )
         # Manually set high token count
         conversations.update_conversation(db.connection, cid, USER, total_tokens=5000)
 
-        result = compactor.check_and_compact(cid, "stub-model", USER, in_tool_use_loop=True)
+        result = compactor.check_and_compact(
+            cid, "stub-model", USER, in_tool_use_loop=True
+        )
         assert result is False  # Deferred
 
     def test_skips_when_conversation_not_found(
@@ -534,8 +590,12 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        cid = conversations.create_conversation(
+            db.connection, "Test", "stub-model", USER
+        )
+        conversations.update_conversation(
+            db.connection, cid, USER, total_tokens=100_000
+        )
 
         # With a real user_guid, compaction runs (stub LLM handles it).
         # With an empty user_guid, the conversation is not found and we skip.
@@ -573,7 +633,9 @@ class TestContextCompactor:
         messages.add_message(db.connection, cid, "assistant", "first reply", 50, USER)
         messages.add_message(db.connection, cid, "user", "second user msg", 50, USER)
         messages.add_message(db.connection, cid, "assistant", "second reply", 50, USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        conversations.update_conversation(
+            db.connection, cid, USER, total_tokens=100_000
+        )
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
@@ -611,10 +673,16 @@ class TestContextCompactor:
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
         messages.add_message(db.connection, cid, "user", "rolled msg one", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "rolled reply one", 50, USER)
+        messages.add_message(
+            db.connection, cid, "assistant", "rolled reply one", 50, USER
+        )
         messages.add_message(db.connection, cid, "user", "rolled msg two", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "rolled reply two", 50, USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        messages.add_message(
+            db.connection, cid, "assistant", "rolled reply two", 50, USER
+        )
+        conversations.update_conversation(
+            db.connection, cid, USER, total_tokens=100_000
+        )
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
@@ -627,7 +695,9 @@ class TestContextCompactor:
         assert "rolled msg two" not in joined
         assert "rolled reply two" not in joined
         assert any(
-            (c if isinstance(c, str) else json.dumps(c)).startswith("[COMPACTED CONTEXT")
+            (c if isinstance(c, str) else json.dumps(c)).startswith(
+                "[COMPACTED CONTEXT"
+            )
             for c in contents
         )
 

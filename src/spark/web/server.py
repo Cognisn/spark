@@ -32,7 +32,9 @@ _STATIC_DIR = _WEB_DIR / "static"
 
 def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="Spark", version=spark.__version__, docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Spark", version=spark.__version__, docs_url=None, redoc_url=None
+    )
 
     # -- Shared state ---------------------------------------------------------
     timeout = ctx.settings.get("interface.session_timeout_minutes", 60, cast=int)
@@ -67,7 +69,14 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     # -- Auth middleware -------------------------------------------------------
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-        public = {"/login", "/auto-login", "/loading", "/static", "/api/auth", "/favicon.ico"}
+        public = {
+            "/login",
+            "/auto-login",
+            "/loading",
+            "/static",
+            "/api/auth",
+            "/favicon.ico",
+        }
         path = request.url.path
         if any(path.startswith(p) for p in public):
             return await call_next(request)
@@ -112,7 +121,9 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
         try:
             from spark.llm.anthropic_direct import AnthropicDirectProvider
 
-            api_key = _resolve_secret(ctx, settings.get("providers.anthropic.api_key", ""))
+            api_key = _resolve_secret(
+                ctx, settings.get("providers.anthropic.api_key", "")
+            )
             if api_key:
                 provider = AnthropicDirectProvider(api_key=api_key)
                 mgr.register_provider(provider)
@@ -127,8 +138,12 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             region = settings.get("providers.aws_bedrock.region", "us-east-1")
             auth_method = settings.get("providers.aws_bedrock.auth_method", "sso")
             profile = settings.get("providers.aws_bedrock.profile")
-            access_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.access_key"))
-            secret_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.secret_key"))
+            access_key = _resolve_secret(
+                ctx, settings.get("providers.aws_bedrock.access_key")
+            )
+            secret_key = _resolve_secret(
+                ctx, settings.get("providers.aws_bedrock.secret_key")
+            )
             session_token = _resolve_secret(
                 ctx, settings.get("providers.aws_bedrock.session_token")
             )
@@ -158,7 +173,9 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
         try:
             from spark.llm.ollama import OllamaProvider
 
-            base_url = settings.get("providers.ollama.base_url", "http://localhost:11434")
+            base_url = settings.get(
+                "providers.ollama.base_url", "http://localhost:11434"
+            )
             provider = OllamaProvider(base_url=base_url)
             mgr.register_provider(provider)
         except Exception as e:
@@ -169,7 +186,9 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
         try:
             from spark.llm.google_gemini import GoogleGeminiProvider
 
-            api_key = _resolve_secret(ctx, settings.get("providers.google_gemini.api_key", ""))
+            api_key = _resolve_secret(
+                ctx, settings.get("providers.google_gemini.api_key", "")
+            )
             if api_key:
                 provider = GoogleGeminiProvider(api_key=api_key)
                 mgr.register_provider(provider)
@@ -220,7 +239,9 @@ def _start_tray_daemon_if_needed() -> None:
 
     kwargs: dict = {}
     if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
     else:
         kwargs["start_new_session"] = True
 
@@ -268,13 +289,19 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             from spark.llm.context_limits import ContextLimitResolver
 
             context_limits = ContextLimitResolver(
-                ctx.settings.get("context_limits") if ctx.settings.get("context_limits") else None
+                ctx.settings.get("context_limits")
+                if ctx.settings.get("context_limits")
+                else None
             )
             conv_settings = ctx.settings.get("conversation") or {}
-            embedded_tools_config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+            embedded_tools_config = {
+                "embedded_tools": ctx.settings.get("embedded_tools") or {}
+            }
 
             # Resolve secret:// URIs within embedded tools config
-            for _cat, cat_config in embedded_tools_config.get("embedded_tools", {}).items():
+            for _cat, cat_config in embedded_tools_config.get(
+                "embedded_tools", {}
+            ).items():
                 if isinstance(cat_config, dict):
                     for key, val in cat_config.items():
                         if isinstance(val, str) and val.startswith("secret://"):
@@ -331,11 +358,22 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             except Exception as e:
                 logger.warning("MCP server init failed (non-fatal): %s", e)
 
+            # Skills manager (content on disk; enable state in the database)
+            try:
+                from spark.skills.manager import get_skills_manager
+
+                app.state.skills_manager = get_skills_manager()
+            except Exception as e:  # noqa: BLE001 - skills must never block startup
+                logger.warning("Skills unavailable this session: %s", e)
+                app.state.skills_manager = None
+
             app.state.conversation_manager = ConversationManager(
                 database.connection,
                 llm_manager,
                 context_limits,
-                global_instructions=ctx.settings.get("conversation.global_instructions"),
+                global_instructions=ctx.settings.get(
+                    "conversation.global_instructions"
+                ),
                 max_tool_iterations=(
                     conv_settings.get("max_tool_iterations", 25)
                     if isinstance(conv_settings, dict)
@@ -370,7 +408,9 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 mcp_manager=mcp_manager,
                 user_guid=app.state.user_guid,
                 mcp_loop=getattr(app.state, "_mcp_loop", None),
-                prompt_caching=bool(ctx.settings.get("conversation.prompt_caching", True)),
+                prompt_caching=bool(
+                    ctx.settings.get("conversation.prompt_caching", True)
+                ),
             )
 
             # Migrate any orphaned memories stored under "default" user_guid
@@ -441,10 +481,12 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             hb_enabled = ctx.settings.get("interface.browser_heartbeat.enabled", True)
             if hb_enabled:
                 hb_interval = int(
-                    ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30) or 30
+                    ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30)
+                    or 30
                 )
                 hb_misses = int(
-                    ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3) or 3
+                    ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3)
+                    or 3
                 )
                 _start_heartbeat_monitor(app, hb_interval, hb_misses)
 
@@ -482,7 +524,9 @@ def _start_heartbeat_monitor(app: FastAPI, interval: int, max_misses: int) -> No
 
     monitor = threading.Thread(target=_monitor, daemon=True)
     monitor.start()
-    logger.info("Heartbeat monitor started (interval=%ds, max_misses=%d)", interval, max_misses)
+    logger.info(
+        "Heartbeat monitor started (interval=%ds, max_misses=%d)", interval, max_misses
+    )
 
 
 async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
@@ -548,7 +592,9 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
                 ssl_kwargs["ssl_keyfile"] = str(key_path)
                 logger.info("SSL enabled with auto-generated self-signed certificate")
             except Exception as e:
-                logger.warning("Failed to generate SSL certificate: %s — falling back to HTTP", e)
+                logger.warning(
+                    "Failed to generate SSL certificate: %s — falling back to HTTP", e
+                )
                 ssl_enabled = False
                 scheme = "http"
 

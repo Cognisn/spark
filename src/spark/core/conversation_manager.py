@@ -567,9 +567,23 @@ class ConversationManager:
         else:
             logger.debug("No RAG context retrieved for this message")
 
+        # Enabled skills (progressive disclosure; failure must never break a turn)
+        skills_block = ""
+        try:
+            from spark.database import skills as skills_db
+            from spark.skills.manager import get_skills_manager
+            from spark.skills.prompt import build_skills_block
+
+            enabled = skills_db.resolve_enabled(
+                self._db, get_skills_manager(), user_guid, conversation_id
+            )
+            skills_block = build_skills_block(enabled)
+        except Exception:  # noqa: BLE001 - skills must never break a chat turn
+            logger.warning("Skills block unavailable", exc_info=True)
+
         # Build system instructions (with retrieved context if available)
         system = self._build_system_instructions(
-            conv, retrieved_context=retrieved_context
+            conv, retrieved_context=retrieved_context, skills_block=skills_block
         )
         logger.debug(
             "System prompt: %d chars, %d messages in history",
@@ -945,7 +959,11 @@ class ConversationManager:
         return ""
 
     def _build_system_instructions(
-        self, conv: dict, *, retrieved_context: str | None = None
+        self,
+        conv: dict,
+        *,
+        retrieved_context: str | None = None,
+        skills_block: str = "",
     ) -> str:
         """Assemble system instructions from all sources."""
         parts: list[str] = []
@@ -986,6 +1004,9 @@ class ConversationManager:
         # 4. Retrieved context from vector index and linked conversations
         if retrieved_context:
             parts.append(retrieved_context)
+
+        if skills_block:
+            parts.append(skills_block)
 
         return "\n\n".join(parts)
 
