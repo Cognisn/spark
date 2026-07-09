@@ -25,7 +25,9 @@ def _get_tool_documentation(tool_name: str) -> str:
         return doc_file.read_text(encoding="utf-8")
 
     # List available docs
-    available = sorted(f.stem for f in docs_dir.glob("*.md") if not f.stem.startswith("_template"))
+    available = sorted(
+        f.stem for f in docs_dir.glob("*.md") if not f.stem.startswith("_template")
+    )
     return (
         f"Documentation not found for tool: {tool_name}\n\n"
         f"Available documentation: {', '.join(available)}\n\n"
@@ -74,6 +76,14 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
             },
         }
     )
+
+    # Skills — always available (degrades to none if the directory is unreadable)
+    try:
+        from spark.skills.tools import get_tools as skills_get_tools
+
+        tools.extend(skills_get_tools())
+    except Exception as e:  # noqa: BLE001 - skills must never break tool assembly
+        logger.warning("Skills tools unavailable: %s", e)
 
     # Filesystem — requires allowed_paths
     fs_config = embedded.get("filesystem", {})
@@ -144,6 +154,14 @@ def execute_builtin_tool(
         if tool_name == "get_tool_documentation":
             return _get_tool_documentation(tool_input.get("tool_name", "")), False
 
+        # Skills
+        from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES
+
+        if tool_name in (READ_TOOL_NAMES | WRITE_TOOL_NAMES):
+            from spark.skills.tools import execute as skills_execute
+
+            return skills_execute(tool_name, tool_input, config)
+
         # Datetime
         if tool_name == "get_current_datetime":
             from spark.tools.datetime_tool import execute
@@ -167,33 +185,49 @@ def execute_builtin_tool(
             if isinstance(allowed, str):
                 allowed = [p.strip() for p in allowed.split(",") if p.strip()]
             if not allowed:
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.filesystem import execute
 
             mode = fs_config.get("mode", "read")
-            return execute(tool_name, tool_input, allowed_paths=allowed, mode=mode), False
+            return execute(
+                tool_name, tool_input, allowed_paths=allowed, mode=mode
+            ), False
 
         # Documents (read)
         doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
         if tool_name in doc_read_tools:
             fs_config = embedded.get("filesystem", {})
             if not _has_paths(fs_config):
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.documents import execute
 
             return execute(tool_name, tool_input), False
 
         # Documents (create)
-        doc_create_tools = {"create_word", "create_excel", "create_powerpoint", "create_pdf"}
+        doc_create_tools = {
+            "create_word",
+            "create_excel",
+            "create_powerpoint",
+            "create_pdf",
+        }
         if tool_name in doc_create_tools:
             fs_config = embedded.get("filesystem", {})
             allowed = fs_config.get("allowed_paths", [])
             if isinstance(allowed, str):
                 allowed = [p.strip() for p in allowed.split(",") if p.strip()]
             if not allowed:
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.document_creation import execute as doc_create_execute
 
@@ -203,7 +237,10 @@ def execute_builtin_tool(
         if tool_name in ("list_archive", "extract_archive"):
             fs_config = embedded.get("filesystem", {})
             if not _has_paths(fs_config):
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.archives import execute
 
@@ -232,14 +269,22 @@ def execute_builtin_tool(
             if not email_cfg.get("enabled", False):
                 return "Email tool is disabled. Enable it in Settings → Email.", True
             if not email_cfg.get("host"):
-                return "Email SMTP host is not configured. Go to Settings → Email.", True
+                return (
+                    "Email SMTP host is not configured. Go to Settings → Email.",
+                    True,
+                )
 
             from spark.tools.email_tool import execute as email_execute
 
             return email_execute(tool_name, tool_input, config), False
 
         # Memory
-        memory_tool_names = {"store_memory", "query_memory", "list_memories", "delete_memory"}
+        memory_tool_names = {
+            "store_memory",
+            "query_memory",
+            "list_memories",
+            "delete_memory",
+        }
         if tool_name in memory_tool_names:
             from spark.tools.memory_tools import execute as mem_execute
 
