@@ -157,3 +157,82 @@ class TestCancellation:
         assert result["status"] == "cancelled"
         # The second invoke must not have been reached.
         assert call_index["i"] == 1
+
+
+class TestExecutorExtensions:
+    """Tests for system_override, exclude_tools, extra_tools, terminal_tool."""
+
+    def _end_turn(self, content: str = "done") -> dict:
+        return {
+            "content": content,
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "tool_use": None,
+            "content_blocks": [{"type": "text", "text": content}],
+        }
+
+    def _tool_use(self, name: str, tool_input: dict) -> dict:
+        return {
+            "content": "",
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "tool_use": [{"id": "t1", "name": name, "input": tool_input}],
+            "content_blocks": [],
+        }
+
+    def test_system_override_used(self, executor: AgentExecutor) -> None:
+        executor._llm.invoke_model.return_value = self._end_turn()
+        executor.execute("a1", "n", "task", "m", system_override="CUSTOM SYSTEM")
+        assert executor._llm.invoke_model.call_args.kwargs["system"] == "CUSTOM SYSTEM"
+
+    def test_extra_tools_offered_and_excluded_removed(self, executor: AgentExecutor) -> None:
+        extra = {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+        executor._llm.invoke_model.return_value = self._end_turn()
+        executor.execute(
+            "a1",
+            "n",
+            "task",
+            "m",
+            extra_tools=[extra],
+            exclude_tools={"store_memory"},
+        )
+        tools = executor._llm.invoke_model.call_args.kwargs["tools"]
+        names = {t["name"] for t in tools}
+        assert "submit_argument" in names and "store_memory" not in names
+
+    def test_terminal_tool_returns_capture_without_executing(
+        self, executor: AgentExecutor
+    ) -> None:
+        executor._llm.invoke_model.return_value = self._tool_use(
+            "submit_argument", {"argument_markdown": "case", "exhibits": []}
+        )
+        result = executor.execute(
+            "a1",
+            "n",
+            "task",
+            "m",
+            extra_tools=[
+                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+            ],
+            terminal_tool="submit_argument",
+        )
+        assert result["status"] == "completed"
+        assert result["terminal_call"]["input"]["argument_markdown"] == "case"
+        assert executor._llm.invoke_model.call_count == 1
+
+    def test_excluded_tool_refused_at_execution(self, executor: AgentExecutor) -> None:
+        executor._llm.invoke_model.side_effect = [
+            self._tool_use("store_memory", {"content": "x"}),
+            self._end_turn(),
+        ]
+        executor.execute("a1", "n", "task", "m", exclude_tools={"store_memory"})
+        # The second call's messages must contain a refusal tool result
+        messages = executor._llm.invoke_model.call_args.args[0]
+        refusals = [
+            item
+            for m in messages
+            if isinstance(m.get("content"), list)
+            for item in m["content"]
+            if isinstance(item, dict) and "not available" in str(item.get("content", ""))
+        ]
+        assert refusals

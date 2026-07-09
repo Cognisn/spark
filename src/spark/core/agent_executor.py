@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import Any, Callable
 
 from spark.core.cancellation import CancellationToken
@@ -48,16 +46,28 @@ class AgentExecutor:
         max_iterations: int = 15,
         max_tokens: int = 8192,
         cancel_token: CancellationToken | None = None,
+        system_override: str | None = None,
+        exclude_tools: frozenset[str] | set[str] | None = None,
+        extra_tools: list[dict] | None = None,
+        terminal_tool: str | None = None,
     ) -> dict[str, Any]:
         """Run the agent's tool-use loop.
 
         Returns a dict with: content, input_tokens, output_tokens, tool_calls.
+        When terminal_tool is set and the model calls it, the result also
+        carries terminal_call = {name, input} and the tool is NOT executed.
         """
         # Set the model for this agent's execution
         self._llm.set_model(model_id)
 
-        # Build the system prompt for this agent
-        system = self._build_system(agent_name, task, mode)
+        # Tools refused at execution time as well as removed from the offer
+        self._exclude_tools = frozenset(exclude_tools or ())
+
+        # Build the system prompt for this agent (or use the caller's)
+        if system_override is not None:
+            system = system_override
+        else:
+            system = self._build_system(agent_name, task, mode)
 
         # Build initial messages — chain mode inherits parent context,
         # orchestrator mode starts fresh with just the task.
@@ -67,8 +77,13 @@ class AgentExecutor:
         else:
             messages = [{"role": "user", "content": task}]
 
-        # Gather available tools (same as parent conversation)
+        # Gather available tools (same as parent conversation), then apply
+        # the caller's filter and additions.
         tools = self._get_tools()
+        if self._exclude_tools:
+            tools = [t for t in tools if t.get("name") not in self._exclude_tools]
+        if extra_tools:
+            tools.extend(extra_tools)
 
         # Notify that the agent is starting
         if self._status_callback:
@@ -130,6 +145,34 @@ class AgentExecutor:
             stop_reason = response.get("stop_reason", "end_turn")
 
             if stop_reason == "tool_use" and response.get("tool_use"):
+                # A terminal tool ends the turn: capture its input, do not execute it.
+                if terminal_tool:
+                    for tc in response["tool_use"]:
+                        if tc.get("name") == terminal_tool:
+                            if self._status_callback:
+                                self._status_callback(
+                                    "agent_complete",
+                                    {
+                                        "agent_id": agent_id,
+                                        "agent_name": agent_name,
+                                        "status": "completed",
+                                        "result": "[argument submitted]",
+                                        "input_tokens": total_input,
+                                        "output_tokens": total_output,
+                                    },
+                                )
+                            return {
+                                "content": "",
+                                "status": "completed",
+                                "terminal_call": {
+                                    "name": terminal_tool,
+                                    "input": tc.get("input", {}),
+                                },
+                                "input_tokens": total_input,
+                                "output_tokens": total_output,
+                                "tool_calls": all_tool_calls,
+                            }
+
                 tool_results = []
                 for tc in response["tool_use"]:
                     tool_name = tc.get("name", "")
@@ -283,16 +326,16 @@ class AgentExecutor:
             )
 
         base += (
-            f"- Complete your task using the available tools, then provide a clear "
-            f"summary of your findings and results\n"
-            f"- Be thorough but concise — your output will be returned to the parent "
-            f"conversation\n"
-            f"- The current date/time is already provided above — do NOT call "
-            f"`get_current_datetime` unless you specifically need a different timezone\n"
-            f"- Focus exclusively on your assigned task — do not perform unrelated "
-            f"lookups or unnecessary steps\n"
-            f"- Use `get_tool_documentation(tool_name)` if you need help with any tool\n"
-            f"- You cannot spawn further sub-agents\n"
+            "- Complete your task using the available tools, then provide a clear "
+            "summary of your findings and results\n"
+            "- Be thorough but concise — your output will be returned to the parent "
+            "conversation\n"
+            "- The current date/time is already provided above — do NOT call "
+            "`get_current_datetime` unless you specifically need a different timezone\n"
+            "- Focus exclusively on your assigned task — do not perform unrelated "
+            "lookups or unnecessary steps\n"
+            "- Use `get_tool_documentation(tool_name)` if you need help with any tool\n"
+            "- You cannot spawn further sub-agents\n"
         )
 
         return base
@@ -331,6 +374,8 @@ class AgentExecutor:
 
     def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool, reusing the parent's tool infrastructure."""
+        if tool_name in getattr(self, "_exclude_tools", frozenset()):
+            return f"Tool '{tool_name}' is not available in this context."
         try:
             from spark.tools.registry import execute_builtin_tool, get_builtin_tools
 
