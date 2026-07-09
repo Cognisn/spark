@@ -11,7 +11,6 @@ from typing import Any, Callable
 from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import ContextCompactor
 from spark.database.connection import DatabaseConnection
-from spark.llm.base import LLMService
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
 
@@ -128,7 +127,12 @@ class ConversationManager:
             logger.debug("Failed to index message: %s", e)
 
     def _index_tool_call(
-        self, conversation_id: int, user_guid: str, tool_name: str, tool_input: dict, msg_id: int
+        self,
+        conversation_id: int,
+        user_guid: str,
+        tool_name: str,
+        tool_input: dict,
+        msg_id: int,
     ) -> None:
         """Index a tool call in the vector store."""
         idx = self._get_vector_index(conversation_id, user_guid)
@@ -190,14 +194,18 @@ class ConversationManager:
                     import hashlib
 
                     # Hash the content the same way context_index does
-                    active_content_hashes.add(hashlib.sha256(content.encode()).hexdigest())
+                    active_content_hashes.add(
+                        hashlib.sha256(content.encode()).hexdigest()
+                    )
 
             # Build list of conversation IDs to search (current + linked)
             search_ids = [conversation_id]
             try:
                 from spark.database import conversation_links
 
-                linked = conversation_links.get_links(self._db, conversation_id, user_guid)
+                linked = conversation_links.get_links(
+                    self._db, conversation_id, user_guid
+                )
                 for link in linked:
                     link_id = link.get("id")
                     if link_id:
@@ -215,7 +223,9 @@ class ConversationManager:
                     len(search_ids),
                     len(search_ids) - 1,
                 )
-                results = idx.search_multi(query, search_ids, top_k=fetch_k, threshold=threshold)
+                results = idx.search_multi(
+                    query, search_ids, top_k=fetch_k, threshold=threshold
+                )
             else:
                 results = idx.search(query, top_k=fetch_k, threshold=threshold)
 
@@ -370,10 +380,14 @@ class ConversationManager:
 
                             with concurrent.futures.ThreadPoolExecutor() as pool:
                                 mcp_tools = pool.submit(
-                                    lambda: asyncio.run(self._mcp_manager.list_all_tools())
+                                    lambda: asyncio.run(
+                                        self._mcp_manager.list_all_tools()
+                                    )
                                 ).result(timeout=10)
                         else:
-                            mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
+                            mcp_tools = loop.run_until_complete(
+                                self._mcp_manager.list_all_tools()
+                            )
                     except RuntimeError:
                         mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
 
@@ -497,7 +511,9 @@ class ConversationManager:
         try:
             from spark.safety.inspector import PromptInspector
 
-            inspector_enabled = self._embedded_tools_config.get("_prompt_inspection_enabled", False)
+            inspector_enabled = self._embedded_tools_config.get(
+                "_prompt_inspection_enabled", False
+            )
             if inspector_enabled:
                 inspector_level = self._embedded_tools_config.get(
                     "_prompt_inspection_level", "standard"
@@ -535,7 +551,9 @@ class ConversationManager:
         )
 
         # Index user message in vector store
-        self._index_message(conversation_id, user_guid, user_msg_id, "user", user_message)
+        self._index_message(
+            conversation_id, user_guid, user_msg_id, "user", user_message
+        )
 
         # Retrieve relevant context from vector index (respects conv settings)
         retrieved_context = self._retrieve_relevant_context(
@@ -543,13 +561,16 @@ class ConversationManager:
         )
         if retrieved_context:
             logger.info(
-                "RAG context injected into system prompt (%d chars)", len(retrieved_context)
+                "RAG context injected into system prompt (%d chars)",
+                len(retrieved_context),
             )
         else:
             logger.debug("No RAG context retrieved for this message")
 
         # Build system instructions (with retrieved context if available)
-        system = self._build_system_instructions(conv, retrieved_context=retrieved_context)
+        system = self._build_system_instructions(
+            conv, retrieved_context=retrieved_context
+        )
         logger.debug(
             "System prompt: %d chars, %d messages in history",
             len(system),
@@ -629,9 +650,7 @@ class ConversationManager:
                         continue
                     logger.error("LLM invocation failed: %s", error_msg[:300])
                     # Store error as assistant message so user sees it
-                    error_content = (
-                        f"I encountered an error communicating with the model: {error_msg}"
-                    )
+                    error_content = f"I encountered an error communicating with the model: {error_msg}"
                     msg_db.add_message(
                         self._db,
                         conversation_id,
@@ -691,7 +710,9 @@ class ConversationManager:
 
                     # Store assistant message with tool calls
                     assistant_content = response.get("content_blocks", [])
-                    assistant_text = json.dumps(assistant_content) if assistant_content else ""
+                    assistant_text = (
+                        json.dumps(assistant_content) if assistant_content else ""
+                    )
                     assistant_tokens = self._llm.count_tokens(assistant_text)
                     asst_msg_id = msg_db.add_message(
                         self._db,
@@ -745,7 +766,9 @@ class ConversationManager:
                     )
 
                     if status_callback:
-                        status_callback("tool_iteration_complete", {"iteration": iterations})
+                        status_callback(
+                            "tool_iteration_complete", {"iteration": iterations}
+                        )
 
                     # Cooperative cancellation check after tools have executed —
                     # avoids re-invoking the LLM for another iteration.
@@ -817,7 +840,7 @@ class ConversationManager:
         if fs_config.get("enabled", True) and allowed_paths:
             path_list = ", ".join(f"`{p}`" for p in allowed_paths)
             parts.append(
-                f"**Filesystem access:** You can read"
+                "**Filesystem access:** You can read"
                 + (" and write" if fs_config.get("mode") == "read_write" else "")
                 + f" files within these paths: {path_list}\n"
             )
@@ -895,7 +918,9 @@ class ConversationManager:
                 try:
                     provider_name = self._llm.active_provider
                     if provider_name and provider_name in self._llm.providers:
-                        models = self._llm.providers[provider_name].list_available_models()
+                        models = self._llm.providers[
+                            provider_name
+                        ].list_available_models()
                         if models:
                             model_lines = []
                             for m in models[:10]:
@@ -905,7 +930,9 @@ class ConversationManager:
                                 model_lines.append(
                                     f"  - `{m['id']}` ({m.get('name', '')}, {ctx} ctx)"
                                 )
-                            agent_desc += "Available models:\n" + "\n".join(model_lines) + "\n"
+                            agent_desc += (
+                                "Available models:\n" + "\n".join(model_lines) + "\n"
+                            )
                 except Exception:
                     pass
             else:
@@ -940,11 +967,11 @@ class ConversationManager:
             f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
             + self._build_conversation_tool_context()
-            + f"**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
-            f"parameter references, examples, and best practices for any tool before using it. "
-            f"Pass `_index` as the tool name to see all available documentation.\n\n"
-            f"**Linked conversations:** If this conversation is linked to others, relevant context from those conversations "
-            f"is automatically provided below. You can reference this context in your responses."
+            + "**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
+            "parameter references, examples, and best practices for any tool before using it. "
+            "Pass `_index` as the tool name to see all available documentation.\n\n"
+            "**Linked conversations:** If this conversation is linked to others, relevant context from those conversations "
+            "is automatically provided below. You can reference this context in your responses."
         )
 
         # 2. Global instructions
@@ -1076,6 +1103,14 @@ class ConversationManager:
         ):
             permission = None  # Force re-prompt
 
+        # Skill authoring: always prompt, even when previously always-allowed,
+        # unless running without a callback (autonomous actions).
+        if (
+            tool_name in ("create_skill", "update_skill")
+            and self._tool_permission_callback
+        ):
+            permission = None  # Force re-prompt
+
         if permission is None:
             # First use — prompt user
             if self._tool_permission_callback:
@@ -1116,7 +1151,10 @@ class ConversationManager:
 
         # Execute
         logger.info(
-            "Tool call: %s (id=%s) params=%s", tool_name, tool_id, json.dumps(tool_input)[:200]
+            "Tool call: %s (id=%s) params=%s",
+            tool_name,
+            tool_id,
+            json.dumps(tool_input)[:200],
         )
         start_time = time.monotonic()
         try:
@@ -1128,13 +1166,19 @@ class ConversationManager:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
         if is_error:
-            logger.warning("Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200])
+            logger.warning(
+                "Tool %s failed (%dms): %s", tool_name, elapsed_ms, result_text[:200]
+            )
         else:
-            logger.info("Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100])
+            logger.info(
+                "Tool %s completed (%dms): %s", tool_name, elapsed_ms, result_text[:100]
+            )
 
         # Truncate large results
         if len(result_text) > self._max_tool_result_tokens * 4:
-            result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+            result_text = (
+                result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
+            )
 
         # Record transaction
         mcp_ops.record_transaction(
@@ -1212,8 +1256,12 @@ class ConversationManager:
         if len(agent_calls) > 1 and not needs_sequential:
             import concurrent.futures
 
-            logger.info("Dispatching %d spawn_agent calls in parallel", len(agent_calls))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agent_calls)) as pool:
+            logger.info(
+                "Dispatching %d spawn_agent calls in parallel", len(agent_calls)
+            )
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(agent_calls)
+            ) as pool:
                 future_to_idx: dict[concurrent.futures.Future, int] = {}
                 for idx, tc in agent_calls:
                     future = pool.submit(
@@ -1355,7 +1403,9 @@ class ConversationManager:
             try:
                 from spark.database import conversations
 
-                conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+                conv = conversations.get_conversation(
+                    self._db, conversation_id, user_guid
+                )
                 if conv:
                     model_id = conv.get("model_id", "")
             except Exception:
@@ -1386,7 +1436,9 @@ class ConversationManager:
             provider_name = self._llm.active_provider
             available_models: list[dict] = []
             if provider_name and provider_name in self._llm.providers:
-                available_models = self._llm.providers[provider_name].list_available_models()
+                available_models = self._llm.providers[
+                    provider_name
+                ].list_available_models()
 
             model_justification = tool_input.get("model_justification", "")
             approved_model = self._agent_model_callback(
@@ -1613,6 +1665,7 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
     "system_commands": ["run_command"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
     "email": ["send_email", "draft_email"],
+    "skills": ["use_skill", "read_skill_resource", "create_skill", "update_skill"],
     "core": ["get_current_datetime", "get_tool_documentation"],
     "agents": ["spawn_agent", "list_provider_models"],
 }

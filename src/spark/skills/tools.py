@@ -47,10 +47,8 @@ def get_read_tools() -> list[dict[str, Any]]:
 
 def get_tools() -> list[dict[str, Any]]:
     """All skills tools offered through the registry."""
-    try:
-        from spark.skills.authoring import get_write_tools
-    except ImportError:  # authoring lands in the next task
-        return get_read_tools()
+    from spark.skills.authoring import get_write_tools
+
     return get_read_tools() + get_write_tools()
 
 
