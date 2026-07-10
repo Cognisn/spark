@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - Panel{% endblock %}
+
+{% block content %}
+<div id="panel-root" data-conversation-id="{{ conversation_id }}" class="panel-layout">
+    <div class="panel-main">
+        <div id="panel-rail" class="app-card panel-rail"></div>
+        <div id="panel-thread-pane" class="app-card panel-thread-pane">
+            <div id="panel-thread" class="panel-thread-body"></div>
+        </div>
+    </div>
+    <div class="panel-controls app-card">
+        <span id="panel-status" class="badge" style="background: var(--app-accent); color: var(--app-bg-primary);">Loading</span>
+        <button id="panel-resume" class="btn btn-sm btn-app-primary d-none">Resume</button>
+        <button id="panel-retry" class="btn btn-sm btn-app-primary d-none">Retry turn</button>
+        <button id="panel-cancel" class="btn btn-sm btn-app-ghost d-none">Cancel</button>
+        <label class="d-flex align-items-center gap-1" style="font-size: 0.75rem; color: var(--app-text-muted);">
+            <input type="checkbox" id="panel-autoscroll" checked style="accent-color: var(--app-accent);"> Auto-scroll
+        </label>
+        <div class="dropdown">
+            <button class="btn btn-app-ghost btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-download me-1"></i> Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="/chat/{{ conversation_id }}/api/export?format=markdown">Markdown</a></li>
+                <li><a class="dropdown-item" href="/chat/{{ conversation_id }}/api/export?format=html">HTML</a></li>
+            </ul>
+        </div>
+        <div class="panel-input">
+            <input id="panel-prompt" class="form-control"
+                   placeholder="Send a directive to the panel (or a question to the moderator after the synthesis)">
+            <button id="panel-send" class="btn btn-app-primary">Send</button>
+        </div>
+    </div>
+</div>
+<style>
+    .panel-layout { display: flex; flex-direction: column; gap: 0.75rem; height: calc(100vh - 120px); }
+    .panel-main { display: flex; gap: 0.75rem; flex: 1; min-height: 0; }
+    .panel-rail { flex: 0 0 220px; overflow-y: auto; padding: 0.5rem; }
+    .panel-thread-pane { flex: 1; overflow-y: auto; min-width: 0; }
+    .panel-thread-body { padding: 0.75rem; }
+    .panel-controls { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; }
+    .panel-input { display: flex; gap: 0.5rem; flex: 1; }
+    .rail-entry { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.5rem;
+                  border: 1px solid transparent; border-radius: 0.5rem; margin-bottom: 0.25rem; }
+    .rail-chip { width: 0.7rem; height: 0.7rem; border-radius: 50%; flex: 0 0 auto; }
+    .rail-name { font-weight: 600; font-size: 0.85rem; }
+    .rail-sub { font-size: 0.7rem; color: var(--app-text-muted); }
+    .rail-entry.has-floor { box-shadow: 0 0 14px rgba(150, 30, 40, 0.55);
+                            border-color: rgba(150, 30, 40, 0.7); transition: box-shadow 0.4s ease; }
+    .speaker-card { border: 1px solid var(--app-border); border-left-width: 4px; border-radius: 0.5rem;
+                    padding: 0.6rem 0.75rem; margin: 0.5rem 0; }
+    .speaker-card .speaker-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; }
+    .moderator-card { background: var(--app-bg-secondary); }
+    .human-banner { border: 1px dashed var(--app-accent); border-radius: 0.5rem; padding: 0.6rem 0.75rem;
+                    margin: 0.5rem 0; color: var(--app-text-primary); background: var(--app-bg-secondary); }
+    .exhibit-card { border: 1px solid var(--app-border); border-radius: 6px; padding: 0.5rem;
+                    margin-top: 0.5rem; background: var(--app-bg-secondary); }
+    .judgement-card { border: 1px solid var(--app-accent); border-left-width: 4px; border-radius: 0.5rem; padding: 0.75rem; margin: 0.5rem 0; background: var(--app-bg-secondary); }
+    .judgement-card .judgement-title { font-weight: 700; letter-spacing: 0.06em; color: var(--app-accent); margin-bottom: 0.5rem; }
+    .tool-group { border: 1px solid var(--app-border); border-radius: 0.5rem; margin: 0.5rem 0; font-size: 0.8125rem; }
+    .tool-group-header { padding: 0.35rem 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; background: var(--app-bg-secondary); border-radius: 0.5rem; }
+    .tool-group.open .tool-group-header { border-bottom: 1px solid var(--app-border); border-radius: 0.5rem 0.5rem 0 0; }
+    .tool-group-body { display: none; padding: 0.35rem 0.6rem; }
+    .tool-group.open .tool-group-body { display: block; }
+    .tool-entry { padding: 0.15rem 0; color: var(--app-text-muted); }
+    .tool-entry .result-snippet { display: block; margin-left: 1.1rem; font-size: 0.75rem; opacity: 0.8; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/main.js"></script>
+<script src="/static/js/panel.js"></script>
+{% endblock %}

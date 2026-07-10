@@ -459,6 +459,8 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN kg_auto_context INTEGER DEFAULT 1",
         "ALTER TABLE debate_agents ADD COLUMN allowed_tools TEXT",
         "ALTER TABLE debate_agents ADD COLUMN allowed_skills TEXT",
+        "ALTER TABLE debate_agents ADD COLUMN display_name TEXT",
+        "ALTER TABLE debate_agents ADD COLUMN is_human INTEGER DEFAULT 0",
     ]
 
     for sql in migrations:

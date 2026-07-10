@@ -143,3 +143,34 @@ class TestCapabilityColumns:
         )
         db.commit()
         assert debates.get_debate(db, cid)["agents"]["pro"]["allowed_tools"] is None
+
+
+class TestPanelAgentColumns:
+    def test_display_name_and_human_round_trip(self, db) -> None:
+        cid = _conv(db)
+        agents = {
+            "moderator": {"model_id": "m", "brief": None, "display_name": "Moderator"},
+            "panellist:1": {
+                "model_id": "a",
+                "brief": "economist",
+                "display_name": "Economist",
+            },
+            "panellist:2": {
+                "model_id": "",
+                "brief": None,
+                "display_name": "Matthew",
+                "is_human": True,
+            },
+        }
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+        d = debates.get_debate(db, cid)
+        assert d["agents"]["panellist:1"]["display_name"] == "Economist"
+        assert d["agents"]["panellist:2"]["is_human"] is True
+        assert d["agents"]["moderator"]["is_human"] is False
+
+    def test_debate_agents_unaffected(self, db) -> None:
+        cid = _conv(db)
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
+        d = debates.get_debate(db, cid)
+        assert d["agents"]["pro"]["display_name"] is None
+        assert d["agents"]["pro"]["is_human"] is False

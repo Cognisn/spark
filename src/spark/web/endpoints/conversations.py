@@ -73,6 +73,78 @@ async def create_conversation(request: Request) -> JSONResponse:
                         status_code=400,
                     )
 
+    # Validate a panel payload BEFORE creating anything, for the same reason.
+    panel = None
+    panel_agents = None
+    if conversation_type == "panel":
+        panel = data.get("panel") or {}
+        if not (panel.get("topic") or "").strip():
+            return JSONResponse({"error": "Panel requires a topic"}, status_code=400)
+        moderator = panel.get("moderator") or {}
+        if not moderator.get("model_id"):
+            return JSONResponse(
+                {"error": "Panel requires a moderator with a model"}, status_code=400
+            )
+        panellists = panel.get("panellists") or []
+        if not isinstance(panellists, list) or not 2 <= len(panellists) <= 5:
+            return JSONResponse(
+                {"error": "Panel requires 2 to 5 panellists"}, status_code=400
+            )
+        human = panel.get("human") or None
+        names = [(p or {}).get("name", "").strip() for p in panellists]
+        if human is not None:
+            human_name = (human.get("name") or "").strip()
+            if not human_name:
+                return JSONResponse(
+                    {"error": "Human panellist requires a name"}, status_code=400
+                )
+            names.append(human_name)
+        if any(not n for n in names) or len({n.casefold() for n in names}) != len(names):
+            return JSONResponse(
+                {"error": "Panellists need distinct, non-empty names"}, status_code=400
+            )
+        if any(not (p or {}).get("model_id") for p in panellists):
+            return JSONResponse(
+                {"error": "Every AI panellist requires a model"}, status_code=400
+            )
+        specs = [("moderator", moderator)] + [
+            (f"panellist:{i}", p) for i, p in enumerate(panellists, start=1)
+        ]
+        for role, spec in specs:
+            for key in ("allowed_tools", "allowed_skills"):
+                value = (spec or {}).get(key)
+                if value is not None and (
+                    not isinstance(value, list)
+                    or any(not isinstance(item, str) for item in value)
+                ):
+                    return JSONResponse(
+                        {"error": f"{key} for {role} must be a list of tool/skill names"},
+                        status_code=400,
+                    )
+        panel_agents = {
+            "moderator": {
+                "model_id": moderator["model_id"],
+                "brief": moderator.get("brief"),
+                "allowed_skills": moderator.get("allowed_skills"),
+                "display_name": "Moderator",
+            }
+        }
+        for i, spec in enumerate(panellists, start=1):
+            panel_agents[f"panellist:{i}"] = {
+                "model_id": spec["model_id"],
+                "brief": spec.get("brief"),
+                "allowed_tools": spec.get("allowed_tools"),
+                "allowed_skills": spec.get("allowed_skills"),
+                "display_name": spec["name"].strip(),
+            }
+        if human is not None:
+            panel_agents[f"panellist:{len(panellists) + 1}"] = {
+                "model_id": "",
+                "brief": None,
+                "display_name": (human.get("name") or "").strip(),
+                "is_human": True,
+            }
+
     try:
         cid = conv_mgr.create_conversation(
             name,
@@ -99,6 +171,25 @@ async def create_conversation(request: Request) -> JSONResponse:
                 debate.get("max_rounds"),
                 user_guid,
                 debate["agents"],
+            )
+        if conversation_type == "panel" and panel_agents is not None:
+            from spark.database import debates
+
+            db = conv_mgr._db
+            ph = db.placeholder
+            db.execute(
+                f"UPDATE conversations SET conversation_type = 'panel' WHERE id = {ph}",
+                (cid,),
+            )
+            db.commit()
+            debates.create_debate(
+                db,
+                cid,
+                panel["topic"].strip(),
+                panel.get("rounds_mode", "fixed"),
+                panel.get("max_rounds"),
+                user_guid,
+                panel_agents,
             )
         if data.get("kg_local_enabled"):
             db = conv_mgr._db
