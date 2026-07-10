@@ -146,3 +146,40 @@ class TestDebatePage:
         cid = client.post("/conversations/api/create", json=DEBATE_PAYLOAD).json()["id"]
         r = client.get(f"/debate/{cid}")
         assert r.status_code == 200 and "debate" in r.text.lower()
+
+
+class TestCapabilities:
+    def test_capabilities_shape(self, client, tmp_path) -> None:
+        from spark.skills.manager import SkillsManager, set_skills_manager
+
+        set_skills_manager(SkillsManager(tmp_path / "empty-skills"))
+        try:
+            _auth(client)
+            data = client.get("/debate/api/capabilities").json()
+            names = {t["name"] for g in data["tools"] for t in g["tools"]}
+            assert "spawn_agent" not in names and "store_memory" not in names
+            assert "use_skill" not in names  # governed by the skills checklist
+            assert "get_current_datetime" in names
+            assert isinstance(data["skills"], list)
+        finally:
+            set_skills_manager(None)
+
+    def test_create_with_allowlists_persists(self, client) -> None:
+        import copy
+
+        _auth(client)
+        payload = copy.deepcopy(DEBATE_PAYLOAD)
+        payload["debate"]["agents"]["pro"]["allowed_tools"] = ["web_search"]
+        payload["debate"]["agents"]["judge"]["allowed_skills"] = []
+        cid = client.post("/conversations/api/create", json=payload).json()["id"]
+        state = client.get(f"/debate/api/state?conversation_id={cid}").json()
+        assert state["config"]["agents"]["pro"]["allowed_tools"] == ["web_search"]
+        assert state["config"]["agents"]["judge"]["allowed_skills"] == []
+
+    def test_invalid_allowlist_type_is_400(self, client) -> None:
+        import copy
+
+        _auth(client)
+        payload = copy.deepcopy(DEBATE_PAYLOAD)
+        payload["debate"]["agents"]["pro"]["allowed_tools"] = "web_search"
+        assert client.post("/conversations/api/create", json=payload).status_code == 400

@@ -61,6 +61,17 @@ async def create_conversation(request: Request) -> JSONResponse:
             )
         if not (debate.get("topic") or "").strip():
             return JSONResponse({"error": "Debate requires a topic"}, status_code=400)
+        for role, spec in agents.items():
+            for key in ("allowed_tools", "allowed_skills"):
+                value = (spec or {}).get(key)
+                if value is not None and (
+                    not isinstance(value, list)
+                    or any(not isinstance(item, str) for item in value)
+                ):
+                    return JSONResponse(
+                        {"error": f"{key} for {role} must be a list of tool/skill names"},
+                        status_code=400,
+                    )
 
     try:
         cid = conv_mgr.create_conversation(

@@ -47,6 +47,65 @@ async def debate_page(request: Request, conversation_id: int) -> HTMLResponse:
     return templates.TemplateResponse(request, "debate.html", {"conversation_id": conversation_id})
 
 
+@router.get("/debate/api/capabilities")
+async def debate_capabilities(request: Request) -> JSONResponse:
+    """The selectable tool and skill universe for the debate creation wizard."""
+    tools_out: list[dict] = []
+    try:
+        from spark.core.conversation_manager import _TOOL_CATEGORIES
+        from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES
+        from spark.tools.registry import get_builtin_tools
+
+        conv_mgr = request.app.state.conversation_manager
+        config = getattr(conv_mgr, "_embedded_tools_config", {}) or {"embedded_tools": {}}
+        offered = {t["name"]: t.get("description", "") for t in get_builtin_tools(config)}
+
+        never = {"spawn_agent", "list_provider_models"}
+        never |= set(READ_TOOL_NAMES) | set(WRITE_TOOL_NAMES)
+        from spark.core.debate.tools import MEMORY_TOOL_NAMES
+
+        never |= set(MEMORY_TOOL_NAMES)
+
+        for category, names in _TOOL_CATEGORIES.items():
+            if category in ("skills", "agents", "memory"):
+                continue
+            entries = [
+                {"name": n, "description": offered[n][:80]}
+                for n in names
+                if n in offered and n not in never
+            ]
+            if entries:
+                tools_out.append({"group": category, "tools": entries})
+
+        mcp_mgr = getattr(request.app.state, "mcp_manager", None)
+        if mcp_mgr:
+            by_server: dict[str, list[dict]] = {}
+            for tool in mcp_mgr._tools_cache or []:
+                server = tool.get("server", "mcp")
+                by_server.setdefault(server, []).append(
+                    {"name": tool.get("name", ""),
+                     "description": (tool.get("description") or "")[:80]}
+                )
+            for server, entries in by_server.items():
+                tools_out.append({"group": f"MCP: {server}", "tools": entries})
+    except Exception:  # noqa: BLE001 - degrade to whatever resolved
+        logger.warning("Capabilities tools listing degraded", exc_info=True)
+
+    skills_out: list[dict] = []
+    try:
+        from spark.skills.manager import get_skills_manager
+
+        manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
+        skills_out = [
+            {"name": s["name"], "description": s["description"][:80]}
+            for s in manager.list_skills()
+        ]
+    except Exception:  # noqa: BLE001
+        logger.warning("Capabilities skills listing degraded", exc_info=True)
+
+    return JSONResponse({"tools": tools_out, "skills": skills_out})
+
+
 @router.get("/debate/api/state")
 async def debate_state(request: Request, conversation_id: int) -> JSONResponse:
     """Full debate record: config, agents, turns, and exhibits."""
