@@ -95,6 +95,9 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-pro-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-pro-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('pro'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-pro-caps" data-skills-only="false"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -103,6 +106,9 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-con-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-con-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('con'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-con-caps" data-skills-only="false"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -111,6 +117,9 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-judge-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-judge-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('judge'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-judge-caps" data-skills-only="true"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
                                 </div>
                             </div>
                         </div>
@@ -188,6 +197,52 @@ async function loadConversations() {
     }
 }
 
+let _debateCaps = null;
+
+function toggleCaps(role) {
+    document.getElementById(`debate-${role}-caps`).classList.toggle('d-none');
+}
+
+async function loadDebateCapabilities() {
+    try {
+        const resp = await fetch('/debate/api/capabilities');
+        _debateCaps = await resp.json();
+    } catch (err) { _debateCaps = { tools: [], skills: [] }; return; }
+    for (const role of ['pro', 'con', 'judge']) {
+        const box = document.getElementById(`debate-${role}-caps`);
+        if (!box) continue;
+        const skillsOnly = box.dataset.skillsOnly === 'true';
+        let html = '';
+        if (!skillsOnly) {
+            for (const group of _debateCaps.tools) {
+                const gid = `${role}-g-${group.group.replace(/[^a-z0-9]/gi, '-')}`;
+                html += `<div class="fw-semibold mt-1">
+                    <input type="checkbox" checked onchange="document.querySelectorAll('#debate-${role}-caps [data-group=\'${gid}\']').forEach(b => b.checked = this.checked)">
+                    ${escapeHtml(group.group)}</div>`;
+                for (const tool of group.tools) {
+                    html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="tool" data-group="${gid}" value="${escapeHtml(tool.name)}"> ${escapeHtml(tool.name)}</label></div>`;
+                }
+            }
+        }
+        if (_debateCaps.skills.length) {
+            html += '<div class="fw-semibold mt-1">Skills</div>';
+            for (const skill of _debateCaps.skills) {
+                html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="skill" value="${escapeHtml(skill.name)}"> ${escapeHtml(skill.name)}</label></div>`;
+            }
+        } else if (skillsOnly) {
+            html += '<div class="ms-1" style="color: var(--app-text-muted);">No skills installed.</div>';
+        }
+        box.innerHTML = html || '<div style="color: var(--app-text-muted);">Nothing to configure.</div>';
+    }
+}
+
+function collectAllowlist(role, kind) {
+    const boxes = [...document.querySelectorAll(`#debate-${role}-caps input[data-kind="${kind}"]`)];
+    if (!boxes.length) return undefined;
+    const ticked = boxes.filter(b => b.checked).map(b => b.value);
+    return ticked.length === boxes.length ? undefined : ticked;  // fully ticked = everything
+}
+
 function toggleDebateFields() {
     const isDebate = document.getElementById('conv-type').value === 'debate';
     document.getElementById('debate-fields').classList.toggle('d-none', !isDebate);
@@ -226,6 +281,7 @@ async function showNewConversation() {
     } catch (err) {
         // Ignore
     }
+    loadDebateCapabilities();
     new bootstrap.Modal(document.getElementById('newConvModal')).show();
 }
 
@@ -240,10 +296,17 @@ function buildCreatePayload() {
             kg_local_enabled: document.getElementById('conv-kg-local').checked,
         };
     }
-    const agents = Object.fromEntries(['pro', 'con', 'judge'].map(role => [role, {
-        model_id: document.getElementById(`debate-${role}-model`).value,
-        brief: document.getElementById(`debate-${role}-brief`).value.trim() || null,
-    }]));
+    const agents = Object.fromEntries(['pro', 'con', 'judge'].map(role => {
+        const spec = {
+            model_id: document.getElementById(`debate-${role}-model`).value,
+            brief: document.getElementById(`debate-${role}-brief`).value.trim() || null,
+        };
+        const tools = role === 'judge' ? undefined : collectAllowlist(role, 'tool');
+        const skills = collectAllowlist(role, 'skill');
+        if (tools !== undefined) spec.allowed_tools = tools;
+        if (skills !== undefined) spec.allowed_skills = skills;
+        return [role, spec];
+    }));
     const roundsMode = document.getElementById('debate-rounds-mode').value;
     return {
         name,
