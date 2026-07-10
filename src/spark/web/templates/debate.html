@@ -5,18 +5,28 @@
 {% block content %}
 <div id="debate-root" data-conversation-id="{{ conversation_id }}" class="debate-layout">
     <div id="judge-pane" class="app-card debate-judge">
-        <div class="debate-pane-header">Judge</div>
+        <div class="debate-pane-header">Judge
+            <label class="d-flex align-items-center gap-1 ms-auto" style="font-size: 0.75rem; font-weight: 400; color: var(--app-text-muted);">
+                <input type="checkbox" id="judge-autoscroll" checked style="accent-color: var(--app-accent);"> Auto-scroll
+            </label>
+        </div>
         <div id="judge-content" class="debate-pane-body"></div>
     </div>
     <div class="debate-sides">
         <div id="pro-pane" class="app-card debate-side">
             <div class="debate-pane-header">Pro
+                <label class="d-flex align-items-center gap-1 ms-auto me-2" style="font-size: 0.75rem; font-weight: 400; color: var(--app-text-muted);">
+                    <input type="checkbox" id="pro-autoscroll" checked style="accent-color: var(--app-accent);"> Auto-scroll
+                </label>
                 <button id="pro-cancel" class="btn btn-sm btn-app-ghost d-none">Cancel</button>
             </div>
             <div id="pro-content" class="debate-pane-body"></div>
         </div>
         <div id="con-pane" class="app-card debate-side">
             <div class="debate-pane-header">Against
+                <label class="d-flex align-items-center gap-1 ms-auto me-2" style="font-size: 0.75rem; font-weight: 400; color: var(--app-text-muted);">
+                    <input type="checkbox" id="con-autoscroll" checked style="accent-color: var(--app-accent);"> Auto-scroll
+                </label>
                 <button id="con-cancel" class="btn btn-sm btn-app-ghost d-none">Cancel</button>
             </div>
             <div id="con-content" class="debate-pane-body"></div>
@@ -26,6 +36,15 @@
         <span id="debate-status" class="badge" style="background: var(--app-accent); color: var(--app-bg-primary);">Loading</span>
         <button id="debate-resume" class="btn btn-sm btn-app-primary d-none">Resume</button>
         <button id="debate-retry" class="btn btn-sm btn-app-primary d-none">Retry turn</button>
+        <div class="dropdown">
+            <button class="btn btn-app-ghost btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-download me-1"></i> Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="/chat/{{ conversation_id }}/api/export?format=markdown">Markdown</a></li>
+                <li><a class="dropdown-item" href="/chat/{{ conversation_id }}/api/export?format=html">HTML</a></li>
+            </ul>
+        </div>
         <div class="debate-input">
             <input id="debate-prompt" class="form-control"
                    placeholder="Send a directive to all agents (or a question to the judge after the ruling)">
@@ -47,9 +66,20 @@
     .exhibit-card { border: 1px solid var(--app-border); border-radius: 6px; padding: 0.5rem;
                     margin-top: 0.5rem; background: var(--app-bg-secondary); }
     .debate-ruling { border-left: 4px solid var(--app-accent); padding-left: 0.75rem; }
+    .has-floor { box-shadow: 0 0 14px rgba(150, 30, 40, 0.55); border-color: rgba(150, 30, 40, 0.7) !important; transition: box-shadow 0.4s ease; }
+    .judgement-card { border: 1px solid var(--app-accent); border-left-width: 4px; border-radius: 0.5rem; padding: 0.75rem; margin: 0.5rem 0; background: var(--app-bg-secondary); }
+    .judgement-card .judgement-title { font-weight: 700; letter-spacing: 0.06em; color: var(--app-accent); margin-bottom: 0.5rem; }
+    .tool-group { border: 1px solid var(--app-border); border-radius: 0.5rem; margin: 0.5rem 0; font-size: 0.8125rem; }
+    .tool-group-header { padding: 0.35rem 0.6rem; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; background: var(--app-bg-secondary); border-radius: 0.5rem; }
+    .tool-group.open .tool-group-header { border-bottom: 1px solid var(--app-border); border-radius: 0.5rem 0.5rem 0 0; }
+    .tool-group-body { display: none; padding: 0.35rem 0.6rem; }
+    .tool-group.open .tool-group-body { display: block; }
+    .tool-entry { padding: 0.15rem 0; color: var(--app-text-muted); }
+    .tool-entry .result-snippet { display: block; margin-left: 1.1rem; font-size: 0.75rem; opacity: 0.8; }
 </style>
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/main.js"></script>
 <script src="/static/js/debate.js"></script>
 {% endblock %}
