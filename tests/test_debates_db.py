@@ -110,3 +110,36 @@ class TestDebatesCrud:
         assert turns[0]["status"] == "complete" and turns[0]["summary"] == "short"
         d = debates.get_debate(db, cid)
         assert d["agents"]["pro"]["tokens_sent"] == 100
+
+
+class TestCapabilityColumns:
+    def test_allowlists_round_trip(self, db) -> None:
+        cid = _conv(db)
+        agents = {
+            "pro": {
+                "model_id": "a",
+                "brief": None,
+                "allowed_tools": ["web_search"],
+                "allowed_skills": [],
+            },
+            "con": {"model_id": "b", "brief": None},
+            "judge": {"model_id": "c", "brief": None, "allowed_skills": ["skill-creator"]},
+        }
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+        d = debates.get_debate(db, cid)
+        assert d["agents"]["pro"]["allowed_tools"] == ["web_search"]
+        assert d["agents"]["pro"]["allowed_skills"] == []
+        assert d["agents"]["con"]["allowed_tools"] is None
+        assert d["agents"]["judge"]["allowed_skills"] == ["skill-creator"]
+
+    def test_corrupt_json_treated_as_null(self, db) -> None:
+        cid = _conv(db)
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
+        ph = db.placeholder
+        db.execute(
+            f"UPDATE debate_agents SET allowed_tools = 'not-json' "
+            f"WHERE conversation_id = {ph} AND role = 'pro'",
+            (cid,),
+        )
+        db.commit()
+        assert debates.get_debate(db, cid)["agents"]["pro"]["allowed_tools"] is None

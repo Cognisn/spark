@@ -39,12 +39,27 @@ def create_debate(
         (conversation_id, topic, rounds_mode, max_rounds, user_guid),
     )
     config_id = cur.lastrowid
+    import json as json_mod
+
     for role in ("pro", "con", "judge"):
         spec = agents[role]
+
+        def _allow(key: str) -> str | None:
+            value = spec.get(key)
+            return json_mod.dumps(value) if isinstance(value, list) else None
+
         db.execute(
-            f"""INSERT INTO debate_agents (conversation_id, role, model_id, brief)
-                VALUES ({ph}, {ph}, {ph}, {ph})""",
-            (conversation_id, role, spec["model_id"], spec.get("brief")),
+            f"""INSERT INTO debate_agents
+                (conversation_id, role, model_id, brief, allowed_tools, allowed_skills)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            (
+                conversation_id,
+                role,
+                spec["model_id"],
+                spec.get("brief"),
+                _allow("allowed_tools"),
+                _allow("allowed_skills"),
+            ),
         )
     db.commit()
     return config_id
@@ -75,16 +90,33 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
         "agents": {},
     }
     cur = db.execute(
-        f"""SELECT role, model_id, brief, tokens_sent, tokens_received
+        f"""SELECT role, model_id, brief, tokens_sent, tokens_received,
+                   allowed_tools, allowed_skills
             FROM debate_agents WHERE conversation_id = {ph}""",
         (conversation_id,),
     )
-    for role, model_id, brief, sent, received in cur.fetchall():
+
+    def _parse_allow(raw: Any) -> list[str] | None:
+        if raw is None:
+            return None
+        import json as json_mod
+        import logging
+
+        try:
+            value = json_mod.loads(raw)
+            return value if isinstance(value, list) else None
+        except (ValueError, TypeError):
+            logging.getLogger(__name__).warning("Invalid allowlist JSON, treating as all")
+            return None
+
+    for role, model_id, brief, sent, received, tools_raw, skills_raw in cur.fetchall():
         cfg["agents"][role] = {
             "model_id": model_id,
             "brief": brief,
             "tokens_sent": sent,
             "tokens_received": received,
+            "allowed_tools": _parse_allow(tools_raw),
+            "allowed_skills": _parse_allow(skills_raw),
         }
     return cfg
 
