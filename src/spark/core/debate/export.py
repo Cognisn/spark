@@ -19,9 +19,20 @@ def _load(db: Any, conversation_id: int) -> tuple[dict, list[dict], dict]:
     )
 
 
+def _is_panel(cfg: dict) -> bool:
+    return any(role.startswith("panellist:") for role in cfg.get("agents", {}))
+
+
+def _speaker_label(turn: dict, cfg: dict) -> str:
+    agent = cfg.get("agents", {}).get(turn["role"]) or {}
+    return agent.get("display_name") or turn["role"].upper()
+
+
 def export_debate_markdown(db: Any, conversation_id: int) -> str:
     cfg, turns, exhibits = _load(db, conversation_id)
-    lines = [f"# Debate: {cfg['topic']}", ""]
+    panel = _is_panel(cfg)
+    kind = "Panel" if panel else "Debate"
+    lines = [f"# {kind}: {cfg['topic']}", ""]
     lines.append(
         f"Mode: {cfg['rounds_mode']}"
         + (f", max {cfg['max_rounds']} rounds" if cfg["max_rounds"] else "")
@@ -31,18 +42,21 @@ def export_debate_markdown(db: Any, conversation_id: int) -> str:
     for t in turns:
         if t["status"] != "complete":
             continue
-        if t["turn_type"] == "argument" and t["round"] != current_round:
+        if t["turn_type"] in ("argument", "contribution") and t["round"] != current_round:
             current_round = t["round"]
             lines.append(f"## Round {current_round}")
             lines.append("")
+        speaker = "Moderator" if panel else "Judge"
         heading = {
-            "announcement": "### Judge, opening",
-            "interim": "### Judge, interim remarks",
+            "announcement": f"### {speaker}, opening",
+            "interim": f"### {speaker}, interim remarks",
             "argument": f"### {t['role'].upper()}",
+            "contribution": f"### {_speaker_label(t, cfg)}",
             "user_prompt": "### User directive",
             "ruling": "## Ruling",
+            "synthesis": "## Synthesis",
             "qa_question": "### User question",
-            "qa_answer": "### Judge answer",
+            "qa_answer": f"### {speaker} answer",
         }.get(t["turn_type"], f"### {t['turn_type']}")
         lines.append(heading)
         lines.append(t.get("content") or "")
@@ -134,6 +148,9 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
     import html as html_mod
 
     cfg, turns, exhibits = _load(db, conversation_id)
+    panel = _is_panel(cfg)
+    kind = "Panel" if panel else "Debate"
+    speaker = "Moderator" if panel else "Judge"
 
     def esc(value: Any) -> str:
         return html_mod.escape(str(value or ""))
@@ -142,7 +159,7 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
         return _markdown_to_html(esc(value))
 
     sections: list[str] = []
-    sections.append(f"<h1>Debate: {esc(cfg['topic'])}</h1>")
+    sections.append(f"<h1>{kind}: {esc(cfg['topic'])}</h1>")
     mode = esc(cfg["rounds_mode"]) + (
         f", max {esc(cfg['max_rounds'])} rounds" if cfg["max_rounds"] else ""
     )
@@ -152,12 +169,16 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
     for turn in turns:
         if turn["status"] != "complete":
             continue
-        if turn["turn_type"] == "argument" and turn["round"] != current_round:
+        if turn["turn_type"] in ("argument", "contribution") and turn["round"] != current_round:
             current_round = turn["round"]
             sections.append(f"<h2 class='round'>Round {esc(current_round)}</h2>")
-        if turn["turn_type"] == "argument":
-            side = "pro" if turn["role"] == "pro" else "con"
-            label = "Pro" if side == "pro" else "Against"
+        if turn["turn_type"] in ("argument", "contribution"):
+            if turn["turn_type"] == "contribution":
+                side = "contribution"
+                label = esc(_speaker_label(turn, cfg))
+            else:
+                side = "pro" if turn["role"] == "pro" else "con"
+                label = "Pro" if side == "pro" else "Against"
             sections.append(f'<div class="argument {side}"><h3>{label}</h3>')
             sections.append(md(turn.get("content")))
             for ex in exhibits.get(turn["id"], []):
@@ -173,15 +194,21 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
                 + md(turn.get("content"))
                 + "</div>"
             )
+        elif turn["turn_type"] == "synthesis":
+            sections.append(
+                '<div class="judgement"><h2>Synthesis</h2>'
+                + md(turn.get("content"))
+                + "</div>"
+            )
         elif turn["turn_type"] in ("announcement", "interim"):
-            title = "Judge, opening" if turn["turn_type"] == "announcement" else "Judge, interim remarks"
+            title = f"{speaker}, opening" if turn["turn_type"] == "announcement" else f"{speaker}, interim remarks"
             sections.append(f'<div class="judge-note"><h3>{title}</h3>{md(turn.get("content"))}</div>')
         elif turn["turn_type"] == "user_prompt":
             sections.append(f'<div class="user-note"><h3>User directive</h3>{md(turn.get("content"))}</div>')
         elif turn["turn_type"] == "qa_question":
             sections.append(f'<div class="user-note"><h3>User question</h3>{md(turn.get("content"))}</div>')
         elif turn["turn_type"] == "qa_answer":
-            sections.append(f'<div class="judge-note"><h3>Judge answer</h3>{md(turn.get("content"))}</div>')
+            sections.append(f'<div class="judge-note"><h3>{speaker} answer</h3>{md(turn.get("content"))}</div>')
 
     style = (
         "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"
@@ -191,6 +218,7 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
         ".round{margin-top:2rem;border-bottom:1px solid #d5dbe3;}"
         ".argument{border:1px solid #d5dbe3;border-radius:8px;padding:0.75rem 1rem;margin:0.75rem 0;}"
         ".argument.pro h3{color:#1f7a4d;}.argument.con h3{color:#a03030;}"
+        ".argument.contribution h3{color:#1d4f91;}"
         ".exhibit{border:1px solid #cfd6df;border-left:4px solid #2a6df4;border-radius:6px;"
         "padding:0.5rem 0.75rem;margin:0.5rem 0;background:#f5f7fa;}"
         ".exhibit .source{color:#5b6675;font-size:0.85em;}"
@@ -201,7 +229,7 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
     )
     return (
         "<!DOCTYPE html>\n<html lang='en'>\n<head>\n<meta charset='utf-8'>\n"
-        f"<title>Debate: {esc(cfg['topic'])}</title>\n<style>{style}</style>\n</head>\n<body>\n"
+        f"<title>{kind}: {esc(cfg['topic'])}</title>\n<style>{style}</style>\n</head>\n<body>\n"
         + "\n".join(sections)
         + "\n</body>\n</html>\n"
     )

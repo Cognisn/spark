@@ -472,8 +472,8 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     msgs = conv_mgr.get_messages(conversation_id)
     name = conv.get("name", "conversation")
 
-    # Debates export from their structured turn record, not from messages.
-    if conv.get("conversation_type") == "debate":
+    # Debates and panels export from their structured turn record, not messages.
+    if conv.get("conversation_type") in ("debate", "panel"):
         from spark.core.debate.export import export_debate_json, export_debate_markdown
 
         if fmt == "markdown":
@@ -499,7 +499,9 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
                 media_type="text/html",
                 headers={"Content-Disposition": f'attachment; filename="{name}.html"'},
             )
-        return JSONResponse({"error": "Format not supported for debates"}, status_code=400)
+        return JSONResponse(
+            {"error": "Format not supported for this conversation type"}, status_code=400
+        )
 
     if fmt == "json":
         content = json.dumps(
