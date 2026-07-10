@@ -41,17 +41,17 @@ def create_debate(
     config_id = cur.lastrowid
     import json as json_mod
 
-    for role in ("pro", "con", "judge"):
-        spec = agents[role]
+    for role, spec in agents.items():
 
-        def _allow(key: str) -> str | None:
+        def _allow(key: str, spec: dict[str, Any] = spec) -> str | None:
             value = spec.get(key)
             return json_mod.dumps(value) if isinstance(value, list) else None
 
         db.execute(
             f"""INSERT INTO debate_agents
-                (conversation_id, role, model_id, brief, allowed_tools, allowed_skills)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                (conversation_id, role, model_id, brief, allowed_tools,
+                 allowed_skills, display_name, is_human)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 conversation_id,
                 role,
@@ -59,6 +59,8 @@ def create_debate(
                 spec.get("brief"),
                 _allow("allowed_tools"),
                 _allow("allowed_skills"),
+                spec.get("display_name"),
+                1 if spec.get("is_human") else 0,
             ),
         )
     db.commit()
@@ -91,7 +93,7 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
     }
     cur = db.execute(
         f"""SELECT role, model_id, brief, tokens_sent, tokens_received,
-                   allowed_tools, allowed_skills
+                   allowed_tools, allowed_skills, display_name, is_human
             FROM debate_agents WHERE conversation_id = {ph}""",
         (conversation_id,),
     )
@@ -106,10 +108,22 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
             value = json_mod.loads(raw)
             return value if isinstance(value, list) else None
         except (ValueError, TypeError):
-            logging.getLogger(__name__).warning("Invalid allowlist JSON, treating as all")
+            logging.getLogger(__name__).warning(
+                "Invalid allowlist JSON, treating as all"
+            )
             return None
 
-    for role, model_id, brief, sent, received, tools_raw, skills_raw in cur.fetchall():
+    for (
+        role,
+        model_id,
+        brief,
+        sent,
+        received,
+        tools_raw,
+        skills_raw,
+        display_name,
+        is_human,
+    ) in cur.fetchall():
         cfg["agents"][role] = {
             "model_id": model_id,
             "brief": brief,
@@ -117,6 +131,8 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
             "tokens_received": received,
             "allowed_tools": _parse_allow(tools_raw),
             "allowed_skills": _parse_allow(skills_raw),
+            "display_name": display_name,
+            "is_human": bool(is_human),
         }
     return cfg
 
