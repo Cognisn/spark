@@ -212,3 +212,109 @@ class TestFloorEvents:
         floor = [d["role"] for t, d in events if t == "floor"]
         # judge opens, pro argues, con argues, judge rules; none between each
         assert floor == ["judge", "none", "pro", "none", "con", "none", "judge", "none"]
+
+
+class TestCapabilityEnforcement:
+    def _agents(self, **overrides):
+        agents = {
+            "pro": {"model_id": "model-pro", "brief": None},
+            "con": {"model_id": "model-con", "brief": None},
+            "judge": {"model_id": "model-judge", "brief": None},
+        }
+        for role, extra in overrides.items():
+            agents[role].update(extra)
+        return agents
+
+    def _run(self, db, agents):
+        ph = db.placeholder
+        cur = db.execute(
+            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            f"VALUES ({ph}, {ph}, {ph}, 'debate')",
+            ("D", "model-judge", "u1"),
+        )
+        db.commit()
+        cid = cur.lastrowid
+        debates.create_debate(db, cid, "Topic T", "fixed", 1, "u1", agents)
+
+        captured = {"pro": [], "con": [], "judge": []}
+
+        class Recording(ScriptedService):
+            def __init__(self, key, responses):
+                super().__init__(responses)
+                self._key = key
+
+            def invoke_model(self, messages, **kwargs):
+                captured[self._key].append(kwargs)
+                return super().invoke_model(messages, **kwargs)
+
+        services = {
+            "model-judge": Recording(
+                "judge",
+                [
+                    tool_response("set_speaking_order", {"first_speaker": "pro"}, "Open."),
+                    text_response("Ruling."),
+                ],
+            ),
+            "model-pro": Recording(
+                "pro", [tool_response("submit_argument", {"argument_markdown": "P."})]
+            ),
+            "model-con": Recording(
+                "con", [tool_response("submit_argument", {"argument_markdown": "C."})]
+            ),
+        }
+        orch = DebateOrchestrator(
+            db,
+            lambda m: services[m],
+            {"embedded_tools": {}},
+            status_callback=lambda t, d: None,
+        )
+        orch.run(cid, "u1")
+        return captured
+
+    def test_tool_allowlist_restricts_offer(self, db) -> None:
+        captured = self._run(db, self._agents(pro={"allowed_tools": []}))
+        pro_tools = {t["name"] for c in captured["pro"] for t in (c.get("tools") or [])}
+        con_tools = {t["name"] for c in captured["con"] for t in (c.get("tools") or [])}
+        assert "submit_argument" in pro_tools  # always survives
+        assert "get_current_datetime" not in pro_tools
+        assert "get_current_datetime" in con_tools  # unrestricted keeps builtins
+
+    def test_skill_allowlist_filters_block_and_tools(self, db, tmp_path) -> None:
+        from spark.skills.manager import SkillsManager, set_skills_manager
+        from tests.test_skills_manager import make_skill
+
+        make_skill(tmp_path / "user", "pdf-filler", description="Fill PDF forms.")
+        make_skill(tmp_path / "user", "weekly-report", description="Weekly report.")
+        set_skills_manager(SkillsManager(tmp_path / "user"))
+        try:
+            captured = self._run(
+                db,
+                self._agents(
+                    pro={"allowed_skills": ["pdf-filler"]},
+                    con={"allowed_skills": []},
+                ),
+            )
+            pro_system = captured["pro"][0].get("system") or ""
+            assert "pdf-filler" in pro_system and "weekly-report" not in pro_system
+            con_system = captured["con"][0].get("system") or ""
+            assert "## Available Skills" not in con_system
+            con_tools = {t["name"] for c in captured["con"] for t in (c.get("tools") or [])}
+            assert "use_skill" not in con_tools
+        finally:
+            set_skills_manager(None)
+
+    def test_judge_skill_allowlist(self, db, tmp_path) -> None:
+        from spark.skills.manager import SkillsManager, set_skills_manager
+        from tests.test_skills_manager import make_skill
+
+        make_skill(tmp_path / "user", "pdf-filler", description="Fill PDF forms.")
+        set_skills_manager(SkillsManager(tmp_path / "user"))
+        try:
+            captured = self._run(db, self._agents(judge={"allowed_skills": []}))
+            judge_tools = {
+                t["name"] for c in captured["judge"] for t in (c.get("tools") or [])
+            }
+            assert "use_skill" not in judge_tools
+            assert "set_speaking_order" in judge_tools  # procedural untouched
+        finally:
+            set_skills_manager(None)

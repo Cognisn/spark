@@ -52,12 +52,21 @@ def get_tools() -> list[dict[str, Any]]:
     return get_read_tools() + get_write_tools()
 
 
-def _use_skill(tool_input: dict) -> tuple[str, bool]:
+def _allowed_names(config: dict) -> list[str] | None:
+    allow = config.get("_skills_allowlist")
+    return allow if isinstance(allow, list) else None
+
+
+def _use_skill(tool_input: dict, config: dict) -> tuple[str, bool]:
     manager = get_skills_manager()
     name = str(tool_input.get("skill_name", "")).strip()
+    allow = _allowed_names(config)
     skill = manager.get_skill(name)
-    if not skill:
-        available = ", ".join(s["name"] for s in manager.list_skills()) or "(none)"
+    if not skill or (allow is not None and name not in allow):
+        names = [s["name"] for s in manager.list_skills()]
+        if allow is not None:
+            names = [n for n in names if n in allow]
+        available = ", ".join(names) or "(none)"
         return f"Unknown skill '{name}'. Available skills: {available}", True
     resources = manager.list_resources(name)
     resource_note = (
@@ -73,14 +82,15 @@ def _use_skill(tool_input: dict) -> tuple[str, bool]:
     ), False
 
 
-def _read_resource(tool_input: dict) -> tuple[str, bool]:
+def _read_resource(tool_input: dict, config: dict) -> tuple[str, bool]:
     manager = get_skills_manager()
+    name = str(tool_input.get("skill_name", "")).strip()
+    allow = _allowed_names(config)
+    if allow is not None and name not in allow:
+        return f"Unknown skill '{name}'.", True
     try:
         return (
-            manager.read_resource(
-                str(tool_input.get("skill_name", "")).strip(),
-                str(tool_input.get("relative_path", "")).strip(),
-            ),
+            manager.read_resource(name, str(tool_input.get("relative_path", "")).strip()),
             False,
         )
     except SkillResourceError as e:
@@ -90,9 +100,9 @@ def _read_resource(tool_input: dict) -> tuple[str, bool]:
 def execute(tool_name: str, tool_input: dict, config: dict) -> tuple[str, bool]:
     """Dispatch a skills tool call. Returns (result_text, is_error)."""
     if tool_name == "use_skill":
-        return _use_skill(tool_input)
+        return _use_skill(tool_input, config)
     if tool_name == "read_skill_resource":
-        return _read_resource(tool_input)
+        return _read_resource(tool_input, config)
     if tool_name in WRITE_TOOL_NAMES:
         from spark.skills.authoring import execute_write
 

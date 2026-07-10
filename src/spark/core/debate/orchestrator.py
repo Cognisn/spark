@@ -55,16 +55,17 @@ class DebateOrchestrator:
         if self._emit_cb:
             self._emit_cb(event_type, data)
 
-    def _compute_skills_block(self, user_guid: str) -> str:
+    def _compute_skills_block(self, user_guid: str, allowed: list[str] | None = None) -> str:
         """Advertise enabled skills; failure must never break the debate."""
         try:
             from spark.database import skills as skills_db
             from spark.skills.manager import get_skills_manager
             from spark.skills.prompt import build_skills_block
 
-            return build_skills_block(
-                skills_db.resolve_enabled(self._db, get_skills_manager(), user_guid)
-            )
+            enabled = skills_db.resolve_enabled(self._db, get_skills_manager(), user_guid)
+            if allowed is not None:
+                enabled = [s for s in enabled if s["name"] in allowed]
+            return build_skills_block(enabled)
         except Exception:  # noqa: BLE001
             logger.warning("Skills block unavailable", exc_info=True)
             return ""
@@ -94,6 +95,7 @@ class DebateOrchestrator:
             raise ValueError(f"No debate for conversation {conversation_id}")
 
         self._skills_block = self._compute_skills_block(user_guid)
+        self._skills_user_guid = user_guid
 
         def cancelled() -> bool:
             return cancel_token is not None and cancel_token.is_cancelled()
@@ -271,6 +273,25 @@ class DebateOrchestrator:
         self._emit("judge_text", {"role": "judge", "text": ruling, "phase": "ruling"})
         return True
 
+    def _available_tool_names(self) -> set[str]:
+        """Every tool name a debater could see (builtin plus MCP), failure-safe."""
+        names: set[str] = set()
+        try:
+            from spark.tools.registry import get_builtin_tools
+
+            names |= {t["name"] for t in get_builtin_tools(self._config)}
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self._mcp_manager is not None:
+                names |= {
+                    t.get("name", "") for t in (self._mcp_manager._tools_cache or [])
+                }
+        except Exception:  # noqa: BLE001
+            pass
+        names.discard("")
+        return names
+
     # ------------------------------------------------------------------ agents
 
     def _judge_invoke(
@@ -281,16 +302,26 @@ class DebateOrchestrator:
         try:
             service = self._factory(judge["model_id"])
             service.set_model(judge["model_id"])
+            judge_allowed = judge.get("allowed_skills")
+            if judge_allowed is not None:
+                judge_block = self._compute_skills_block(
+                    getattr(self, "_skills_user_guid", "default"), judge_allowed
+                )
+            else:
+                judge_block = getattr(self, "_skills_block", "")
             system = prompts.judge_system(
                 cfg["topic"],
                 judge.get("brief"),
                 rounds_mode=cfg["rounds_mode"],
                 max_rounds=cfg["max_rounds"],
-                skills_block=getattr(self, "_skills_block", ""),
+                skills_block=judge_block,
             )
             from spark.skills.tools import get_read_tools
 
-            judge_tools = get_read_tools() + list(tools or [])
+            if judge.get("allowed_skills") == []:
+                judge_tools = list(tools or [])
+            else:
+                judge_tools = get_read_tools() + list(tools or [])
             response = service.invoke_model(
                 [
                     {
@@ -374,10 +405,28 @@ class DebateOrchestrator:
             logger.warning("Could not record agent run for %s", agent_run_id)
 
         try:
+            exclude = set(_DEBATER_EXCLUDED)
+            allowed_tools = agent.get("allowed_tools")
+            if allowed_tools is not None:
+                exclude |= self._available_tool_names() - set(allowed_tools)
+                exclude.discard("submit_argument")
+
+            allowed_skills = agent.get("allowed_skills")
+            if allowed_skills is not None:
+                debater_block = self._compute_skills_block(user_guid, allowed_skills)
+                if not debater_block:
+                    exclude |= {"use_skill", "read_skill_resource"}
+            else:
+                debater_block = getattr(self, "_skills_block", "")
+
+            turn_config = dict(self._config)
+            if allowed_skills is not None:
+                turn_config["_skills_allowlist"] = allowed_skills
+
             executor = AgentExecutor(
                 self._factory(agent["model_id"]),
                 self._db,
-                self._config,
+                turn_config,
                 mcp_manager=self._mcp_manager,
                 mcp_loop=self._mcp_loop,
                 user_guid=user_guid,
@@ -393,9 +442,9 @@ class DebateOrchestrator:
                     role,
                     cfg["topic"],
                     agent.get("brief"),
-                    skills_block=getattr(self, "_skills_block", ""),
+                    skills_block=debater_block,
                 ),
-                exclude_tools=_DEBATER_EXCLUDED,
+                exclude_tools=frozenset(exclude),
                 extra_tools=[SUBMIT_ARGUMENT_TOOL],
                 terminal_tool="submit_argument",
                 cancel_token=cancel_token,

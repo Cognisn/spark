@@ -66,3 +66,14 @@ class TestRegistry:
         assert {"use_skill", "read_skill_resource"} <= names
         text, is_error = execute_builtin_tool("use_skill", {"skill_name": "pdf-filler"}, {})
         assert not is_error and "## Steps" in text
+
+
+class TestAllowlist:
+    def test_use_skill_outside_allowlist_refused(self, manager) -> None:
+        text, is_error = execute(
+            "use_skill",
+            {"skill_name": "pdf-filler"},
+            {"_skills_allowlist": ["something-else"]},
+        )
+        assert is_error
+        assert "pdf-filler" not in text.split("Available skills:")[-1]
