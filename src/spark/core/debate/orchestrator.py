@@ -142,9 +142,13 @@ class DebateOrchestrator:
         turns = debates.get_turns(self._db, conversation_id)
         exhibits = debates.get_exhibits(self._db, conversation_id)
         transcript = history.build_judge_transcript(turns, exhibits, include_qa=True)
-        response = self._judge_invoke(
-            cfg, transcript, prompts.judge_phase_instruction("qa"), tools=None
-        )
+        self._emit("floor", {"role": "judge"})
+        try:
+            response = self._judge_invoke(
+                cfg, transcript, prompts.judge_phase_instruction("qa"), tools=None
+            )
+        finally:
+            self._emit("floor", {"role": "none"})
         if response is None:
             return ""
         answer = response.get("content", "")
@@ -155,6 +159,13 @@ class DebateOrchestrator:
     # ------------------------------------------------------------------ phases
 
     def _opening(self, cid: int, cfg: dict) -> bool:
+        self._emit("floor", {"role": "judge"})
+        try:
+            return self._opening_inner(cid, cfg)
+        finally:
+            self._emit("floor", {"role": "none"})
+
+    def _opening_inner(self, cid: int, cfg: dict) -> bool:
         transcript = "(the debate has not started)"
         response = self._judge_invoke(
             cfg,
@@ -215,14 +226,18 @@ class DebateOrchestrator:
         turns = debates.get_turns(self._db, cid)
         exhibits = debates.get_exhibits(self._db, cid)
         transcript = history.build_judge_transcript(turns, exhibits)
-        response = self._judge_invoke(
-            cfg,
-            transcript,
-            prompts.judge_phase_instruction(
-                "interim", current_round=round_no, max_rounds=cfg["max_rounds"]
-            ),
-            tools=[REQUEST_NEXT_ROUND_TOOL, DELIVER_RULING_TOOL],
-        )
+        self._emit("floor", {"role": "judge"})
+        try:
+            response = self._judge_invoke(
+                cfg,
+                transcript,
+                prompts.judge_phase_instruction(
+                    "interim", current_round=round_no, max_rounds=cfg["max_rounds"]
+                ),
+                tools=[REQUEST_NEXT_ROUND_TOOL, DELIVER_RULING_TOOL],
+            )
+        finally:
+            self._emit("floor", {"role": "none"})
         if response is None:
             return "failed"
         decision = "next"
@@ -236,6 +251,13 @@ class DebateOrchestrator:
         return decision
 
     def _ruling(self, cid: int, cfg: dict) -> bool:
+        self._emit("floor", {"role": "judge"})
+        try:
+            return self._ruling_inner(cid, cfg)
+        finally:
+            self._emit("floor", {"role": "none"})
+
+    def _ruling_inner(self, cid: int, cfg: dict) -> bool:
         turns = debates.get_turns(self._db, cid)
         exhibits = debates.get_exhibits(self._db, cid)
         transcript = history.build_judge_transcript(turns, exhibits)
@@ -309,6 +331,22 @@ class DebateOrchestrator:
         round_no = cfg["current_round"]
         agent = cfg["agents"][role]
         self._emit("debater_turn_start", {"role": role, "round": round_no})
+        self._emit("floor", {"role": role})
+        try:
+            return self._debater_turn_inner(cid, cfg, role, user_guid, cancel_token, round_no, agent)
+        finally:
+            self._emit("floor", {"role": "none"})
+
+    def _debater_turn_inner(
+        self,
+        cid: int,
+        cfg: dict,
+        role: str,
+        user_guid: str,
+        cancel_token: CancellationToken | None,
+        round_no: int,
+        agent: dict,
+    ) -> bool:
 
         turns = debates.get_turns(self._db, cid)
         exhibits = debates.get_exhibits(self._db, cid)

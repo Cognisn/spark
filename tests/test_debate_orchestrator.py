@@ -187,3 +187,28 @@ class TestFullDebate:
         assert "exhibits were stronger" in answer
         types = [t["turn_type"] for t in debates.get_turns(db, cid)]
         assert types[-2:] == ["qa_question", "qa_answer"]
+
+
+class TestFloorEvents:
+    def test_floor_sequence_one_round(self, db) -> None:
+        cid = _setup_debate(db)
+        services = {
+            "model-judge": ScriptedService(
+                [
+                    tool_response("set_speaking_order", {"first_speaker": "pro"}, "Open."),
+                    text_response("Ruling."),
+                ]
+            ),
+            "model-pro": ScriptedService(
+                [tool_response("submit_argument", {"argument_markdown": "P."})]
+            ),
+            "model-con": ScriptedService(
+                [tool_response("submit_argument", {"argument_markdown": "C."})]
+            ),
+        }
+        events: list = []
+        orch = make_orchestrator(db, services, events)
+        orch.run(cid, "u1")
+        floor = [d["role"] for t, d in events if t == "floor"]
+        # judge opens, pro argues, con argues, judge rules; none between each
+        assert floor == ["judge", "none", "pro", "none", "con", "none", "judge", "none"]
