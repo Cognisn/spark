@@ -490,6 +490,15 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
                 media_type="application/json",
                 headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
             )
+        if fmt == "html":
+            from spark.core.debate.export import export_debate_html
+
+            content = export_debate_html(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="text/html",
+                headers={"Content-Disposition": f'attachment; filename="{name}.html"'},
+            )
         return JSONResponse({"error": "Format not supported for debates"}, status_code=400)
 
     if fmt == "json":

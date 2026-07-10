@@ -67,3 +67,26 @@ def test_json_export_round_trips(db) -> None:
     data = json.loads(export_debate_json(db, cid))
     assert data["topic"] == "Topic T"
     assert data["turns"][0]["content"] == "Pro case."
+
+
+def test_html_export_structure_and_escaping(db) -> None:
+    from spark.core.debate.export import export_debate_html
+
+    cid = _setup_debate(db)
+    tid = debates.add_turn(
+        db, cid, 1, "pro", "argument", "## Case\n**Point** <script>alert(1)</script>"
+    )
+    debates.add_exhibits(
+        db, tid, [{"label": "A", "title": "T<b>", "content": "C & D", "source": "s"}]
+    )
+    debates.add_turn(db, cid, 0, "judge", "ruling", "Pro wins.")
+
+    html_doc = export_debate_html(db, cid)
+    assert html_doc.startswith("<!DOCTYPE html>")
+    assert "<script>alert(1)</script>" not in html_doc  # escaped
+    assert "&lt;script&gt;" in html_doc
+    assert "<h2>Case</h2>" in html_doc  # markdown converted
+    assert "<strong>Point</strong>" in html_doc
+    assert "Final Judgement" in html_doc and "Pro wins." in html_doc
+    assert "Exhibit A" in html_doc and "C &amp; D" in html_doc
+    assert "http" not in html_doc.split("</style>")[0]  # no external resources
