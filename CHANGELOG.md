@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Debate view now renders markdown in all three panes (was plain text)
 
 ### Added
+- **Debate agent capabilities** — Per-agent tool and skill allowlists chosen at debate creation (judge: skills only), enabling asymmetric debates
 - **Debate view polish** — Per-pane chat-style tool activity groups, auto-scroll toggles, a highlighted Final Judgement card, Markdown/HTML export, and a floor indicator glow on the active agent's pane
 - **Knowledge Graphs** — Two-level knowledge graphs built on demand by LLM extraction: a global graph over all conversations and memories, optional per-conversation graphs (creation-time option), per-conversation opt-out of the global graph, and link-based pooling of conversation graphs; queryable by the model via query_knowledge_graph with automatic injection of relevant subgraph context; Knowledge page with build controls and an interactive force-directed visualisation
 - **Skills** — Claude-compatible SKILL.md skill folders with bundled resources; enabled skills are advertised in every LLM surface (chats, sub-agents, autonomous actions, debates) and loaded on demand via use_skill; /skill-name explicit trigger; approval-gated create_skill/update_skill authoring behind a bundled skill-creator skill; Skills management page with import/export and per-conversation toggles
