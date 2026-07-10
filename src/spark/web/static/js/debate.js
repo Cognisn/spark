@@ -5,6 +5,7 @@
     let streamId = null;
     let evtSource = null;
     const currentToolGroup = { pro: null, con: null };
+    let qaMode = false;
 
     const panes = {
         judge: document.getElementById('judge-content'),
@@ -235,6 +236,7 @@
             },
             complete: () => {
                 setFloor(null);
+                qaMode = true;
                 setStatus('Debate concluded, ask the judge about the ruling');
                 evtSource.close();
             },
@@ -269,18 +271,49 @@
         const message = input.value.trim();
         if (!message) return;
         input.value = '';
-        const r = await fetch('/debate/api/prompt', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversation_id: parseInt(cid), message }),
-        });
-        const data = await r.json();
-        if (data.answer !== undefined) {
+
+        // Echo immediately so the UI never looks unresponsive.
+        if (qaMode) {
             addBlock('judge', '', 'You asked', message);
-            addBlock('judge', '', 'Judge', data.answer);
-        } else {
-            ['judge', 'pro', 'con'].forEach(role =>
-                addBlock(role, 'text-muted small', 'User directive', message));
+            const thinking = addBlock('judge', 'text-muted small', '', '');
+            thinking.innerHTML =
+                '<span class="spinner-border spinner-border-sm me-1" ' +
+                'style="width:0.7rem;height:0.7rem;"></span>Judge is considering...';
+            document.getElementById('judge-pane').classList.add('has-floor');
+            try {
+                const r = await fetch('/debate/api/prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ conversation_id: parseInt(cid), message }),
+                });
+                const data = await r.json();
+                thinking.remove();
+                if (r.ok && data.answer !== undefined) {
+                    addBlock('judge', '', 'Judge', data.answer);
+                } else {
+                    addBlock('judge', 'text-danger', 'Error',
+                        (data && data.error) || 'The judge could not answer.');
+                }
+            } catch (err) {
+                thinking.remove();
+                addBlock('judge', 'text-danger', 'Error', 'Network error.');
+            } finally {
+                document.getElementById('judge-pane').classList.remove('has-floor');
+            }
+            return;
+        }
+
+        ['judge', 'pro', 'con'].forEach(role =>
+            addBlock(role, 'text-muted small', 'User directive', message));
+        try {
+            const r = await fetch('/debate/api/prompt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation_id: parseInt(cid), message }),
+            });
+            if (!r.ok) AppToast.danger('Error', 'The directive could not be queued.');
+        } catch (err) {
+            AppToast.danger('Error', 'Network error.');
         }
     }
     document.getElementById('debate-send').addEventListener('click', sendPrompt);
@@ -294,6 +327,9 @@
         .then(state => {
             const s = renderHistory(state);
             if (s !== 'qa') connect();
-            else setStatus('Debate concluded, ask the judge about the ruling');
+            else {
+                qaMode = true;
+                setStatus('Debate concluded, ask the judge about the ruling');
+            }
         });
 })();
