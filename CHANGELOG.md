@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Debate view now renders markdown in all three panes (was plain text)
 
 ### Added
+- **Panel conversations** — A third conversation type: 2 to 5 named AI panellists (per-panellist models, briefs, and capability allowlists) plus an optional human panellist discuss a topic in moderator-directed rounds with shared visibility, a moderated synthesis, follow-up QA, a threaded discussion UI with a speaker rail, and Markdown/HTML export
 - **Debate agent capabilities** — Per-agent tool and skill allowlists chosen at debate creation (judge: skills only), enabling asymmetric debates
 - **Debate view polish** — Per-pane chat-style tool activity groups, auto-scroll toggles, a highlighted Final Judgement card, Markdown/HTML export, and a floor indicator glow on the active agent's pane
 - **Knowledge Graphs** — Two-level knowledge graphs built on demand by LLM extraction: a global graph over all conversations and memories, optional per-conversation graphs (creation-time option), per-conversation opt-out of the global graph, and link-based pooling of conversation graphs; queryable by the model via query_knowledge_graph with automatic injection of relevant subgraph context; Knowledge page with build controls and an interactive force-directed visualisation
