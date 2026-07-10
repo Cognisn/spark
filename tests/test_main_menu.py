@@ -195,3 +195,76 @@ class TestGetMCPServerList:
         ]
         servers = _get_mcp_server_list(ctx, embedded)
         assert len(servers) == 0
+
+
+class TestMenuConversationLinks:
+    """The Home lists must route each conversation to its type's view."""
+
+    def _client(self, tmp_path):
+        import pytest  # noqa: F401 - fixture-free client construction
+        from fastapi.testclient import TestClient
+
+        from spark.database import Database
+        from spark.database.backends import SQLiteBackend
+        from spark.database.connection import DatabaseConnection
+        from spark.web.server import create_app
+
+        def _settings_get(key, default=None, *, cast=None):
+            values = {
+                "interface.session_timeout_minutes": 60,
+                "interface.host": "127.0.0.1",
+                "interface.ssl.enabled": False,
+            }
+            val = values.get(key, default)
+            if cast is not None and val is not None:
+                val = cast(val)
+            return val
+
+        ctx = MagicMock()
+        ctx.settings.get = _settings_get
+        app = create_app(ctx, first_run=False)
+
+        backend = SQLiteBackend(tmp_path / "test.db")
+        conn = DatabaseConnection(backend)
+        Database(conn)
+
+        mgr = MagicMock()
+        mgr._db = conn
+
+        def _get_convs(user_guid):
+            from spark.database import conversations as convdb
+
+            return convdb.get_active_conversations(conn, user_guid)
+
+        mgr.get_conversations.side_effect = _get_convs
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "u1"
+        client = TestClient(app)
+        code = app.state.auth.generate_code()
+        resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
+        client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+        return client, conn
+
+    def test_home_lists_route_by_conversation_type(self, tmp_path) -> None:
+        client, conn = self._client(tmp_path)
+        ph = conn.placeholder
+        ids = {}
+        for name, ctype, fav in (
+            ("Std", "standard", 0),
+            ("Deb", "debate", 1),
+            ("Pan", "panel", 0),
+        ):
+            cur = conn.execute(
+                f"INSERT INTO conversations (name, model_id, user_guid, "
+                f"conversation_type, is_favourite) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+                (name, "m", "u1", ctype, fav),
+            )
+            ids[ctype] = cur.lastrowid
+        conn.commit()
+
+        html = client.get("/").text
+        assert f'href="/chat/{ids["standard"]}"' in html
+        assert f'href="/debate/{ids["debate"]}"' in html
+        assert f'href="/panel/{ids["panel"]}"' in html
+        assert f'href="/chat/{ids["debate"]}"' not in html
+        assert f'href="/chat/{ids["panel"]}"' not in html

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Home page conversation lists now open debate and panel conversations in their own views (were opening the standard chat view)
+
 ## [0.2.0b12] - 2026-07-10
 
 ### Fixed

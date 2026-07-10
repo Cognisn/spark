@@ -72,6 +72,12 @@
         </ul>
     </div>
 
+    {%- macro conv_href(conv) -%}
+        {%- if conv.conversation_type == 'debate' -%}/debate/{{ conv.id }}
+        {%- elif conv.conversation_type == 'panel' -%}/panel/{{ conv.id }}
+        {%- else -%}/chat/{{ conv.id }}
+        {%- endif -%}
+    {%- endmacro %}
     <div class="tab-content">
         <!-- Conversations Tab -->
         <div class="tab-pane fade show active" id="tab-conversations" role="tabpanel">
@@ -82,7 +88,7 @@
                 </div>
                 <div class="card-body p-0">
                     {% for conv in favourite_conversations %}
-                    <a href="/chat/{{ conv.id }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
+                    <a href="{{ conv_href(conv) }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
                        style="{% if not loop.last %}border-bottom: 1px solid var(--app-border);{% endif %} cursor: pointer; transition: background 0.15s;"
                        onmouseover="this.style.background='var(--app-hover-bg)'"
                        onmouseout="this.style.background=''"
@@ -114,7 +120,7 @@
                 </div>
                 <div class="card-body p-0">
                     {% for conv in recent_conversations %}
-                    <a href="/chat/{{ conv.id }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
+                    <a href="{{ conv_href(conv) }}" class="d-flex align-items-center px-3 py-3 text-decoration-none"
                        style="{% if not loop.last %}border-bottom: 1px solid var(--app-border);{% endif %} cursor: pointer; transition: background 0.15s;"
                        onmouseover="this.style.background='var(--app-hover-bg)'"
                        onmouseout="this.style.background=''"
