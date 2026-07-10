@@ -34,8 +34,11 @@
 
     function maybeScroll(role) {
         if (autoScrollEnabled(role)) {
-            const pane = panes[role] || panes.judge;
-            pane.scrollTop = pane.scrollHeight;
+            // The scroll container is the outer pane card (overflow-y: auto),
+            // not the inner content div, which merely grows.
+            const container = document.getElementById(`${role}-pane`)
+                || document.getElementById('judge-pane');
+            container.scrollTop = container.scrollHeight;
         }
     }
 
