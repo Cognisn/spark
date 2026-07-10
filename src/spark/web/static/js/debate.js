@@ -4,6 +4,7 @@
     const cid = root.dataset.conversationId;
     let streamId = null;
     let evtSource = null;
+    const currentToolGroup = { pro: null, con: null };
 
     const panes = {
         judge: document.getElementById('judge-content'),
@@ -26,6 +27,18 @@
         return div.innerHTML;
     }
 
+    function autoScrollEnabled(role) {
+        const box = document.getElementById(`${role}-autoscroll`);
+        return !box || box.checked;
+    }
+
+    function maybeScroll(role) {
+        if (autoScrollEnabled(role)) {
+            const pane = panes[role] || panes.judge;
+            pane.scrollTop = pane.scrollHeight;
+        }
+    }
+
     function addBlock(role, cls, title, text) {
         const pane = panes[role] || panes.judge;
         const block = el('div', 'mb-2 ' + (cls || ''));
@@ -34,8 +47,98 @@
         body.innerHTML = md(text);
         block.appendChild(body);
         pane.appendChild(block);
-        pane.scrollTop = pane.scrollHeight;
+        maybeScroll(role);
         return block;
+    }
+
+    function renderJudgement(text) {
+        const card = el('div', 'judgement-card');
+        const title = el('div', 'judgement-title');
+        title.innerHTML = '<i class="bi bi-hammer me-1"></i> FINAL JUDGEMENT';
+        const body = el('div');
+        body.innerHTML = md(text);
+        card.appendChild(title);
+        card.appendChild(body);
+        panes.judge.appendChild(card);
+        maybeScroll('judge');
+    }
+
+    function startToolGroup(role) {
+        const group = el('div', 'tool-group open');
+        const header = el('div', 'tool-group-header');
+        header.innerHTML = '<i class="bi bi-tools"></i><span class="tool-count">Using tools...</span>' +
+            '<i class="bi bi-chevron-down ms-auto"></i>';
+        header.addEventListener('click', () => group.classList.toggle('open'));
+        const body = el('div', 'tool-group-body');
+        group.appendChild(header);
+        group.appendChild(body);
+        panes[role].appendChild(group);
+        currentToolGroup[role] = { group, body, count: 0, pending: [] };
+        maybeScroll(role);
+    }
+
+    function addToolCall(role, toolName) {
+        if (!currentToolGroup[role]) startToolGroup(role);
+        const state = currentToolGroup[role];
+        state.count += 1;
+        const entry = el('div', 'tool-entry');
+        entry.innerHTML = `<span class="spinner-border spinner-border-sm me-1" style="width:0.7rem;height:0.7rem;"></span>${escapeText(toolName)}`;
+        entry.dataset.tool = toolName;
+        state.body.appendChild(entry);
+        state.pending.push(entry);
+        state.group.querySelector('.tool-count').textContent = `Using tools... (${state.count})`;
+        maybeScroll(role);
+    }
+
+    function completeToolCall(role, toolName, result, status) {
+        const state = currentToolGroup[role];
+        if (!state) return;
+        const idx = state.pending.findIndex(e => e.dataset.tool === toolName);
+        const entry = idx >= 0 ? state.pending.splice(idx, 1)[0] : null;
+        if (!entry) return;
+        const icon = status === 'success' ? 'bi-check-circle' : 'bi-x-circle';
+        entry.innerHTML = `<i class="bi ${icon} me-1"></i>${escapeText(toolName)}` +
+            (result ? `<span class="result-snippet">${escapeText(String(result).slice(0, 160))}</span>` : '');
+    }
+
+    function closeToolGroup(role) {
+        const state = currentToolGroup[role];
+        if (!state) return;
+        state.group.classList.remove('open');
+        state.group.querySelector('.tool-count').textContent =
+            `Used ${state.count} tool${state.count === 1 ? '' : 's'}`;
+        currentToolGroup[role] = null;
+    }
+
+    function addHistoryToolGroup(role, toolCalls) {
+        if (!toolCalls || !toolCalls.length) return;
+        const group = el('div', 'tool-group');
+        const header = el('div', 'tool-group-header');
+        header.innerHTML = `<i class="bi bi-tools"></i><span class="tool-count">Used ${toolCalls.length} tool${toolCalls.length === 1 ? '' : 's'}</span>` +
+            '<i class="bi bi-chevron-down ms-auto"></i>';
+        header.addEventListener('click', () => group.classList.toggle('open'));
+        const body = el('div', 'tool-group-body');
+        toolCalls.forEach(tc => {
+            const entry = el('div', 'tool-entry');
+            entry.innerHTML = `<i class="bi bi-check-circle me-1"></i>${escapeText(tc.name || '')}` +
+                (tc.result ? `<span class="result-snippet">${escapeText(String(tc.result).slice(0, 160))}</span>` : '');
+            body.appendChild(entry);
+        });
+        group.appendChild(header);
+        group.appendChild(body);
+        panes[role].appendChild(group);
+    }
+
+    function escapeText(text) {
+        const div = document.createElement('div');
+        div.textContent = text ?? '';
+        return div.innerHTML;
+    }
+
+    function setFloor(role) {
+        ['judge', 'pro', 'con'].forEach(r => {
+            document.getElementById(`${r}-pane`).classList.toggle('has-floor', r === role);
+        });
     }
 
     function addExhibits(role, items) {
@@ -46,7 +149,7 @@
             if (ex.source) card.appendChild(el('div', 'small text-muted', ex.source));
             panes[role].appendChild(card);
         });
-        panes[role].scrollTop = panes[role].scrollHeight;
+        maybeScroll(role);
     }
 
     function setStatus(text) {
@@ -64,7 +167,7 @@
             switch (t.turn_type) {
                 case 'announcement': addBlock('judge', '', 'Opening', t.content); break;
                 case 'interim': addBlock('judge', '', `Interim, round ${t.round}`, t.content); break;
-                case 'ruling': addBlock('judge', 'debate-ruling', 'Ruling', t.content); break;
+                case 'ruling': renderJudgement(t.content); break;
                 case 'qa_question': addBlock('judge', '', 'You asked', t.content); break;
                 case 'qa_answer': addBlock('judge', '', 'Judge', t.content); break;
                 case 'user_prompt':
@@ -78,7 +181,26 @@
             }
         });
         setStatus(`State: ${state.config.state}, round ${state.config.current_round}`);
+        loadToolHistory();
         return state.config.state;
+    }
+
+    async function loadToolHistory() {
+        try {
+            const resp = await fetch(`/chat/${cid}/api/agent-history`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            (data.agents || data || []).forEach(run => {
+                const name = (run.agent_name || '').toLowerCase();
+                const role = name.startsWith('pro') ? 'pro' : name.startsWith('con') ? 'con' : null;
+                if (!role) return;
+                let calls = run.tool_calls;
+                if (typeof calls === 'string') {
+                    try { calls = JSON.parse(calls); } catch (e) { calls = null; }
+                }
+                addHistoryToolGroup(role, calls);
+            });
+        } catch (err) { /* history tool groups are cosmetic */ }
     }
 
     function connect() {
@@ -86,15 +208,20 @@
         const handlers = {
             stream_start: d => { streamId = d.stream_id; },
             debate_state: d => setStatus(`State: ${d.state}, round ${d.round}`),
-            judge_text: d => addBlock('judge', d.phase === 'ruling' ? 'debate-ruling' : '',
-                d.phase, d.text),
+            judge_text: d => {
+                if (d.phase === 'ruling') renderJudgement(d.text);
+                else addBlock('judge', '', d.phase, d.text);
+            },
             debater_turn_start: d => {
                 addBlock(d.role, 'text-muted small', '', `Preparing round ${d.round} argument...`);
+                startToolGroup(d.role);
                 document.getElementById(`${d.role}-cancel`).classList.remove('d-none');
             },
-            agent_tool_call: d => addBlock(d.role, 'text-muted small', '',
-                `Research: ${d.tool_name}`),
+            agent_tool_call: d => addToolCall(d.role, d.tool_name),
+            agent_tool_result: d => completeToolCall(d.role, d.tool_name, d.result, d.status),
+            floor: d => setFloor(d.role === 'none' ? null : d.role),
             argument: d => {
+                closeToolGroup(d.role);
                 addBlock(d.role, '', `Round ${d.round}`, d.text);
                 document.getElementById(`${d.role}-cancel`).classList.add('d-none');
             },
@@ -104,11 +231,12 @@
                 document.getElementById('debate-retry').classList.remove('d-none');
             },
             complete: () => {
+                setFloor(null);
                 setStatus('Debate concluded, ask the judge about the ruling');
                 evtSource.close();
             },
-            cancelled: () => { setStatus('Paused'); showResume(); evtSource.close(); },
-            error: d => { addBlock('judge', 'text-danger', 'Error', d.error || ''); evtSource.close(); },
+            cancelled: () => { setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
+            error: d => { setFloor(null); addBlock('judge', 'text-danger', 'Error', d.error || ''); evtSource.close(); },
         };
         Object.entries(handlers).forEach(([type, fn]) =>
             evtSource.addEventListener(type, e => fn(e.data ? JSON.parse(e.data) : {})));
