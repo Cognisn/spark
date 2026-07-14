@@ -1371,5 +1371,105 @@ async function saveLockPassword() {
         errorDiv.textContent = 'Network error.';
     }
 }
+
+// -- Voice settings enhancements ------------------------------------------
+// The default-voice list, the connection test, and the usage readout are all
+// dynamic, so they are wired up here rather than rendered server-side.
+document.addEventListener('DOMContentLoaded', () => {
+    const voiceSelect = document.querySelector('[data-key="voice.elevenlabs.default_voice_id"]');
+    if (!voiceSelect) return;
+
+    const group = voiceSelect.closest('.mb-3') || voiceSelect.parentElement;
+    const extras = document.createElement('div');
+    extras.className = 'mt-2 d-flex align-items-center gap-2 flex-wrap';
+    extras.innerHTML =
+        '<button class="btn btn-app-outline btn-sm" type="button" id="btn-voice-test">' +
+        '<i class="bi bi-plug me-1"></i>Test Connection</button>' +
+        '<button class="btn btn-app-ghost btn-sm" type="button" id="btn-voice-preview">' +
+        '<i class="bi bi-play-circle me-1"></i>Preview</button>' +
+        '<span id="voice-usage" style="font-size: 0.75rem; color: var(--app-text-muted);"></span>';
+    if (group) group.appendChild(extras);
+
+    async function loadVoices() {
+        try {
+            const resp = await fetch('/voice/api/voices');
+            const voices = await resp.json();
+            if (!Array.isArray(voices) || !voices.length) return;
+            const current = voiceSelect.value;
+            voiceSelect.innerHTML = voices.map(v =>
+                `<option value="${v.voice_id}">${escapeHtmlVoice(v.name)}</option>`
+            ).join('');
+            if (voices.some(v => v.voice_id === current)) voiceSelect.value = current;
+            voiceSelect.dataset.previewUrl = '';
+        } catch (err) { /* an empty picker beats a broken page */ }
+    }
+
+    async function loadUsage() {
+        try {
+            const data = await fetch('/voice/api/usage').then(r => r.json());
+            const el = document.getElementById('voice-usage');
+            if (!el) return;
+            const cap = data.cap ? data.cap.toLocaleString() : 'unlimited';
+            el.textContent = `${(data.characters_this_month || 0).toLocaleString()} of ${cap} characters used this month`;
+        } catch (err) { /* the readout is cosmetic */ }
+    }
+
+    function escapeHtmlVoice(text) {
+        const d = document.createElement('div');
+        d.textContent = text ?? '';
+        return d.innerHTML;
+    }
+
+    document.getElementById('btn-voice-test').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+            const data = await fetch('/voice/api/test', { method: 'POST' }).then(r => r.json());
+            if (data.ok) {
+                AppToast.success('Voice', 'ElevenLabs connected.');
+                loadVoices();
+                loadUsage();
+            } else {
+                const reasons = {
+                    bad_key: 'The API key was rejected.',
+                    quota: 'The ElevenLabs quota is exhausted.',
+                    cap: 'The monthly character cap has been reached.',
+                    disabled: 'Set the engine to ElevenLabs and save an API key first.',
+                    network: 'Could not reach ElevenLabs.',
+                };
+                AppToast.danger('Voice', reasons[data.reason] || 'ElevenLabs is unavailable.');
+            }
+        } catch (err) {
+            AppToast.danger('Voice', 'Network error.');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('btn-voice-preview').addEventListener('click', async () => {
+        try {
+            const resp = await fetch('/voice/api/speak', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: 'This is how Spark will sound.',
+                    voice_id: voiceSelect.value || undefined,
+                }),
+            });
+            if (!resp.ok) {
+                AppToast.warning('Voice', 'Preview unavailable — save your key first.');
+                return;
+            }
+            const url = URL.createObjectURL(await resp.blob());
+            new Audio(url).play().catch(() => {});
+        } catch (err) {
+            AppToast.danger('Voice', 'Network error.');
+        }
+    });
+
+    loadVoices();
+    loadUsage();
+});
+
 </script>
 {% endblock %}

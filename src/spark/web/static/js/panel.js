@@ -12,6 +12,46 @@
 
     const PALETTE = ['#2a6df4', '#1f7a4d', '#a03030', '#7a4dbf', '#b8860b', '#0f7f8b'];
 
+    // -- Voice mode ---------------------------------------------------------
+    // Speech is driven off the SSE events that already exist; the orchestrator
+    // is untouched. Only completed turns are spoken, never tool activity.
+    let voiceOn = false;
+    let voices = {};   // role -> voice_id
+
+    function voiceMode() {
+        return window.SparkVoice ? SparkVoice.interactionMode() : 'listen_along';
+    }
+
+    function speakTurn(role, text) {
+        if (!voiceOn || !text || !window.SparkVoice) return;
+        const speaker = document.getElementById('voice-speaker');
+        if (speaker) speaker.textContent = `${displayName(role)} speaking...`;
+        SparkVoice.speak(text, { voiceId: voices[role], conversationId: parseInt(cid) })
+            .then(() => {
+                if (speaker && !SparkVoice.isSpeaking()) speaker.textContent = 'Voice mode active';
+            });
+    }
+
+    function setVoiceMode(on) {
+        voiceOn = on;
+        document.getElementById('voice-bar').classList.toggle('d-none', !on);
+        const btn = document.getElementById('voice-toggle');
+        btn.classList.toggle('btn-app-primary', on);
+        btn.classList.toggle('btn-app-ghost', !on);
+        if (!on && window.SparkVoice) SparkVoice.cancel();
+    }
+
+    function initVoice(state) {
+        const agents = (state.config && state.config.agents) || {};
+        voices = {};
+        Object.keys(agents).forEach(role => { voices[role] = agents[role].voice_id || null; });
+        if (!window.SparkVoice) return;
+        SparkVoice.init().then(() => {
+            const select = document.getElementById('voice-mode-select');
+            if (select) select.value = SparkVoice.interactionMode();
+        });
+    }
+
     function el(tag, cls, text) {
         const e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -210,9 +250,38 @@
         document.getElementById('panel-resume').classList.remove('d-none');
     }
 
+    function startVoiceDictation() {
+        // The transcript fills the input for review — never auto-submitted,
+        // matching the typed flow exactly.
+        const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!Recognition) return;
+        const input = document.getElementById('panel-prompt');
+        const recogniser = new Recognition();
+        recogniser.continuous = true;
+        recogniser.interimResults = true;
+        recogniser.lang = navigator.language || 'en-US';
+        let finalText = '';
+        recogniser.onresult = (event) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const t = event.results[i][0].transcript;
+                if (event.results[i].isFinal) finalText += t; else interim += t;
+            }
+            input.value = finalText + interim;
+        };
+        recogniser.onerror = () => {};
+        // Never let the microphone hear Spark's own speech.
+        const waitForSilence = setInterval(() => {
+            if (window.SparkVoice && SparkVoice.isSpeaking()) return;
+            clearInterval(waitForSilence);
+            try { recogniser.start(); } catch (e) { /* already started */ }
+        }, 300);
+    }
+
     function enterHumanMode(d) {
         humanPending = d;
         setFloor(d.role);
+        if (voiceOn && voiceMode() !== 'listen_only') startVoiceDictation();
         const banner = el('div', 'human-banner');
         banner.id = 'panel-human-banner';
         banner.innerHTML = `<i class="bi bi-mic me-1"></i> You have the floor, <strong>${escapeText(d.name)}</strong> — write your round ${d.round} contribution below.`;
@@ -286,6 +355,7 @@
             moderator_text: d => {
                 if (d.phase === 'synthesis') renderSynthesis(d.text);
                 else addCard('moderator', `Moderator — ${d.phase}`, d.text);
+                speakTurn('moderator', d.text);
             },
             panellist_turn_start: d => {
                 addMuted(`${d.name} is preparing a round ${d.round} contribution...`);
@@ -299,6 +369,7 @@
                 closeToolGroup(d.role);
                 addCard(d.role, `${d.name || displayName(d.role)} — round ${d.round}`, d.text);
                 document.getElementById('panel-cancel').classList.add('d-none');
+                speakTurn(d.role, d.text);
             },
             exhibits: d => addExhibits(d.items),
             human_turn: d => {
@@ -400,6 +471,7 @@
                 thinking.remove();
                 if (r.ok && data.answer !== undefined) {
                     addCard('moderator', 'Moderator', data.answer);
+                    speakTurn('moderator', data.answer);
                 } else {
                     addCard('moderator', 'Error',
                         (data && data.error) || 'The moderator could not answer.', { cls: 'text-danger' });
@@ -430,11 +502,19 @@
         if (e.key === 'Enter') sendPrompt();
     });
 
+    document.getElementById('voice-toggle').addEventListener('click', () => setVoiceMode(!voiceOn));
+    document.getElementById('voice-exit').addEventListener('click', () => setVoiceMode(false));
+    document.getElementById('voice-mode-select').addEventListener('change', e => {
+        if (window.SparkVoice) SparkVoice.setInteractionMode(e.target.value);
+    });
+    window.addEventListener('beforeunload', () => { if (window.SparkVoice) SparkVoice.cancel(); });
+
     // Initial load: render history, then connect unless waiting on the user or done.
     fetch(`/panel/api/state?conversation_id=${cid}`)
         .then(r => r.json())
         .then(state => {
             agents = (state.config && state.config.agents) || {};
+            initVoice(state);
             buildRail();
             const s = renderHistory(state);
             if (state.awaiting_human) {

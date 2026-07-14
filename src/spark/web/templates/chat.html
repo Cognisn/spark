@@ -471,6 +471,7 @@
 
 {% block scripts %}
 <script src="/static/js/main.js"></script>
+<script src="/static/js/voice.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
 <script>
@@ -931,6 +932,7 @@ function initSpeechInput() {
     if (!SpeechRecognition) return;
     document.getElementById('btn-mic').style.display = '';
     document.getElementById('btn-voice-mode').style.display = '';
+    if (window.SparkVoice) SparkVoice.init();
     _populateVoiceSelect();
     // Voices load async in some browsers
     if (_voiceTTS) _voiceTTS.onvoiceschanged = _populateVoiceSelect;
@@ -952,11 +954,15 @@ function _populateVoiceSelect() {
         select.appendChild(opt);
     });
     if (!_voiceSelectedVoice && voices.length > 0) _voiceSelectedVoice = voices[0];
+    if (window.SparkVoice) SparkVoice.setBrowserVoice(_voiceSelectedVoice);
 }
 
 function saveVoicePreference() {
     const select = document.getElementById('voice-select');
     const voices = _voiceTTS.getVoices();
+    if (voices[select.selectedIndex] && window.SparkVoice) {
+        SparkVoice.setBrowserVoice(voices[select.selectedIndex]);
+    }
     const idx = parseInt(select.value);
     if (voices[idx]) {
         _voiceSelectedVoice = voices[idx];
@@ -995,6 +1001,12 @@ function toggleVoiceMode() {
 function _enterVoiceMode() {
     _voiceModeActive = true;
     document.getElementById('voice-mode-bar').style.display = '';
+    // The browser voice list is irrelevant when ElevenLabs is doing the talking.
+    const picker = document.getElementById('voice-select');
+    if (picker && window.SparkVoice && SparkVoice.usingElevenLabs()) {
+        const wrap = picker.parentElement;
+        if (wrap) wrap.innerHTML = '<i class="bi bi-stars me-1"></i>Natural voice (ElevenLabs)';
+    }
     const btn = document.getElementById('btn-voice-mode');
     btn.classList.remove('btn-app-ghost');
     btn.classList.add('btn-app-primary');
@@ -1018,7 +1030,7 @@ function _exitVoiceMode() {
 
 function _voiceStopAll() {
     if (_speechRecognition) { try { _speechRecognition.abort(); } catch(e) {} }
-    if (_voiceTTS) _voiceTTS.cancel();
+    if (window.SparkVoice) SparkVoice.cancel();
     if (_voiceSilenceTimer) { clearTimeout(_voiceSilenceTimer); _voiceSilenceTimer = null; }
     _voiceIsSpeaking = false;
     _voiceSendInFlight = false;
@@ -1171,52 +1183,16 @@ function _voiceAutoSend(text) {
 }
 
 function _voiceSpeak(text) {
-    if (!_voiceTTS || !_voiceModeActive) { _voiceStartListening(); return; }
+    if (!_voiceModeActive) { _voiceStartListening(); return; }
     _voiceIsSpeaking = true;
     _setVoiceStatus('Speaking...');
 
-    // Split long text into chunks at sentence boundaries (TTS has length limits)
-    const chunks = _splitIntoSentences(text);
-    let idx = 0;
-
-    function speakNext() {
-        if (idx >= chunks.length || !_voiceModeActive) {
-            _voiceIsSpeaking = false;
-            if (_voiceModeActive) _voiceStartListening();
-            return;
-        }
-        const utterance = new SpeechSynthesisUtterance(chunks[idx]);
-        if (_voiceSelectedVoice) utterance.voice = _voiceSelectedVoice;
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.onend = () => { idx++; speakNext(); };
-        utterance.onerror = (e) => {
-            if (e.error !== 'canceled') console.warn('TTS error:', e.error);
-            _voiceIsSpeaking = false;
-            if (_voiceModeActive) _voiceStartListening();
-        };
-        _voiceTTS.speak(utterance);
-    }
-
-    // If user starts speaking while TTS is active, interrupt
-    speakNext();
-}
-
-function _splitIntoSentences(text) {
-    // Split on sentence endings, keeping chunks under ~200 chars for reliable TTS
-    const raw = text.match(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g) || [text];
-    const chunks = [];
-    let current = '';
-    for (const s of raw) {
-        if ((current + s).length > 200 && current) {
-            chunks.push(current.trim());
-            current = s;
-        } else {
-            current += s;
-        }
-    }
-    if (current.trim()) chunks.push(current.trim());
-    return chunks;
+    // SparkVoice picks the engine (ElevenLabs when configured, browser
+    // otherwise) and always speaks: an ElevenLabs failure silently falls back.
+    SparkVoice.speak(text, { conversationId: conversationId }).then(() => {
+        _voiceIsSpeaking = false;
+        if (_voiceModeActive) _voiceStartListening();
+    });
 }
 
 // -- Shared mic UI --

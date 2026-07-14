@@ -50,8 +50,8 @@ def create_debate(
         db.execute(
             f"""INSERT INTO debate_agents
                 (conversation_id, role, model_id, brief, allowed_tools,
-                 allowed_skills, display_name, is_human)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                 allowed_skills, display_name, is_human, voice_id)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 conversation_id,
                 role,
@@ -61,6 +61,7 @@ def create_debate(
                 _allow("allowed_skills"),
                 spec.get("display_name"),
                 1 if spec.get("is_human") else 0,
+                spec.get("voice_id"),
             ),
         )
     db.commit()
@@ -93,7 +94,7 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
     }
     cur = db.execute(
         f"""SELECT role, model_id, brief, tokens_sent, tokens_received,
-                   allowed_tools, allowed_skills, display_name, is_human
+                   allowed_tools, allowed_skills, display_name, is_human, voice_id
             FROM debate_agents WHERE conversation_id = {ph}""",
         (conversation_id,),
     )
@@ -123,6 +124,7 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
         skills_raw,
         display_name,
         is_human,
+        voice_id,
     ) in cur.fetchall():
         cfg["agents"][role] = {
             "model_id": model_id,
@@ -133,6 +135,7 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
             "allowed_skills": _parse_allow(skills_raw),
             "display_name": display_name,
             "is_human": bool(is_human),
+            "voice_id": voice_id,
         }
     return cfg
 

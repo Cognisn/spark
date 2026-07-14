@@ -371,6 +371,14 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             user_guid TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        f"""CREATE TABLE IF NOT EXISTS voice_usage (
+            id {auto},
+            conversation_id INTEGER,
+            user_guid TEXT NOT NULL,
+            characters INTEGER NOT NULL,
+            model_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
         f"""CREATE TABLE IF NOT EXISTS kg_builds (
             id {auto},
             scope TEXT NOT NULL,
@@ -461,6 +469,7 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE debate_agents ADD COLUMN allowed_skills TEXT",
         "ALTER TABLE debate_agents ADD COLUMN display_name TEXT",
         "ALTER TABLE debate_agents ADD COLUMN is_human INTEGER DEFAULT 0",
+        "ALTER TABLE debate_agents ADD COLUMN voice_id TEXT",
     ]
 
     for sql in migrations:

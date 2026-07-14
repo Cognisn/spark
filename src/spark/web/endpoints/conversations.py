@@ -127,6 +127,7 @@ async def create_conversation(request: Request) -> JSONResponse:
                 "brief": moderator.get("brief"),
                 "allowed_skills": moderator.get("allowed_skills"),
                 "display_name": "Moderator",
+                "voice_id": moderator.get("voice_id") or None,
             }
         }
         for i, spec in enumerate(panellists, start=1):
@@ -136,6 +137,7 @@ async def create_conversation(request: Request) -> JSONResponse:
                 "allowed_tools": spec.get("allowed_tools"),
                 "allowed_skills": spec.get("allowed_skills"),
                 "display_name": spec["name"].strip(),
+                "voice_id": spec.get("voice_id") or None,
             }
         if human is not None:
             panel_agents[f"panellist:{len(panellists) + 1}"] = {

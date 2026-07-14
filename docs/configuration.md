@@ -315,6 +315,44 @@ daemon:
 
 See [Autonomous Actions](autonomous-actions.md) for details.
 
+### Voice
+
+Text-to-speech for voice mode. The browser synthesiser is the default and
+remains the fallback whenever ElevenLabs is unavailable. See [Voice](voice.md).
+
+```yaml
+voice:
+  # "browser" (default, offline, robotic) or "elevenlabs" (natural)
+  engine: browser
+
+  elevenlabs:
+    # Stored in the OS keychain, never written to config.yaml
+    api_key: ""
+    # eleven_flash_v2_5 (fast, half price) | eleven_multilingual_v2 | eleven_v3
+    model_id: eleven_flash_v2_5
+    # Used by chat, and as the fallback for any debate/panel agent with no voice
+    default_voice_id: ""
+    # Local guard against runaway spend. 0 means unlimited
+    monthly_character_cap: 100000
+    # Cached audio replays for free — the same text is never billed twice
+    cache_enabled: true
+    cache_max_mb: 200
+
+  # Voice-mode behaviour in debate and panel
+  interaction_mode: listen_along   # listen_along | immersive | listen_only
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `voice.engine` | `browser` | Speech engine. `elevenlabs` requires an API key |
+| `voice.elevenlabs.api_key` | `""` | Stored in the OS keychain |
+| `voice.elevenlabs.model_id` | `eleven_flash_v2_5` | Flash is fastest and half price |
+| `voice.elevenlabs.default_voice_id` | `""` | Chosen in Settings from the premade voices |
+| `voice.elevenlabs.monthly_character_cap` | `100000` | `0` means unlimited |
+| `voice.elevenlabs.cache_enabled` | `true` | Cache audio by content hash |
+| `voice.elevenlabs.cache_max_mb` | `200` | Cache size cap, least-recently-used eviction |
+| `voice.interaction_mode` | `listen_along` | Debate/panel microphone behaviour |
+
 ### Token Management
 
 ```yaml

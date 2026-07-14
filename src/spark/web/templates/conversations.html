@@ -96,6 +96,7 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-pro-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-pro-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-pro-voice"></select>
                                     <a href="#" class="small d-block mt-2" onclick="toggleCaps('pro'); return false;">Capabilities ▸</a>
                                     <div class="d-none debate-caps" id="debate-pro-caps" data-skills-only="false"
                                          style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
@@ -107,6 +108,7 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-con-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-con-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-con-voice"></select>
                                     <a href="#" class="small d-block mt-2" onclick="toggleCaps('con'); return false;">Capabilities ▸</a>
                                     <div class="d-none debate-caps" id="debate-con-caps" data-skills-only="false"
                                          style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
@@ -118,6 +120,7 @@
                                     <select class="form-select form-select-sm mb-2" id="debate-judge-model"></select>
                                     <textarea class="form-control form-control-sm" id="debate-judge-brief" rows="3"
                                               placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-judge-voice"></select>
                                     <a href="#" class="small d-block mt-2" onclick="toggleCaps('judge'); return false;">Capabilities ▸</a>
                                     <div class="d-none debate-caps" id="debate-judge-caps" data-skills-only="true"
                                          style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
@@ -150,6 +153,7 @@
                             <select class="form-select form-select-sm mb-2" id="panel-moderator-model"></select>
                             <textarea class="form-control form-control-sm" id="panel-moderator-brief" rows="2"
                                       placeholder="Additional context (cannot change its role)"></textarea>
+                            <select class="form-select form-select-sm mt-2 d-none voice-picker" id="panel-moderator-voice"></select>
                             <a href="#" class="small d-block mt-2" onclick="togglePanelCaps('panel-moderator-caps'); return false;">Capabilities &#9656;</a>
                             <div class="d-none panel-caps" id="panel-moderator-caps" data-skills-only="true"
                                  style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
@@ -366,12 +370,15 @@ function addPanellist() {
             <select class="form-select form-select-sm mb-2" id="panel-p${i}-model">${_modelOptionsHtml}</select>
             <textarea class="form-control form-control-sm" id="panel-p${i}-brief" rows="2"
                       placeholder="Persona and perspective (cannot be overridden)"></textarea>
+            <select class="form-select form-select-sm mt-2 d-none voice-picker" id="panel-p${i}-voice"></select>
             <a href="#" class="small d-block mt-2" onclick="togglePanelCaps('panel-p${i}-caps'); return false;">Capabilities &#9656;</a>
             <div class="d-none panel-caps" id="panel-p${i}-caps" data-skills-only="false"
                  style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
         </div>`;
     document.getElementById('panel-panellist-cards').appendChild(col);
     document.getElementById(`panel-p${i}-caps`).innerHTML = capsInnerHtml(`panel-p${i}-caps`, false);
+    // +1 so panellists never collide with the moderator's voice.
+    fillVoicePicker(`panel-p${i}-voice`, _panelIds.length);
     updatePanelButtons();
 }
 
@@ -434,6 +441,9 @@ async function showNewConversation() {
         // Ignore
     }
     await loadDebateCapabilities();
+    await loadVoicePool();
+    ['pro', 'con', 'judge'].forEach((role, i) => fillVoicePicker(`debate-${role}-voice`, i));
+    fillVoicePicker('panel-moderator-voice', 0);
     initPanelCards();
     document.getElementById('panel-moderator-caps').innerHTML = capsInnerHtml('panel-moderator-caps', true);
     for (const i of _panelIds) {
@@ -441,6 +451,41 @@ async function showNewConversation() {
         if (box && !box.innerHTML) box.innerHTML = capsInnerHtml(`panel-p${i}-caps`, false);
     }
     new bootstrap.Modal(document.getElementById('newConvModal')).show();
+}
+
+// -- Per-agent voices ------------------------------------------------------
+// The pool is empty when ElevenLabs is disabled, in which case every picker
+// stays hidden and the browser engine speaks everything with one voice.
+let _voicePool = [];
+
+async function loadVoicePool() {
+    try {
+        const resp = await fetch('/voice/api/voices');
+        const voices = await resp.json();
+        _voicePool = Array.isArray(voices) ? voices : [];
+    } catch (err) {
+        _voicePool = [];
+    }
+    return _voicePool;
+}
+
+// Rotate through the pool so a fresh debate/panel gets distinct voices with
+// no effort from the user, while still allowing any of them to be overridden.
+function fillVoicePicker(selectId, index) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    if (!_voicePool.length) { select.classList.add('d-none'); return; }
+    select.innerHTML = _voicePool.map(v =>
+        `<option value="${v.voice_id}">${escapeHtml(v.name)}</option>`
+    ).join('');
+    select.selectedIndex = index % _voicePool.length;
+    select.classList.remove('d-none');
+}
+
+function voiceOf(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select || select.classList.contains('d-none') || !select.value) return undefined;
+    return select.value;
 }
 
 function buildCreatePayload() {
@@ -453,6 +498,8 @@ function buildCreatePayload() {
         };
         const modSkills = collectAllowlistIn('panel-moderator-caps', 'skill');
         if (modSkills !== undefined) moderator.allowed_skills = modSkills;
+        const modVoice = voiceOf('panel-moderator-voice');
+        if (modVoice) moderator.voice_id = modVoice;
         const panellists = _panelIds.map(i => {
             const spec = {
                 name: document.getElementById(`panel-p${i}-name`).value.trim(),
@@ -463,6 +510,8 @@ function buildCreatePayload() {
             const skills = collectAllowlistIn(`panel-p${i}-caps`, 'skill');
             if (tools !== undefined) spec.allowed_tools = tools;
             if (skills !== undefined) spec.allowed_skills = skills;
+            const voice = voiceOf(`panel-p${i}-voice`);
+            if (voice) spec.voice_id = voice;
             return spec;
         });
         const includeMe = document.getElementById('panel-include-me').checked;
@@ -503,6 +552,8 @@ function buildCreatePayload() {
         const skills = collectAllowlist(role, 'skill');
         if (tools !== undefined) spec.allowed_tools = tools;
         if (skills !== undefined) spec.allowed_skills = skills;
+        const voice = voiceOf(`debate-${role}-voice`);
+        if (voice) spec.voice_id = voice;
         return [role, spec];
     }));
     const roundsMode = document.getElementById('debate-rounds-mode').value;

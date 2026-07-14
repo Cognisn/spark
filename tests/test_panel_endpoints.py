@@ -230,3 +230,22 @@ class TestPanelPage:
             "/conversations/api/create", json={"name": "N", "model_id": "m"}
         ).json()["id"]
         assert client.get(f"/panel/api/state?conversation_id={cid}").status_code == 404
+
+
+class TestPanelVoices:
+    def test_voice_ids_persist_and_human_has_none(self, client: TestClient) -> None:
+        _auth(client)
+        payload = copy.deepcopy(PANEL_PAYLOAD)
+        payload["panel"]["human"] = {"name": "Matthew"}
+        payload["panel"]["moderator"]["voice_id"] = "voice-mod"
+        payload["panel"]["panellists"][0]["voice_id"] = "voice-one"
+        cid = client.post("/conversations/api/create", json=payload).json()["id"]
+
+        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"][
+            "agents"
+        ]
+        assert agents["moderator"]["voice_id"] == "voice-mod"
+        assert agents["panellist:1"]["voice_id"] == "voice-one"
+        assert agents["panellist:2"]["voice_id"] is None
+        # The human speaks for themselves, so they never get a voice.
+        assert agents["panellist:3"]["voice_id"] is None

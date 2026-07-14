@@ -167,23 +167,27 @@ _SECRET_KEYS = {
     "providers.xai.api_key",
     "database.password",
     "embedded_tools.email.password",
+    "voice.elevenlabs.api_key",
 }
 
 # Keys whose UI value is a string "true"/"false" but stored as a boolean in config.yaml
 _BOOL_STRING_KEYS = {
     "embedded_tools.email.use_tls",
     "embedded_tools.email.require_approval",
+    "embedded_tools.system_commands.require_approval",
+    "voice.elevenlabs.cache_enabled",
+}
+
+# Keys whose UI value is a numeric string but stored as an integer in config.yaml
+_INT_KEYS = {
+    "voice.elevenlabs.monthly_character_cap",
+    "voice.elevenlabs.cache_max_mb",
 }
 
 # Keys whose UI value is a comma-separated string but stored as a list in config.yaml
 _LIST_KEYS = {
     "embedded_tools.filesystem.allowed_paths",
     "embedded_tools.system_commands.blocked_commands",
-}
-
-# Keys sent as "true"/"false" strings — convert to bool before storing
-_BOOL_STRING_KEYS = {
-    "embedded_tools.system_commands.require_approval",
 }
 
 
@@ -422,6 +426,11 @@ async def save_settings(request: Request) -> JSONResponse:
                 elif not isinstance(value, list):
                     value = []
                 _set_nested(raw, dotted_key, value)
+            elif dotted_key in _INT_KEYS:
+                try:
+                    _set_nested(raw, dotted_key, int(value))
+                except (TypeError, ValueError):
+                    _set_nested(raw, dotted_key, 0)
             elif dotted_key in _BOOL_STRING_KEYS and isinstance(value, str):
                 _set_nested(raw, dotted_key, value.lower() == "true")
             else:
@@ -625,6 +634,75 @@ def _build_sections(settings: object) -> list[dict]:
                             **_secret("database.password", "Password", settings),
                             "db_requires": "remote",
                         },
+                    ],
+                },
+            ],
+        },
+        {
+            "id": "voice",
+            "title": "Voice",
+            "icon": "bi-mic",
+            "description": (
+                "Text-to-speech for voice mode. The browser synthesiser is used by "
+                "default and remains the fallback whenever ElevenLabs is unavailable."
+            ),
+            "groups": [
+                {
+                    "id": "voice_engine",
+                    "title": "Engine",
+                    "fields": [
+                        _select(
+                            "voice.engine",
+                            "Speech engine",
+                            settings,
+                            ["browser", "elevenlabs"],
+                            "browser",
+                        ),
+                        _select(
+                            "voice.interaction_mode",
+                            "Debate and panel voice mode",
+                            settings,
+                            ["listen_along", "immersive", "listen_only"],
+                            "listen_along",
+                        ),
+                    ],
+                },
+                {
+                    "id": "elevenlabs",
+                    "title": "ElevenLabs",
+                    "fields": [
+                        _secret("voice.elevenlabs.api_key", "API Key", settings),
+                        _select(
+                            "voice.elevenlabs.model_id",
+                            "Model",
+                            settings,
+                            [
+                                "eleven_flash_v2_5",
+                                "eleven_multilingual_v2",
+                                "eleven_v3",
+                            ],
+                            "eleven_flash_v2_5",
+                        ),
+                        _select(
+                            "voice.elevenlabs.default_voice_id",
+                            "Default voice",
+                            settings,
+                            [_get_val(settings, "voice.elevenlabs.default_voice_id", "") or ""],
+                            "",
+                        ),
+                        _number(
+                            "voice.elevenlabs.monthly_character_cap",
+                            "Monthly character cap (0 = unlimited)",
+                            settings,
+                            100000,
+                        ),
+                        _toggle("voice.elevenlabs.cache_enabled", "Cache audio", settings),
+                        _number(
+                            "voice.elevenlabs.cache_max_mb",
+                            "Audio cache size (MB)",
+                            settings,
+                            200,
+                        ),
                     ],
                 },
             ],
