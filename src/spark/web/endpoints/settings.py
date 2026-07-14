@@ -639,6 +639,75 @@ def _build_sections(settings: object) -> list[dict]:
             ],
         },
         {
+            "id": "voice",
+            "title": "Voice",
+            "icon": "bi-mic",
+            "description": (
+                "Text-to-speech for voice mode. The browser synthesiser is used by "
+                "default and remains the fallback whenever ElevenLabs is unavailable."
+            ),
+            "groups": [
+                {
+                    "id": "voice_engine",
+                    "title": "Engine",
+                    "fields": [
+                        _select(
+                            "voice.engine",
+                            "Speech engine",
+                            settings,
+                            ["browser", "elevenlabs"],
+                            "browser",
+                        ),
+                        _select(
+                            "voice.interaction_mode",
+                            "Debate and panel voice mode",
+                            settings,
+                            ["listen_along", "immersive", "listen_only"],
+                            "listen_along",
+                        ),
+                    ],
+                },
+                {
+                    "id": "elevenlabs",
+                    "title": "ElevenLabs",
+                    "fields": [
+                        _secret("voice.elevenlabs.api_key", "API Key", settings),
+                        _select(
+                            "voice.elevenlabs.model_id",
+                            "Model",
+                            settings,
+                            [
+                                "eleven_flash_v2_5",
+                                "eleven_multilingual_v2",
+                                "eleven_v3",
+                            ],
+                            "eleven_flash_v2_5",
+                        ),
+                        _select(
+                            "voice.elevenlabs.default_voice_id",
+                            "Default voice",
+                            settings,
+                            [_get_val(settings, "voice.elevenlabs.default_voice_id", "") or ""],
+                            "",
+                        ),
+                        _number(
+                            "voice.elevenlabs.monthly_character_cap",
+                            "Monthly character cap (0 = unlimited)",
+                            settings,
+                            100000,
+                        ),
+                        _toggle("voice.elevenlabs.cache_enabled", "Cache audio", settings),
+                        _number(
+                            "voice.elevenlabs.cache_max_mb",
+                            "Audio cache size (MB)",
+                            settings,
+                            200,
+                        ),
+                    ],
+                },
+            ],
+        },
+        {
             "id": "interface",
             "title": "Web Interface",
             "icon": "bi-globe",

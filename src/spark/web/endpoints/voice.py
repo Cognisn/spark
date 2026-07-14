@@ -88,6 +88,24 @@ async def voice_speak(request: Request) -> Response:
     return Response(content=audio, media_type="audio/mpeg")
 
 
+@router.post("/api/test")
+async def voice_test(request: Request) -> JSONResponse:
+    """Test the ElevenLabs connection by synthesising a short phrase."""
+    # Rebuild the engine so a key just saved in Settings is picked up.
+    request.app.state.voice_engine = None
+    engine = _engine(request)
+    try:
+        engine.synthesise(
+            "Spark voice is connected.", None, user_guid=_user_guid(request)
+        )
+    except VoiceUnavailable as e:
+        return JSONResponse({"ok": False, "reason": e.reason})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Voice test failed: %s", e)
+        return JSONResponse({"ok": False, "reason": "server"})
+    return JSONResponse({"ok": True})
+
+
 @router.get("/api/usage")
 async def voice_usage_summary(request: Request) -> JSONResponse:
     """Characters billed this month, against the configured cap."""
