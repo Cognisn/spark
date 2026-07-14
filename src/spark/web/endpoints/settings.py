@@ -167,23 +167,27 @@ _SECRET_KEYS = {
     "providers.xai.api_key",
     "database.password",
     "embedded_tools.email.password",
+    "voice.elevenlabs.api_key",
 }
 
 # Keys whose UI value is a string "true"/"false" but stored as a boolean in config.yaml
 _BOOL_STRING_KEYS = {
     "embedded_tools.email.use_tls",
     "embedded_tools.email.require_approval",
+    "embedded_tools.system_commands.require_approval",
+    "voice.elevenlabs.cache_enabled",
+}
+
+# Keys whose UI value is a numeric string but stored as an integer in config.yaml
+_INT_KEYS = {
+    "voice.elevenlabs.monthly_character_cap",
+    "voice.elevenlabs.cache_max_mb",
 }
 
 # Keys whose UI value is a comma-separated string but stored as a list in config.yaml
 _LIST_KEYS = {
     "embedded_tools.filesystem.allowed_paths",
     "embedded_tools.system_commands.blocked_commands",
-}
-
-# Keys sent as "true"/"false" strings — convert to bool before storing
-_BOOL_STRING_KEYS = {
-    "embedded_tools.system_commands.require_approval",
 }
 
 
@@ -422,6 +426,11 @@ async def save_settings(request: Request) -> JSONResponse:
                 elif not isinstance(value, list):
                     value = []
                 _set_nested(raw, dotted_key, value)
+            elif dotted_key in _INT_KEYS:
+                try:
+                    _set_nested(raw, dotted_key, int(value))
+                except (TypeError, ValueError):
+                    _set_nested(raw, dotted_key, 0)
             elif dotted_key in _BOOL_STRING_KEYS and isinstance(value, str):
                 _set_nested(raw, dotted_key, value.lower() == "true")
             else:

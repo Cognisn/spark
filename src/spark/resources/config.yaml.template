@@ -202,3 +202,29 @@ daemon:
   enabled: false
   # pid_file: spark_daemon.pid
   # heartbeat_interval: 30
+
+# -----------------------------------------------------------------------------
+# Voice
+# -----------------------------------------------------------------------------
+voice:
+  # Text-to-speech engine: "browser" (default, offline, robotic) or "elevenlabs".
+  engine: browser
+
+  elevenlabs:
+    # Stored in the OS keychain, never written to this file.
+    api_key: ""
+    # eleven_flash_v2_5 (fast, half price) | eleven_multilingual_v2 | eleven_v3
+    model_id: eleven_flash_v2_5
+    # Used by chat, and as the fallback for any debate/panel agent with no voice.
+    default_voice_id: ""
+    # Local guard against runaway spend. 0 means unlimited.
+    monthly_character_cap: 100000
+    # Cached audio replays for free — the same text is never billed twice.
+    cache_enabled: true
+    cache_max_mb: 200
+
+  # Voice-mode behaviour in debate and panel:
+  #   listen_along - speak agent turns; the mic opens only when you have the floor
+  #   immersive    - always-on mic, hands-free
+  #   listen_only  - narration only; the mic never opens
+  interaction_mode: listen_along
