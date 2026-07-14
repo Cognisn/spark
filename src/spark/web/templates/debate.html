@@ -32,8 +32,19 @@
             <div id="con-content" class="debate-pane-body"></div>
         </div>
     </div>
+    <div id="voice-bar" class="app-card d-none" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; font-size: 0.8125rem;">
+        <i class="bi bi-headset"></i>
+        <span id="voice-speaker" style="color: var(--app-text-muted);">Voice mode active</span>
+        <select id="voice-mode-select" class="form-select form-select-sm ms-auto" style="width: auto;">
+            <option value="listen_along">Listen along</option>
+            <option value="immersive">Immersive</option>
+            <option value="listen_only">Listen only</option>
+        </select>
+        <button id="voice-exit" class="btn btn-sm btn-app-ghost">Exit voice</button>
+    </div>
     <div class="debate-controls app-card">
         <span id="debate-status" class="badge" style="background: var(--app-accent); color: var(--app-bg-primary);">Loading</span>
+        <button id="voice-toggle" class="btn btn-sm btn-app-ghost" title="Voice mode"><i class="bi bi-headset"></i></button>
         <button id="debate-resume" class="btn btn-sm btn-app-primary d-none">Resume</button>
         <button id="debate-retry" class="btn btn-sm btn-app-primary d-none">Retry turn</button>
         <div class="dropdown">
@@ -81,5 +92,6 @@
 
 {% block scripts %}
 <script src="/static/js/main.js"></script>
+<script src="/static/js/voice.js"></script>
 <script src="/static/js/debate.js"></script>
 {% endblock %}

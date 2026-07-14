@@ -13,6 +13,47 @@
         con: document.getElementById('con-content'),
     };
 
+    // -- Voice mode ---------------------------------------------------------
+    // Speech is driven off the SSE events that already exist; the orchestrator
+    // is untouched. Only completed turns are spoken, never tool activity.
+    let voiceOn = false;
+    let voices = {};   // role -> voice_id
+
+    function voiceMode() {
+        return window.SparkVoice ? SparkVoice.interactionMode() : 'listen_along';
+    }
+
+    function speakTurn(role, text) {
+        if (!voiceOn || !text || !window.SparkVoice) return;
+        const label = role === 'judge' ? 'Judge' : (role === 'pro' ? 'Pro' : 'Against');
+        const speaker = document.getElementById('voice-speaker');
+        if (speaker) speaker.textContent = `${label} speaking...`;
+        SparkVoice.speak(text, { voiceId: voices[role], conversationId: parseInt(cid) })
+            .then(() => {
+                if (speaker && !SparkVoice.isSpeaking()) speaker.textContent = 'Voice mode active';
+            });
+    }
+
+    function setVoiceMode(on) {
+        voiceOn = on;
+        document.getElementById('voice-bar').classList.toggle('d-none', !on);
+        const btn = document.getElementById('voice-toggle');
+        btn.classList.toggle('btn-app-primary', on);
+        btn.classList.toggle('btn-app-ghost', !on);
+        if (!on && window.SparkVoice) SparkVoice.cancel();
+    }
+
+    function initVoice(state) {
+        const agents = (state.config && state.config.agents) || {};
+        voices = {};
+        Object.keys(agents).forEach(role => { voices[role] = agents[role].voice_id || null; });
+        if (!window.SparkVoice) return;
+        SparkVoice.init().then(cfg => {
+            const select = document.getElementById('voice-mode-select');
+            if (select) select.value = SparkVoice.interactionMode();
+        });
+    }
+
     function el(tag, cls, text) {
         const e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -215,6 +256,7 @@
             judge_text: d => {
                 if (d.phase === 'ruling') renderJudgement(d.text);
                 else addBlock('judge', '', d.phase, d.text);
+                speakTurn('judge', d.text);
             },
             debater_turn_start: d => {
                 addBlock(d.role, 'text-muted small', '', `Preparing round ${d.round} argument...`);
@@ -228,6 +270,7 @@
                 closeToolGroup(d.role);
                 addBlock(d.role, '', `Round ${d.round}`, d.text);
                 document.getElementById(`${d.role}-cancel`).classList.add('d-none');
+                speakTurn(d.role, d.text);
             },
             exhibits: d => addExhibits(d.role, d.items),
             turn_failed: d => {
@@ -290,6 +333,7 @@
                 thinking.remove();
                 if (r.ok && data.answer !== undefined) {
                     addBlock('judge', '', 'Judge', data.answer);
+                    speakTurn('judge', data.answer);
                 } else {
                     addBlock('judge', 'text-danger', 'Error',
                         (data && data.error) || 'The judge could not answer.');
@@ -321,10 +365,18 @@
         if (e.key === 'Enter') sendPrompt();
     });
 
+    document.getElementById('voice-toggle').addEventListener('click', () => setVoiceMode(!voiceOn));
+    document.getElementById('voice-exit').addEventListener('click', () => setVoiceMode(false));
+    document.getElementById('voice-mode-select').addEventListener('change', e => {
+        if (window.SparkVoice) SparkVoice.setInteractionMode(e.target.value);
+    });
+    window.addEventListener('beforeunload', () => { if (window.SparkVoice) SparkVoice.cancel(); });
+
     // Initial load: render history, then connect unless already concluded.
     fetch(`/debate/api/state?conversation_id=${cid}`)
         .then(r => r.json())
         .then(state => {
+            initVoice(state);
             const s = renderHistory(state);
             if (s !== 'qa') connect();
             else {
