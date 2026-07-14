@@ -174,3 +174,41 @@ class TestPanelAgentColumns:
         d = debates.get_debate(db, cid)
         assert d["agents"]["pro"]["display_name"] is None
         assert d["agents"]["pro"]["is_human"] is False
+
+
+class TestVoiceIdColumn:
+    def test_voice_id_round_trips(self, db) -> None:
+        cid = _conv(db)
+        agents = {
+            "moderator": {
+                "model_id": "m",
+                "brief": None,
+                "display_name": "Mod",
+                "voice_id": "voice-mod",
+            },
+            "panellist:1": {
+                "model_id": "a",
+                "brief": None,
+                "display_name": "Econ",
+                "voice_id": "voice-econ",
+            },
+            "panellist:2": {
+                "model_id": "",
+                "brief": None,
+                "display_name": "Matthew",
+                "is_human": True,
+            },
+        }
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+        d = debates.get_debate(db, cid)
+
+        assert d["agents"]["moderator"]["voice_id"] == "voice-mod"
+        assert d["agents"]["panellist:1"]["voice_id"] == "voice-econ"
+        # The human panellist speaks for themselves, so they have no voice.
+        assert d["agents"]["panellist:2"]["voice_id"] is None
+
+    def test_absent_voice_id_is_none(self, db) -> None:
+        cid = _conv(db)
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
+        d = debates.get_debate(db, cid)
+        assert d["agents"]["pro"]["voice_id"] is None
