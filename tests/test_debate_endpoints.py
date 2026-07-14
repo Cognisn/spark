@@ -183,3 +183,21 @@ class TestCapabilities:
         payload = copy.deepcopy(DEBATE_PAYLOAD)
         payload["debate"]["agents"]["pro"]["allowed_tools"] = "web_search"
         assert client.post("/conversations/api/create", json=payload).status_code == 400
+
+
+class TestDebateVoices:
+    def test_voice_ids_persist(self, client) -> None:
+        import copy
+
+        _auth(client)
+        payload = copy.deepcopy(DEBATE_PAYLOAD)
+        payload["debate"]["agents"]["pro"]["voice_id"] = "voice-pro"
+        payload["debate"]["agents"]["judge"]["voice_id"] = "voice-judge"
+        cid = client.post("/conversations/api/create", json=payload).json()["id"]
+
+        agents = client.get(f"/debate/api/state?conversation_id={cid}").json()["config"][
+            "agents"
+        ]
+        assert agents["pro"]["voice_id"] == "voice-pro"
+        assert agents["judge"]["voice_id"] == "voice-judge"
+        assert agents["con"]["voice_id"] is None
