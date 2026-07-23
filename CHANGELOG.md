@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Run with uv** — Spark can be installed and run with `uv tool install cognisn-spark` (or `uvx cognisn-spark`); a `cognisn-spark` command alias makes the natural `uvx` invocation work. New `interface.port` and `interface.open_browser` settings (overridable via `SPARK__INTERFACE__PORT` / `SPARK__INTERFACE__OPEN_BROWSER`) allow a fixed port and a suppressed browser for headless/server runs. A CI smoke-test installs the built wheel with uv and confirms it launches
+
 ## [0.2.0b13] - 2026-07-14
 
 ### Added
