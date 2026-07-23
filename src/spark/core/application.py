@@ -80,7 +80,9 @@ def _ensure_config(config_path: Path) -> bool:
         shutil.copy(template, config_path)
         logger.info("Created default config.yaml from template")
     else:
-        config_path.write_text("# Spark configuration — see documentation for options\n")
+        config_path.write_text(
+            "# Spark configuration — see documentation for options\n"
+        )
         logger.info("Created empty config.yaml")
     return True
 
@@ -152,6 +154,8 @@ def _default_settings() -> dict:
         },
         "interface": {
             "host": "127.0.0.1",
+            "port": 0,
+            "open_browser": True,
             "ssl": {"enabled": False},
             "session_timeout_minutes": 60,
             "browser_heartbeat": {

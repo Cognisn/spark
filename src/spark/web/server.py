@@ -99,6 +99,27 @@ def _find_free_port(host: str = "127.0.0.1") -> int:
         return s.getsockname()[1]
 
 
+def _resolve_port(ctx: Any, host: str = "127.0.0.1") -> int:
+    """The configured fixed port, or a random free one (the default)."""
+    configured = ctx.settings.get("interface.port", 0, cast=int)
+    if configured and configured > 0:
+        return int(configured)
+    return _find_free_port(host)
+
+
+def _should_open_browser(ctx: Any) -> bool:
+    """Whether to auto-open the browser at startup (default: yes).
+
+    Read as a raw value rather than cast=bool: an env override
+    (SPARK__INTERFACE__OPEN_BROWSER=false) arrives as the string "false", which
+    bool() would wrongly treat as truthy.
+    """
+    value = ctx.settings.get("interface.open_browser", True)
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "0", "no", "off", "")
+    return bool(value)
+
+
 def _resolve_secret(ctx: AppContext, value: str | None) -> str:
     """Resolve a secret:// URI via the konfig secrets backend, or return as-is."""
     if not value:
@@ -538,7 +559,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     _background_init(app, ctx)
 
     host = ctx.settings.get("interface.host", "127.0.0.1")
-    port = _find_free_port(host)
+    port = _resolve_port(ctx, host)
     ssl_enabled = ctx.settings.get("interface.ssl.enabled", False)
 
     # Generate auth code and build auto-login URL
@@ -568,8 +589,11 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         logger.debug("Opening browser at %s", login_url)
         webbrowser.open(login_url)
 
-    threading.Thread(target=_open_browser_delayed, daemon=True).start()
-    logger.debug("Browser open scheduled, configuring server...")
+    if _should_open_browser(ctx):
+        threading.Thread(target=_open_browser_delayed, daemon=True).start()
+        logger.debug("Browser open scheduled, configuring server...")
+    else:
+        logger.info("Browser auto-open disabled (interface.open_browser=false)")
 
     # SSL configuration
     ssl_kwargs: dict = {}

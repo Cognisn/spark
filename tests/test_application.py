@@ -34,7 +34,9 @@ class TestPlatformPaths:
 class TestEnsureConfig:
     def test_creates_config_from_template(self, tmp_path: Path) -> None:
         config_path = tmp_path / "subdir" / "config.yaml"
-        resources = Path(__file__).resolve().parent.parent / "src" / "spark" / "resources"
+        resources = (
+            Path(__file__).resolve().parent.parent / "src" / "spark" / "resources"
+        )
         assert (resources / "config.yaml.template").exists()
 
         first_run = _ensure_config(config_path)
@@ -82,7 +84,10 @@ class TestDefaultSettings:
     def test_interface_defaults(self) -> None:
         defaults = _default_settings()
         assert defaults["interface"]["host"] == "127.0.0.1"
-        assert "port" not in defaults["interface"]  # Port is random on startup
+        # port 0 keeps the random-port-on-startup default while allowing a fixed
+        # port to be set for headless/reverse-proxy runs.
+        assert defaults["interface"]["port"] == 0
+        assert defaults["interface"]["open_browser"] is True
 
     def test_logging_defaults(self) -> None:
         defaults = _default_settings()

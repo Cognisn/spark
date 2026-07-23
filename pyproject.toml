@@ -106,6 +106,7 @@ all-databases = [
 
 [project.scripts]
 spark = "spark.launch:main"
+cognisn-spark = "spark.launch:main"
 spark-daemon = "spark.daemon.tray:run_tray_daemon"
 
 [project.urls]

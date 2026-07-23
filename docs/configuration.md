@@ -90,6 +90,12 @@ SQLite is the default and requires no additional configuration. For other databa
 ```yaml
 interface:
   host: 127.0.0.1               # Bind address (use 0.0.0.0 for network access)
+  port: 0                       # 0 picks a random free port each launch; set a
+                                # fixed port for a headless/reverse-proxy setup.
+                                # Override with SPARK__INTERFACE__PORT
+  open_browser: true            # Auto-open the browser at startup. Set false for
+                                # a headless run. Override with
+                                # SPARK__INTERFACE__OPEN_BROWSER
   ssl:
     enabled: false
     cert_file: /path/to/cert.pem

@@ -28,6 +28,26 @@ spark
 
 Spark starts a local web server and opens your browser automatically.
 
+### Run with uv
+
+[uv](https://docs.astral.sh/uv/) can install and run Spark from PyPI without a
+manually managed environment:
+
+```bash
+uv tool install cognisn-spark    # then run:
+spark
+```
+
+`uv tool install` keeps Spark and its (large) dependencies installed between
+runs. For a throwaway run, `uvx cognisn-spark` works too but re-downloads
+everything each time.
+
+On a headless server, disable the browser auto-open and pin a port:
+
+```bash
+SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
+```
+
 ### Optional database drivers
 
 By default Spark uses SQLite, which requires no additional packages. For other databases, install the corresponding driver:

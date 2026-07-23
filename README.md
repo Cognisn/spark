@@ -87,6 +87,25 @@ Pre-built binaries with an embedded Python runtime and a native splash screen fo
 pip install cognisn-spark
 ```
 
+### Run with uv
+
+[uv](https://docs.astral.sh/uv/) can install and run Spark from PyPI:
+
+```bash
+uv tool install cognisn-spark    # then run:
+spark
+```
+
+`uv tool install` keeps Spark and its (large) dependencies installed between
+runs, which is what you want. For a throwaway run, `uvx cognisn-spark` works too
+but re-downloads everything each time.
+
+On a headless server, disable the browser auto-open and pin a port:
+
+```bash
+SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
+```
+
 #### Optional database drivers
 
 ```bash
