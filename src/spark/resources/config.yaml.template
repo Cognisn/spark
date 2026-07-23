@@ -36,7 +36,12 @@ database:
 # -----------------------------------------------------------------------------
 interface:
   host: 127.0.0.1
-  # port is randomly chosen on each startup
+  # TCP port for the web interface. 0 (default) picks a random free port each
+  # launch. Set a fixed port for a headless/server or reverse-proxy setup.
+  port: 0
+  # Open the browser automatically at startup. Set false for a headless run
+  # (e.g. `uv tool install cognisn-spark` on a server).
+  open_browser: true
   ssl:
     enabled: false
     # cert_file: /path/to/cert.pem

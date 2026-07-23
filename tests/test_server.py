@@ -195,3 +195,58 @@ class TestSettingsPage:
 
         saved = yaml.safe_load(config_file.read_text())
         assert saved["database"]["type"] == "postgresql"
+
+
+class TestPortResolution:
+    def _ctx(self, values: dict):
+        ctx = MagicMock()
+
+        def get(key, default=None, *, cast=None):
+            val = values.get(key, default)
+            if cast is not None and val is not None:
+                val = cast(val)
+            return val
+
+        ctx.settings.get = get
+        return ctx
+
+    def test_zero_port_uses_a_random_free_port(self) -> None:
+        from spark.web.server import _resolve_port
+
+        port = _resolve_port(self._ctx({"interface.port": 0}), "127.0.0.1")
+        assert isinstance(port, int) and 1024 <= port <= 65535
+
+    def test_missing_port_uses_a_random_free_port(self) -> None:
+        from spark.web.server import _resolve_port
+
+        port = _resolve_port(self._ctx({}), "127.0.0.1")
+        assert isinstance(port, int) and port > 0
+
+    def test_fixed_port_is_used_verbatim(self) -> None:
+        from spark.web.server import _resolve_port
+
+        assert _resolve_port(self._ctx({"interface.port": 8765}), "127.0.0.1") == 8765
+
+
+class TestBrowserOpenSetting:
+    def _ctx(self, values: dict):
+        ctx = MagicMock()
+
+        def get(key, default=None, *, cast=None):
+            val = values.get(key, default)
+            if cast is not None and val is not None:
+                val = cast(val)
+            return val
+
+        ctx.settings.get = get
+        return ctx
+
+    def test_default_opens_browser(self) -> None:
+        from spark.web.server import _should_open_browser
+
+        assert _should_open_browser(self._ctx({})) is True
+
+    def test_disabled_does_not_open_browser(self) -> None:
+        from spark.web.server import _should_open_browser
+
+        assert _should_open_browser(self._ctx({"interface.open_browser": False})) is False
