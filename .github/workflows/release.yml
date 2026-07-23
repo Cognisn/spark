@@ -36,6 +36,7 @@ jobs:
   # Step 2: Build PyApp binaries for all platforms
   build-binaries:
     needs: build-wheel
+    if: false  # TEMP: PyPI-only release — binaries disabled. Remove this line to re-enable.
     strategy:
       fail-fast: false
       matrix:
@@ -230,6 +231,7 @@ jobs:
   # Step 3: Create macOS .app bundles and DMG installers (all variants)
   create-macos-installer:
     needs: build-binaries
+    if: false  # TEMP: PyPI-only release — DMG disabled. Remove this line to re-enable.
     strategy:
       fail-fast: false
       matrix:
@@ -422,6 +424,7 @@ jobs:
   # Step 4: Create Windows installer
   create-windows-installer:
     needs: build-binaries
+    if: false  # TEMP: PyPI-only release — installer disabled. Remove this line to re-enable.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -664,10 +667,10 @@ jobs:
   attach-release:
     permissions:
       contents: write
+    # TEMP: PyPI-only release — depends on publish-pypi alone. Restore the full
+    # list (build-binaries, create-macos-installer, create-windows-installer,
+    # publish-pypi) when re-enabling binary builds.
     needs:
-      - build-binaries
-      - create-macos-installer
-      - create-windows-installer
       - publish-pypi
     runs-on: ubuntu-latest
     steps:
