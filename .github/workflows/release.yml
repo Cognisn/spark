@@ -691,4 +691,4 @@ jobs:
             artifacts/spark-windows-x86_64/*
             artifacts/spark-dmg-*/*.dmg
             artifacts/spark-windows-installer/*-setup.exe
-            artifacts/wheel/*.whl
+            artifacts/**/*.whl
