@@ -108,8 +108,16 @@ def _resolve_port(ctx: Any, host: str = "127.0.0.1") -> int:
 
 
 def _should_open_browser(ctx: Any) -> bool:
-    """Whether to auto-open the browser at startup (default: yes)."""
-    return bool(ctx.settings.get("interface.open_browser", True, cast=bool))
+    """Whether to auto-open the browser at startup (default: yes).
+
+    Read as a raw value rather than cast=bool: an env override
+    (SPARK__INTERFACE__OPEN_BROWSER=false) arrives as the string "false", which
+    bool() would wrongly treat as truthy.
+    """
+    value = ctx.settings.get("interface.open_browser", True)
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "0", "no", "off", "")
+    return bool(value)
 
 
 def _resolve_secret(ctx: AppContext, value: str | None) -> str:
