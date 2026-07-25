@@ -74,7 +74,9 @@ async def toggle_skill(request: Request) -> JSONResponse:
     name = str(data.get("name", "")).strip()
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
-    skills_db.set_skill_enabled(_db(request), name, bool(data.get("enabled", True)), _user_guid(request))
+    skills_db.set_skill_enabled(
+        _db(request), name, bool(data.get("enabled", True)), _user_guid(request)
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -133,9 +135,7 @@ async def import_skill(request: Request, file: UploadFile = File(...)) -> JSONRe
     if error:
         return JSONResponse({"error": error}, status_code=400)
     if manager.exists(folder) or (manager.user_dir / folder).exists():
-        return JSONResponse(
-            {"error": f"A skill named '{folder}' already exists"}, status_code=400
-        )
+        return JSONResponse({"error": f"A skill named '{folder}' already exists"}, status_code=400)
 
     staging = manager.user_dir / f".import-{uuid.uuid4().hex[:6]}"
     try:
@@ -143,9 +143,7 @@ async def import_skill(request: Request, file: UploadFile = File(...)) -> JSONRe
         candidate = staging / folder
         record = _parse_skill_dir(candidate, "user")
         if not record["valid"]:
-            return JSONResponse(
-                {"error": f"Invalid skill: {record['error']}"}, status_code=400
-            )
+            return JSONResponse({"error": f"Invalid skill: {record['error']}"}, status_code=400)
         candidate.rename(manager.user_dir / folder)
         manager.reload()
         return JSONResponse({"status": "ok", "name": folder})

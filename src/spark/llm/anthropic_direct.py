@@ -118,9 +118,7 @@ class AnthropicDirectProvider(LLMService):
                 logger.info("Discovered %d Anthropic models from API", len(models))
                 return models
         except Exception as e:
-            logger.debug(
-                "Anthropic model list API failed, using static fallback: %s", e
-            )
+            logger.debug("Anthropic model list API failed, using static fallback: %s", e)
 
         # Fallback to static list
         self._cached_models = [
@@ -298,18 +296,14 @@ class AnthropicDirectProvider(LLMService):
                         if sr:
                             stop_reason = sr
                     if hasattr(event, "usage"):
-                        usage["output_tokens"] = getattr(
-                            event.usage, "output_tokens", 0
-                        )
+                        usage["output_tokens"] = getattr(event.usage, "output_tokens", 0)
 
                 elif event_type == "message_start":
                     if hasattr(event, "message") and hasattr(event.message, "usage"):
                         msg_usage = event.message.usage
                         usage["input_tokens"] = msg_usage.input_tokens
                         # Capture cache metrics from message_start
-                        cache_create = getattr(
-                            msg_usage, "cache_creation_input_tokens", 0
-                        )
+                        cache_create = getattr(msg_usage, "cache_creation_input_tokens", 0)
                         cache_read = getattr(msg_usage, "cache_read_input_tokens", 0)
                         if cache_create:
                             usage["cache_creation_input_tokens"] = cache_create

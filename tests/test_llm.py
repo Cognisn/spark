@@ -525,18 +525,14 @@ class TestAnthropicTemperature:
         return provider
 
     def test_omits_temperature_for_rejecting_model(self) -> None:
-        with patch(
-            "spark.llm.anthropic_direct._normalise_response", return_value={}
-        ):
+        with patch("spark.llm.anthropic_direct._normalise_response", return_value={}):
             provider = self._provider("claude-sonnet-5")
             provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
             req = provider._client.messages.create.call_args.kwargs
             assert "temperature" not in req
 
     def test_keeps_temperature_for_accepting_model(self) -> None:
-        with patch(
-            "spark.llm.anthropic_direct._normalise_response", return_value={}
-        ):
+        with patch("spark.llm.anthropic_direct._normalise_response", return_value={}):
             provider = self._provider("claude-sonnet-4-6")
             provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
             req = provider._client.messages.create.call_args.kwargs
@@ -564,9 +560,7 @@ class TestAnthropicTemperature:
             provider._client = MagicMock()
             provider._client.messages.create.side_effect = fake_create
             provider.set_model("claude-sonnet-9")  # unknown to the static list
-            result = provider.invoke_model(
-                [{"role": "user", "content": "hi"}], temperature=0.4
-            )
+            result = provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
 
         assert result == {}
         assert len(calls) == 2  # first with temperature (400), retry without

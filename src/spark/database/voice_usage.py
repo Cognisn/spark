@@ -55,7 +55,6 @@ def usage_summary(db: DatabaseConnection, user_guid: str) -> dict[str, Any]:
     return {
         "characters_this_month": characters_this_month(db, user_guid),
         "by_conversation": [
-            {"conversation_id": cid, "characters": int(total)}
-            for cid, total in cur.fetchall()
+            {"conversation_id": cid, "characters": int(total)} for cid, total in cur.fetchall()
         ],
     }

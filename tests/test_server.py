@@ -16,9 +16,7 @@ def mock_ctx() -> MagicMock:
     return ctx
 
 
-def _mock_settings_get(
-    key: str, default: object = None, *, cast: type | None = None
-) -> object:
+def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
     """Mock settings.get that returns sensible defaults."""
     values = {
         "interface.session_timeout_minutes": 60,
@@ -65,9 +63,7 @@ class TestAuthMiddleware:
         assert resp.status_code == 200
 
     def test_invalid_session_redirects(self, app: TestClient) -> None:
-        resp = app.get(
-            "/", cookies={"spark_session": "invalid"}, follow_redirects=False
-        )
+        resp = app.get("/", cookies={"spark_session": "invalid"}, follow_redirects=False)
         assert resp.status_code == 303
 
 
@@ -89,9 +85,7 @@ class TestAuthFlow:
         session_cookie = login_resp.cookies.get("spark_session")
         assert session_cookie
 
-        resp = app.get(
-            "/", cookies={"spark_session": session_cookie}, follow_redirects=False
-        )
+        resp = app.get("/", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 200
 
     def test_logout(self, app: TestClient) -> None:
@@ -99,9 +93,7 @@ class TestAuthFlow:
         login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")
 
-        resp = app.get(
-            "/logout", cookies={"spark_session": session_cookie}, follow_redirects=False
-        )
+        resp = app.get("/logout", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 303
         assert resp.headers["location"] == "/login"
 
@@ -123,17 +115,13 @@ class TestAutoLogin:
         resp = app.get("/auto-login?code=X", follow_redirects=False)
         # Should not redirect to /login via middleware (it IS public)
         assert resp.status_code == 303
-        assert (
-            resp.headers["location"] == "/login"
-        )  # Invalid code → redirect to login page
+        assert resp.headers["location"] == "/login"  # Invalid code → redirect to login page
 
 
 class TestFirstRun:
     def test_root_redirects_to_welcome(self, first_run_app: TestClient) -> None:
         code = first_run_app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = first_run_app.post(
-            "/api/auth", data={"code": code}, follow_redirects=False
-        )
+        login_resp = first_run_app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")
 
         resp = first_run_app.get(
@@ -144,9 +132,7 @@ class TestFirstRun:
 
     def test_welcome_page_loads(self, first_run_app: TestClient) -> None:
         code = first_run_app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = first_run_app.post(
-            "/api/auth", data={"code": code}, follow_redirects=False
-        )
+        login_resp = first_run_app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")
 
         resp = first_run_app.get(
@@ -165,9 +151,7 @@ class TestMainMenu:
         login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
         session_cookie = login_resp.cookies.get("spark_session")
 
-        resp = app.get(
-            "/menu", cookies={"spark_session": session_cookie}, follow_redirects=False
-        )
+        resp = app.get("/menu", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 200
         assert "Dashboard" in resp.text
 
@@ -267,9 +251,7 @@ class TestBrowserOpenSetting:
     def test_disabled_does_not_open_browser(self) -> None:
         from spark.web.server import _should_open_browser
 
-        assert (
-            _should_open_browser(self._ctx({"interface.open_browser": False})) is False
-        )
+        assert _should_open_browser(self._ctx({"interface.open_browser": False})) is False
 
     def test_string_false_from_env_var_does_not_open_browser(self) -> None:
         # konfig delivers SPARK__INTERFACE__OPEN_BROWSER=false as the string
@@ -277,14 +259,9 @@ class TestBrowserOpenSetting:
         from spark.web.server import _should_open_browser
 
         for value in ("false", "False", "0", "no", "off"):
-            assert (
-                _should_open_browser(self._ctx({"interface.open_browser": value}))
-                is False
-            )
+            assert _should_open_browser(self._ctx({"interface.open_browser": value})) is False
 
     def test_string_true_from_env_var_opens_browser(self) -> None:
         from spark.web.server import _should_open_browser
 
-        assert (
-            _should_open_browser(self._ctx({"interface.open_browser": "true"})) is True
-        )
+        assert _should_open_browser(self._ctx({"interface.open_browser": "true"})) is True

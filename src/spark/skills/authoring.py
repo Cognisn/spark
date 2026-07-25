@@ -60,9 +60,7 @@ def get_write_tools() -> list[dict[str, Any]]:
     return [dict(_CREATE), dict(_UPDATE)]
 
 
-def _validate(
-    name: str, description: str, instructions: str, resources: list[dict]
-) -> str | None:
+def _validate(name: str, description: str, instructions: str, resources: list[dict]) -> str | None:
     """Return an error message, or None when the input is acceptable."""
     if not NAME_RE.match(name) or len(name) > 64:
         return "Skill name must be kebab-case (letters, digits, hyphens), max 64 chars"

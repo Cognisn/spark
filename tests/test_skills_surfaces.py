@@ -38,9 +38,7 @@ class TestChatSurface:
         stub = StubLLMService()
         llm = LLMManager()
         llm.register_provider(stub)  # type: ignore[arg-type]
-        mgr = ConversationManager(
-            db, llm, ContextLimitResolver(), max_tool_iterations=5
-        )
+        mgr = ConversationManager(db, llm, ContextLimitResolver(), max_tool_iterations=5)
         cid = mgr.create_conversation("t", "stub-model", "u1")
         mgr.send_message(cid, "hello", "u1")
         assert "## Available Skills" in stub.last_system
@@ -66,9 +64,7 @@ class TestAgentSurface:
         set_skills_manager(SkillsManager(tmp_path / "empty-skills"))
         try:
             ex = AgentExecutor(MagicMock(), db, {"embedded_tools": {}}, user_guid="u1")
-            assert "## Available Skills" not in ex._build_system(
-                "w", "t", "orchestrator"
-            )
+            assert "## Available Skills" not in ex._build_system("w", "t", "orchestrator")
         finally:
             set_skills_manager(None)
 
@@ -101,20 +97,23 @@ class TestDebateSurface:
 
         d = prompts.debater_system("pro", "T", None, skills_block="## Available Skills\n- x: y")
         j = prompts.judge_system(
-            "T", None, rounds_mode="fixed", max_rounds=1,
+            "T",
+            None,
+            rounds_mode="fixed",
+            max_rounds=1,
             skills_block="## Available Skills\n- x: y",
         )
         assert "## Available Skills" in d and "## Available Skills" in j
 
     def test_judge_gets_read_tools_never_run_command(self, skills_env, db) -> None:
         from spark.core.debate.orchestrator import DebateOrchestrator
+        from spark.database import debates
         from tests.test_debate_orchestrator import (
             AGENTS,
             ScriptedService,
             text_response,
             tool_response,
         )
-        from spark.database import debates
 
         captured: list = []
 
@@ -134,19 +133,20 @@ class TestDebateSurface:
         debates.create_debate(db, cid, "Topic T", "fixed", 1, "u1", AGENTS)
 
         services = {
-            "model-judge": RecordingService([
-                tool_response("set_speaking_order", {"first_speaker": "pro"}, "Open."),
-                text_response("Ruling."),
-            ]),
-            "model-pro": ScriptedService([
-                tool_response("submit_argument", {"argument_markdown": "P."})
-            ]),
-            "model-con": ScriptedService([
-                tool_response("submit_argument", {"argument_markdown": "C."})
-            ]),
+            "model-judge": RecordingService(
+                [
+                    tool_response("set_speaking_order", {"first_speaker": "pro"}, "Open."),
+                    text_response("Ruling."),
+                ]
+            ),
+            "model-pro": ScriptedService(
+                [tool_response("submit_argument", {"argument_markdown": "P."})]
+            ),
+            "model-con": ScriptedService(
+                [tool_response("submit_argument", {"argument_markdown": "C."})]
+            ),
         }
-        orch = DebateOrchestrator(db, lambda m: services[m], {},
-                                  status_callback=lambda t, d: None)
+        orch = DebateOrchestrator(db, lambda m: services[m], {}, status_callback=lambda t, d: None)
         orch.run(cid, "u1")
 
         judge_tool_names = {

@@ -43,9 +43,7 @@ def _setup_debate(db) -> int:
 def test_markdown_export_structure(db) -> None:
     cid = _setup_debate(db)
     tid = debates.add_turn(db, cid, 1, "pro", "argument", "Pro case.")
-    debates.add_exhibits(
-        db, tid, [{"label": "A", "title": "T", "content": "C", "source": "s"}]
-    )
+    debates.add_exhibits(db, tid, [{"label": "A", "title": "T", "content": "C", "source": "s"}])
     debates.add_turn(db, cid, 0, "judge", "ruling", "Pro wins.")
 
     md = export_debate_markdown(db, cid)

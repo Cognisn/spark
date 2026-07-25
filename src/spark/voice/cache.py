@@ -56,9 +56,7 @@ class AudioCache:
         if self._max_bytes <= 0:
             return
         try:
-            entries = [
-                (p.stat().st_mtime, p.stat().st_size, p) for p in self._root.glob("*.mp3")
-            ]
+            entries = [(p.stat().st_mtime, p.stat().st_size, p) for p in self._root.glob("*.mp3")]
         except OSError:
             return
         total = sum(size for _, size, _ in entries)

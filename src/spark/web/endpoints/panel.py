@@ -60,9 +60,7 @@ def _panel_config(request: Request, conversation_id: int) -> dict | None:
 async def panel_page(request: Request, conversation_id: int) -> HTMLResponse:
     """Render the threaded panel page."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        request, "panel.html", {"conversation_id": conversation_id}
-    )
+    return templates.TemplateResponse(request, "panel.html", {"conversation_id": conversation_id})
 
 
 @router.get("/panel/api/state")
@@ -99,9 +97,7 @@ async def panel_prompt(request: Request) -> JSONResponse:
     cid = data.get("conversation_id")
     message = (data.get("message") or "").strip()
     if not cid or not message:
-        return JSONResponse(
-            {"error": "conversation_id and message required"}, status_code=400
-        )
+        return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
     cfg = _panel_config(request, cid)
     if not cfg:

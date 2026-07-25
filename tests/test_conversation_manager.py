@@ -176,9 +176,7 @@ class TestSendMessage:
                 "content": "",
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 30, "output_tokens": 10},
-                "tool_use": [
-                    {"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}}
-                ],
+                "tool_use": [{"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}}],
                 "content_blocks": [
                     {"type": "tool_use", "id": "t1", "name": "test_tool", "input": {}},
                 ],
@@ -266,12 +264,8 @@ class TestSendMessage:
             "content": "",
             "stop_reason": "tool_use",
             "usage": {"input_tokens": 10, "output_tokens": 5},
-            "tool_use": [
-                {"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}
-            ],
-            "content_blocks": [
-                {"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}
-            ],
+            "tool_use": [{"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}],
+            "content_blocks": [{"type": "tool_use", "id": "t1", "name": "loop_tool", "input": {}}],
         }
         stub_llm.responses = [tool_response, tool_response, tool_response]
 
@@ -358,9 +352,7 @@ class TestSendMessage:
                 "content": "",
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 10, "output_tokens": 5},
-                "tool_use": [
-                    {"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}
-                ],
+                "tool_use": [{"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}],
                 "content_blocks": [
                     {"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}
                 ],
@@ -437,9 +429,7 @@ class TestSystemInstructions:
         assert "Spark" in system
         assert "Current date/time" in system
 
-    def test_includes_global_instructions(
-        self, db: Database, llm_manager: LLMManager
-    ) -> None:
+    def test_includes_global_instructions(self, db: Database, llm_manager: LLMManager) -> None:
         mgr = ConversationManager(
             db.connection,
             llm_manager,
@@ -451,9 +441,7 @@ class TestSystemInstructions:
         system = mgr._build_system_instructions(conv)
         assert "Always be concise." in system
 
-    def test_includes_conversation_instructions(
-        self, manager: ConversationManager
-    ) -> None:
+    def test_includes_conversation_instructions(self, manager: ConversationManager) -> None:
         cid = manager.create_conversation(
             "Test",
             "stub-model",
@@ -508,9 +496,7 @@ class TestFindInFlightToolMessages:
             {"id": 1, "content": [{"type": "tool_use", "id": "t1", "name": "a"}]},
             {
                 "id": 2,
-                "content": [
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
-                ],
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
             },
         ]
         assert _find_in_flight_tool_messages(msgs) == set()
@@ -527,9 +513,7 @@ class TestFindInFlightToolMessages:
             {"id": 1, "content": [{"type": "tool_use", "id": "t1", "name": "a"}]},
             {
                 "id": 2,
-                "content": [
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
-                ],
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
             },
             {"id": 3, "content": [{"type": "tool_use", "id": "t2", "name": "b"}]},
         ]
@@ -537,9 +521,7 @@ class TestFindInFlightToolMessages:
 
 
 class TestContextCompactor:
-    def test_no_compaction_below_threshold(
-        self, db: Database, stub_llm: StubLLMService
-    ) -> None:
+    def test_no_compaction_below_threshold(self, db: Database, stub_llm: StubLLMService) -> None:
         from spark.database import conversations, messages
 
         compactor = ContextCompactor(
@@ -548,17 +530,13 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.7,
         )
-        cid = conversations.create_conversation(
-            db.connection, "Test", "stub-model", USER
-        )
+        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
         messages.add_message(db.connection, cid, "user", "short msg", 10, USER)
 
         result = compactor.check_and_compact(cid, "stub-model", USER)
         assert result is False
 
-    def test_deferred_during_tool_use(
-        self, db: Database, stub_llm: StubLLMService
-    ) -> None:
+    def test_deferred_during_tool_use(self, db: Database, stub_llm: StubLLMService) -> None:
         from spark.database import conversations
 
         compactor = ContextCompactor(
@@ -567,15 +545,11 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,  # very low threshold to trigger
         )
-        cid = conversations.create_conversation(
-            db.connection, "Test", "stub-model", USER
-        )
+        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
         # Manually set high token count
         conversations.update_conversation(db.connection, cid, USER, total_tokens=5000)
 
-        result = compactor.check_and_compact(
-            cid, "stub-model", USER, in_tool_use_loop=True
-        )
+        result = compactor.check_and_compact(cid, "stub-model", USER, in_tool_use_loop=True)
         assert result is False  # Deferred
 
     def test_skips_when_conversation_not_found(
@@ -590,12 +564,8 @@ class TestContextCompactor:
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,
         )
-        cid = conversations.create_conversation(
-            db.connection, "Test", "stub-model", USER
-        )
-        conversations.update_conversation(
-            db.connection, cid, USER, total_tokens=100_000
-        )
+        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
+        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
 
         # With a real user_guid, compaction runs (stub LLM handles it).
         # With an empty user_guid, the conversation is not found and we skip.
@@ -633,9 +603,7 @@ class TestContextCompactor:
         messages.add_message(db.connection, cid, "assistant", "first reply", 50, USER)
         messages.add_message(db.connection, cid, "user", "second user msg", 50, USER)
         messages.add_message(db.connection, cid, "assistant", "second reply", 50, USER)
-        conversations.update_conversation(
-            db.connection, cid, USER, total_tokens=100_000
-        )
+        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
@@ -673,16 +641,10 @@ class TestContextCompactor:
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
         messages.add_message(db.connection, cid, "user", "rolled msg one", 50, USER)
-        messages.add_message(
-            db.connection, cid, "assistant", "rolled reply one", 50, USER
-        )
+        messages.add_message(db.connection, cid, "assistant", "rolled reply one", 50, USER)
         messages.add_message(db.connection, cid, "user", "rolled msg two", 50, USER)
-        messages.add_message(
-            db.connection, cid, "assistant", "rolled reply two", 50, USER
-        )
-        conversations.update_conversation(
-            db.connection, cid, USER, total_tokens=100_000
-        )
+        messages.add_message(db.connection, cid, "assistant", "rolled reply two", 50, USER)
+        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
@@ -695,9 +657,7 @@ class TestContextCompactor:
         assert "rolled msg two" not in joined
         assert "rolled reply two" not in joined
         assert any(
-            (c if isinstance(c, str) else json.dumps(c)).startswith(
-                "[COMPACTED CONTEXT"
-            )
+            (c if isinstance(c, str) else json.dumps(c)).startswith("[COMPACTED CONTEXT")
             for c in contents
         )
 

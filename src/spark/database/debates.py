@@ -109,9 +109,7 @@ def get_debate(db: DatabaseConnection, conversation_id: int) -> dict[str, Any] |
             value = json_mod.loads(raw)
             return value if isinstance(value, list) else None
         except (ValueError, TypeError):
-            logging.getLogger(__name__).warning(
-                "Invalid allowlist JSON, treating as all"
-            )
+            logging.getLogger(__name__).warning("Invalid allowlist JSON, treating as all")
             return None
 
     for (
@@ -208,9 +206,7 @@ def update_turn(
     if not sets:
         return
     params.append(turn_id)
-    db.execute(
-        f"UPDATE debate_turns SET {', '.join(sets)} WHERE id = {ph}", tuple(params)
-    )
+    db.execute(f"UPDATE debate_turns SET {', '.join(sets)} WHERE id = {ph}", tuple(params))
     db.commit()
 
 
@@ -227,9 +223,7 @@ def get_turns(db: DatabaseConnection, conversation_id: int) -> list[dict[str, An
     return [dict(zip(_TURN_COLUMNS, row)) for row in cur.fetchall()]
 
 
-def add_exhibits(
-    db: DatabaseConnection, turn_id: int, exhibits: list[dict[str, Any]]
-) -> None:
+def add_exhibits(db: DatabaseConnection, turn_id: int, exhibits: list[dict[str, Any]]) -> None:
     """Attach exhibits to a turn."""
     ph = db.placeholder
     for ex in exhibits:
@@ -247,9 +241,7 @@ def add_exhibits(
     db.commit()
 
 
-def get_exhibits(
-    db: DatabaseConnection, conversation_id: int
-) -> dict[int, list[dict[str, Any]]]:
+def get_exhibits(db: DatabaseConnection, conversation_id: int) -> dict[int, list[dict[str, Any]]]:
     """Exhibits for all turns of a conversation, keyed by turn ID."""
     ph = db.placeholder
     cur = db.execute(

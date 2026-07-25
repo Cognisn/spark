@@ -25,9 +25,7 @@ def _get_tool_documentation(tool_name: str) -> str:
         return doc_file.read_text(encoding="utf-8")
 
     # List available docs
-    available = sorted(
-        f.stem for f in docs_dir.glob("*.md") if not f.stem.startswith("_template")
-    )
+    available = sorted(f.stem for f in docs_dir.glob("*.md") if not f.stem.startswith("_template"))
     return (
         f"Documentation not found for tool: {tool_name}\n\n"
         f"Available documentation: {', '.join(available)}\n\n"
@@ -207,9 +205,7 @@ def execute_builtin_tool(
             from spark.tools.filesystem import execute
 
             mode = fs_config.get("mode", "read")
-            return execute(
-                tool_name, tool_input, allowed_paths=allowed, mode=mode
-            ), False
+            return execute(tool_name, tool_input, allowed_paths=allowed, mode=mode), False
 
         # Documents (read)
         doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}

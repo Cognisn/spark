@@ -36,9 +36,7 @@ class TestRecording:
         summary = voice_usage.usage_summary(db, "u1")
 
         assert summary["characters_this_month"] == 35
-        by_conv = {
-            r["conversation_id"]: r["characters"] for r in summary["by_conversation"]
-        }
+        by_conv = {r["conversation_id"]: r["characters"] for r in summary["by_conversation"]}
         assert by_conv == {1: 15, 2: 20}
 
 

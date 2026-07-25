@@ -95,9 +95,7 @@ async def voice_test(request: Request) -> JSONResponse:
     request.app.state.voice_engine = None
     engine = _engine(request)
     try:
-        engine.synthesise(
-            "Spark voice is connected.", None, user_guid=_user_guid(request)
-        )
+        engine.synthesise("Spark voice is connected.", None, user_guid=_user_guid(request))
     except VoiceUnavailable as e:
         return JSONResponse({"ok": False, "reason": e.reason})
     except Exception as e:  # noqa: BLE001

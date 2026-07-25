@@ -46,7 +46,7 @@ SET_PANEL_ORDER_TOOL: dict[str, Any] = {
     "name": "set_speaking_order",
     "description": (
         "Announce the order in which the panellists speak each round, as a "
-        "list of panellist roles (for example [\"panellist:2\", \"panellist:1\"])."
+        'list of panellist roles (for example ["panellist:2", "panellist:1"]).'
     ),
     "inputSchema": {
         "type": "object",

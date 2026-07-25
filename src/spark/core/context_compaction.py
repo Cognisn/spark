@@ -134,9 +134,7 @@ class ContextCompactor:
             )
 
         try:
-            return self._perform_compaction(
-                conversation_id, model_id, user_guid, status_callback
-            )
+            return self._perform_compaction(conversation_id, model_id, user_guid, status_callback)
         except Exception as e:
             logger.error("Compaction failed: %s", e)
             if total_tokens >= emergency:
@@ -219,9 +217,7 @@ class ContextCompactor:
 
         # Add compacted content as a new message
         compacted_tokens = self._llm.count_tokens(compacted_content)
-        messages.add_message(
-            self._db, conversation_id, "user", marker, compacted_tokens, user_guid
-        )
+        messages.add_message(self._db, conversation_id, "user", marker, compacted_tokens, user_guid)
 
         # Mark originals
         messages.mark_messages_as_rolled_up(self._db, conversation_id, rollup_ids)
@@ -259,9 +255,7 @@ class ContextCompactor:
 
         return True
 
-    def _emergency_truncation(
-        self, conversation_id: int, model_id: str, user_guid: str
-    ) -> bool:
+    def _emergency_truncation(self, conversation_id: int, model_id: str, user_guid: str) -> bool:
         """Last resort: keep only recent messages."""
         from spark.database import conversations, messages
 

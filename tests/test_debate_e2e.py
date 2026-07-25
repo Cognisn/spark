@@ -71,9 +71,7 @@ def test_two_round_judge_decides_debate(db) -> None:
             ]
         ),
     }
-    orch = DebateOrchestrator(
-        db, lambda m: services[m], {}, status_callback=lambda t, d: None
-    )
+    orch = DebateOrchestrator(db, lambda m: services[m], {}, status_callback=lambda t, d: None)
     orch.run(cid, "u1")
 
     d = debates.get_debate(db, cid)

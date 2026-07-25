@@ -99,29 +99,21 @@ class TestImportDownloadDelete:
         payload = self._zip_of(
             "imported-skill", "---\nname: imported-skill\ndescription: d\n---\nbody\n"
         )
-        r = client.post(
-            "/skills/api/import", files={"file": ("s.zip", payload, "application/zip")}
-        )
+        r = client.post("/skills/api/import", files={"file": ("s.zip", payload, "application/zip")})
         assert r.status_code == 200
         names = [s["name"] for s in client.get("/skills/api/list").json()["skills"]]
         assert "imported-skill" in names
 
     def test_import_collision_rejected(self, client) -> None:
         _auth(client)
-        payload = self._zip_of(
-            "pdf-filler", "---\nname: pdf-filler\ndescription: d\n---\nbody\n"
-        )
-        r = client.post(
-            "/skills/api/import", files={"file": ("s.zip", payload, "application/zip")}
-        )
+        payload = self._zip_of("pdf-filler", "---\nname: pdf-filler\ndescription: d\n---\nbody\n")
+        r = client.post("/skills/api/import", files={"file": ("s.zip", payload, "application/zip")})
         assert r.status_code == 400 and "exists" in r.json()["error"]
 
     def test_import_invalid_zip_rejected(self, client) -> None:
         _auth(client)
         payload = self._zip_of("bad-skill", "no frontmatter at all")
-        r = client.post(
-            "/skills/api/import", files={"file": ("s.zip", payload, "application/zip")}
-        )
+        r = client.post("/skills/api/import", files={"file": ("s.zip", payload, "application/zip")})
         assert r.status_code == 400
 
     def test_download_and_delete(self, client) -> None:
@@ -141,17 +133,17 @@ class TestImportDownloadDelete:
 class TestConversationToggles:
     def test_tools_api_lists_skills(self, client) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "n", "model_id": "m"}
-        ).json()["id"]
+        cid = client.post("/conversations/api/create", json={"name": "n", "model_id": "m"}).json()[
+            "id"
+        ]
         data = client.get(f"/chat/{cid}/api/tools").json()
         assert any(s["name"] == "pdf-filler" and s["enabled"] for s in data["skills"])
 
     def test_toggle_skill_for_conversation(self, client) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "n", "model_id": "m"}
-        ).json()["id"]
+        cid = client.post("/conversations/api/create", json={"name": "n", "model_id": "m"}).json()[
+            "id"
+        ]
         client.post(
             f"/chat/{cid}/api/tools",
             json={"type": "skill", "name": "pdf-filler", "enabled": False},

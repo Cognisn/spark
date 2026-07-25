@@ -112,9 +112,9 @@ class TestDebatePromptTrigger:
 class TestChatStreamTrigger:
     def test_stream_chat_passes_rewritten_message(self, skills_env, client) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "n", "model_id": "m"}
-        ).json()["id"]
+        cid = client.post("/conversations/api/create", json={"name": "n", "model_id": "m"}).json()[
+            "id"
+        ]
 
         captured: dict = {}
         conv_mgr = client.app.state.conversation_manager

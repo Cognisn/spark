@@ -45,18 +45,12 @@ def load_config(ctx: Any) -> VoiceConfig:
             enabled=bool(enabled),
             api_key=key,
             model_id=settings.get("voice.elevenlabs.model_id", DEFAULT_MODEL, cast=str),
-            default_voice_id=settings.get(
-                "voice.elevenlabs.default_voice_id", "", cast=str
-            ),
+            default_voice_id=settings.get("voice.elevenlabs.default_voice_id", "", cast=str),
             monthly_character_cap=int(
                 settings.get("voice.elevenlabs.monthly_character_cap", 0, cast=int) or 0
             ),
-            cache_enabled=bool(
-                settings.get("voice.elevenlabs.cache_enabled", True, cast=bool)
-            ),
-            cache_max_mb=int(
-                settings.get("voice.elevenlabs.cache_max_mb", 200, cast=int) or 200
-            ),
+            cache_enabled=bool(settings.get("voice.elevenlabs.cache_enabled", True, cast=bool)),
+            cache_max_mb=int(settings.get("voice.elevenlabs.cache_max_mb", 200, cast=int) or 200),
             interaction_mode=mode if mode in VALID_MODES else "listen_along",
         )
     except Exception:  # noqa: BLE001 - a broken config must not break the page

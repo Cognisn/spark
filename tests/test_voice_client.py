@@ -29,9 +29,7 @@ class FakeHttp:
         self.gets: list[dict] = []
 
     def post(self, url, headers=None, params=None, json=None):
-        self.posts.append(
-            {"url": url, "headers": headers, "params": params, "json": json}
-        )
+        self.posts.append({"url": url, "headers": headers, "params": params, "json": json})
         return self.responses.pop(0)
 
     def get(self, url, headers=None, params=None):
@@ -77,9 +75,7 @@ class TestSynthesise:
         assert len(http.posts) == 1  # no point retrying an exhausted quota
 
     def test_rate_limit_retries_once_then_succeeds(self) -> None:
-        http = FakeHttp(
-            [FakeResponse(429, payload={}), FakeResponse(200, content=b"ok")]
-        )
+        http = FakeHttp([FakeResponse(429, payload={}), FakeResponse(200, content=b"ok")])
         client = ElevenLabsClient("k", http=http, retry_delay=0)
         assert client.synthesise("hi", "v") == b"ok"
         assert len(http.posts) == 2

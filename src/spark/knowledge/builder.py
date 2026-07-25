@@ -149,9 +149,13 @@ class KnowledgeGraphBuilder:
                     result["status"] = "failed"
                     result["error"] = f"Node cap ({NODE_CAP}) reached for this scope"
                     store.set_watermark(
-                        self._db, scope, source_key,
+                        self._db,
+                        scope,
+                        source_key,
                         self._watermarks(scope, user_guid).get(source_key, 0),
-                        user_guid, status="failed", error=result["error"],
+                        user_guid,
+                        status="failed",
+                        error=result["error"],
                     )
                     return result
 
@@ -163,7 +167,9 @@ class KnowledgeGraphBuilder:
                     result["skipped_chunks"] += 1
                     logger.warning(
                         "KG chunk skipped (no fragment) scope=%s source=%s up to id %d",
-                        scope, source_key, chunk_max_id,
+                        scope,
+                        source_key,
+                        chunk_max_id,
                     )
                     continue
 
@@ -173,8 +179,13 @@ class KnowledgeGraphBuilder:
                         f"{ent['name']}: {ent['description']}"
                     ).tobytes()
                     node_ids[ent["name"].strip().lower()] = store.upsert_node(
-                        self._db, scope, ent["name"], ent["entity_type"],
-                        ent["description"], embedding, user_guid,
+                        self._db,
+                        scope,
+                        ent["name"],
+                        ent["entity_type"],
+                        ent["description"],
+                        embedding,
+                        user_guid,
                     )
                     result["entities"] += 1
                 for rel in fragment["relationships"]:
@@ -183,8 +194,13 @@ class KnowledgeGraphBuilder:
                     if src is None or dst is None:
                         continue  # relationships must reference this fragment's entities
                     store.upsert_edge(
-                        self._db, scope, src, dst, rel["relation"],
-                        rel["description"], user_guid,
+                        self._db,
+                        scope,
+                        src,
+                        dst,
+                        rel["relation"],
+                        rel["description"],
+                        user_guid,
                     )
                     result["relationships"] += 1
 

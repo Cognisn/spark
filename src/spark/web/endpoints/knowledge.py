@@ -92,8 +92,7 @@ async def kg_build(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Invalid scope"}, status_code=400)
 
     if not builder.try_acquire(scope):
-        return JSONResponse({"error": "A build is already running for this scope"},
-                            status_code=409)
+        return JSONResponse({"error": "A build is already running for this scope"}, status_code=409)
 
     conv_mgr = request.app.state.conversation_manager
     db = _db(request)
@@ -116,12 +115,8 @@ async def kg_build(request: Request) -> JSONResponse:
 
     def run() -> None:
         try:
-            engine = KnowledgeGraphBuilder(
-                db, conv_mgr._get_llm_service_for_model, _get_embedder()
-            )
-            results[scope] = engine.build_scope(
-                scope, user_guid, model_id, cancel_token=token
-            )
+            engine = KnowledgeGraphBuilder(db, conv_mgr._get_llm_service_for_model, _get_embedder())
+            results[scope] = engine.build_scope(scope, user_guid, model_id, cancel_token=token)
         except Exception as e:  # noqa: BLE001 - record, never crash the thread
             logger.error("Knowledge graph build failed: %s", e, exc_info=True)
             results[scope] = {"status": "failed", "error": str(e)}
@@ -163,9 +158,7 @@ async def kg_graph(request: Request, scope: str) -> JSONResponse:
     ]
     return JSONResponse(
         {
-            "nodes": [
-                {k: v for k, v in n.items() if k != "embedding"} for n in nodes
-            ],
+            "nodes": [{k: v for k, v in n.items() if k != "embedding"} for n in nodes],
             "edges": edges,
             "total_nodes": total_nodes,
             "total_edges": total_edges,

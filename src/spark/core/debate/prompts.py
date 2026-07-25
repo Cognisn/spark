@@ -9,9 +9,7 @@ from __future__ import annotations
 _SIDE = {"pro": "FOR", "con": "AGAINST"}
 
 
-def debater_system(
-    role: str, topic: str, brief: str | None, *, skills_block: str = ""
-) -> str:
+def debater_system(role: str, topic: str, brief: str | None, *, skills_block: str = "") -> str:
     side = _SIDE[role]
     parts = [
         "## Identity\n",

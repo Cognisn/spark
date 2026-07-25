@@ -193,9 +193,7 @@ class ActionExecutor:
                 )
 
                 # Reset failure count on success
-                autonomous_actions.update_action(
-                    db, action_id, self._user_guid, failure_count=0
-                )
+                autonomous_actions.update_action(db, action_id, self._user_guid, failure_count=0)
 
             except Exception as e:
                 logger.error("Action '%s' failed: %s", action["name"], e, exc_info=True)
@@ -217,9 +215,7 @@ class ActionExecutor:
                         action["name"],
                         new_count,
                     )
-                autonomous_actions.update_action(
-                    db, action_id, self._user_guid, **updates
-                )
+                autonomous_actions.update_action(db, action_id, self._user_guid, **updates)
 
             finally:
                 autonomous_actions.unlock_action(db, action_id)
@@ -365,9 +361,7 @@ class ActionExecutor:
                         ),
                     },
                 )
-                activity_log.append(
-                    f"[System] Output truncated at {max_tokens} tokens — retrying"
-                )
+                activity_log.append(f"[System] Output truncated at {max_tokens} tokens — retrying")
                 continue
 
             if stop_reason == "tool_use" and response.get("tool_use"):
@@ -442,11 +436,7 @@ class ActionExecutor:
             from spark.database import autonomous_actions
 
             runs = autonomous_actions.get_action_runs(db, action["id"], limit=5)
-            completed = [
-                r
-                for r in runs
-                if r.get("status") == "completed" and r.get("result_text")
-            ]
+            completed = [r for r in runs if r.get("status") == "completed" and r.get("result_text")]
 
             if not completed:
                 return ""
@@ -551,9 +541,7 @@ class ActionExecutor:
         if "send_email" in tool_names:
             sender = settings.get("embedded_tools.email.sender", "")
             if sender:
-                lines.append(
-                    f"## Email\n\nEmail is configured with sender address: {sender}\n"
-                )
+                lines.append(f"## Email\n\nEmail is configured with sender address: {sender}\n")
 
         lines.append(
             "## Tool Documentation\n\n"
@@ -702,9 +690,7 @@ class ActionExecutor:
                     logger.info("Initialised %s provider for model %s", key, model_id)
                     return service
                 except Exception as e:
-                    logger.debug(
-                        "Provider %s failed for model %s: %s", key, model_id, e
-                    )
+                    logger.debug("Provider %s failed for model %s: %s", key, model_id, e)
                     continue
 
         logger.error(
@@ -725,9 +711,7 @@ class ActionExecutor:
     def _init_bedrock(self, settings: Any) -> Any:
         from spark.llm.bedrock import BedrockProvider
 
-        read_timeout = int(
-            settings.get("providers.aws_bedrock.read_timeout", 300) or 300
-        )
+        read_timeout = int(settings.get("providers.aws_bedrock.read_timeout", 300) or 300)
         return BedrockProvider(
             region=settings.get("providers.aws_bedrock.region", "us-east-1"),
             profile=settings.get("providers.aws_bedrock.profile"),
@@ -744,9 +728,7 @@ class ActionExecutor:
     def _init_gemini(self, settings: Any) -> Any:
         from spark.llm.google_gemini import GoogleGeminiProvider
 
-        api_key = self._resolve_secret(
-            settings.get("providers.google_gemini.api_key", "")
-        )
+        api_key = self._resolve_secret(settings.get("providers.google_gemini.api_key", ""))
         if not api_key:
             raise ValueError("Google Gemini API key not configured")
         return GoogleGeminiProvider(api_key=api_key)

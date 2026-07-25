@@ -83,8 +83,10 @@ async def debate_capabilities(request: Request) -> JSONResponse:
             for tool in mcp_mgr._tools_cache or []:
                 server = tool.get("server", "mcp")
                 by_server.setdefault(server, []).append(
-                    {"name": tool.get("name", ""),
-                     "description": (tool.get("description") or "")[:80]}
+                    {
+                        "name": tool.get("name", ""),
+                        "description": (tool.get("description") or "")[:80],
+                    }
                 )
             for server, entries in by_server.items():
                 tools_out.append({"group": f"MCP: {server}", "tools": entries})
@@ -97,8 +99,7 @@ async def debate_capabilities(request: Request) -> JSONResponse:
 
         manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
         skills_out = [
-            {"name": s["name"], "description": s["description"][:80]}
-            for s in manager.list_skills()
+            {"name": s["name"], "description": s["description"][:80]} for s in manager.list_skills()
         ]
     except Exception:  # noqa: BLE001
         logger.warning("Capabilities skills listing degraded", exc_info=True)
@@ -135,9 +136,7 @@ async def debate_prompt(request: Request) -> JSONResponse:
     cid = data.get("conversation_id")
     message = (data.get("message") or "").strip()
     if not cid or not message:
-        return JSONResponse(
-            {"error": "conversation_id and message required"}, status_code=400
-        )
+        return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
     db = request.app.state.conversation_manager._db
     cfg = debates.get_debate(db, cid)

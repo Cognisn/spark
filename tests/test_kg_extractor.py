@@ -84,9 +84,7 @@ class TestExtractFragment:
             ]
         )
         frag = extract_fragment(svc, "text")
-        assert frag["entities"] == [
-            {"name": "Spark", "entity_type": "other", "description": "d"}
-        ]
+        assert frag["entities"] == [{"name": "Spark", "entity_type": "other", "description": "d"}]
         assert frag["relationships"][0]["relation"] == "belongs_to"
 
     def test_retry_then_success(self) -> None:

@@ -34,9 +34,7 @@ class TestPlatformPaths:
 class TestEnsureConfig:
     def test_creates_config_from_template(self, tmp_path: Path) -> None:
         config_path = tmp_path / "subdir" / "config.yaml"
-        resources = (
-            Path(__file__).resolve().parent.parent / "src" / "spark" / "resources"
-        )
+        resources = Path(__file__).resolve().parent.parent / "src" / "spark" / "resources"
         assert (resources / "config.yaml.template").exists()
 
         first_run = _ensure_config(config_path)

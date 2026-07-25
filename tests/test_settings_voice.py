@@ -12,10 +12,7 @@ class TestVoiceSecret:
     def test_secret_name_matches_what_the_engine_reads(self) -> None:
         # load_config() reads ctx.secrets.get("elevenlabs_api_key"); if this
         # derivation ever drifts, the key silently stops being found.
-        assert (
-            settings_mod._secret_name("voice.elevenlabs.api_key")
-            == "elevenlabs_api_key"
-        )
+        assert settings_mod._secret_name("voice.elevenlabs.api_key") == "elevenlabs_api_key"
 
 
 class TestIntKeys:
@@ -32,10 +29,7 @@ class TestBoolKeysRegression:
         assert "embedded_tools.email.require_approval" in settings_mod._BOOL_STRING_KEYS
 
     def test_system_command_bool_key_survives(self) -> None:
-        assert (
-            "embedded_tools.system_commands.require_approval"
-            in settings_mod._BOOL_STRING_KEYS
-        )
+        assert "embedded_tools.system_commands.require_approval" in settings_mod._BOOL_STRING_KEYS
 
     def test_voice_bool_key_registered(self) -> None:
         assert "voice.elevenlabs.cache_enabled" in settings_mod._BOOL_STRING_KEYS

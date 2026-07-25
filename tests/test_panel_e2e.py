@@ -15,9 +15,7 @@ from spark.web.server import create_app
 from tests.test_debate_orchestrator import ScriptedService, text_response, tool_response
 
 
-def _mock_settings_get(
-    key: str, default: object = None, *, cast: type | None = None
-) -> object:
+def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
     values = {
         "interface.session_timeout_minutes": 60,
         "interface.host": "127.0.0.1",
@@ -134,16 +132,12 @@ def test_full_panel_with_human(client: TestClient) -> None:
     orch.run(cid, "test-user")
     cfg = debates.get_debate(db, cid)
     assert cfg["state"] == "qa"
-    contribs = [
-        t["role"] for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"
-    ]
+    contribs = [t["role"] for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"]
     assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
 
     # 5. QA: the prompt endpoint answers synchronously via the moderator.
     services["model-mod"].responses.append(text_response("The panel leant to supply."))
-    r = client.post(
-        "/panel/api/prompt", json={"conversation_id": cid, "message": "Who won?"}
-    )
+    r = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "Who won?"})
     assert r.json() == {"queued": False, "answer": "The panel leant to supply."}
 
     # 6. Export renders names and the synthesis.

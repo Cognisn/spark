@@ -182,7 +182,11 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
             sections.append(f'<div class="argument {side}"><h3>{label}</h3>')
             sections.append(md(turn.get("content")))
             for ex in exhibits.get(turn["id"], []):
-                src = f' <span class="source">({esc(ex.get("source"))})</span>' if ex.get("source") else ""
+                src = (
+                    f' <span class="source">({esc(ex.get("source"))})</span>'
+                    if ex.get("source")
+                    else ""
+                )
                 sections.append(
                     f'<div class="exhibit"><strong>Exhibit {esc(ex.get("label"))}: '
                     f"{esc(ex.get('title'))}</strong>{src}<div>{esc(ex.get('content'))}</div></div>"
@@ -196,19 +200,29 @@ def export_debate_html(db: Any, conversation_id: int) -> str:
             )
         elif turn["turn_type"] == "synthesis":
             sections.append(
-                '<div class="judgement"><h2>Synthesis</h2>'
-                + md(turn.get("content"))
-                + "</div>"
+                '<div class="judgement"><h2>Synthesis</h2>' + md(turn.get("content")) + "</div>"
             )
         elif turn["turn_type"] in ("announcement", "interim"):
-            title = f"{speaker}, opening" if turn["turn_type"] == "announcement" else f"{speaker}, interim remarks"
-            sections.append(f'<div class="judge-note"><h3>{title}</h3>{md(turn.get("content"))}</div>')
+            title = (
+                f"{speaker}, opening"
+                if turn["turn_type"] == "announcement"
+                else f"{speaker}, interim remarks"
+            )
+            sections.append(
+                f'<div class="judge-note"><h3>{title}</h3>{md(turn.get("content"))}</div>'
+            )
         elif turn["turn_type"] == "user_prompt":
-            sections.append(f'<div class="user-note"><h3>User directive</h3>{md(turn.get("content"))}</div>')
+            sections.append(
+                f'<div class="user-note"><h3>User directive</h3>{md(turn.get("content"))}</div>'
+            )
         elif turn["turn_type"] == "qa_question":
-            sections.append(f'<div class="user-note"><h3>User question</h3>{md(turn.get("content"))}</div>')
+            sections.append(
+                f'<div class="user-note"><h3>User question</h3>{md(turn.get("content"))}</div>'
+            )
         elif turn["turn_type"] == "qa_answer":
-            sections.append(f'<div class="judge-note"><h3>{speaker} answer</h3>{md(turn.get("content"))}</div>')
+            sections.append(
+                f'<div class="judge-note"><h3>{speaker} answer</h3>{md(turn.get("content"))}</div>'
+            )
 
     style = (
         "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"

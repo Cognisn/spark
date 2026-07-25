@@ -210,9 +210,7 @@ class DebateOrchestrator:
         done_roles = {
             t["role"]
             for t in debates.get_turns(self._db, cid)
-            if t["turn_type"] == "argument"
-            and t["round"] == round_no
-            and t["status"] == "complete"
+            if t["turn_type"] == "argument" and t["round"] == round_no and t["status"] == "complete"
         }
         for role in order:
             if role in done_roles:
@@ -284,9 +282,7 @@ class DebateOrchestrator:
             pass
         try:
             if self._mcp_manager is not None:
-                names |= {
-                    t.get("name", "") for t in (self._mcp_manager._tools_cache or [])
-                }
+                names |= {t.get("name", "") for t in (self._mcp_manager._tools_cache or [])}
         except Exception:  # noqa: BLE001
             pass
         names.discard("")
@@ -364,7 +360,9 @@ class DebateOrchestrator:
         self._emit("debater_turn_start", {"role": role, "round": round_no})
         self._emit("floor", {"role": role})
         try:
-            return self._debater_turn_inner(cid, cfg, role, user_guid, cancel_token, round_no, agent)
+            return self._debater_turn_inner(
+                cid, cfg, role, user_guid, cancel_token, round_no, agent
+            )
         finally:
             self._emit("floor", {"role": "none"})
 

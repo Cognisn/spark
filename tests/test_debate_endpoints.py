@@ -13,9 +13,7 @@ from spark.database.connection import DatabaseConnection
 from spark.web.server import create_app
 
 
-def _mock_settings_get(
-    key: str, default: object = None, *, cast: type | None = None
-) -> object:
+def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
     values = {
         "interface.session_timeout_minutes": 60,
         "interface.host": "127.0.0.1",
@@ -109,9 +107,7 @@ class TestDebateCreate:
 
     def test_standard_create_unchanged(self, client: TestClient) -> None:
         _auth(client)
-        r = client.post(
-            "/conversations/api/create", json={"name": "N", "model_id": "stub-model"}
-        )
+        r = client.post("/conversations/api/create", json={"name": "N", "model_id": "stub-model"})
         assert r.status_code == 200
         assert r.json().get("conversation_type", "standard") == "standard"
 
@@ -131,12 +127,10 @@ class TestDebatePrompt:
 
     def test_prompt_on_standard_conversation_is_404(self, client: TestClient) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "N", "model_id": "m"}
-        ).json()["id"]
-        r = client.post(
-            "/debate/api/prompt", json={"conversation_id": cid, "message": "x"}
-        )
+        cid = client.post("/conversations/api/create", json={"name": "N", "model_id": "m"}).json()[
+            "id"
+        ]
+        r = client.post("/debate/api/prompt", json={"conversation_id": cid, "message": "x"})
         assert r.status_code == 404
 
 
@@ -195,9 +189,7 @@ class TestDebateVoices:
         payload["debate"]["agents"]["judge"]["voice_id"] = "voice-judge"
         cid = client.post("/conversations/api/create", json=payload).json()["id"]
 
-        agents = client.get(f"/debate/api/state?conversation_id={cid}").json()["config"][
-            "agents"
-        ]
+        agents = client.get(f"/debate/api/state?conversation_id={cid}").json()["config"]["agents"]
         assert agents["pro"]["voice_id"] == "voice-pro"
         assert agents["judge"]["voice_id"] == "voice-judge"
         assert agents["con"]["voice_id"] is None

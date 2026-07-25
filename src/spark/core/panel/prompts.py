@@ -7,9 +7,7 @@ the assigned persona.
 from __future__ import annotations
 
 
-def panellist_system(
-    name: str, topic: str, brief: str | None, *, skills_block: str = ""
-) -> str:
+def panellist_system(name: str, topic: str, brief: str | None, *, skills_block: str = "") -> str:
     parts = [
         "## Identity\n",
         f"You are {name}, a panellist in a moderated panel discussion.\n",
@@ -53,8 +51,7 @@ def moderator_system(
     names = ", ".join(panellist_names)
     parts = [
         "## Identity\n",
-        "You are the moderator of a panel discussion between these "
-        f"panellists: {names}.\n",
+        "You are the moderator of a panel discussion between these " f"panellists: {names}.\n",
         f"**Discussion topic:** {topic}\n",
     ]
     if brief:

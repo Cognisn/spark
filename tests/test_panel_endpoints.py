@@ -16,9 +16,7 @@ from spark.web.server import create_app
 from tests.test_debate_orchestrator import ScriptedService, text_response
 
 
-def _mock_settings_get(
-    key: str, default: object = None, *, cast: type | None = None
-) -> object:
+def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
     values = {
         "interface.session_timeout_minutes": 60,
         "interface.host": "127.0.0.1",
@@ -105,9 +103,7 @@ class TestPanelCreate:
         payload = copy.deepcopy(PANEL_PAYLOAD)
         payload["panel"]["human"] = {"name": "Matthew"}
         cid = client.post("/conversations/api/create", json=payload).json()["id"]
-        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"][
-            "agents"
-        ]
+        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"]["agents"]
         assert agents["panellist:3"]["display_name"] == "Matthew"
         assert agents["panellist:3"]["is_human"] is True
 
@@ -120,9 +116,7 @@ class TestPanelCreate:
     def test_too_many_panellists_is_400(self, client: TestClient) -> None:
         _auth(client)
         payload = copy.deepcopy(PANEL_PAYLOAD)
-        payload["panel"]["panellists"] = [
-            {"name": f"P{i}", "model_id": "m"} for i in range(6)
-        ]
+        payload["panel"]["panellists"] = [{"name": f"P{i}", "model_id": "m"} for i in range(6)]
         assert client.post("/conversations/api/create", json=payload).status_code == 400
 
     def test_duplicate_names_is_400(self, client: TestClient) -> None:
@@ -149,9 +143,7 @@ class TestPanelCreate:
         payload["panel"]["panellists"][0]["allowed_tools"] = ["web_search"]
         payload["panel"]["moderator"]["allowed_skills"] = []
         cid = client.post("/conversations/api/create", json=payload).json()["id"]
-        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"][
-            "agents"
-        ]
+        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"]["agents"]
         assert agents["panellist:1"]["allowed_tools"] == ["web_search"]
         assert agents["moderator"]["allowed_skills"] == []
 
@@ -169,17 +161,13 @@ class TestPanelPrompt:
 
     def test_prompt_on_standard_conversation_is_404(self, client: TestClient) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "N", "model_id": "m"}
-        ).json()["id"]
-        r = client.post(
-            "/panel/api/prompt", json={"conversation_id": cid, "message": "x"}
-        )
+        cid = client.post("/conversations/api/create", json={"name": "N", "model_id": "m"}).json()[
+            "id"
+        ]
+        r = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "x"})
         assert r.status_code == 404
 
-    def test_prompt_during_human_turn_stores_contribution(
-        self, client: TestClient
-    ) -> None:
+    def test_prompt_during_human_turn_stores_contribution(self, client: TestClient) -> None:
         _auth(client)
         payload = copy.deepcopy(PANEL_PAYLOAD)
         payload["panel"]["human"] = {"name": "Matthew"}
@@ -193,9 +181,7 @@ class TestPanelPrompt:
             current_round=1,
             opening_speaker=json.dumps(["panellist:3", "panellist:1", "panellist:2"]),
         )
-        r = client.post(
-            "/panel/api/prompt", json={"conversation_id": cid, "message": "My take."}
-        )
+        r = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "My take."})
         assert r.status_code == 200
         assert r.json()["accepted"] == "contribution"
         turns = client.get(f"/panel/api/state?conversation_id={cid}").json()["turns"]
@@ -210,9 +196,7 @@ class TestPanelPrompt:
         debates.update_debate_state(db, cid, "qa")
         stub = ScriptedService([text_response("Because they agreed.")])
         client.app.state.conversation_manager._get_llm_service_for_model = lambda m: stub
-        r = client.post(
-            "/panel/api/prompt", json={"conversation_id": cid, "message": "Why?"}
-        )
+        r = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "Why?"})
         assert r.status_code == 200
         assert r.json() == {"queued": False, "answer": "Because they agreed."}
 
@@ -226,9 +210,9 @@ class TestPanelPage:
 
     def test_state_on_standard_conversation_is_404(self, client: TestClient) -> None:
         _auth(client)
-        cid = client.post(
-            "/conversations/api/create", json={"name": "N", "model_id": "m"}
-        ).json()["id"]
+        cid = client.post("/conversations/api/create", json={"name": "N", "model_id": "m"}).json()[
+            "id"
+        ]
         assert client.get(f"/panel/api/state?conversation_id={cid}").status_code == 404
 
 
@@ -241,9 +225,7 @@ class TestPanelVoices:
         payload["panel"]["panellists"][0]["voice_id"] = "voice-one"
         cid = client.post("/conversations/api/create", json=payload).json()["id"]
 
-        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"][
-            "agents"
-        ]
+        agents = client.get(f"/panel/api/state?conversation_id={cid}").json()["config"]["agents"]
         assert agents["moderator"]["voice_id"] == "voice-mod"
         assert agents["panellist:1"]["voice_id"] == "voice-one"
         assert agents["panellist:2"]["voice_id"] is None

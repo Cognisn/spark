@@ -91,9 +91,7 @@ class TestRotation:
         d = debates.get_debate(db, cid)
         assert d["state"] == "qa"
         assert json.loads(d["opening_speaker"]) == ["panellist:2", "panellist:1"]
-        contribs = [
-            t for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"
-        ]
+        contribs = [t for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"]
         assert [c["role"] for c in contribs] == ["panellist:2", "panellist:1"]
         types = [t["turn_type"] for t in debates.get_turns(db, cid)]
         assert "synthesis" in types
@@ -132,9 +130,7 @@ class TestHumanTurn:
         orch.run(cid, "u1")
         assert debates.get_debate(db, cid)["state"] == "qa"
         contribs = [
-            t["role"]
-            for t in debates.get_turns(db, cid)
-            if t["turn_type"] == "contribution"
+            t["role"] for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"
         ]
         assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
 

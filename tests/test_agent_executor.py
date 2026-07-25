@@ -122,9 +122,7 @@ class TestCancellation:
                 "stop_reason": "tool_use",
                 "usage": {"input_tokens": 1, "output_tokens": 1},
                 "tool_use": [{"type": "tool_use", "id": "t1", "name": "noop", "input": {}}],
-                "content_blocks": [
-                    {"type": "tool_use", "id": "t1", "name": "noop", "input": {}}
-                ],
+                "content_blocks": [{"type": "tool_use", "id": "t1", "name": "noop", "input": {}}],
             },
             self._make_response("should not be reached"),
         ]
@@ -138,6 +136,7 @@ class TestCancellation:
         llm = MagicMock()
         llm.invoke_model.side_effect = fake_invoke
         ex = AgentExecutor(llm, MagicMock(), {"embedded_tools": {}}, user_guid="u")
+
         # Patch _execute_tool to avoid touching the real tool registry, and to
         # cancel after the first tool runs.
         def fake_tool(name: str, inp: dict) -> str:
@@ -200,9 +199,7 @@ class TestExecutorExtensions:
         names = {t["name"] for t in tools}
         assert "submit_argument" in names and "store_memory" not in names
 
-    def test_terminal_tool_returns_capture_without_executing(
-        self, executor: AgentExecutor
-    ) -> None:
+    def test_terminal_tool_returns_capture_without_executing(self, executor: AgentExecutor) -> None:
         executor._llm.invoke_model.return_value = self._tool_use(
             "submit_argument", {"argument_markdown": "case", "exhibits": []}
         )

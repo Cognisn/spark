@@ -31,9 +31,7 @@ from spark.database import debates
 
 logger = logging.getLogger(__name__)
 
-_PANELLIST_EXCLUDED = MEMORY_TOOL_NAMES | frozenset(
-    {"spawn_agent", "list_provider_models"}
-)
+_PANELLIST_EXCLUDED = MEMORY_TOOL_NAMES | frozenset({"spawn_agent", "list_provider_models"})
 
 
 def _panellist_roles(cfg: dict) -> list[str]:
@@ -194,9 +192,7 @@ class PanelOrchestrator:
             return None  # next slot is an AI turn, not a human pause
         return None
 
-    def submit_contribution(
-        self, conversation_id: int, user_guid: str, text: str
-    ) -> int | None:
+    def submit_contribution(self, conversation_id: int, user_guid: str, text: str) -> int | None:
         """Store the human panellist's contribution for the awaiting slot."""
         pending = self.awaiting_human(conversation_id, user_guid)
         if not pending:
@@ -259,9 +255,7 @@ class PanelOrchestrator:
         order = normalise_order(raw_order, roles)
         names = ", ".join(self._display_name(cfg, r) for r in order)
         framing = response.get("content", "") or f"The discussion begins with {names}."
-        debates.update_debate_state(
-            self._db, cid, cfg["state"], opening_speaker=json.dumps(order)
-        )
+        debates.update_debate_state(self._db, cid, cfg["state"], opening_speaker=json.dumps(order))
         cfg["opening_speaker"] = json.dumps(order)
         debates.add_turn(
             self._db,
@@ -271,9 +265,7 @@ class PanelOrchestrator:
             "announcement",
             f"{framing}\n\nSpeaking order: {names}.",
         )
-        self._emit(
-            "moderator_text", {"role": "moderator", "text": framing, "phase": "opening"}
-        )
+        self._emit("moderator_text", {"role": "moderator", "text": framing, "phase": "opening"})
         return True
 
     def _round(
@@ -384,9 +376,7 @@ class PanelOrchestrator:
             pass
         try:
             if self._mcp_manager is not None:
-                names |= {
-                    t.get("name", "") for t in (self._mcp_manager._tools_cache or [])
-                }
+                names |= {t.get("name", "") for t in (self._mcp_manager._tools_cache or [])}
         except Exception:  # noqa: BLE001
             pass
         names.discard("")
@@ -409,9 +399,7 @@ class PanelOrchestrator:
                 )
             else:
                 mod_block = getattr(self, "_skills_block", "")
-            names = [
-                self._display_name(cfg, r) for r in _panellist_roles(cfg)
-            ]
+            names = [self._display_name(cfg, r) for r in _panellist_roles(cfg)]
             system = prompts.moderator_system(
                 cfg["topic"],
                 moderator.get("brief"),
@@ -466,9 +454,7 @@ class PanelOrchestrator:
         round_no = cfg["current_round"]
         agent = cfg["agents"][role]
         name = self._display_name(cfg, role)
-        self._emit(
-            "panellist_turn_start", {"role": role, "name": name, "round": round_no}
-        )
+        self._emit("panellist_turn_start", {"role": role, "name": name, "round": round_no})
         self._emit("floor", {"role": role})
         try:
             return self._panellist_turn_inner(
@@ -586,9 +572,7 @@ class PanelOrchestrator:
             logger.warning("Could not complete agent run for %s", agent_run_id)
 
         if result.get("status") == "cancelled":
-            debates.add_turn(
-                self._db, cid, round_no, role, "contribution", "", status="cancelled"
-            )
+            debates.add_turn(self._db, cid, round_no, role, "contribution", "", status="cancelled")
             return False
 
         terminal = result.get("terminal_call")

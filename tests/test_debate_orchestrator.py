@@ -311,9 +311,7 @@ class TestCapabilityEnforcement:
         set_skills_manager(SkillsManager(tmp_path / "user"))
         try:
             captured = self._run(db, self._agents(judge={"allowed_skills": []}))
-            judge_tools = {
-                t["name"] for c in captured["judge"] for t in (c.get("tools") or [])
-            }
+            judge_tools = {t["name"] for c in captured["judge"] for t in (c.get("tools") or [])}
             assert "use_skill" not in judge_tools
             assert "set_speaking_order" in judge_tools  # procedural untouched
         finally:

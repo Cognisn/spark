@@ -58,7 +58,7 @@ def execute(tool_name: str, tool_input: dict, config: dict) -> tuple[str, bool]:
     if db is None or user_guid is None:
         return "The knowledge graph is unavailable in this context.", False
     try:
-        from spark.knowledge.query import find_entities, expand, render_subgraph
+        from spark.knowledge.query import expand, find_entities, render_subgraph
         from spark.knowledge.resolve import available_scopes
 
         conversation_id = config.get("_kg_conversation_id")
@@ -86,8 +86,7 @@ def execute(tool_name: str, tool_input: dict, config: dict) -> tuple[str, bool]:
 
         if not seeds:
             return (
-                f"No entities matched '{query}' in the available graphs "
-                f"({', '.join(scopes)}).",
+                f"No entities matched '{query}' in the available graphs " f"({', '.join(scopes)}).",
                 False,
             )
         nodes, edges = expand(db, scopes, seeds, user_guid, depth=depth)

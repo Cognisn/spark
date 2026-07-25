@@ -34,9 +34,7 @@ async def create_conversation(request: Request) -> JSONResponse:
     data = await request.json()
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
-        return JSONResponse(
-            {"error": "Conversation manager not initialised"}, status_code=503
-        )
+        return JSONResponse({"error": "Conversation manager not initialised"}, status_code=503)
 
     name = data.get("name", "New Conversation")
     model_id = data.get("model_id", "")
@@ -65,8 +63,7 @@ async def create_conversation(request: Request) -> JSONResponse:
             for key in ("allowed_tools", "allowed_skills"):
                 value = (spec or {}).get(key)
                 if value is not None and (
-                    not isinstance(value, list)
-                    or any(not isinstance(item, str) for item in value)
+                    not isinstance(value, list) or any(not isinstance(item, str) for item in value)
                 ):
                     return JSONResponse(
                         {"error": f"{key} for {role} must be a list of tool/skill names"},
@@ -87,26 +84,20 @@ async def create_conversation(request: Request) -> JSONResponse:
             )
         panellists = panel.get("panellists") or []
         if not isinstance(panellists, list) or not 2 <= len(panellists) <= 5:
-            return JSONResponse(
-                {"error": "Panel requires 2 to 5 panellists"}, status_code=400
-            )
+            return JSONResponse({"error": "Panel requires 2 to 5 panellists"}, status_code=400)
         human = panel.get("human") or None
         names = [(p or {}).get("name", "").strip() for p in panellists]
         if human is not None:
             human_name = (human.get("name") or "").strip()
             if not human_name:
-                return JSONResponse(
-                    {"error": "Human panellist requires a name"}, status_code=400
-                )
+                return JSONResponse({"error": "Human panellist requires a name"}, status_code=400)
             names.append(human_name)
         if any(not n for n in names) or len({n.casefold() for n in names}) != len(names):
             return JSONResponse(
                 {"error": "Panellists need distinct, non-empty names"}, status_code=400
             )
         if any(not (p or {}).get("model_id") for p in panellists):
-            return JSONResponse(
-                {"error": "Every AI panellist requires a model"}, status_code=400
-            )
+            return JSONResponse({"error": "Every AI panellist requires a model"}, status_code=400)
         specs = [("moderator", moderator)] + [
             (f"panellist:{i}", p) for i, p in enumerate(panellists, start=1)
         ]
@@ -114,8 +105,7 @@ async def create_conversation(request: Request) -> JSONResponse:
             for key in ("allowed_tools", "allowed_skills"):
                 value = (spec or {}).get(key)
                 if value is not None and (
-                    not isinstance(value, list)
-                    or any(not isinstance(item, str) for item in value)
+                    not isinstance(value, list) or any(not isinstance(item, str) for item in value)
                 ):
                     return JSONResponse(
                         {"error": f"{key} for {role} must be a list of tool/skill names"},
@@ -196,9 +186,7 @@ async def create_conversation(request: Request) -> JSONResponse:
         if data.get("kg_local_enabled"):
             db = conv_mgr._db
             ph = db.placeholder
-            db.execute(
-                f"UPDATE conversations SET kg_local_enabled = 1 WHERE id = {ph}", (cid,)
-            )
+            db.execute(f"UPDATE conversations SET kg_local_enabled = 1 WHERE id = {ph}", (cid,))
             db.commit()
         return JSONResponse({"id": cid, "name": name, "conversation_type": conversation_type})
     except Exception as e:
@@ -250,9 +238,7 @@ async def rename_conversation(request: Request, conversation_id: int) -> JSONRes
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(
-        conv_mgr._db, conversation_id, user_guid, name=name
-    )
+    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, name=name)
     return JSONResponse({"status": "ok"})
 
 
@@ -271,9 +257,7 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(
-        conv_mgr._db, conversation_id, user_guid, model_id=model_id
-    )
+    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, model_id=model_id)
     return JSONResponse({"status": "ok"})
 
 

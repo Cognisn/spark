@@ -49,8 +49,14 @@ def client(db) -> TestClient:
                     {"name": "Spark", "entity_type": "project", "description": "kit"},
                     {"name": "Matthew", "entity_type": "person", "description": ""},
                 ],
-                [{"source": "Matthew", "target": "Spark", "relation": "works_on",
-                  "description": ""}],
+                [
+                    {
+                        "source": "Matthew",
+                        "target": "Spark",
+                        "relation": "works_on",
+                        "description": "",
+                    }
+                ],
             )
             for _ in range(10)
         ]
@@ -102,10 +108,7 @@ class TestBuildLifecycle:
 
         assert builder.try_acquire("global")
         try:
-            assert (
-                client.post("/knowledge/api/build", json={"scope": "global"}).status_code
-                == 409
-            )
+            assert client.post("/knowledge/api/build", json={"scope": "global"}).status_code == 409
         finally:
             builder.release("global")
 
@@ -120,7 +123,12 @@ class TestSearchAndClear:
         _auth(client)
         emb = DirectionalEmbedder()
         store.upsert_node(
-            db, "global", "Spark", "project", "kit", emb.encode("spark").tobytes(),
+            db,
+            "global",
+            "Spark",
+            "project",
+            "kit",
+            emb.encode("spark").tobytes(),
             "test-user",
         )
         r = client.get("/knowledge/api/search?q=spark&scope=global").json()
