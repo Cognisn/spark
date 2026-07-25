@@ -682,15 +682,28 @@ async function loadToolsTab() {
             });
         }
 
-        // Skills
+        // Skills — a first-class per-conversation control, distinct from tools
         if (data.skills && data.skills.length) {
-            html += '<div class="mt-3 mb-3"><strong style="font-size:0.875rem;"><i class="bi bi-stars me-1" style="color:var(--app-accent);"></i>Skills</strong></div>';
-            data.skills.forEach(s => {
-                html += `<div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1" style="font-size:0.8125rem; border-radius:0.375rem;">
-                    <span>${escapeHtml(s.name)}<span style="color:var(--app-text-muted); font-size:0.6875rem; margin-left:0.5rem;">${escapeHtml(s.description || '').substring(0, 60)}</span></span>
-                    <div class="form-switch"><input class="form-check-input" type="checkbox" ${s.enabled?'checked':''} onchange="toggleTool('skill','${s.name}',this.checked)"></div>
+            const enabledSkills = data.skills.filter(s => s.enabled).length;
+            html += `
+                <div class="mt-4 mb-2" style="border:1px solid var(--app-border); border-radius:0.5rem; overflow:hidden;">
+                    <div class="d-flex align-items-center justify-content-between px-3 py-2" style="background:var(--app-bg-secondary);">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-stars" style="color:var(--app-accent);"></i>
+                            <strong style="font-size:0.875rem;">Skills</strong>
+                            <span style="font-size:0.6875rem; color:var(--app-text-muted);">${enabledSkills} of ${data.skills.length} enabled</span>
+                        </div>
+                    </div>
+                    <div style="padding:0.375rem 0.5rem;">
+                        <div style="font-size:0.6875rem; color:var(--app-text-muted); padding:0.25rem 0.5rem 0.5rem;">Skills available to this conversation. Defaults to your global settings.</div>
+                        ${data.skills.map(s => `
+                            <div class="d-flex align-items-center justify-content-between py-1 px-2 mb-1" style="font-size:0.8125rem; border-radius:0.375rem;">
+                                <span>${escapeHtml(s.name)}<span style="color:var(--app-text-muted); font-size:0.6875rem; margin-left:0.5rem;">${escapeHtml(s.description || '').substring(0, 60)}</span></span>
+                                <div class="form-switch"><input class="form-check-input" type="checkbox" ${s.enabled?'checked':''} onchange="toggleTool('skill','${s.name}',this.checked)"></div>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>`;
-            });
         }
 
         // MCP servers

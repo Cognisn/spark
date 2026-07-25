@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Skill loading is now transparent** — loading a skill (`use_skill` / `read_skill_resource`) no longer pauses for approval; it runs silently as a read-only progressive-disclosure step, in chats, debates, panels, and sub-agents. Authoring skills (`create_skill` / `update_skill`) is still approval-gated
+- **Debate and panel capabilities honour global skill settings** — the per-agent capability checklists in the debate and panel creation wizards now list only skills that are enabled in the global settings, so a globally-disabled skill no longer appears there (tools were already gated by their category settings)
+- **Per-conversation skills control is easier to find** — in a conversation's tools panel, the Skills section is now a distinct, labelled card with an enabled count and a note that it defaults to your global settings
+
 ## [0.2.0b15] - 2026-07-25
 
 ### Fixed

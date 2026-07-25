@@ -571,7 +571,10 @@ class ConversationManager:
         kg_block = ""
         try:
             from spark.knowledge.query import subgraph_for_query
-            from spark.knowledge.resolve import available_scopes, conversation_kg_settings
+            from spark.knowledge.resolve import (
+                available_scopes,
+                conversation_kg_settings,
+            )
             from spark.knowledge.tools import _get_embedder
 
             kg_settings = conversation_kg_settings(self._db, conversation_id, user_guid)
@@ -1135,6 +1138,14 @@ class ConversationManager:
         if tool_name in ("create_skill", "update_skill") and self._tool_permission_callback:
             permission = None  # Force re-prompt
 
+        # Skill loading is transparent: use_skill / read_skill_resource never
+        # prompt for approval. Loading a skill is a read-only progressive-disclosure
+        # step, so it should be invisible to the user; authoring (above) stays gated.
+        from spark.skills.tools import READ_TOOL_NAMES as _SKILL_READ_TOOLS
+
+        if tool_name in _SKILL_READ_TOOLS:
+            permission = True
+
         if permission is None:
             # First use — prompt user
             if self._tool_permission_callback:
@@ -1679,7 +1690,8 @@ _TOOL_CATEGORIES: dict[str, list[str]] = {
     "system_commands": ["run_command"],
     "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
     "email": ["send_email", "draft_email"],
-    "skills": ["use_skill", "read_skill_resource", "create_skill", "update_skill"],
+    "skills": ["use_skill", "read_skill_resource"],
+    "skill_authoring": ["create_skill", "update_skill"],
     "core": ["get_current_datetime", "get_tool_documentation"],
     "agents": ["spawn_agent", "list_provider_models"],
 }
