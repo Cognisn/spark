@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Debate and panel turns failed with "temperature is deprecated for this model" (HTTP 400) on the Claude 5 family (Sonnet 5, Fable 5) and Opus 4.7/4.8 — the Anthropic Direct provider no longer sends the `temperature` parameter to models that reject it, and defensively retries without it if a model 400s on temperature
+
 ## [0.2.0b14] - 2026-07-23
 
 ### Added

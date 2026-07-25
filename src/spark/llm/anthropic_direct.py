@@ -118,7 +118,9 @@ class AnthropicDirectProvider(LLMService):
                 logger.info("Discovered %d Anthropic models from API", len(models))
                 return models
         except Exception as e:
-            logger.debug("Anthropic model list API failed, using static fallback: %s", e)
+            logger.debug(
+                "Anthropic model list API failed, using static fallback: %s", e
+            )
 
         # Fallback to static list
         self._cached_models = [
@@ -167,8 +169,12 @@ class AnthropicDirectProvider(LLMService):
             "model": self._model_id,
             "messages": _clean_messages(messages),
             "max_tokens": max_tokens,
-            "temperature": temperature,
         }
+        # The Claude 5 family and Opus 4.7/4.8 reject temperature (400). Only
+        # send it to models that still accept it; a defensive strip-and-retry
+        # in the loop below catches any newer model the static list misses.
+        if _accepts_temperature(self._model_id):
+            req["temperature"] = temperature
         if system:
             if prompt_caching:
                 # Use Anthropic's prompt caching: wrap system in a block with cache_control
@@ -197,6 +203,27 @@ class AnthropicDirectProvider(LLMService):
                     return self._invoke_sync(req)
             except Exception as e:
                 err = str(e).lower()
+                # Defensive backstop: a model that rejects temperature (the
+                # static allowlist can lag new releases) 400s mentioning it —
+                # strip the parameter and retry so the turn never fails.
+                if (
+                    "temperature" in req
+                    and "temperature" in err
+                    and (
+                        "deprecat" in err
+                        or "unexpected" in err
+                        or "unsupported" in err
+                        or "not supported" in err
+                        or "invalid_request" in err
+                        or "400" in err
+                    )
+                ):
+                    logger.info(
+                        "Model %s rejected temperature; retrying without it",
+                        self._model_id,
+                    )
+                    req.pop("temperature", None)
+                    continue
                 retryable = (
                     "rate" in err
                     or "429" in err
@@ -271,14 +298,18 @@ class AnthropicDirectProvider(LLMService):
                         if sr:
                             stop_reason = sr
                     if hasattr(event, "usage"):
-                        usage["output_tokens"] = getattr(event.usage, "output_tokens", 0)
+                        usage["output_tokens"] = getattr(
+                            event.usage, "output_tokens", 0
+                        )
 
                 elif event_type == "message_start":
                     if hasattr(event, "message") and hasattr(event.message, "usage"):
                         msg_usage = event.message.usage
                         usage["input_tokens"] = msg_usage.input_tokens
                         # Capture cache metrics from message_start
-                        cache_create = getattr(msg_usage, "cache_creation_input_tokens", 0)
+                        cache_create = getattr(
+                            msg_usage, "cache_creation_input_tokens", 0
+                        )
                         cache_read = getattr(msg_usage, "cache_read_input_tokens", 0)
                         if cache_create:
                             usage["cache_creation_input_tokens"] = cache_create
@@ -349,6 +380,27 @@ def _normalise_response(response: Any) -> dict[str, Any]:
         "tool_use": tool_blocks if tool_blocks else None,
         "content_blocks": content_blocks,
     }
+
+
+# Model families that removed the temperature/top_p/top_k sampling parameters
+# (the Anthropic API returns 400 if they are sent). Matched as substrings so
+# date-suffixed and "anthropic."-prefixed (Bedrock) variants are covered too.
+_NO_TEMPERATURE_MARKERS = (
+    "sonnet-5",
+    "opus-4-7",
+    "opus-4-8",
+    "fable-5",
+    "mythos-5",
+)
+
+
+def _accepts_temperature(model_id: str | None) -> bool:
+    """Whether the model still accepts a temperature parameter.
+
+    The Claude 5 family and Opus 4.7/4.8 reject it; older models accept it.
+    """
+    model = (model_id or "").lower()
+    return not any(marker in model for marker in _NO_TEMPERATURE_MARKERS)
 
 
 def _clean_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
