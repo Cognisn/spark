@@ -158,6 +158,32 @@ class TestCapabilities:
         finally:
             set_skills_manager(None)
 
+    def test_capabilities_hides_globally_disabled_skills(self, client, tmp_path) -> None:
+        """Skills disabled globally must not appear in the debate/panel wizard."""
+        from spark.database import skills as skills_db
+        from spark.skills.manager import SkillsManager, set_skills_manager
+
+        skills_root = tmp_path / "skills"
+        for name in ("alpha-skill", "beta-skill"):
+            d = skills_root / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: The {name}.\n---\n\nBody.\n",
+                encoding="utf-8",
+            )
+        set_skills_manager(SkillsManager(skills_root))
+        try:
+            conn = client.app.state.conversation_manager._db
+            skills_db.set_skill_enabled(conn, "beta-skill", False, "test-user")
+
+            _auth(client)
+            data = client.get("/debate/api/capabilities").json()
+            skill_names = {s["name"] for s in data["skills"]}
+            assert "alpha-skill" in skill_names  # globally enabled → offered
+            assert "beta-skill" not in skill_names  # globally disabled → hidden
+        finally:
+            set_skills_manager(None)
+
     def test_create_with_allowlists_persists(self, client) -> None:
         import copy
 

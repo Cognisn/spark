@@ -67,7 +67,7 @@ async def debate_capabilities(request: Request) -> JSONResponse:
         never |= set(MEMORY_TOOL_NAMES)
 
         for category, names in _TOOL_CATEGORIES.items():
-            if category in ("skills", "agents", "memory"):
+            if category in ("skills", "skill_authoring", "agents", "memory"):
                 continue
             entries = [
                 {"name": n, "description": offered[n][:80]}
@@ -95,11 +95,19 @@ async def debate_capabilities(request: Request) -> JSONResponse:
 
     skills_out: list[dict] = []
     try:
+        from spark.database import skills as skills_db
         from spark.skills.manager import get_skills_manager
 
         manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
+        # Only globally-enabled skills are offered; a skill disabled in the global
+        # settings never reaches the wizard, matching how tools are gated by their
+        # category config. Absent state defaults to enabled.
+        conv_mgr = request.app.state.conversation_manager
+        states = skills_db.get_skill_states(conv_mgr._db, _user_guid(request))
         skills_out = [
-            {"name": s["name"], "description": s["description"][:80]} for s in manager.list_skills()
+            {"name": s["name"], "description": s["description"][:80]}
+            for s in manager.list_skills()
+            if states.get(s["name"], True)
         ]
     except Exception:  # noqa: BLE001
         logger.warning("Capabilities skills listing degraded", exc_info=True)

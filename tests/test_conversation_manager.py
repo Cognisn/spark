@@ -244,6 +244,73 @@ class TestSendMessage:
         result = mgr.send_message(cid, "Try tool", USER)
         assert result["content"] == "OK, tool was denied"
 
+    def test_skill_loading_is_transparent(
+        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+    ) -> None:
+        """use_skill must never prompt for approval, even with a callback present."""
+        asked: list[str] = []
+
+        def record_and_deny(name: str, inp: dict) -> str:
+            asked.append(name)
+            return "denied"
+
+        mgr = ConversationManager(
+            db.connection,
+            llm_manager,
+            ContextLimitResolver(),
+            tool_permission_callback=record_and_deny,
+        )
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+
+        stub_llm.responses = [
+            {
+                "content": "",
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "tool_use": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "use_skill",
+                        "input": {"skill_name": "nonexistent-skill"},
+                    }
+                ],
+                "content_blocks": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "use_skill",
+                        "input": {"skill_name": "nonexistent-skill"},
+                    }
+                ],
+            },
+            {
+                "content": "done",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "tool_use": None,
+                "content_blocks": [{"type": "text", "text": "done"}],
+            },
+        ]
+
+        result = mgr.send_message(cid, "load a skill", USER)
+        assert result["content"] == "done"
+        # The callback must never have been consulted for skill loading.
+        assert "use_skill" not in asked
+
+    def test_skill_read_and_authoring_categories_are_separate(self) -> None:
+        """Approving skill loading must not carry over to skill authoring."""
+        from spark.core.conversation_manager import _get_tool_category_siblings
+
+        read_siblings = _get_tool_category_siblings("use_skill")
+        assert "read_skill_resource" in read_siblings
+        assert "create_skill" not in read_siblings
+        assert "update_skill" not in read_siblings
+
+        authoring_siblings = _get_tool_category_siblings("create_skill")
+        assert "update_skill" in authoring_siblings
+        assert "use_skill" not in authoring_siblings
+
     def test_conversation_not_found(self, manager: ConversationManager) -> None:
         with pytest.raises(ValueError, match="not found"):
             manager.send_message(99999, "Hello", USER)
