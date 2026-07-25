@@ -209,3 +209,7 @@ __marimo__/
 /.claude/
 /docs/superpowers/
 /_working/
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
