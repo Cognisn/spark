@@ -82,7 +82,10 @@ class TestDefaultSettings:
     def test_interface_defaults(self) -> None:
         defaults = _default_settings()
         assert defaults["interface"]["host"] == "127.0.0.1"
-        assert "port" not in defaults["interface"]  # Port is random on startup
+        # port 0 keeps the random-port-on-startup default while allowing a fixed
+        # port to be set for headless/reverse-proxy runs.
+        assert defaults["interface"]["port"] == 0
+        assert defaults["interface"]["open_browser"] is True
 
     def test_logging_defaults(self) -> None:
         defaults = _default_settings()

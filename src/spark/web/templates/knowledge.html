@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - Knowledge{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="max-width: 1100px;">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Knowledge</h4>
+    </div>
+
+    <!-- Global graph card -->
+    <div class="app-card p-3 mb-3">
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <strong><i class="bi bi-globe2 me-1" style="color: var(--app-accent);"></i> Global graph</strong>
+                <div id="kg-global-stats" style="font-size: 0.8125rem; color: var(--app-text-muted);">Loading...</div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-app-primary btn-sm" id="kg-global-build" onclick="startBuild('global')">
+                    <i class="bi bi-hammer me-1"></i> Build / Refresh
+                </button>
+                <button class="btn btn-app-ghost btn-sm d-none" id="kg-global-cancel" onclick="cancelBuild('global')">Cancel</button>
+                <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);" onclick="clearScope('global')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+        <div id="kg-global-progress" class="mt-2 d-none" style="font-size: 0.8125rem; color: var(--app-text-muted);"></div>
+    </div>
+
+    <!-- Conversation graphs -->
+    <div class="app-card p-3 mb-3">
+        <strong><i class="bi bi-chat-dots me-1" style="color: var(--app-accent);"></i> Conversation graphs</strong>
+        <div id="kg-conversation-list" class="mt-2" style="font-size: 0.875rem;">Loading...</div>
+    </div>
+
+    <!-- Visualisation -->
+    <div class="app-card p-3">
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+            <select class="form-select form-select-sm" id="kg-scope" style="width: auto;" onchange="loadGraph()">
+                <option value="global">Global</option>
+            </select>
+            <input class="form-control form-control-sm" id="kg-search" style="width: 220px;"
+                   placeholder="Find an entity..." onkeydown="if(event.key==='Enter')searchEntity()">
+            <span id="kg-cap-note" style="font-size: 0.75rem; color: var(--app-text-muted);"></span>
+            <span class="ms-auto" id="kg-legend" style="font-size: 0.75rem;"></span>
+        </div>
+        <div class="d-flex" style="gap: 0.75rem;">
+            <canvas id="kg-canvas" style="flex: 1; min-width: 0; height: 520px; border: 1px solid var(--app-border); border-radius: 0.5rem;"></canvas>
+            <div id="kg-inspector" class="d-none" style="width: 280px; max-height: 520px; overflow-y: auto;
+                 border: 1px solid var(--app-border); border-radius: 0.5rem; padding: 0.75rem; font-size: 0.8125rem;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/knowledge.js"></script>
+{% endblock %}

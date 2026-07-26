@@ -14,6 +14,9 @@ graph TD
     Builtin --> Doc[Documents]
     Builtin --> Arc[Archives]
     Builtin --> Web[Web]
+    Builtin --> Cmd[System Commands]
+    Builtin --> Email[Email]
+    Builtin --> Agent[Agents]
     Builtin --> Mem[Memory]
     Builtin --> DT[DateTime]
     Builtin --> TD[Tool Docs]
@@ -31,16 +34,30 @@ graph TD
     Doc --> read_pdf
     Doc --> read_powerpoint
 
+    Builtin --> DocCreate[Document Creation]
+    DocCreate --> create_word
+    DocCreate --> create_excel
+    DocCreate --> create_powerpoint
+    DocCreate --> create_pdf
+
     Arc --> list_archive
     Arc --> extract_archive
 
     Web --> web_search
     Web --> web_fetch
 
+    Cmd --> run_command
+
+    Email --> send_email
+    Email --> draft_email
+
     Mem --> store_memory
     Mem --> query_memory
     Mem --> list_memories
     Mem --> delete_memory
+
+    Agent --> spawn_agent
+    Agent --> list_provider_models
 
     DT --> get_current_datetime
     TD --> get_tool_documentation
@@ -108,6 +125,29 @@ embedded_tools:
     max_file_size_mb: 50
 ```
 
+### Document Creation
+
+Create Word, Excel, PowerPoint, and PDF documents with advanced formatting. Requires `allowed_paths` to be configured and Documents mode set to `read_write`.
+
+| Tool | Description |
+|------|-------------|
+| `create_word` | Create .docx files with headings, paragraphs, tables, lists, images, and custom styles |
+| `create_excel` | Create .xlsx spreadsheets with multiple sheets, formulas, column widths, and cell formatting |
+| `create_powerpoint` | Create .pptx presentations with titled slides, bullet points, images, and speaker notes |
+| `create_pdf` | Create PDF documents with headings, paragraphs, tables, images, and page layout options |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  documents:
+    enabled: true
+    mode: read_write               # Must be read_write for document creation
+    max_file_size_mb: 50
+```
+
+> **Note:** When the documents mode is set to `read` (the default), only the read tools (`read_word`, `read_excel`, etc.) are available. Set the mode to `read_write` to enable both reading and creation tools.
+
 ### Archives
 
 List and optionally extract ZIP and TAR archives. Requires `allowed_paths` to be configured.
@@ -137,6 +177,99 @@ Search the web and fetch page content. No path configuration required.
 
 See [Web Search](web-search.md) for search engine configuration.
 
+### System Commands
+
+Execute shell commands on the host system. Disabled by default — must be explicitly enabled in Settings. OS-aware: uses zsh on macOS, bash on Linux, cmd.exe on Windows.
+
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute a shell command, returning stdout and stderr |
+
+### Agents
+
+Spawn independent sub-agents within conversations. Disabled by default.
+
+| Tool | Description |
+|------|-------------|
+| `spawn_agent` | Spawn a sub-agent to work on a task independently |
+| `list_provider_models` | List models from the current provider for agent model selection |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  agents:
+    enabled: true
+    default_mode: orchestrator    # orchestrator or chain
+    model_selection: same         # same or auto_select
+    max_concurrent: 5
+    max_iterations: 15
+```
+
+**Modes:**
+- **Orchestrator-Workers:** Each agent gets fresh context with just the task description. Best for independent research, data gathering, and parallel work.
+- **Chain:** Agents inherit the full conversation history. Best for contextual follow-up tasks.
+
+**Model Selection:**
+- **Same:** Agents use the conversation's current model.
+- **Auto-select:** The LLM chooses the best model from the same provider. The user approves via a modal before the agent starts.
+
+### Email
+
+Send and draft emails via SMTP. Disabled by default — requires SMTP configuration in Settings.
+
+| Tool | Description |
+|------|-------------|
+| `send_email` | Send an email with to/cc/bcc recipients, subject, HTML or plain text body, and file attachments |
+| `draft_email` | Compose an email and save it as a .eml file instead of sending |
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  system_commands:
+    enabled: true
+    timeout: 30                    # Default timeout per command (seconds)
+    max_timeout: 300               # Maximum allowed timeout
+    max_output_chars: 50000        # Truncate output beyond this
+    blocked_commands: []            # Commands to block (e.g. rm, shutdown)
+    require_approval: true         # Always prompt before running
+```
+
+**Security:**
+- Disabled by default — must be explicitly enabled
+- Dangerous commands (mkfs, fdisk, dd, format) are always blocked
+- Configurable blocked command list for additional restrictions
+- When `require_approval` is enabled (default), every command prompts for user approval
+- Commands run under the same OS permissions as the Spark process
+- Output is truncated to prevent excessive token usage
+
+### Email
+
+**Configuration:**
+
+```yaml
+embedded_tools:
+  email:
+    enabled: true
+    host: smtp.gmail.com
+    port: 587
+    username: you@gmail.com
+    password: secret://email_password    # Stored in OS keychain
+    sender: you@gmail.com
+    use_tls: true
+    max_attachment_mb: 25
+    require_approval: true               # Always prompt before sending
+```
+
+**Settings UI:** Configure SMTP credentials in **Settings → Embedded Tools → Email**. The password is stored securely in the OS keychain via the secrets backend. Use the **Test Email Connection** button to verify your SMTP settings and optionally send a test email.
+
+**Security:**
+- `send_email` is a high-stakes mutation tool. When `require_approval` is enabled (default), it always prompts for user approval before sending — even if the tool has been globally approved.
+- File attachments are restricted to the filesystem `allowed_paths`. The attachment size is capped by `max_attachment_mb`.
+- When `require_approval` is disabled, `send_email` respects the standard tool permission system. This is required for autonomous actions where no user is present to approve.
+- `draft_email` saves to disk instead of sending, providing a lower-risk alternative for composing emails.
+
 ### Memory
 
 Always available. Manages persistent cross-conversation memories.
@@ -163,21 +296,25 @@ Documentation files are stored in `src/spark/resources/tool_docs/` as markdown f
 
 ## Tool Permissions
 
-When the AI first uses a tool in a conversation, Spark prompts for permission:
+When the AI first uses a tool in a conversation, Spark prompts for permission with four options:
 
-- **Allow Once** -- Permit this single invocation
-- **Always Allow** -- Approve this tool and all tools in the same category
-- **Deny** -- Block the tool call
+- **Deny** -- Block this tool call
+- **Approve Once** -- Permit this single invocation only (not persisted)
+- **Always (Conversation)** -- Approve this tool and all tools in the same category for the rest of this conversation
+- **Always (Global)** -- Approve this tool and its category across all conversations
 
-Permissions are stored per conversation in the database. When you approve a tool with "Always Allow", all tools in the same category are also approved. The categories are:
+Conversation-level permissions are checked first, then global permissions. When you approve with either "Always" option, all tools in the same category are also approved. The categories are:
 
 | Category | Tools |
 |----------|-------|
 | filesystem | read_file, write_file, list_directory, search_files, get_file_info, find_in_file, get_directory_tree |
-| documents | read_word, read_excel, read_pdf, read_powerpoint |
+| documents | read_word, read_excel, read_pdf, read_powerpoint, create_word, create_excel, create_powerpoint, create_pdf |
 | archives | list_archive, extract_archive |
 | web | web_search, web_fetch |
+| system_commands | run_command |
+| email | send_email, draft_email |
 | memory | store_memory, query_memory, list_memories, delete_memory |
+| agents | spawn_agent, list_provider_models |
 | core | get_current_datetime, get_tool_documentation |
 
 To auto-approve all tools without prompting:

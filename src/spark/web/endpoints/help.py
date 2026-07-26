@@ -73,30 +73,35 @@ Click **New Conversation** and choose a name and model. If a default model is co
         "category": "Configuration",
         "content": """## LLM Providers
 
-Spark supports multiple AI model providers:
+Spark supports multiple AI model providers. Each provider has a detailed setup guide to walk you through account creation, API key generation, and configuration.
 
 ### Anthropic (Direct API)
 - Models: Claude Opus 4, Sonnet 4, 3.7 Sonnet, 3.5 Sonnet/Haiku
 - Requires an API key from anthropic.com
 - Supports streaming and tool use
+- [View Anthropic Setup Guide](/help/provider/anthropic)
 
 ### AWS Bedrock
 - Access Claude and other models via AWS
 - Requires AWS credentials (SSO, IAM, or session)
 - Supports region selection
+- [View AWS Bedrock Setup Guide](/help/provider/aws_bedrock)
 
 ### Ollama (Local)
 - Run models locally on your machine
 - No API key needed — just the Ollama server URL
 - Models: Llama, Mistral, Qwen, Gemma, etc.
+- [View Ollama Setup Guide](/help/provider/ollama)
 
 ### Google Gemini
 - Models: Gemini 2.5 Pro/Flash, 2.0 Flash, 1.5 Pro/Flash
 - Requires an API key from Google AI Studio
+- [View Google Gemini Setup Guide](/help/provider/google_gemini)
 
 ### X.AI (Grok)
 - Models: Grok 4.1, Grok 4, Grok 3
 - Requires an API key from x.ai
+- [View X.AI Setup Guide](/help/provider/xai)
 
 ### API Key Security
 API keys entered in Settings are stored in your OS keychain (macOS Keychain, Windows Credential Locker) — never in plain text config files.

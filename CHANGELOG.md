@@ -5,6 +5,97 @@ All notable changes to Spark will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.0b17] - 2026-07-26
+
+### Fixed
+- Debate and panel turns could fail with "No submit_argument call" (or discard a panellist's contribution) when the agent spent its whole tool budget researching — often after repeated web searches returned no results — and never reached the final submission tool. Agents now get a firm, tool-restricted prompt to submit before a turn is abandoned, and debaters and panellists have a larger research budget (25 tool iterations), so heavy research no longer throws the turn away
+- Debate and panel modes now use prompt caching (on providers that support it — Anthropic, AWS Bedrock, and Google Gemini) for every debater, panellist, judge, and moderator turn — the system prompt and tool definitions are cached and reused across a turn's tool calls and across rounds, cutting token cost and latency. Previously these turns never requested caching, even with it enabled globally; it follows the same `conversation.prompt_caching` setting as normal chats
+- AWS Bedrock now honours prompt caching. The Converse provider previously ignored the caching flag entirely; it now inserts `cachePoint` blocks on the system prompt and tool definitions, reports cache read/write token metrics, and safely retries without caching for models that do not support it
+
+## [0.2.0b16] - 2026-07-25
+
+### Changed
+- **Skill loading is now transparent** — loading a skill (`use_skill` / `read_skill_resource`) no longer pauses for approval; it runs silently as a read-only progressive-disclosure step, in chats, debates, panels, and sub-agents. Authoring skills (`create_skill` / `update_skill`) is still approval-gated
+- **Debate and panel capabilities honour global skill settings** — the per-agent capability checklists in the debate and panel creation wizards now list only skills that are enabled in the global settings, so a globally-disabled skill no longer appears there (tools were already gated by their category settings)
+- **Per-conversation skills control is easier to find** — in a conversation's tools panel, the Skills section is now a distinct, labelled card with an enabled count and a note that it defaults to your global settings
+
+## [0.2.0b15] - 2026-07-25
+
+### Fixed
+- Debate and panel turns failed with "temperature is deprecated for this model" (HTTP 400) on the Claude 5 family (Sonnet 5, Fable 5) and Opus 4.7/4.8 — the Anthropic Direct provider no longer sends the `temperature` parameter to models that reject it, and defensively retries without it if a model 400s on temperature
+
+## [0.2.0b14] - 2026-07-23
+
+### Added
+- **Run with uv** — Spark can be installed and run with `uv tool install cognisn-spark` (or `uvx cognisn-spark`); a `cognisn-spark` command alias makes the natural `uvx` invocation work. New `interface.port` and `interface.open_browser` settings (overridable via `SPARK__INTERFACE__PORT` / `SPARK__INTERFACE__OPEN_BROWSER`) allow a fixed port and a suppressed browser for headless/server runs. A CI smoke-test installs the built wheel with uv and confirms it launches
+
+## [0.2.0b13] - 2026-07-14
+
+### Added
+- **ElevenLabs voice (optional)** — Natural text-to-speech as an opt-in integration: enable it in Settings with an API key (stored in the OS keychain, never sent to the browser) and voice mode speaks with natural voices instead of the browser synthesiser, which remains the default and the automatic fallback on any error, quota exhaustion, or missing key. Voice mode now works in debate and panel as well as chat, with a distinct voice per agent chosen at creation, three interaction modes (listen-along, immersive, listen-only), a monthly character cap, and an audio cache so repeated text is never billed twice
+
+### Fixed
+- Email settings `use_tls` and `require_approval` were never coerced to booleans, because a duplicate `_BOOL_STRING_KEYS` declaration silently overwrote the first
+- Home page conversation lists now open debate and panel conversations in their own views (were opening the standard chat view)
+
+## [0.2.0b12] - 2026-07-10
+
+### Fixed
+- Debate view now renders markdown in all three panes (was plain text)
+
+### Added
+- **Panel conversations** — A third conversation type: 2 to 5 named AI panellists (per-panellist models, briefs, and capability allowlists) plus an optional human panellist discuss a topic in moderator-directed rounds with shared visibility, a moderated synthesis, follow-up QA, a threaded discussion UI with a speaker rail, and Markdown/HTML export
+- **Debate agent capabilities** — Per-agent tool and skill allowlists chosen at debate creation (judge: skills only), enabling asymmetric debates
+- **Debate view polish** — Per-pane chat-style tool activity groups, auto-scroll toggles, a highlighted Final Judgement card, Markdown/HTML export, and a floor indicator glow on the active agent's pane
+- **Knowledge Graphs** — Two-level knowledge graphs built on demand by LLM extraction: a global graph over all conversations and memories, optional per-conversation graphs (creation-time option), per-conversation opt-out of the global graph, and link-based pooling of conversation graphs; queryable by the model via query_knowledge_graph with automatic injection of relevant subgraph context; Knowledge page with build controls and an interactive force-directed visualisation
+- **Skills** — Claude-compatible SKILL.md skill folders with bundled resources; enabled skills are advertised in every LLM surface (chats, sub-agents, autonomous actions, debates) and loaded on demand via use_skill; /skill-name explicit trigger; approval-gated create_skill/update_skill authoring behind a bundled skill-creator skill; Skills management page with import/export and per-conversation toggles
+- **Debate Mode** — New conversation type where a Pro and an Against agent (each with its own model, brief, and full tool access) argue a user-defined topic across rounds, presenting structured evidence exhibits, while a Judge agent moderates, rules on the presented arguments only, and answers follow-up questions; three-pane UI with per-turn cancellation and pause/resume
+- **Conversation types** — Conversation creation now offers a type selection (Standard chat, Debate, or Panel) as the framework for future chat styles
+
+## [0.2.0] — 2026-04-16
+
+### Added
+- **System Command Tool** — Execute shell commands (git, docker, aws, curl, etc.) with OS-aware execution, blocked command list, and configurable approval prompts
+- **Agent Spawning** — LLM can spawn independent sub-agents via `spawn_agent` tool with dedicated Agents tab in resizable sidecar panel; supports orchestrator-workers and chain modes; model auto-selection with user approval
+- **Email Tool** — Send and draft emails via SMTP with HTML/plain text, to/cc/bcc, file attachments; SMTP test connection button; passwords stored in OS keychain
+- **Document Creation** — Create Word (.docx), Excel (.xlsx), PowerPoint (.pptx), and PDF documents with advanced formatting (headings, tables, lists, images, styles)
+- **Provider Setup Guides** — In-app setup guides for all LLM providers (Anthropic, AWS Bedrock, Ollama, Google Gemini, X.AI) with step-by-step instructions
+- **Conversation to Action** — Create autonomous actions directly from conversations with AI-guided setup
+- **AWS Bedrock API Key Auth** — Support for explicit Access Key / Secret Key / Session Token authentication alongside SSO
+- **Windows Code Signing** — Release workflow signs Windows exe and NSIS installer with SSL.com eSigner
+- **4-Level Tool Approval** — Deny, Approve Once, Always (Conversation), Always (Global) with global_tool_permissions table
+- **MCP UI Enhancements** — Edit MCP server configurations, view tools from dashboard, manage servers link
+- **Tool Activity Date Grouping** — Sidecar entries grouped by date with collapsible headers and call counts
+- **Resizable Sidecar** — Tools and Agents tabs with drag-to-resize handle; width persists in session
+- **Run Now** — Execute autonomous actions immediately from the Actions page
+- **Theme Persistence** — Dark/light theme preference saved to config.yaml, persists across restarts
+- **Directory Browser** — Filesystem allowed_paths uses folder browser modal instead of text input
+- **Skill Documentation** — Comprehensive tool docs for run_command, spawn_agent, list_provider_models, create_word, create_excel, create_powerpoint, create_pdf
+
+### Fixed
+- MCP stdio tool execution failing during conversations (event loop mismatch)
+- Memory storage and dashboard using wrong user GUID
+- Tool activity sidecar empty when reopening past conversations
+- Filesystem allowed_paths stored as string instead of list
+- macOS app PATH missing common tool directories (Homebrew, Docker)
+- Daemon MCP connections — independent connections per action execution
+- Scheduler timezone — cron schedules now use local timezone
+- Scheduler sleep/wake recovery with stale lock clearing
+- Email TLS string normalisation and secret resolution
+- Agent provider isolation — concurrent conversations no longer conflict
+- Settings tool config refresh without restart
+- SSL auto-generates self-signed certificate when enabled without cert files
+
+### Changed
+- Autonomous action system prompt includes tool context, filesystem paths, OS info
+- Autonomous action max_tokens guidance dynamically reflects configured limit
+- Autonomous action tool iterations increased to 25 (was 10)
+- Action run history records full activity log (tool calls + results)
+- Max_tokens truncation triggers automatic retry with concise output instruction
+- Prompt caching enabled for daemon action executor
+
 ## [0.1.0] - 2026-04-06
 
 First production release of Spark -- Secure Personal AI Research Kit.
@@ -105,4 +196,5 @@ First production release of Spark -- Secure Personal AI Research Kit.
 - SonarCloud: all A ratings (0 bugs, 0 vulnerabilities, 0 hotspots)
 - CI on Ubuntu, macOS, Windows (Python 3.12, 3.13)
 
+[0.2.0]: https://github.com/Cognisn/spark/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Cognisn/spark/releases/tag/v0.1.0

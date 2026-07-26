@@ -31,7 +31,7 @@
 
     <!-- New conversation modal -->
     <div class="modal fade" id="newConvModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>New Conversation</h5>
@@ -43,15 +43,139 @@
                         <input type="text" class="form-control" id="conv-name" placeholder="e.g. Python Help">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Model</label>
-                        <select class="form-select" id="conv-model">
-                            <option value="">Loading models...</option>
+                        <label class="form-label">Conversation type</label>
+                        <select class="form-select" id="conv-type" onchange="toggleTypeFields()">
+                            <option value="standard" selected>Standard chat</option>
+                            <option value="debate">Debate</option>
+                            <option value="panel">Panel</option>
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Instructions (optional)</label>
-                        <textarea class="form-control" id="conv-instructions" rows="3"
-                                  placeholder="Custom system instructions for this conversation"></textarea>
+                    <div id="standard-fields">
+                        <div class="mb-3">
+                            <label class="form-label">Model</label>
+                            <select class="form-select" id="conv-model">
+                                <option value="">Loading models...</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Instructions (optional)</label>
+                            <textarea class="form-control" id="conv-instructions" rows="3"
+                                      placeholder="Custom system instructions for this conversation"></textarea>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="conv-kg-local">
+                            <label class="form-check-label" for="conv-kg-local">
+                                Build a knowledge graph for this conversation
+                            </label>
+                        </div>
+                    </div>
+                    <div id="debate-fields" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Debate topic</label>
+                            <textarea class="form-control" id="debate-topic" rows="2"
+                                      placeholder="State the proposition to be debated"></textarea>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label">Rounds</label>
+                                <select class="form-select" id="debate-rounds-mode"
+                                        onchange="document.getElementById('debate-max-rounds-wrap').classList.toggle('d-none', this.value !== 'fixed')">
+                                    <option value="fixed" selected>Fixed number</option>
+                                    <option value="judge">Judge decides</option>
+                                </select>
+                            </div>
+                            <div class="col" id="debate-max-rounds-wrap">
+                                <label class="form-label">Max rounds</label>
+                                <input type="number" class="form-control" id="debate-max-rounds" value="2" min="1" max="10">
+                            </div>
+                        </div>
+                        <div class="row" id="debate-agent-cards">
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Pro</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-pro-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-pro-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-pro-voice"></select>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('pro'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-pro-caps" data-skills-only="false"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Against</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-con-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-con-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-con-voice"></select>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('con'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-con-caps" data-skills-only="false"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="app-card p-2 mb-2">
+                                    <h6>Judge</h6>
+                                    <select class="form-select form-select-sm mb-2" id="debate-judge-model"></select>
+                                    <textarea class="form-control form-control-sm" id="debate-judge-brief" rows="3"
+                                              placeholder="Additional context (cannot change its role)"></textarea>
+                                    <select class="form-select form-select-sm mt-2 d-none voice-picker" id="debate-judge-voice"></select>
+                                    <a href="#" class="small d-block mt-2" onclick="toggleCaps('judge'); return false;">Capabilities ▸</a>
+                                    <div class="d-none debate-caps" id="debate-judge-caps" data-skills-only="true"
+                                         style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="panel-fields" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Discussion topic</label>
+                            <textarea class="form-control" id="panel-topic" rows="2"
+                                      placeholder="State the question or theme for the panel"></textarea>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label">Rounds</label>
+                                <select class="form-select" id="panel-rounds-mode"
+                                        onchange="document.getElementById('panel-max-rounds-wrap').classList.toggle('d-none', this.value !== 'fixed')">
+                                    <option value="fixed" selected>Fixed number</option>
+                                    <option value="judge">Moderator decides</option>
+                                </select>
+                            </div>
+                            <div class="col" id="panel-max-rounds-wrap">
+                                <label class="form-label">Max rounds</label>
+                                <input type="number" class="form-control" id="panel-max-rounds" value="2" min="1" max="10">
+                            </div>
+                        </div>
+                        <div class="app-card p-2 mb-3">
+                            <h6>Moderator</h6>
+                            <select class="form-select form-select-sm mb-2" id="panel-moderator-model"></select>
+                            <textarea class="form-control form-control-sm" id="panel-moderator-brief" rows="2"
+                                      placeholder="Additional context (cannot change its role)"></textarea>
+                            <select class="form-select form-select-sm mt-2 d-none voice-picker" id="panel-moderator-voice"></select>
+                            <a href="#" class="small d-block mt-2" onclick="togglePanelCaps('panel-moderator-caps'); return false;">Capabilities &#9656;</a>
+                            <div class="d-none panel-caps" id="panel-moderator-caps" data-skills-only="true"
+                                 style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="panel-include-me"
+                                   onchange="document.getElementById('panel-human-name-wrap').classList.toggle('d-none', !this.checked)">
+                            <label class="form-check-label" for="panel-include-me">
+                                Include me as a panellist
+                            </label>
+                        </div>
+                        <div class="mb-3 d-none" id="panel-human-name-wrap">
+                            <input type="text" class="form-control form-control-sm" id="panel-human-name"
+                                   placeholder="Your name on the panel">
+                        </div>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label class="form-label mb-0">Panellists (2&ndash;5)</label>
+                            <button type="button" class="btn btn-app-ghost btn-sm" id="panel-add-btn" onclick="addPanellist()">
+                                <i class="bi bi-plus-lg me-1"></i> Add panellist
+                            </button>
+                        </div>
+                        <div class="row" id="panel-panellist-cards"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -97,13 +221,19 @@ async function loadConversations() {
             const isFav = c.is_favourite;
             const starIcon = isFav ? 'bi-star-fill' : 'bi-star';
             const starColor = isFav ? 'color: var(--app-warning);' : 'color: var(--app-text-muted);';
+            const href = convHref(c);
+            const typeBadge = c.conversation_type === 'debate'
+                ? '<span class="badge ms-2" style="background: var(--app-accent); color: var(--app-bg-primary);">Debate</span>'
+                : (c.conversation_type === 'panel'
+                    ? '<span class="badge ms-2" style="background: var(--app-info, var(--app-accent)); color: var(--app-bg-primary);">Panel</span>'
+                    : '');
             return `
             <div class="app-card d-flex align-items-center p-3 mb-2">
                 <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${starColor}">
                     <i class="bi ${starIcon}"></i>
                 </button>
-                <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
-                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}</div>
+                <a href="${href}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
+                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}${typeBadge}</div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
                         ${c.model_id || 'No model'} &middot; ${c.total_tokens || 0} tokens
                         ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
@@ -112,13 +242,164 @@ async function loadConversations() {
                 <button class="btn btn-app-ghost btn-sm ms-2" style="color: var(--app-danger);" onclick="deleteConversation(${c.id}, '${escapeHtml(c.name)}')" title="Delete">
                     <i class="bi bi-trash"></i>
                 </button>
-                <a href="/chat/${c.id}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                <a href="${href}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
             </div>`;
         }).join('');
     } catch (err) {
         document.getElementById('conversation-list').innerHTML =
             `<div class="alert-app alert-app-danger">Failed to load conversations.</div>`;
     }
+}
+
+let _debateCaps = null;
+
+function toggleCaps(role) {
+    document.getElementById(`debate-${role}-caps`).classList.toggle('d-none');
+}
+
+async function loadDebateCapabilities() {
+    try {
+        const resp = await fetch('/debate/api/capabilities');
+        _debateCaps = await resp.json();
+    } catch (err) { _debateCaps = { tools: [], skills: [] }; return; }
+    for (const role of ['pro', 'con', 'judge']) {
+        const box = document.getElementById(`debate-${role}-caps`);
+        if (!box) continue;
+        const skillsOnly = box.dataset.skillsOnly === 'true';
+        let html = '';
+        if (!skillsOnly) {
+            for (const group of _debateCaps.tools) {
+                const gid = `${role}-g-${group.group.replace(/[^a-z0-9]/gi, '-')}`;
+                html += `<div class="fw-semibold mt-1">
+                    <input type="checkbox" checked onchange="document.querySelectorAll('#debate-${role}-caps [data-group=\'${gid}\']').forEach(b => b.checked = this.checked)">
+                    ${escapeHtml(group.group)}</div>`;
+                for (const tool of group.tools) {
+                    html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="tool" data-group="${gid}" value="${escapeHtml(tool.name)}"> ${escapeHtml(tool.name)}</label></div>`;
+                }
+            }
+        }
+        if (_debateCaps.skills.length) {
+            html += '<div class="fw-semibold mt-1">Skills</div>';
+            for (const skill of _debateCaps.skills) {
+                html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="skill" value="${escapeHtml(skill.name)}"> ${escapeHtml(skill.name)}</label></div>`;
+            }
+        } else if (skillsOnly) {
+            html += '<div class="ms-1" style="color: var(--app-text-muted);">No skills installed.</div>';
+        }
+        box.innerHTML = html || '<div style="color: var(--app-text-muted);">Nothing to configure.</div>';
+    }
+}
+
+function collectAllowlist(role, kind) {
+    const boxes = [...document.querySelectorAll(`#debate-${role}-caps input[data-kind="${kind}"]`)];
+    if (!boxes.length) return undefined;
+    const ticked = boxes.filter(b => b.checked).map(b => b.value);
+    return ticked.length === boxes.length ? undefined : ticked;  // fully ticked = everything
+}
+
+function toggleTypeFields() {
+    const type = document.getElementById('conv-type').value;
+    document.getElementById('debate-fields').classList.toggle('d-none', type !== 'debate');
+    document.getElementById('panel-fields').classList.toggle('d-none', type !== 'panel');
+    document.getElementById('standard-fields').classList.toggle('d-none', type !== 'standard');
+}
+
+function convHref(c) {
+    if (c.conversation_type === 'debate') return `/debate/${c.id}`;
+    if (c.conversation_type === 'panel') return `/panel/${c.id}`;
+    return `/chat/${c.id}`;
+}
+
+function togglePanelCaps(boxId) {
+    document.getElementById(boxId).classList.toggle('d-none');
+}
+
+// Shared checklist markup for a capability box (tools optional, skills always)
+function capsInnerHtml(boxId, skillsOnly) {
+    if (!_debateCaps) return '';
+    let html = '';
+    if (!skillsOnly) {
+        for (const group of _debateCaps.tools) {
+            const gid = `${boxId}-g-${group.group.replace(/[^a-z0-9]/gi, '-')}`;
+            html += `<div class="fw-semibold mt-1">
+                <input type="checkbox" checked onchange="document.querySelectorAll('#${boxId} [data-group=\'${gid}\']').forEach(b => b.checked = this.checked)">
+                ${escapeHtml(group.group)}</div>`;
+            for (const tool of group.tools) {
+                html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="tool" data-group="${gid}" value="${escapeHtml(tool.name)}"> ${escapeHtml(tool.name)}</label></div>`;
+            }
+        }
+    }
+    if (_debateCaps.skills.length) {
+        html += '<div class="fw-semibold mt-1">Skills</div>';
+        for (const skill of _debateCaps.skills) {
+            html += `<div class="ms-3"><label><input type="checkbox" checked data-kind="skill" value="${escapeHtml(skill.name)}"> ${escapeHtml(skill.name)}</label></div>`;
+        }
+    } else if (skillsOnly) {
+        html += '<div class="ms-1" style="color: var(--app-text-muted);">No skills installed.</div>';
+    }
+    return html || '<div style="color: var(--app-text-muted);">Nothing to configure.</div>';
+}
+
+function collectAllowlistIn(boxId, kind) {
+    const boxes = [...document.querySelectorAll(`#${boxId} input[data-kind="${kind}"]`)];
+    if (!boxes.length) return undefined;
+    const ticked = boxes.filter(b => b.checked).map(b => b.value);
+    return ticked.length === boxes.length ? undefined : ticked;  // fully ticked = everything
+}
+
+// --- Panellist cards -------------------------------------------------------
+
+let _panelIds = [];
+let _panelNextId = 1;
+let _modelOptionsHtml = '<option value="">Loading models...</option>';
+
+function addPanellist() {
+    if (_panelIds.length >= 5) return;
+    const i = _panelNextId++;
+    _panelIds.push(i);
+    const col = document.createElement('div');
+    col.className = 'col-md-6';
+    col.id = `panel-card-col-${i}`;
+    col.innerHTML = `
+        <div class="app-card p-2 mb-2">
+            <div class="d-flex align-items-center mb-2">
+                <input type="text" class="form-control form-control-sm" id="panel-p${i}-name" placeholder="Panellist name">
+                <button type="button" class="btn btn-app-ghost btn-sm ms-1 panel-remove-btn" title="Remove"
+                        onclick="removePanellist(${i})"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <select class="form-select form-select-sm mb-2" id="panel-p${i}-model">${_modelOptionsHtml}</select>
+            <textarea class="form-control form-control-sm" id="panel-p${i}-brief" rows="2"
+                      placeholder="Persona and perspective (cannot be overridden)"></textarea>
+            <select class="form-select form-select-sm mt-2 d-none voice-picker" id="panel-p${i}-voice"></select>
+            <a href="#" class="small d-block mt-2" onclick="togglePanelCaps('panel-p${i}-caps'); return false;">Capabilities &#9656;</a>
+            <div class="d-none panel-caps" id="panel-p${i}-caps" data-skills-only="false"
+                 style="max-height: 180px; overflow-y: auto; font-size: 0.75rem;"></div>
+        </div>`;
+    document.getElementById('panel-panellist-cards').appendChild(col);
+    document.getElementById(`panel-p${i}-caps`).innerHTML = capsInnerHtml(`panel-p${i}-caps`, false);
+    // +1 so panellists never collide with the moderator's voice.
+    fillVoicePicker(`panel-p${i}-voice`, _panelIds.length);
+    updatePanelButtons();
+}
+
+function removePanellist(i) {
+    if (_panelIds.length <= 2) return;
+    _panelIds = _panelIds.filter(id => id !== i);
+    document.getElementById(`panel-card-col-${i}`)?.remove();
+    updatePanelButtons();
+}
+
+function updatePanelButtons() {
+    document.getElementById('panel-add-btn').disabled = _panelIds.length >= 5;
+    const removable = _panelIds.length > 2;
+    document.querySelectorAll('#panel-panellist-cards .panel-remove-btn')
+        .forEach(b => b.classList.toggle('d-none', !removable));
+}
+
+function initPanelCards() {
+    if (_panelIds.length) return;  // keep whatever the user configured
+    addPanellist();
+    addPanellist();
 }
 
 async function showNewConversation() {
@@ -131,12 +412,22 @@ async function showNewConversation() {
         const mandatory = data.mandatory || false;
         const select = document.getElementById('conv-model');
 
-        if (!models.length) {
-            select.innerHTML = '<option value="">No models available — configure a provider first</option>';
-        } else {
-            select.innerHTML = models.map(m =>
+        const optionsHtml = models.length
+            ? models.map(m =>
                 `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.provider})</option>`
-            ).join('');
+              ).join('')
+            : '<option value="">No models available — configure a provider first</option>';
+        select.innerHTML = optionsHtml;
+
+        // Populate the per-agent debate selects from the same model list
+        _modelOptionsHtml = optionsHtml;
+        for (const role of ['pro', 'con', 'judge']) {
+            document.getElementById(`debate-${role}-model`).innerHTML = optionsHtml;
+        }
+        document.getElementById('panel-moderator-model').innerHTML = optionsHtml;
+        for (const i of _panelIds) {
+            const sel = document.getElementById(`panel-p${i}-model`);
+            if (sel) { const v = sel.value; sel.innerHTML = optionsHtml; if (v) sel.value = v; }
         }
 
         // If mandatory, disable the select
@@ -149,28 +440,174 @@ async function showNewConversation() {
     } catch (err) {
         // Ignore
     }
+    await loadDebateCapabilities();
+    await loadVoicePool();
+    ['pro', 'con', 'judge'].forEach((role, i) => fillVoicePicker(`debate-${role}-voice`, i));
+    fillVoicePicker('panel-moderator-voice', 0);
+    initPanelCards();
+    document.getElementById('panel-moderator-caps').innerHTML = capsInnerHtml('panel-moderator-caps', true);
+    for (const i of _panelIds) {
+        const box = document.getElementById(`panel-p${i}-caps`);
+        if (box && !box.innerHTML) box.innerHTML = capsInnerHtml(`panel-p${i}-caps`, false);
+    }
     new bootstrap.Modal(document.getElementById('newConvModal')).show();
 }
 
-async function createConversation() {
-    const name = document.getElementById('conv-name').value.trim() || 'New Conversation';
-    const model = document.getElementById('conv-model').value;
-    const instructions = document.getElementById('conv-instructions').value.trim() || null;
+// -- Per-agent voices ------------------------------------------------------
+// The pool is empty when ElevenLabs is disabled, in which case every picker
+// stays hidden and the browser engine speaks everything with one voice.
+let _voicePool = [];
 
-    if (!model) {
+async function loadVoicePool() {
+    try {
+        const resp = await fetch('/voice/api/voices');
+        const voices = await resp.json();
+        _voicePool = Array.isArray(voices) ? voices : [];
+    } catch (err) {
+        _voicePool = [];
+    }
+    return _voicePool;
+}
+
+// Rotate through the pool so a fresh debate/panel gets distinct voices with
+// no effort from the user, while still allowing any of them to be overridden.
+function fillVoicePicker(selectId, index) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    if (!_voicePool.length) { select.classList.add('d-none'); return; }
+    select.innerHTML = _voicePool.map(v =>
+        `<option value="${v.voice_id}">${escapeHtml(v.name)}</option>`
+    ).join('');
+    select.selectedIndex = index % _voicePool.length;
+    select.classList.remove('d-none');
+}
+
+function voiceOf(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select || select.classList.contains('d-none') || !select.value) return undefined;
+    return select.value;
+}
+
+function buildCreatePayload() {
+    const name = document.getElementById('conv-name').value.trim() || 'New Conversation';
+    const type = document.getElementById('conv-type').value;
+    if (type === 'panel') {
+        const moderator = {
+            model_id: document.getElementById('panel-moderator-model').value,
+            brief: document.getElementById('panel-moderator-brief').value.trim() || null,
+        };
+        const modSkills = collectAllowlistIn('panel-moderator-caps', 'skill');
+        if (modSkills !== undefined) moderator.allowed_skills = modSkills;
+        const modVoice = voiceOf('panel-moderator-voice');
+        if (modVoice) moderator.voice_id = modVoice;
+        const panellists = _panelIds.map(i => {
+            const spec = {
+                name: document.getElementById(`panel-p${i}-name`).value.trim(),
+                model_id: document.getElementById(`panel-p${i}-model`).value,
+                brief: document.getElementById(`panel-p${i}-brief`).value.trim() || null,
+            };
+            const tools = collectAllowlistIn(`panel-p${i}-caps`, 'tool');
+            const skills = collectAllowlistIn(`panel-p${i}-caps`, 'skill');
+            if (tools !== undefined) spec.allowed_tools = tools;
+            if (skills !== undefined) spec.allowed_skills = skills;
+            const voice = voiceOf(`panel-p${i}-voice`);
+            if (voice) spec.voice_id = voice;
+            return spec;
+        });
+        const includeMe = document.getElementById('panel-include-me').checked;
+        const roundsMode = document.getElementById('panel-rounds-mode').value;
+        return {
+            name,
+            conversation_type: 'panel',
+            // The moderator's model is the conversation's display model
+            model_id: moderator.model_id,
+            panel: {
+                topic: document.getElementById('panel-topic').value.trim(),
+                rounds_mode: roundsMode,
+                max_rounds: roundsMode === 'fixed'
+                    ? (parseInt(document.getElementById('panel-max-rounds').value) || null)
+                    : null,
+                moderator,
+                panellists,
+                human: includeMe
+                    ? { name: document.getElementById('panel-human-name').value.trim() }
+                    : null,
+            },
+        };
+    }
+    if (type !== 'debate') {
+        return {
+            name,
+            model_id: document.getElementById('conv-model').value,
+            instructions: document.getElementById('conv-instructions').value.trim() || null,
+            kg_local_enabled: document.getElementById('conv-kg-local').checked,
+        };
+    }
+    const agents = Object.fromEntries(['pro', 'con', 'judge'].map(role => {
+        const spec = {
+            model_id: document.getElementById(`debate-${role}-model`).value,
+            brief: document.getElementById(`debate-${role}-brief`).value.trim() || null,
+        };
+        const tools = role === 'judge' ? undefined : collectAllowlist(role, 'tool');
+        const skills = collectAllowlist(role, 'skill');
+        if (tools !== undefined) spec.allowed_tools = tools;
+        if (skills !== undefined) spec.allowed_skills = skills;
+        const voice = voiceOf(`debate-${role}-voice`);
+        if (voice) spec.voice_id = voice;
+        return [role, spec];
+    }));
+    const roundsMode = document.getElementById('debate-rounds-mode').value;
+    return {
+        name,
+        conversation_type: 'debate',
+        // The judge's model is the conversation's display model
+        model_id: agents.judge.model_id,
+        debate: {
+            topic: document.getElementById('debate-topic').value.trim(),
+            rounds_mode: roundsMode,
+            max_rounds: roundsMode === 'fixed'
+                ? (parseInt(document.getElementById('debate-max-rounds').value) || null)
+                : null,
+            agents,
+        },
+    };
+}
+
+async function createConversation() {
+    const payload = buildCreatePayload();
+
+    if (!payload.model_id) {
         AppToast.warning('No model', 'Please select a model.');
         return;
+    }
+    if (payload.conversation_type === 'debate' && !payload.debate.topic) {
+        AppToast.warning('No topic', 'Please enter the debate topic.');
+        return;
+    }
+    if (payload.conversation_type === 'panel') {
+        if (!payload.panel.topic) {
+            AppToast.warning('No topic', 'Please enter the discussion topic.');
+            return;
+        }
+        if (payload.panel.panellists.some(p => !p.name)) {
+            AppToast.warning('Missing name', 'Every panellist needs a name.');
+            return;
+        }
+        if (payload.panel.human && !payload.panel.human.name) {
+            AppToast.warning('Missing name', 'Please enter your panellist name.');
+            return;
+        }
     }
 
     try {
         const resp = await fetch('/conversations/api/create', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name, model_id: model, instructions }),
+            body: JSON.stringify(payload),
         });
         const data = await resp.json();
         if (data.id) {
-            window.location.href = `/chat/${data.id}`;
+            window.location.href = convHref(data);
         } else {
             AppToast.danger('Error', data.error || 'Failed to create conversation.');
         }
@@ -205,14 +642,17 @@ function searchConversations(query) {
                 container.innerHTML = '<div class="text-center py-3" style="color:var(--app-text-muted);">No matches found.</div>';
                 return;
             }
-            container.innerHTML = results.map(c => `
+            container.innerHTML = results.map(c => {
+                const href = convHref(c);
+                return `
                 <div class="app-card d-flex align-items-center p-3 mb-2">
-                    <a href="/chat/${c.id}" class="flex-grow-1 text-decoration-none">
+                    <a href="${href}" class="flex-grow-1 text-decoration-none">
                         <div style="font-weight:600; color:var(--app-text-primary);">${escapeHtml(c.name)}</div>
                         <div style="font-size:0.8125rem; color:var(--app-text-muted);">${c.model_id || ''}</div>
                     </a>
-                    <a href="/chat/${c.id}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
-                </div>`).join('');
+                    <a href="${href}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                </div>`;
+            }).join('');
         } catch (err) {}
     }, 300);
 }

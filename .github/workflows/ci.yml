@@ -45,6 +45,42 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+  uv-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Build the wheel
+        run: uv build --wheel
+
+      - name: Install Spark as a uv tool
+        run: uv tool install ./dist/cognisn_spark-*.whl
+
+      - name: Launch headless and poll until it serves
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          SPARK__INTERFACE__PORT=8765 SPARK__INTERFACE__OPEN_BROWSER=false \
+            spark > spark.log 2>&1 &
+          SPARK_PID=$!
+          up=0
+          for i in $(seq 1 45); do
+            if ! kill -0 "$SPARK_PID" 2>/dev/null; then
+              echo "Spark process exited early"; break
+            fi
+            if curl -fsS -o /dev/null http://127.0.0.1:8765/login; then
+              echo "Spark is serving on :8765"; up=1; break
+            fi
+            sleep 2
+          done
+          kill "$SPARK_PID" 2>/dev/null || true
+          if [ "$up" -ne 1 ]; then
+            echo "=== spark.log ==="; cat spark.log; exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
 

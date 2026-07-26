@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}Spark - {{ guide.title }} Setup Guide{% endblock %}
+{% block head %}
+<style>
+.guide-step {
+    position: relative;
+    padding-left: 2.5rem;
+    margin-bottom: 2rem;
+}
+.guide-step::before {
+    content: attr(data-step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.guide-step h6 {
+    font-weight: 600;
+    color: var(--app-text-primary);
+    margin-bottom: 0.5rem;
+}
+.guide-step p, .guide-step li {
+    font-size: 0.875rem;
+    color: var(--app-text-secondary);
+    line-height: 1.6;
+}
+.screenshot-placeholder {
+    border: 2px dashed var(--app-border);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    text-align: center;
+    color: var(--app-text-muted);
+    background: var(--app-bg-tertiary);
+    margin: 1rem 0;
+}
+.screenshot-placeholder i {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+.screenshot-placeholder span {
+    font-size: 0.8125rem;
+}
+.guide-screenshot {
+    border-radius: 0.75rem;
+    border: 1px solid var(--app-border);
+    margin: 1rem 0;
+    max-width: 100%;
+    height: auto;
+}
+.guide-tip {
+    border-left: 3px solid var(--app-accent);
+    background: var(--app-bg-tertiary);
+    border-radius: 0 0.5rem 0.5rem 0;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    font-size: 0.8125rem;
+    color: var(--app-text-secondary);
+}
+.guide-tip strong {
+    color: var(--app-accent);
+}
+.guide-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--app-accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+.guide-link:hover {
+    text-decoration: underline;
+}
+.guide-link i {
+    font-size: 0.75em;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="max-width: 860px;">
+
+    <!-- Breadcrumb -->
+    <nav style="font-size: 0.8125rem; margin-bottom: 1.5rem;">
+        <a href="/settings" style="color: var(--app-text-muted); text-decoration: none;">
+            <i class="bi bi-gear me-1"></i>Settings
+        </a>
+        <span style="color: var(--app-text-muted); margin: 0 0.5rem;">›</span>
+        <a href="/settings#section-providers" style="color: var(--app-text-muted); text-decoration: none;">
+            LLM Providers
+        </a>
+        <span style="color: var(--app-text-muted); margin: 0 0.5rem;">›</span>
+        <span style="color: var(--app-text-primary);">{{ guide.title }}</span>
+    </nav>
+
+    <!-- Header -->
+    <div class="d-flex align-items-center gap-3 mb-4">
+        {% if guide.icon %}
+        <div style="width: 3rem; height: 3rem; border-radius: 0.75rem; background: var(--app-bg-tertiary); display: flex; align-items: center; justify-content: center;">
+            <i class="bi {{ guide.icon }}" style="font-size: 1.5rem; color: var(--app-accent);"></i>
+        </div>
+        {% endif %}
+        <div>
+            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">
+                {{ guide.title }} Setup Guide
+            </h4>
+            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+                {{ guide.summary }}
+            </p>
+        </div>
+    </div>
+
+    <!-- Quick Links -->
+    {% if guide.links %}
+    <div class="app-card mb-4">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap gap-3">
+                {% for link in guide.links %}
+                <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer" class="guide-link">
+                    <i class="bi {{ link.icon }}"></i>
+                    {{ link.label }}
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Prerequisites -->
+    {% if guide.prerequisites %}
+    <div class="app-card mb-4">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-list-check"></i> Prerequisites
+        </div>
+        <div class="card-body">
+            <ul class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                {% for prereq in guide.prerequisites %}
+                <li class="mb-1">{{ prereq }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Steps -->
+    <div class="app-card mb-4">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-signpost-2"></i> Step-by-Step Setup
+        </div>
+        <div class="card-body">
+            {% for step in guide.steps %}
+            <div class="guide-step" data-step="{{ loop.index }}">
+                <h6>{{ step.title }}</h6>
+                <p>{{ step.description }}</p>
+
+                {% if step.substeps %}
+                <ol style="font-size: 0.875rem; color: var(--app-text-secondary); padding-left: 1.25rem;">
+                    {% for sub in step.substeps %}
+                    <li class="mb-1">{{ sub }}</li>
+                    {% endfor %}
+                </ol>
+                {% endif %}
+
+                {% if step.screenshot %}
+                <img src="/static/images/guides/{{ step.screenshot }}"
+                     alt="{{ step.screenshot_alt | default(step.title) }}"
+                     class="guide-screenshot"
+                     loading="lazy">
+                {% elif step.screenshot_placeholder %}
+                <div class="screenshot-placeholder">
+                    <i class="bi bi-image"></i>
+                    <span>{{ step.screenshot_placeholder }}</span>
+                </div>
+                {% endif %}
+
+                {% if step.tip %}
+                <div class="guide-tip">
+                    <strong><i class="bi bi-lightbulb me-1"></i>Tip:</strong> {{ step.tip }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Configure in Spark -->
+    {% if guide.spark_config %}
+    <div class="app-card mb-4">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-gear"></i> Configure in Spark
+        </div>
+        <div class="card-body">
+            {% for step in guide.spark_config %}
+            <div class="guide-step" data-step="{{ loop.index }}">
+                <h6>{{ step.title }}</h6>
+                <p>{{ step.description }}</p>
+                {% if step.screenshot_placeholder %}
+                <div class="screenshot-placeholder">
+                    <i class="bi bi-image"></i>
+                    <span>{{ step.screenshot_placeholder }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Troubleshooting -->
+    {% if guide.troubleshooting %}
+    <div class="app-card mb-4">
+        <div class="card-header d-flex align-items-center gap-2">
+            <i class="bi bi-wrench"></i> Troubleshooting
+        </div>
+        <div class="card-body">
+            {% for item in guide.troubleshooting %}
+            <div class="mb-3{% if not loop.last %} pb-3{% endif %}" {% if not loop.last %}style="border-bottom: 1px solid var(--app-border);"{% endif %}>
+                <strong style="font-size: 0.875rem; color: var(--app-text-primary);">
+                    <i class="bi bi-question-circle me-1" style="color: var(--app-warning);"></i>
+                    {{ item.problem }}
+                </strong>
+                <p class="mb-0 mt-1" style="font-size: 0.8125rem; color: var(--app-text-secondary);">
+                    {{ item.solution }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Back to settings -->
+    <div class="text-center mb-5">
+        <a href="/settings#section-providers" class="btn btn-app-primary">
+            <i class="bi bi-gear me-1"></i> Back to Provider Settings
+        </a>
+    </div>
+</div>
+{% endblock %}

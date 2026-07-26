@@ -207,3 +207,9 @@ marimo/_lsp/
 __marimo__/
 /CLAUDE.md
 /.claude/
+/docs/superpowers/
+/_working/
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
