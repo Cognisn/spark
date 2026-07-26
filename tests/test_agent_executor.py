@@ -237,7 +237,11 @@ class TestExecutorExtensions:
             "task",
             "m",
             extra_tools=[
-                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+                {
+                    "name": "submit_argument",
+                    "description": "d",
+                    "inputSchema": {"type": "object"},
+                }
             ],
             terminal_tool="submit_argument",
         )
@@ -269,14 +273,33 @@ class TestExecutorExtensions:
             "m",
             max_iterations=3,
             extra_tools=[
-                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}},
-                {"name": "web_search", "description": "d", "inputSchema": {"type": "object"}},
+                {
+                    "name": "submit_argument",
+                    "description": "d",
+                    "inputSchema": {"type": "object"},
+                },
+                {
+                    "name": "web_search",
+                    "description": "d",
+                    "inputSchema": {"type": "object"},
+                },
             ],
             terminal_tool="submit_argument",
         )
         assert result["terminal_call"]["input"]["argument_markdown"] == "final"
         # 3 research iterations + 1 forced submission attempt.
         assert calls["i"] == 4
+
+    def test_prompt_caching_enabled_by_default(self, executor: AgentExecutor) -> None:
+        """Sub-agents (debaters, panellists) should cache the system + tools by default."""
+        executor._llm.invoke_model.return_value = self._end_turn()
+        executor.execute("a", "n", "task", "m")
+        assert executor._llm.invoke_model.call_args.kwargs.get("prompt_caching") is True
+
+    def test_prompt_caching_can_be_disabled(self, executor: AgentExecutor) -> None:
+        executor._llm.invoke_model.return_value = self._end_turn()
+        executor.execute("a", "n", "task", "m", prompt_caching=False)
+        assert executor._llm.invoke_model.call_args.kwargs.get("prompt_caching") is False
 
     def test_excluded_tool_refused_at_execution(self, executor: AgentExecutor) -> None:
         executor._llm.invoke_model.side_effect = [

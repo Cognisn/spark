@@ -50,6 +50,7 @@ class AgentExecutor:
         exclude_tools: frozenset[str] | set[str] | None = None,
         extra_tools: list[dict] | None = None,
         terminal_tool: str | None = None,
+        prompt_caching: bool = True,
     ) -> dict[str, Any]:
         """Run the agent's tool-use loop.
 
@@ -166,6 +167,7 @@ class AgentExecutor:
                 temperature=0.7,
                 tools=tools if tools else None,
                 system=system,
+                prompt_caching=prompt_caching,
             )
 
             usage = response.get("usage", {})
@@ -312,6 +314,7 @@ class AgentExecutor:
                 temperature=0.7,
                 tools=terminal_only_tools or None,
                 system=system,
+                prompt_caching=prompt_caching,
             )
             usage = response.get("usage", {})
             total_input += usage.get("input_tokens", 0)

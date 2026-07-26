@@ -64,6 +64,7 @@ class PanelOrchestrator:
         status_callback: Callable[[str, dict], None] | None = None,
         tool_permission_callback: Callable | None = None,
         context_limit_resolver: Any | None = None,
+        prompt_caching: bool = True,
     ) -> None:
         self._db = db
         self._factory = service_factory
@@ -73,6 +74,7 @@ class PanelOrchestrator:
         self._emit_cb = status_callback
         self._permission_cb = tool_permission_callback
         self._limits = context_limit_resolver
+        self._prompt_caching = prompt_caching
 
     # ------------------------------------------------------------------ events
 
@@ -435,6 +437,7 @@ class PanelOrchestrator:
                 temperature=0.4,
                 tools=mod_tools,
                 system=system,
+                prompt_caching=self._prompt_caching,
             )
             usage = response.get("usage", {})
             debates.add_agent_tokens(
@@ -552,6 +555,7 @@ class PanelOrchestrator:
                 # Panellists research before contributing; give them room so a full
                 # turn is not spent gathering without ever submitting.
                 max_iterations=25,
+                prompt_caching=self._prompt_caching,
                 cancel_token=cancel_token,
             )
         except Exception as e:  # noqa: BLE001 - any provider failure fails the turn

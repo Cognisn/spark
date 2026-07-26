@@ -32,7 +32,11 @@ def _panel(db, *, human=False, rounds_mode="fixed", max_rounds=1) -> int:
     db.commit()
     cid = cur.lastrowid
     agents = {
-        "moderator": {"model_id": "model-mod", "brief": None, "display_name": "Moderator"},
+        "moderator": {
+            "model_id": "model-mod",
+            "brief": None,
+            "display_name": "Moderator",
+        },
         "panellist:1": {
             "model_id": "model-p1",
             "brief": "economist",
@@ -158,6 +162,68 @@ class TestUserPromptAndQa:
 
 
 class TestCapabilities:
+    def test_prompt_caching_threaded_to_all_agents(self, db) -> None:
+        """Panellists and the moderator must request prompt caching on every call."""
+        ph = db.placeholder
+        cur = db.execute(
+            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            f"VALUES ({ph}, {ph}, {ph}, 'panel')",
+            ("P", "model-mod", "u1"),
+        )
+        db.commit()
+        cid = cur.lastrowid
+        agents = {
+            "moderator": {"model_id": "model-mod", "brief": None, "display_name": "Mod"},
+            "panellist:1": {"model_id": "model-p1", "brief": None, "display_name": "One"},
+            "panellist:2": {"model_id": "model-p2", "brief": None, "display_name": "Two"},
+        }
+        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+
+        captured: dict[str, list] = {"model-mod": [], "model-p1": [], "model-p2": []}
+
+        class Recording(ScriptedService):
+            def __init__(self, key, responses):
+                super().__init__(responses)
+                self._key = key
+
+            def invoke_model(self, messages, **kwargs):
+                captured[self._key].append(kwargs)
+                return super().invoke_model(messages, **kwargs)
+
+        services = {
+            "model-mod": Recording(
+                "model-mod",
+                [
+                    tool_response(
+                        "set_speaking_order",
+                        {"order": ["panellist:1", "panellist:2"]},
+                        "Open.",
+                    ),
+                    text_response("Synthesis."),
+                ],
+            ),
+            "model-p1": Recording(
+                "model-p1",
+                [tool_response("submit_contribution", {"contribution_markdown": "A."})],
+            ),
+            "model-p2": Recording(
+                "model-p2",
+                [tool_response("submit_contribution", {"contribution_markdown": "B."})],
+            ),
+        }
+        orch = PanelOrchestrator(
+            db,
+            lambda m: services[m],
+            {"embedded_tools": {}},
+            status_callback=lambda t, d: None,
+        )
+        orch.run(cid, "u1")
+        for key in ("model-mod", "model-p1", "model-p2"):
+            assert captured[key], f"no invocations captured for {key}"
+            assert all(
+                c.get("prompt_caching") is True for c in captured[key]
+            ), f"{key} invocations missing prompt_caching"
+
     def test_allowlist_enforced_per_panellist(self, db) -> None:
         ph = db.placeholder
         cur = db.execute(

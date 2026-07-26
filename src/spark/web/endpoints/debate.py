@@ -33,6 +33,7 @@ def _orchestrator(request: Request, status_callback: Any = None):
         mcp_loop=getattr(request.app.state, "_mcp_loop", None),
         status_callback=status_callback,
         tool_permission_callback=getattr(conv_mgr, "_tool_permission_callback", None),
+        prompt_caching=getattr(conv_mgr, "_prompt_caching_enabled", True),
     )
 
 

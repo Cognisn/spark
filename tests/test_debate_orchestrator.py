@@ -271,6 +271,15 @@ class TestCapabilityEnforcement:
         orch.run(cid, "u1")
         return captured
 
+    def test_prompt_caching_threaded_to_all_agents(self, db) -> None:
+        """Debaters and the judge must request prompt caching on every invocation."""
+        captured = self._run(db, self._agents())
+        for key in ("pro", "con", "judge"):
+            assert captured[key], f"no invocations captured for {key}"
+            assert all(
+                c.get("prompt_caching") is True for c in captured[key]
+            ), f"{key} invocations missing prompt_caching"
+
     def test_tool_allowlist_restricts_offer(self, db) -> None:
         captured = self._run(db, self._agents(pro={"allowed_tools": []}))
         pro_tools = {t["name"] for c in captured["pro"] for t in (c.get("tools") or [])}
