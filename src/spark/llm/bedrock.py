@@ -280,29 +280,53 @@ class BedrockProvider(LLMService):
             len(self._inference_profiles),
         )
 
-        # Build Converse API request
+        # Build Converse API request. Bedrock does prompt caching with cachePoint
+        # blocks in the system and tools arrays (its equivalent of cache_control).
+        prompt_caching = kwargs.get("prompt_caching", False)
         converse_messages = _convert_messages(messages)
-        req: dict[str, Any] = {
-            "modelId": resolved_id,
-            "messages": converse_messages,
-            "inferenceConfig": {
-                "maxTokens": max_tokens,
-                "temperature": temperature,
-            },
-        }
-        if system:
-            req["system"] = [{"text": system}]
-        if tools:
-            req["toolConfig"] = {"tools": _convert_tools(tools)}
+
+        def _build_req(with_cache: bool) -> dict[str, Any]:
+            r: dict[str, Any] = {
+                "modelId": resolved_id,
+                "messages": converse_messages,
+                "inferenceConfig": {
+                    "maxTokens": max_tokens,
+                    "temperature": temperature,
+                },
+            }
+            if system:
+                sys_blocks: list[dict[str, Any]] = [{"text": system}]
+                if with_cache:
+                    # The system prompt and tools are identical across a turn's
+                    # tool calls and across rounds — cache that prefix.
+                    sys_blocks.append({"cachePoint": {"type": "default"}})
+                r["system"] = sys_blocks
+            if tools:
+                tool_list = _convert_tools(tools)
+                if with_cache and tool_list:
+                    tool_list = [*tool_list, {"cachePoint": {"type": "default"}}]
+                r["toolConfig"] = {"tools": tool_list}
+            return r
+
+        def _invoke(r: dict[str, Any]) -> dict[str, Any]:
+            if stream_callback:
+                return self._process_stream(self._client.converse_stream(**r), stream_callback)
+            return _normalise_response(self._client.converse(**r))
 
         try:
-            if stream_callback:
-                response = self._client.converse_stream(**req)
-                return self._process_stream(response, stream_callback)
-            else:
-                response = self._client.converse(**req)
-                return _normalise_response(response)
+            return _invoke(_build_req(prompt_caching))
         except Exception as e:
+            # Not every Bedrock model supports prompt caching; if the cachePoint
+            # blocks were rejected, retry once without them rather than failing.
+            if prompt_caching and _is_cache_unsupported_error(e):
+                logger.info(
+                    "Bedrock model %s rejected prompt caching; retrying without it",
+                    resolved_id,
+                )
+                try:
+                    return _invoke(_build_req(False))
+                except Exception as e2:  # noqa: BLE001
+                    e = e2
             logger.error("Bedrock invocation failed: %s", e)
             return {
                 "content": "",
@@ -361,6 +385,11 @@ class BedrockProvider(LLMService):
                 u = event["metadata"].get("usage", {})
                 usage["input_tokens"] = u.get("inputTokens", 0)
                 usage["output_tokens"] = u.get("outputTokens", 0)
+                cache_read = u.get("cacheReadInputTokens", 0)
+                cache_write = u.get("cacheWriteInputTokens", 0)
+                if cache_read or cache_write:
+                    usage["cache_read_input_tokens"] = cache_read
+                    usage["cache_creation_input_tokens"] = cache_write
 
         text = "".join(text_parts)
         content_blocks: list[dict] = [{"type": "text", "text": text}] + tool_blocks
@@ -372,6 +401,12 @@ class BedrockProvider(LLMService):
             "tool_use": tool_blocks if tool_blocks else None,
             "content_blocks": content_blocks,
         }
+
+
+def _is_cache_unsupported_error(error: Exception) -> bool:
+    """True when a Converse error indicates the model rejected prompt caching."""
+    msg = str(error).lower()
+    return "cachepoint" in msg or "prompt caching" in msg or "caching is not" in msg
 
 
 def _normalise_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -401,13 +436,22 @@ def _normalise_response(response: dict[str, Any]) -> dict[str, Any]:
     usage_data = response.get("usage", {})
     stop = response.get("stopReason", "end_turn")
 
+    usage: dict[str, Any] = {
+        "input_tokens": usage_data.get("inputTokens", 0),
+        "output_tokens": usage_data.get("outputTokens", 0),
+    }
+    # Surface prompt-cache metrics under the same keys as the direct provider so
+    # the UI cache stats work for Bedrock too.
+    cache_read = usage_data.get("cacheReadInputTokens", 0)
+    cache_write = usage_data.get("cacheWriteInputTokens", 0)
+    if cache_read or cache_write:
+        usage["cache_read_input_tokens"] = cache_read
+        usage["cache_creation_input_tokens"] = cache_write
+
     return {
         "content": "".join(text_parts),
         "stop_reason": _map_stop_reason(stop),
-        "usage": {
-            "input_tokens": usage_data.get("inputTokens", 0),
-            "output_tokens": usage_data.get("outputTokens", 0),
-        },
+        "usage": usage,
         "tool_use": tool_blocks if tool_blocks else None,
         "content_blocks": content_blocks,
     }

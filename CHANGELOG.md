@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Debate and panel turns could fail with "No submit_argument call" (or discard a panellist's contribution) when the agent spent its whole tool budget researching — often after repeated web searches returned no results — and never reached the final submission tool. Agents now get a firm, tool-restricted prompt to submit before a turn is abandoned, and debaters and panellists have a larger research budget (25 tool iterations), so heavy research no longer throws the turn away
-- Debate and panel modes now use prompt caching (on providers that support it, such as Anthropic and Google Gemini) for every debater, panellist, judge, and moderator turn — the system prompt and tool definitions are cached and reused across a turn's tool calls and across rounds, cutting token cost and latency. Previously these turns never requested caching, even with it enabled globally; it follows the same `conversation.prompt_caching` setting as normal chats
+- Debate and panel modes now use prompt caching (on providers that support it — Anthropic, AWS Bedrock, and Google Gemini) for every debater, panellist, judge, and moderator turn — the system prompt and tool definitions are cached and reused across a turn's tool calls and across rounds, cutting token cost and latency. Previously these turns never requested caching, even with it enabled globally; it follows the same `conversation.prompt_caching` setting as normal chats
+- AWS Bedrock now honours prompt caching. The Converse provider previously ignored the caching flag entirely; it now inserts `cachePoint` blocks on the system prompt and tool definitions, reports cache read/write token metrics, and safely retries without caching for models that do not support it
 
 ## [0.2.0b16] - 2026-07-25
 
