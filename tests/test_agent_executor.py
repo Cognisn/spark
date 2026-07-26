@@ -185,7 +185,11 @@ class TestExecutorExtensions:
         assert executor._llm.invoke_model.call_args.kwargs["system"] == "CUSTOM SYSTEM"
 
     def test_extra_tools_offered_and_excluded_removed(self, executor: AgentExecutor) -> None:
-        extra = {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+        extra = {
+            "name": "submit_argument",
+            "description": "d",
+            "inputSchema": {"type": "object"},
+        }
         executor._llm.invoke_model.return_value = self._end_turn()
         executor.execute(
             "a1",
@@ -209,13 +213,70 @@ class TestExecutorExtensions:
             "task",
             "m",
             extra_tools=[
-                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+                {
+                    "name": "submit_argument",
+                    "description": "d",
+                    "inputSchema": {"type": "object"},
+                }
             ],
             terminal_tool="submit_argument",
         )
         assert result["status"] == "completed"
         assert result["terminal_call"]["input"]["argument_markdown"] == "case"
         assert executor._llm.invoke_model.call_count == 1
+
+    def test_terminal_tool_forced_after_plain_text_finish(self, executor: AgentExecutor) -> None:
+        """A debater that finishes with prose is nudged once to submit properly."""
+        executor._llm.invoke_model.side_effect = [
+            self._end_turn("Here is my argument, in prose, without calling the tool."),
+            self._tool_use("submit_argument", {"argument_markdown": "case", "exhibits": []}),
+        ]
+        result = executor.execute(
+            "a1",
+            "n",
+            "task",
+            "m",
+            extra_tools=[
+                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}}
+            ],
+            terminal_tool="submit_argument",
+        )
+        assert result["terminal_call"]["input"]["argument_markdown"] == "case"
+        assert executor._llm.invoke_model.call_count == 2
+        # The forced attempt restricts the offer to the terminal tool only.
+        forced_tools = executor._llm.invoke_model.call_args.kwargs["tools"]
+        assert {t["name"] for t in forced_tools} == {"submit_argument"}
+
+    def test_terminal_tool_forced_after_max_iterations(self, executor: AgentExecutor) -> None:
+        """Heavy (fruitless) research must not discard the turn: force a final submit."""
+        submit = self._tool_use("submit_argument", {"argument_markdown": "final", "exhibits": []})
+        research = self._tool_use("web_search", {"query": "x"})
+        calls = {"i": 0}
+
+        def fake_invoke(*args, **kwargs):
+            calls["i"] += 1
+            tool_names = {t["name"] for t in (kwargs.get("tools") or [])}
+            # Only submit when tools are restricted to the terminal tool (forced call).
+            return submit if tool_names == {"submit_argument"} else research
+
+        executor._llm.invoke_model.side_effect = fake_invoke
+        executor._execute_tool = lambda name, inp: "No results found"  # type: ignore[method-assign]
+
+        result = executor.execute(
+            "a1",
+            "n",
+            "task",
+            "m",
+            max_iterations=3,
+            extra_tools=[
+                {"name": "submit_argument", "description": "d", "inputSchema": {"type": "object"}},
+                {"name": "web_search", "description": "d", "inputSchema": {"type": "object"}},
+            ],
+            terminal_tool="submit_argument",
+        )
+        assert result["terminal_call"]["input"]["argument_markdown"] == "final"
+        # 3 research iterations + 1 forced submission attempt.
+        assert calls["i"] == 4
 
     def test_excluded_tool_refused_at_execution(self, executor: AgentExecutor) -> None:
         executor._llm.invoke_model.side_effect = [

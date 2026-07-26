@@ -77,7 +77,11 @@ class DebateOrchestrator:
         cfg.update({k: v for k, v in kwargs.items() if v is not None})
         self._emit(
             "debate_state",
-            {"role": "system", "state": new.value, "round": cfg.get("current_round", 0)},
+            {
+                "role": "system",
+                "state": new.value,
+                "round": cfg.get("current_round", 0),
+            },
         )
 
     # ------------------------------------------------------------------ public
@@ -445,6 +449,9 @@ class DebateOrchestrator:
                 exclude_tools=frozenset(exclude),
                 extra_tools=[SUBMIT_ARGUMENT_TOOL],
                 terminal_tool="submit_argument",
+                # Debaters research (often across many searches) before they can
+                # submit; give them room so a full turn is not spent gathering.
+                max_iterations=25,
                 cancel_token=cancel_token,
             )
         except Exception as e:  # noqa: BLE001 - any provider failure fails the turn

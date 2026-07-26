@@ -102,7 +102,11 @@ class PanelOrchestrator:
         cfg.update({k: v for k, v in kwargs.items() if v is not None})
         self._emit(
             "panel_state",
-            {"role": "system", "state": new.value, "round": cfg.get("current_round", 0)},
+            {
+                "role": "system",
+                "state": new.value,
+                "round": cfg.get("current_round", 0),
+            },
         )
 
     def _display_name(self, cfg: dict, role: str) -> str:
@@ -353,7 +357,10 @@ class PanelOrchestrator:
         exhibits = debates.get_exhibits(self._db, cid)
         transcript = build_panel_transcript(turns, exhibits, cfg["agents"], for_moderator=True)
         response = self._moderator_invoke(
-            cfg, transcript, prompts.moderator_phase_instruction("synthesis"), tools=None
+            cfg,
+            transcript,
+            prompts.moderator_phase_instruction("synthesis"),
+            tools=None,
         )
         if response is None:
             return False
@@ -542,6 +549,9 @@ class PanelOrchestrator:
                 exclude_tools=frozenset(exclude),
                 extra_tools=[SUBMIT_CONTRIBUTION_TOOL],
                 terminal_tool="submit_contribution",
+                # Panellists research before contributing; give them room so a full
+                # turn is not spent gathering without ever submitting.
+                max_iterations=25,
                 cancel_token=cancel_token,
             )
         except Exception as e:  # noqa: BLE001 - any provider failure fails the turn
@@ -589,7 +599,11 @@ class PanelOrchestrator:
             )
             self._emit(
                 "turn_failed",
-                {"role": role, "round": round_no, "error": "No submit_contribution call"},
+                {
+                    "role": role,
+                    "round": round_no,
+                    "error": "No submit_contribution call",
+                },
             )
             return False
 

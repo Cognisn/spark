@@ -127,6 +127,36 @@ class AgentExecutor:
                 "tool_calls": all_tool_calls,
             }
 
+        # When a terminal tool is required, keep a handle on just that tool so we
+        # can force a final submission if the model would otherwise finish without
+        # calling it (e.g. a debater that spends its whole budget researching).
+        terminal_only_tools = (
+            [t for t in tools if t.get("name") == terminal_tool] if terminal_tool else None
+        )
+        forced_terminal = False
+
+        def _terminal_result(tc: dict[str, Any]) -> dict[str, Any]:
+            if self._status_callback:
+                self._status_callback(
+                    "agent_complete",
+                    {
+                        "agent_id": agent_id,
+                        "agent_name": agent_name,
+                        "status": "completed",
+                        "result": "[argument submitted]",
+                        "input_tokens": total_input,
+                        "output_tokens": total_output,
+                    },
+                )
+            return {
+                "content": "",
+                "status": "completed",
+                "terminal_call": {"name": terminal_tool, "input": tc.get("input", {})},
+                "input_tokens": total_input,
+                "output_tokens": total_output,
+                "tool_calls": all_tool_calls,
+            }
+
         for iteration in range(max_iterations):
             if _is_cancelled():
                 return _cancelled_result()
@@ -149,29 +179,7 @@ class AgentExecutor:
                 if terminal_tool:
                     for tc in response["tool_use"]:
                         if tc.get("name") == terminal_tool:
-                            if self._status_callback:
-                                self._status_callback(
-                                    "agent_complete",
-                                    {
-                                        "agent_id": agent_id,
-                                        "agent_name": agent_name,
-                                        "status": "completed",
-                                        "result": "[argument submitted]",
-                                        "input_tokens": total_input,
-                                        "output_tokens": total_output,
-                                    },
-                                )
-                            return {
-                                "content": "",
-                                "status": "completed",
-                                "terminal_call": {
-                                    "name": terminal_tool,
-                                    "input": tc.get("input", {}),
-                                },
-                                "input_tokens": total_input,
-                                "output_tokens": total_output,
-                                "tool_calls": all_tool_calls,
-                            }
+                            return _terminal_result(tc)
 
                 tool_results = []
                 for tc in response["tool_use"]:
@@ -243,6 +251,28 @@ class AgentExecutor:
             # Final response — the agent has finished
             content = response.get("content", "")
 
+            # A required terminal tool was never called. Give the model one firm,
+            # tool-restricted chance to submit before accepting a plain-text finish,
+            # so prose or an early stop does not discard the whole turn.
+            if terminal_tool and not forced_terminal:
+                forced_terminal = True
+                messages.append(
+                    {"role": "assistant", "content": response.get("content_blocks", [])}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[SYSTEM] You have not called `{terminal_tool}` yet. Stop now and "
+                            f"call `{terminal_tool}` exactly once to record your result. "
+                            f"Respond with the tool call only."
+                        ),
+                    }
+                )
+                if terminal_only_tools:
+                    tools = terminal_only_tools
+                continue
+
             if self._status_callback:
                 self._status_callback(
                     "agent_complete",
@@ -263,6 +293,33 @@ class AgentExecutor:
                 "output_tokens": total_output,
                 "tool_calls": all_tool_calls,
             }
+
+        # Max iterations reached. If a terminal tool is still required, make one
+        # final, tool-restricted attempt so heavy research does not discard the turn.
+        if terminal_tool and not forced_terminal and not _is_cancelled():
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[SYSTEM] You have reached the research limit. Call `{terminal_tool}` "
+                        f"now, exactly once, to record your result. Respond with the tool call only."
+                    ),
+                }
+            )
+            response = self._llm.invoke_model(
+                messages,
+                max_tokens=max_tokens,
+                temperature=0.7,
+                tools=terminal_only_tools or None,
+                system=system,
+            )
+            usage = response.get("usage", {})
+            total_input += usage.get("input_tokens", 0)
+            total_output += usage.get("output_tokens", 0)
+            if response.get("stop_reason") == "tool_use":
+                for tc in response.get("tool_use") or []:
+                    if tc.get("name") == terminal_tool:
+                        return _terminal_result(tc)
 
         # Max iterations reached without a final response
         if self._status_callback:
