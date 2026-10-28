@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Development tooling: `scripts/stamp_version.py` stamps a version and moves `[Unreleased]` into a dated changelog section, refusing a version that does not follow the current one under PEP 440; a worktree recipe at `dev/worktree.json`; contributor rules and project configuration in `CLAUDE.md`; `.gitattributes` enforcing LF line endings
+
+### Changed
+- CI now runs on pushes to release and workstream branches and on pull requests to release branches, as well as on `main`
+
 ## [0.2.0b17] - 2026-07-26
 
 ### Fixed

@@ -1,0 +1,29 @@
+* text=auto eol=lf
+
+# Images and fonts under assets/ and the web static tree are binary.
+assets/**/*.png binary
+assets/**/*.jpg binary
+assets/**/*.jpeg binary
+assets/**/*.gif binary
+assets/**/*.bmp binary
+assets/**/*.ico binary
+assets/**/*.icns binary
+assets/**/*.tiff binary
+assets/**/*.webp binary
+assets/**/*.woff binary
+assets/**/*.woff2 binary
+assets/**/*.ttf binary
+assets/**/*.otf binary
+assets/**/*.eot binary
+src/spark/web/static/**/*.png binary
+src/spark/web/static/**/*.jpg binary
+src/spark/web/static/**/*.jpeg binary
+src/spark/web/static/**/*.gif binary
+src/spark/web/static/**/*.bmp binary
+src/spark/web/static/**/*.ico binary
+src/spark/web/static/**/*.webp binary
+src/spark/web/static/**/*.woff binary
+src/spark/web/static/**/*.woff2 binary
+src/spark/web/static/**/*.ttf binary
+src/spark/web/static/**/*.otf binary
+src/spark/web/static/**/*.eot binary
