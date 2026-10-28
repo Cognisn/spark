@@ -179,6 +179,15 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             FOREIGN KEY (conversation_id) REFERENCES conversations(id),
             UNIQUE(conversation_id, tool_name)
         )""",
+        f"""CREATE TABLE IF NOT EXISTS global_tool_permissions (
+            id {auto},
+            user_guid TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            permission_state TEXT NOT NULL,
+            granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_guid, tool_name)
+        )""",
         f"""CREATE TABLE IF NOT EXISTS autonomous_actions (
             id {auto},
             name TEXT UNIQUE NOT NULL,
@@ -227,6 +236,24 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             FOREIGN KEY (action_id) REFERENCES autonomous_actions(id),
             UNIQUE(action_id, tool_name)
         )""",
+        f"""CREATE TABLE IF NOT EXISTS agent_runs (
+            id {auto},
+            agent_id TEXT UNIQUE NOT NULL,
+            parent_conversation_id INTEGER NOT NULL,
+            agent_name TEXT NOT NULL,
+            task_description TEXT,
+            mode TEXT NOT NULL DEFAULT 'orchestrator',
+            model_id TEXT,
+            status TEXT NOT NULL DEFAULT 'running',
+            result_text TEXT,
+            tool_calls_json TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            user_guid TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (parent_conversation_id) REFERENCES conversations(id)
+        )""",
         f"""CREATE TABLE IF NOT EXISTS context_index_elements (
             id {auto},
             conversation_id INTEGER NOT NULL,
@@ -263,6 +290,105 @@ def _create_tables(db: DatabaseConnection, auto: str) -> None:
             status TEXT DEFAULT 'running',
             user_guid TEXT
         )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_config (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            topic TEXT NOT NULL,
+            rounds_mode TEXT NOT NULL DEFAULT 'fixed',
+            max_rounds INTEGER,
+            state TEXT NOT NULL DEFAULT 'setup',
+            current_round INTEGER DEFAULT 0,
+            opening_speaker TEXT,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_agents (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            brief TEXT,
+            tokens_sent INTEGER DEFAULT 0,
+            tokens_received INTEGER DEFAULT 0
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_turns (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            round INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            turn_type TEXT NOT NULL,
+            content TEXT,
+            summary TEXT,
+            status TEXT DEFAULT 'complete',
+            token_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS debate_exhibits (
+            id {auto},
+            turn_id INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            title TEXT,
+            content TEXT,
+            source TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS skills (
+            id {auto},
+            name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS conversation_skills (
+            id {auto},
+            conversation_id INTEGER NOT NULL,
+            skill_name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_nodes (
+            id {auto},
+            scope TEXT NOT NULL,
+            name TEXT NOT NULL,
+            name_key TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'other',
+            description TEXT,
+            embedding BLOB,
+            weight INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_edges (
+            id {auto},
+            scope TEXT NOT NULL,
+            source_node_id INTEGER NOT NULL,
+            target_node_id INTEGER NOT NULL,
+            relation TEXT NOT NULL,
+            description TEXT,
+            weight INTEGER DEFAULT 1,
+            user_guid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS voice_usage (
+            id {auto},
+            conversation_id INTEGER,
+            user_guid TEXT NOT NULL,
+            characters INTEGER NOT NULL,
+            model_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS kg_builds (
+            id {auto},
+            scope TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            watermark INTEGER DEFAULT 0,
+            built_at TIMESTAMP,
+            status TEXT DEFAULT 'complete',
+            error TEXT,
+            user_guid TEXT NOT NULL
+        )""",
     ]
 
     for sql in tables:
@@ -288,16 +414,29 @@ def _create_indices(db: DatabaseConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_violations_timestamp ON prompt_inspection_violations(timestamp)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_conv ON conversation_tool_permissions(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_tool_perms_tool ON conversation_tool_permissions(tool_name)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_user ON global_tool_permissions(user_guid)",
+        "CREATE INDEX IF NOT EXISTS idx_global_perms_tool ON global_tool_permissions(tool_name)",
         "CREATE INDEX IF NOT EXISTS idx_actions_enabled ON autonomous_actions(is_enabled)",
         "CREATE INDEX IF NOT EXISTS idx_actions_next_run ON autonomous_actions(next_run_at)",
         "CREATE INDEX IF NOT EXISTS idx_action_runs_action ON action_runs(action_id)",
         "CREATE INDEX IF NOT EXISTS idx_action_runs_status ON action_runs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_runs_conv ON agent_runs(parent_conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_context_idx_conv ON context_index_elements(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_context_idx_hash ON context_index_elements(content_hash)",
         "CREATE INDEX IF NOT EXISTS idx_memories_user ON user_memories(user_guid)",
         "CREATE INDEX IF NOT EXISTS idx_memories_category ON user_memories(category)",
         "CREATE INDEX IF NOT EXISTS idx_memories_hash ON user_memories(content_hash)",
         "CREATE INDEX IF NOT EXISTS idx_memories_importance ON user_memories(importance)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_config_conv ON debate_config(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_agents_conv ON debate_agents(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_turns_conv ON debate_turns(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_debate_exhibits_turn ON debate_exhibits(turn_id)",
+        "CREATE INDEX IF NOT EXISTS idx_skills_user_name ON skills(user_guid, name)",
+        "CREATE INDEX IF NOT EXISTS idx_conv_skills_conv ON conversation_skills(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_nodes_scope_key ON kg_nodes(scope, name_key)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_nodes_user ON kg_nodes(user_guid)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_scope ON kg_edges(scope)",
+        "CREATE INDEX IF NOT EXISTS idx_kg_builds_scope_source ON kg_builds(scope, source_key)",
     ]
 
     for sql in indices:
@@ -319,6 +458,18 @@ def _migrate_schema(db: DatabaseConnection) -> None:
         "ALTER TABLE conversations ADD COLUMN include_tool_results INTEGER DEFAULT 1",
         "ALTER TABLE conversations ADD COLUMN is_favourite INTEGER DEFAULT 0",
         "ALTER TABLE conversations ADD COLUMN prompt_caching INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN agents_enabled INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN agent_mode TEXT DEFAULT NULL",
+        "ALTER TABLE conversations ADD COLUMN agent_model_selection TEXT DEFAULT NULL",
+        "ALTER TABLE conversations ADD COLUMN conversation_type TEXT DEFAULT 'standard'",
+        "ALTER TABLE conversations ADD COLUMN kg_local_enabled INTEGER DEFAULT 0",
+        "ALTER TABLE conversations ADD COLUMN kg_use_global INTEGER DEFAULT 1",
+        "ALTER TABLE conversations ADD COLUMN kg_auto_context INTEGER DEFAULT 1",
+        "ALTER TABLE debate_agents ADD COLUMN allowed_tools TEXT",
+        "ALTER TABLE debate_agents ADD COLUMN allowed_skills TEXT",
+        "ALTER TABLE debate_agents ADD COLUMN display_name TEXT",
+        "ALTER TABLE debate_agents ADD COLUMN is_human INTEGER DEFAULT 0",
+        "ALTER TABLE debate_agents ADD COLUMN voice_id TEXT",
     ]
 
     for sql in migrations:

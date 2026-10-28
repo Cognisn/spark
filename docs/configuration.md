@@ -90,6 +90,12 @@ SQLite is the default and requires no additional configuration. For other databa
 ```yaml
 interface:
   host: 127.0.0.1               # Bind address (use 0.0.0.0 for network access)
+  port: 0                       # 0 picks a random free port each launch; set a
+                                # fixed port for a headless/reverse-proxy setup.
+                                # Override with SPARK__INTERFACE__PORT
+  open_browser: true            # Auto-open the browser at startup. Set false for
+                                # a headless run. Override with
+                                # SPARK__INTERFACE__OPEN_BROWSER
   ssl:
     enabled: false
     cert_file: /path/to/cert.pem
@@ -103,6 +109,15 @@ interface:
 ```
 
 The port is randomly chosen on each startup. The browser heartbeat monitor shuts down the server when no browser tabs are connected (after `miss_threshold` consecutive missed heartbeats at `interval_seconds` intervals).
+
+#### Theme Persistence
+
+```yaml
+interface:
+  theme: dark                    # dark or light — persists across restarts
+```
+
+The selected theme is saved to `config.yaml` when changed via the UI toggle, so it persists across application restarts.
 
 ### LLM Providers
 
@@ -218,6 +233,51 @@ embedded_tools:
     searxng_url: ""
 ```
 
+#### System Commands
+
+```yaml
+embedded_tools:
+  system_commands:
+    enabled: false                 # Disabled by default — must be explicitly enabled
+    timeout: 30                    # Default timeout per command (seconds)
+    max_timeout: 300               # Maximum allowed timeout
+    max_output_chars: 50000        # Truncate output beyond this
+    blocked_commands: []            # Additional commands to block (e.g. rm, shutdown)
+    require_approval: true         # Always prompt before running
+```
+
+OS-aware execution: uses zsh on macOS, bash on Linux, cmd.exe on Windows. Dangerous commands (mkfs, fdisk, dd, format) are always blocked regardless of configuration.
+
+#### Email
+
+```yaml
+embedded_tools:
+  email:
+    enabled: false                 # Disabled by default — requires SMTP configuration
+    host: smtp.gmail.com
+    port: 587
+    username: you@gmail.com
+    password: secret://email_password    # Stored in OS keychain
+    sender: you@gmail.com
+    use_tls: true
+    max_attachment_mb: 25
+    require_approval: true         # Always prompt before sending
+```
+
+Passwords are stored securely in the OS keychain via the secrets backend. Use the **Test Email Connection** button in Settings to verify your SMTP settings.
+
+#### Agents
+
+```yaml
+embedded_tools:
+  agents:
+    enabled: false                 # Disabled by default
+    default_mode: orchestrator     # orchestrator or chain
+    model_selection: same          # same or auto_select
+    max_concurrent: 5              # Maximum concurrent sub-agents
+    max_iterations: 15             # Max tool iterations per agent
+```
+
 See [Tools](tools.md) and [Web Search](web-search.md) for details.
 
 ### Default Model
@@ -260,6 +320,44 @@ daemon:
 ```
 
 See [Autonomous Actions](autonomous-actions.md) for details.
+
+### Voice
+
+Text-to-speech for voice mode. The browser synthesiser is the default and
+remains the fallback whenever ElevenLabs is unavailable. See [Voice](voice.md).
+
+```yaml
+voice:
+  # "browser" (default, offline, robotic) or "elevenlabs" (natural)
+  engine: browser
+
+  elevenlabs:
+    # Stored in the OS keychain, never written to config.yaml
+    api_key: ""
+    # eleven_flash_v2_5 (fast, half price) | eleven_multilingual_v2 | eleven_v3
+    model_id: eleven_flash_v2_5
+    # Used by chat, and as the fallback for any debate/panel agent with no voice
+    default_voice_id: ""
+    # Local guard against runaway spend. 0 means unlimited
+    monthly_character_cap: 100000
+    # Cached audio replays for free — the same text is never billed twice
+    cache_enabled: true
+    cache_max_mb: 200
+
+  # Voice-mode behaviour in debate and panel
+  interaction_mode: listen_along   # listen_along | immersive | listen_only
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `voice.engine` | `browser` | Speech engine. `elevenlabs` requires an API key |
+| `voice.elevenlabs.api_key` | `""` | Stored in the OS keychain |
+| `voice.elevenlabs.model_id` | `eleven_flash_v2_5` | Flash is fastest and half price |
+| `voice.elevenlabs.default_voice_id` | `""` | Chosen in Settings from the premade voices |
+| `voice.elevenlabs.monthly_character_cap` | `100000` | `0` means unlimited |
+| `voice.elevenlabs.cache_enabled` | `true` | Cache audio by content hash |
+| `voice.elevenlabs.cache_max_mb` | `200` | Cache size cap, least-recently-used eviction |
+| `voice.interaction_mode` | `listen_along` | Debate/panel microphone behaviour |
 
 ### Token Management
 

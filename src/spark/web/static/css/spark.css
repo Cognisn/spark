@@ -284,6 +284,56 @@
 
 /* Tool Panel Sidecar — items */
 
+/* Tool panel date group headers */
+.tp-date-group {
+    margin-bottom: 0.5rem;
+}
+
+.tp-date-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.625rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.tp-date-header::before,
+.tp-date-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--app-border);
+}
+
+.tp-date-header:hover {
+    color: var(--app-text-secondary);
+}
+
+.tp-date-header .tp-date-chevron {
+    font-size: 0.5rem;
+    transition: transform 0.15s ease;
+}
+
+.tp-date-header .tp-date-chevron.collapsed {
+    transform: rotate(-90deg);
+}
+
+.tp-date-header .tp-date-count {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.tp-date-body.collapsed {
+    display: none;
+}
+
 .tool-panel-item {
     background: var(--app-bg-secondary);
     border: 1px solid var(--app-border);
@@ -363,6 +413,67 @@
     word-break: break-word;
     color: var(--app-text-secondary);
     margin-bottom: 0.375rem;
+}
+
+
+/* Agent panel items */
+
+.agent-panel-item {
+    background: var(--app-bg-secondary);
+    border: 1px solid var(--app-border);
+    border-left: 3px solid var(--app-accent);
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+}
+
+.agent-panel-item .ap-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+}
+
+.agent-panel-item .ap-header:hover {
+    background: var(--app-hover-bg);
+}
+
+.agent-panel-item .ap-name {
+    font-weight: 600;
+    color: var(--app-text-primary);
+    flex: 1;
+}
+
+.agent-panel-item .ap-status { font-size: 0.875rem; flex-shrink: 0; }
+.agent-panel-item .ap-status.running { color: var(--app-accent); animation: app-spin 0.75s linear infinite; }
+.agent-panel-item .ap-status.success { color: var(--app-success); }
+.agent-panel-item .ap-status.error { color: var(--app-danger); }
+
+.agent-panel-item .ap-detail {
+    padding: 0 0.625rem 0.5rem;
+    display: none;
+    font-size: 0.75rem;
+}
+
+.agent-panel-item .ap-task {
+    color: var(--app-text-secondary);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.625rem;
+    border-bottom: 1px solid var(--app-border);
+}
+
+.agent-panel-item .ap-tool-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--app-border-light, var(--app-border));
+    font-size: 0.6875rem;
+}
+
+/* Sidecar resize handle hover indicator */
+#sidecar-resize-handle:hover {
+    background: var(--app-accent) !important;
+    opacity: 0.3;
 }
 
 

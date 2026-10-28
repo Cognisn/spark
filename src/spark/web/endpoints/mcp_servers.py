@@ -185,6 +185,16 @@ async def test_connection(request: Request) -> JSONResponse:
         return JSONResponse({"status": "error", "message": err_msg}, status_code=400)
 
 
+@router.get("/api/{server_name}/config")
+async def get_server_config(request: Request, server_name: str) -> JSONResponse:
+    """Get the full configuration for a specific MCP server (for editing)."""
+    servers = _load_server_configs(request)
+    for srv in servers:
+        if srv.get("name") == server_name:
+            return JSONResponse(srv)
+    return JSONResponse({"error": "Server not found"}, status_code=404)
+
+
 @router.get("/api/{server_name}/tools")
 async def get_server_tools(request: Request, server_name: str) -> JSONResponse:
     """Get the list of tools exposed by a specific MCP server."""

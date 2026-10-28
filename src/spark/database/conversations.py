@@ -109,19 +109,23 @@ def update_token_usage(
     output_tokens: int,
     user_guid: str,
 ) -> None:
-    """Update per-model token usage for a conversation."""
+    """Update per-model token usage for a conversation.
+
+    `tokens_sent` and `tokens_received` are lifetime billing counters.
+    `total_tokens` is deliberately NOT touched here — it represents the current
+    active context size (used by the compaction threshold) and is maintained
+    by `messages.add_message` / `delete_message` / `recalculate_total_tokens`.
+    """
     ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
 
-    # Update conversation totals
     db.execute(
         f"""UPDATE conversations SET
             tokens_sent = tokens_sent + {ph},
             tokens_received = tokens_received + {ph},
-            total_tokens = total_tokens + {ph} + {ph},
             last_updated = {ph}
             WHERE id = {ph}""",
-        (input_tokens, output_tokens, input_tokens, output_tokens, now, conversation_id),
+        (input_tokens, output_tokens, now, conversation_id),
     )
 
     # Upsert model usage

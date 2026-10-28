@@ -252,3 +252,51 @@ class TestStreaming:
         # Should return an error event via SSE
         assert resp.status_code == 200
         assert "Not initialised" in resp.text
+
+
+class TestCancelEndpoints:
+    def test_agent_cancel_sets_token(self, client: TestClient) -> None:
+        from spark.core.cancellation import CancellationToken
+
+        cookies = _auth(client)
+        tok = CancellationToken()
+        client.app.state.agent_cancel_tokens = {"agent-x": tok}
+
+        resp = client.post(
+            "/chat/agent/cancel",
+            json={"agent_id": "agent-x"},
+            cookies=cookies,
+        )
+        assert resp.status_code == 200
+        assert tok.is_cancelled() is True
+
+    def test_agent_cancel_unknown_id_is_ok(self, client: TestClient) -> None:
+        cookies = _auth(client)
+        client.app.state.agent_cancel_tokens = {}
+        resp = client.post(
+            "/chat/agent/cancel",
+            json={"agent_id": "missing"},
+            cookies=cookies,
+        )
+        assert resp.status_code == 200
+
+    def test_stream_cancel_sets_turn_and_agents(self, client: TestClient) -> None:
+        from spark.core.cancellation import CancellationToken
+
+        cookies = _auth(client)
+        turn = CancellationToken()
+        a1 = CancellationToken()
+        a2 = CancellationToken()
+        client.app.state.turn_cancel_tokens = {"stream-1": turn}
+        client.app.state.agent_cancel_tokens = {"a1": a1, "a2": a2}
+        client.app.state.stream_agent_sets = {"stream-1": {"a1": a1, "a2": a2}}
+
+        resp = client.post(
+            "/stream/cancel",
+            json={"stream_id": "stream-1"},
+            cookies=cookies,
+        )
+        assert resp.status_code == 200
+        assert turn.is_cancelled() is True
+        assert a1.is_cancelled() is True
+        assert a2.is_cancelled() is True

@@ -75,6 +75,22 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
         }
     )
 
+    # Knowledge graph query — always available (resolves scopes at call time)
+    try:
+        from spark.knowledge.tools import get_tools as kg_get_tools
+
+        tools.extend(kg_get_tools())
+    except Exception as e:  # noqa: BLE001 - graphs must never break tool assembly
+        logger.warning("Knowledge graph tool unavailable: %s", e)
+
+    # Skills — always available (degrades to none if the directory is unreadable)
+    try:
+        from spark.skills.tools import get_tools as skills_get_tools
+
+        tools.extend(skills_get_tools())
+    except Exception as e:  # noqa: BLE001 - skills must never break tool assembly
+        logger.warning("Skills tools unavailable: %s", e)
+
     # Filesystem — requires allowed_paths
     fs_config = embedded.get("filesystem", {})
     if fs_config.get("enabled", True) and _has_paths(fs_config):
@@ -89,6 +105,12 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(doc_tools(mode=doc_config.get("mode", "read")))
 
+        # Document creation tools (when mode is read_write)
+        if doc_config.get("mode", "read") == "read_write":
+            from spark.tools.document_creation import get_tools as doc_create_tools
+
+            tools.extend(doc_create_tools())
+
     # Archives — requires filesystem allowed_paths
     arc_config = embedded.get("archives", {})
     if arc_config.get("enabled", True) and _has_paths(fs_config):
@@ -102,6 +124,20 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
         from spark.tools.web import get_tools as web_tools
 
         tools.extend(web_tools())
+
+    # System Commands — requires explicit enable
+    cmd_config = embedded.get("system_commands", {})
+    if cmd_config.get("enabled", False):
+        from spark.tools.system_command import get_tools as cmd_tools
+
+        tools.extend(cmd_tools())
+
+    # Email — requires SMTP configuration
+    email_config = embedded.get("email", {})
+    if email_config.get("enabled", False) and email_config.get("host"):
+        from spark.tools.email_tool import get_tools as email_tools
+
+        tools.extend(email_tools())
 
     # Memory — always available
     from spark.tools.memory_tools import TOOLS as mem_tools
@@ -124,6 +160,20 @@ def execute_builtin_tool(
         if tool_name == "get_tool_documentation":
             return _get_tool_documentation(tool_input.get("tool_name", "")), False
 
+        # Knowledge graph
+        if tool_name == "query_knowledge_graph":
+            from spark.knowledge.tools import execute as kg_execute
+
+            return kg_execute(tool_name, tool_input, config)
+
+        # Skills
+        from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES
+
+        if tool_name in (READ_TOOL_NAMES | WRITE_TOOL_NAMES):
+            from spark.skills.tools import execute as skills_execute
+
+            return skills_execute(tool_name, tool_input, config)
+
         # Datetime
         if tool_name == "get_current_datetime":
             from spark.tools.datetime_tool import execute
@@ -143,30 +193,64 @@ def execute_builtin_tool(
         if tool_name in fs_tools:
             fs_config = embedded.get("filesystem", {})
             allowed = fs_config.get("allowed_paths", [])
+            # Handle legacy string format (comma-separated)
+            if isinstance(allowed, str):
+                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
             if not allowed:
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.filesystem import execute
 
             mode = fs_config.get("mode", "read")
             return execute(tool_name, tool_input, allowed_paths=allowed, mode=mode), False
 
-        # Documents
-        doc_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
-        if tool_name in doc_tools:
+        # Documents (read)
+        doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
+        if tool_name in doc_read_tools:
             fs_config = embedded.get("filesystem", {})
             if not _has_paths(fs_config):
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.documents import execute
 
             return execute(tool_name, tool_input), False
 
+        # Documents (create)
+        doc_create_tools = {
+            "create_word",
+            "create_excel",
+            "create_powerpoint",
+            "create_pdf",
+        }
+        if tool_name in doc_create_tools:
+            fs_config = embedded.get("filesystem", {})
+            allowed = fs_config.get("allowed_paths", [])
+            if isinstance(allowed, str):
+                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
+            if not allowed:
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
+
+            from spark.tools.document_creation import execute as doc_create_execute
+
+            return doc_create_execute(tool_name, tool_input, allowed), False
+
         # Archives
         if tool_name in ("list_archive", "extract_archive"):
             fs_config = embedded.get("filesystem", {})
             if not _has_paths(fs_config):
-                return f"Tool '{tool_name}' requires allowed_paths to be configured.", True
+                return (
+                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
+                    True,
+                )
 
             from spark.tools.archives import execute
 
@@ -179,8 +263,38 @@ def execute_builtin_tool(
 
             return execute(tool_name, tool_input, config), False
 
+        # System Commands
+        if tool_name == "run_command":
+            cmd_config = embedded.get("system_commands", {})
+            if not cmd_config.get("enabled", False):
+                return "System command tool is disabled. Enable in Settings.", True
+            from spark.tools.system_command import execute as cmd_execute
+
+            return cmd_execute(tool_name, tool_input, cmd_config), False
+
+        # Email
+        email_tools = {"send_email", "draft_email"}
+        if tool_name in email_tools:
+            email_cfg = embedded.get("email", {})
+            if not email_cfg.get("enabled", False):
+                return "Email tool is disabled. Enable it in Settings → Email.", True
+            if not email_cfg.get("host"):
+                return (
+                    "Email SMTP host is not configured. Go to Settings → Email.",
+                    True,
+                )
+
+            from spark.tools.email_tool import execute as email_execute
+
+            return email_execute(tool_name, tool_input, config), False
+
         # Memory
-        memory_tool_names = {"store_memory", "query_memory", "list_memories", "delete_memory"}
+        memory_tool_names = {
+            "store_memory",
+            "query_memory",
+            "list_memories",
+            "delete_memory",
+        }
         if tool_name in memory_tool_names:
             from spark.tools.memory_tools import execute as mem_execute
 

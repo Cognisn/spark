@@ -67,6 +67,7 @@ dependencies = [
     "openpyxl>=3.1.0",
     "python-pptx>=0.6.21",
     "pdfplumber>=0.10.0",
+    "reportlab>=4.0",
     "python-magic-bin>=0.4.14; sys_platform == 'win32'",
     "python-magic>=0.4.27; sys_platform != 'win32'",
     # Semantic search and embeddings
@@ -91,8 +92,8 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-timeout>=2.3.0",
     "mypy>=1.8.0",
-    "black>=24.0.0",
-    "isort>=5.13.0",
+    "black==26.3.1",
+    "isort==8.0.1",
 ]
 mysql = ["mysql-connector-python>=8.0.0"]
 postgresql = ["psycopg2-binary>=2.9.0"]
@@ -105,6 +106,7 @@ all-databases = [
 
 [project.scripts]
 spark = "spark.launch:main"
+cognisn-spark = "spark.launch:main"
 spark-daemon = "spark.daemon.tray:run_tray_daemon"
 
 [project.urls]

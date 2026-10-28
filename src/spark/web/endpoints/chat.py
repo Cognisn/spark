@@ -35,7 +35,11 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
             request,
             "chat.html",
             {
-                "conversation": {"id": conversation_id, "name": "Unknown", "model_id": ""},
+                "conversation": {
+                    "id": conversation_id,
+                    "name": "Unknown",
+                    "model_id": "",
+                },
             },
         )
 
@@ -60,6 +64,58 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
 
     messages = conv_mgr.get_messages(conversation_id)
     return JSONResponse(messages)
+
+
+@router.get("/{conversation_id}/api/tool-activity")
+async def get_tool_activity(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get tool call history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import mcp_ops
+
+    transactions = mcp_ops.get_transactions(conv_mgr._db, conversation_id)
+    # Return newest-last so the panel renders in chronological order.
+    transactions.reverse()
+    # Strip the embedding-sized binary blob; keep only display fields.
+    result = []
+    for t in transactions:
+        result.append(
+            {
+                "id": t.get("id"),
+                "tool_name": t.get("tool_name", ""),
+                "tool_input": t.get("tool_input", "{}"),
+                "tool_response": t.get("tool_response", ""),
+                "is_error": bool(t.get("is_error")),
+                "execution_time_ms": t.get("execution_time_ms"),
+                "timestamp": t.get("transaction_timestamp"),
+            }
+        )
+    return JSONResponse(result)
+
+
+@router.get("/{conversation_id}/api/agent-history")
+async def get_agent_history(request: Request, conversation_id: int) -> JSONResponse:
+    """API: get agent run history for a conversation."""
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    if not conv_mgr:
+        return JSONResponse([])
+
+    from spark.database import agents as agent_db
+
+    runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+    # Serialise datetime and JSON fields for the frontend.
+    result = []
+    for r in runs:
+        entry = dict(r)
+        # Ensure datetimes are strings
+        for key in ("created_at", "completed_at"):
+            val = entry.get(key)
+            if val and not isinstance(val, str):
+                entry[key] = str(val)
+        result.append(entry)
+    return JSONResponse(result)
 
 
 @router.post("/{conversation_id}/api/send")
@@ -105,15 +161,30 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     model_id = conv.get("model_id", "")
     context_window = resolver.get_context_window(model_id)
 
+    # Sum token usage from agent runs for this conversation
+    agent_input_tokens = 0
+    agent_output_tokens = 0
+    try:
+        from spark.database import agents as agent_db
+
+        runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+        for r in runs:
+            agent_input_tokens += r.get("input_tokens", 0) or 0
+            agent_output_tokens += r.get("output_tokens", 0) or 0
+    except Exception:
+        pass
+
     return JSONResponse(
         {
             "id": conv.get("id"),
             "name": conv.get("name"),
             "model_id": model_id,
             "created_at": conv.get("created_at"),
-            "tokens_sent": conv.get("tokens_sent", 0),
-            "tokens_received": conv.get("tokens_received", 0),
-            "total_tokens": conv.get("total_tokens", 0),
+            "tokens_sent": (conv.get("tokens_sent", 0) or 0) + agent_input_tokens,
+            "tokens_received": (conv.get("tokens_received", 0) or 0) + agent_output_tokens,
+            "total_tokens": (conv.get("total_tokens", 0) or 0)
+            + agent_input_tokens
+            + agent_output_tokens,
             "context_window": context_window,
             "instructions": conv.get("instructions"),
             "compaction_threshold": conv.get("compaction_threshold"),
@@ -126,6 +197,12 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "max_history_messages": conv.get("max_history_messages"),
             "include_tool_results": bool(conv.get("include_tool_results", True)),
             "prompt_caching": bool(conv.get("prompt_caching", True)),
+            "agents_enabled": bool(conv.get("agents_enabled", False)),
+            "agent_mode": conv.get("agent_mode") or "",
+            "agent_model_selection": conv.get("agent_model_selection") or "",
+            "kg_local_enabled": bool(conv.get("kg_local_enabled", False)),
+            "kg_use_global": conv.get("kg_use_global", 1) != 0,
+            "kg_auto_context": conv.get("kg_auto_context", 1) != 0,
         }
     )
 
@@ -154,6 +231,12 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "max_history_messages",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
+        "agent_mode",
+        "agent_model_selection",
+        "kg_local_enabled",
+        "kg_use_global",
+        "kg_auto_context",
     }
     _BOOL_FIELDS = {
         "memory_enabled",
@@ -161,6 +244,10 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         "rag_tool_enabled",
         "include_tool_results",
         "prompt_caching",
+        "agents_enabled",
+        "kg_local_enabled",
+        "kg_use_global",
+        "kg_auto_context",
     }
 
     updates: dict[str, Any] = {}
@@ -200,7 +287,11 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     for t in all_builtin:
         enabled = mcp_ops.is_embedded_tool_enabled(conv_mgr._db, conversation_id, t["name"])
         embedded.append(
-            {"name": t["name"], "description": t.get("description", ""), "enabled": enabled}
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "enabled": enabled,
+            }
         )
 
     # MCP servers
@@ -235,7 +326,30 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
                 }
             )
 
-    return JSONResponse({"embedded": embedded, "mcp_servers": mcp_servers})
+    # Skills (global enable state folded with per-conversation overrides)
+    skills_out: list[dict] = []
+    try:
+        from spark.database import skills as skills_db
+        from spark.skills.manager import get_skills_manager
+
+        manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
+        global_states = skills_db.get_skill_states(conv_mgr._db, user_guid)
+        conv_states = skills_db.get_conversation_skill_states(conv_mgr._db, conversation_id)
+        for skill in manager.list_skills():
+            enabled_flag = global_states.get(skill["name"], True) and conv_states.get(
+                skill["name"], True
+            )
+            skills_out.append(
+                {
+                    "name": skill["name"],
+                    "description": skill["description"],
+                    "enabled": enabled_flag,
+                }
+            )
+    except Exception:  # noqa: BLE001 - skills must never break the tools panel
+        logger.warning("Skills unavailable for tools panel", exc_info=True)
+
+    return JSONResponse({"embedded": embedded, "mcp_servers": mcp_servers, "skills": skills_out})
 
 
 @router.post("/{conversation_id}/api/tools")
@@ -257,6 +371,10 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
         mcp_ops.set_embedded_tool_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
     elif tool_type == "mcp_server":
         mcp_ops.set_mcp_server_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
+    elif tool_type == "skill":
+        from spark.database import skills as skills_db
+
+        skills_db.set_conversation_skill_enabled(conv_mgr._db, conversation_id, name, enabled)
 
     return JSONResponse({"status": "ok"})
 
@@ -339,6 +457,37 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     msgs = conv_mgr.get_messages(conversation_id)
     name = conv.get("name", "conversation")
 
+    # Debates and panels export from their structured turn record, not messages.
+    if conv.get("conversation_type") in ("debate", "panel"):
+        from spark.core.debate.export import export_debate_json, export_debate_markdown
+
+        if fmt == "markdown":
+            content = export_debate_markdown(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="text/markdown",
+                headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
+            )
+        if fmt == "json":
+            content = export_debate_json(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{name}.json"'},
+            )
+        if fmt == "html":
+            from spark.core.debate.export import export_debate_html
+
+            content = export_debate_html(conv_mgr._db, conversation_id)
+            return StreamingResponse(
+                iter([content]),
+                media_type="text/html",
+                headers={"Content-Disposition": f'attachment; filename="{name}.html"'},
+            )
+        return JSONResponse(
+            {"error": "Format not supported for this conversation type"}, status_code=400
+        )
+
     if fmt == "json":
         content = json.dumps({"conversation": conv, "messages": msgs}, indent=2, default=str)
         return StreamingResponse(
@@ -389,6 +538,30 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
 # -- Permission ---------------------------------------------------------------
 
 
+@router.post("/agent/model-approve")
+async def approve_agent_model(request: Request) -> JSONResponse:
+    """API: respond to an agent model approval request.
+
+    Signals the streaming thread that is waiting for the user to approve or
+    override the model selected for a sub-agent.
+    """
+    data = await request.json()
+    request_id = data.get("request_id")
+    model_id = data.get("model_id", "")
+
+    events = getattr(request.app.state, "agent_model_events", {})
+    responses = getattr(request.app.state, "agent_model_responses", {})
+
+    if request_id in events:
+        responses[request_id] = model_id
+        events[request_id].set()
+        logger.info("Agent model approval for %s: %s", request_id, model_id)
+    else:
+        logger.warning("Agent model approval for unknown request %s", request_id)
+
+    return JSONResponse({"status": "ok"})
+
+
 @router.post("/permission/respond")
 async def permission_respond(request: Request) -> JSONResponse:
     """API: respond to a tool permission request.
@@ -410,6 +583,21 @@ async def permission_respond(request: Request) -> JSONResponse:
     else:
         logger.warning("Permission response for unknown request %s", request_id)
 
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/agent/cancel")
+async def cancel_agent(request: Request) -> JSONResponse:
+    """API: cancel a running sub-agent. Idempotent — unknown ids return 200."""
+    data = await request.json()
+    agent_id = data.get("agent_id", "")
+    tokens = getattr(request.app.state, "agent_cancel_tokens", {})
+    tok = tokens.get(agent_id)
+    if tok is not None:
+        tok.cancel("user")
+        logger.info("Agent cancel requested for %s", agent_id)
+    else:
+        logger.info("Agent cancel for unknown id %s — ignored", agent_id)
     return JSONResponse({"status": "ok"})
 
 

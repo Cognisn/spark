@@ -102,7 +102,20 @@ class TestConversations:
         conv = conversations.get_conversation(conn, cid, USER)
         assert conv["tokens_sent"] == 100
         assert conv["tokens_received"] == 50
-        assert conv["total_tokens"] == 150
+        # total_tokens tracks active context, not lifetime billing — no messages added yet
+        assert conv["total_tokens"] == 0
+
+    def test_total_tokens_tracks_active_messages(self, conn: DatabaseConnection) -> None:
+        """total_tokens is maintained by message inserts, not token-usage updates."""
+        cid = conversations.create_conversation(conn, "Chat", "m1", USER)
+        messages.add_message(conn, cid, "user", "hello", 10, USER)
+        messages.add_message(conn, cid, "assistant", "hi", 5, USER)
+        # Billing update must not inflate total_tokens
+        conversations.update_token_usage(conn, cid, "m1", 1000, 500, USER)
+        conv = conversations.get_conversation(conn, cid, USER)
+        assert conv["total_tokens"] == 15
+        assert conv["tokens_sent"] == 1000
+        assert conv["tokens_received"] == 500
 
     def test_recalculate_tokens(self, conn: DatabaseConnection) -> None:
         cid = conversations.create_conversation(conn, "Chat", "m1", USER)

@@ -487,3 +487,82 @@ class TestGeminiHelpers:
         }
         cleaned = _clean_schema(schema)
         assert "examples" not in cleaned["items"]
+
+
+class TestAnthropicTemperature:
+    """The Claude 5 family and Opus 4.7/4.8 reject the temperature parameter."""
+
+    def test_accepts_temperature_detection(self) -> None:
+        from spark.llm.anthropic_direct import _accepts_temperature
+
+        # Rejecting families → False (also the bedrock 'anthropic.' prefix).
+        for rejecting in (
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-fable-5",
+            "claude-mythos-5",
+            "anthropic.claude-sonnet-5",
+        ):
+            assert _accepts_temperature(rejecting) is False, rejecting
+
+        # Older families still accept it.
+        for accepting in (
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+            "claude-opus-4-5",
+            "claude-haiku-4-5",
+            "claude-3-5-sonnet-20241022",
+        ):
+            assert _accepts_temperature(accepting) is True, accepting
+
+    def _provider(self, model_id: str):
+        from spark.llm.anthropic_direct import AnthropicDirectProvider
+
+        provider = AnthropicDirectProvider(api_key="test")
+        provider._client = MagicMock()
+        provider.set_model(model_id)
+        return provider
+
+    def test_omits_temperature_for_rejecting_model(self) -> None:
+        with patch("spark.llm.anthropic_direct._normalise_response", return_value={}):
+            provider = self._provider("claude-sonnet-5")
+            provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
+            req = provider._client.messages.create.call_args.kwargs
+            assert "temperature" not in req
+
+    def test_keeps_temperature_for_accepting_model(self) -> None:
+        with patch("spark.llm.anthropic_direct._normalise_response", return_value={}):
+            provider = self._provider("claude-sonnet-4-6")
+            provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
+            req = provider._client.messages.create.call_args.kwargs
+            assert req["temperature"] == 0.4
+
+    def test_strips_temperature_and_retries_on_400(self) -> None:
+        # A future/unknown model that still 400s on temperature must self-heal:
+        # strip the parameter and retry, rather than failing the turn.
+        from spark.llm.anthropic_direct import AnthropicDirectProvider
+
+        calls: list[dict] = []
+
+        def fake_create(**req):
+            calls.append(dict(req))
+            if "temperature" in req:
+                raise Exception(
+                    "Error code: 400 - {'type': 'error', 'error': {'type': "
+                    "'invalid_request_error', 'message': 'temperature is "
+                    "deprecated for this model.'}}"
+                )
+            return {}
+
+        with patch("spark.llm.anthropic_direct._normalise_response", return_value={}):
+            provider = AnthropicDirectProvider(api_key="test", rate_limit_base_delay=1.0)
+            provider._client = MagicMock()
+            provider._client.messages.create.side_effect = fake_create
+            provider.set_model("claude-sonnet-9")  # unknown to the static list
+            result = provider.invoke_model([{"role": "user", "content": "hi"}], temperature=0.4)
+
+        assert result == {}
+        assert len(calls) == 2  # first with temperature (400), retry without
+        assert "temperature" in calls[0]
+        assert "temperature" not in calls[1]

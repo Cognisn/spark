@@ -73,6 +73,69 @@ sequenceDiagram
 4. **Speaking** -- The response text is spoken using `speechSynthesis`
 5. **Loop** -- After TTS completes, listening restarts automatically
 
+## ElevenLabs (optional)
+
+By default, voice mode speaks with the browser's built-in synthesiser, which is
+free and works offline but sounds robotic. Spark can optionally use
+[ElevenLabs](https://elevenlabs.io) for natural speech instead.
+
+**The browser synthesiser always remains the fallback.** If ElevenLabs is
+disabled, has no API key, hits its quota, exceeds your character cap, or simply
+fails, the utterance is still spoken by the browser. Voice mode never goes
+silent.
+
+### Enabling it
+
+1. Open **Settings → Voice**.
+2. Set **Speech engine** to `elevenlabs`.
+3. Paste your ElevenLabs **API key**. It is stored in the operating system
+   keychain, never written to `config.yaml`, and never sent to the browser --
+   all synthesis is proxied through Spark's own server.
+4. Press **Test Connection** to confirm, then choose a **default voice**.
+
+### Models
+
+| Model | Speed | Cost |
+|-------|-------|------|
+| `eleven_flash_v2_5` (default) | ~75 ms, real-time | **Half price** (0.5 credits/character) |
+| `eleven_multilingual_v2` | Slower | 1 credit/character |
+| `eleven_v3` | Slowest, most expressive | 1 credit/character |
+
+Flash is the default because it is both the fastest and the cheapest, which
+matters in a debate where every turn is synthesised.
+
+### Voices in debate and panel
+
+When ElevenLabs is enabled, the conversation creation wizard shows a **voice
+picker beside each agent** (the debaters and judge; the moderator and each
+panellist). Distinct voices are pre-selected automatically, so a multi-voice
+debate works with no configuration -- you can override any of them. The human
+panellist has no voice: they speak for themselves.
+
+### Interaction modes
+
+Voice mode in debate and panel can behave in three ways, set in Settings and
+switchable live from the voice bar:
+
+- **Listen along** (default) -- agent turns are spoken as they land. The
+  microphone opens only when you hold the floor or press it.
+- **Immersive** -- the microphone stays open so you can interject. It is
+  suppressed while Spark is speaking, so it never transcribes its own audio.
+- **Listen only** -- narration only; the microphone never opens.
+
+### Cost controls
+
+- **Monthly character cap** -- ElevenLabs meters per character. Set a cap
+  (0 means unlimited); once reached, Spark falls back to the browser voice.
+  Usage is shown in Settings.
+- **Audio cache** -- synthesised audio is cached by content, so replaying a
+  debate or re-reading a turn costs nothing and is billed no characters.
+
+### What ElevenLabs does not replace
+
+Speech-to-**text** (the microphone and dictation) still uses the browser's Web
+Speech API. ElevenLabs replaces only the spoken output.
+
 ## Limitations
 
 - Speech recognition accuracy depends on the browser's speech engine (most use cloud-based recognition)

@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "python": {
+    "version": "3.12",
+    "install": ["-e", ".[dev]"],
+    "import_check": "spark"
+  },
+  "services": [
+    { "name": "web", "offset": 0 }
+  ],
+  "notes": "No Compose stack in 0.2.0. Run headless with SPARK__INTERFACE__OPEN_BROWSER=false and SPARK__INTERFACE__PORT set to the web port from ports.txt. sentence-transformers downloads its embedding model on first use."
+}

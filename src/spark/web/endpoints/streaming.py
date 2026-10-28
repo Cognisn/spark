@@ -11,7 +11,10 @@ import uuid
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
+
+from spark.core.cancellation import CancellationToken
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +37,50 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
     user_guid = getattr(request.app.state, "user_guid", "default")
 
+    # Resolve an explicit /skill-name invocation at the start of the message
+    from spark.skills.trigger import resolve_trigger_for_conversation
+
+    message = resolve_trigger_for_conversation(conv_mgr._db, user_guid, conversation_id, message)
+
+    # Allocate a unique stream id and per-turn cancellation token.
+    stream_id = uuid.uuid4().hex
+    turn_token = CancellationToken()
+    agent_tokens_for_stream: dict[str, CancellationToken] = {}
+
+    # Initialise cancellation registries on app.state if absent.
+    if not hasattr(request.app.state, "turn_cancel_tokens"):
+        request.app.state.turn_cancel_tokens = {}
+    if not hasattr(request.app.state, "agent_cancel_tokens"):
+        request.app.state.agent_cancel_tokens = {}
+    if not hasattr(request.app.state, "stream_agent_sets"):
+        request.app.state.stream_agent_sets = {}
+
+    request.app.state.turn_cancel_tokens[stream_id] = turn_token
+    request.app.state.stream_agent_sets[stream_id] = agent_tokens_for_stream
+
     # Shared state for permission requests
     pending_permissions: dict[str, threading.Event] = {}
     permission_responses: dict[str, str] = {}
+
+    # Shared state for agent model approval requests
+    agent_model_events: dict[str, threading.Event] = {}
+    agent_model_responses: dict[str, str] = {}
 
     # Store on app state so the /permission/respond endpoint can access them
     if not hasattr(request.app.state, "permission_events"):
         request.app.state.permission_events = {}
     if not hasattr(request.app.state, "permission_responses"):
         request.app.state.permission_responses = {}
+    if not hasattr(request.app.state, "agent_model_events"):
+        request.app.state.agent_model_events = {}
+    if not hasattr(request.app.state, "agent_model_responses"):
+        request.app.state.agent_model_responses = {}
 
     async def event_generator() -> AsyncGenerator[dict, None]:
-        yield {"event": "status", "data": json.dumps({"status": "processing"})}
+        yield {
+            "event": "status",
+            "data": json.dumps({"status": "processing", "stream_id": stream_id}),
+        }
 
         tool_events: list[dict] = []
         final_content = ""
@@ -103,9 +138,83 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             logger.info("Permission for %s: %s", tool_name, decision)
             return decision
 
-        # Inject the permission callback into the conversation manager for this request
+        def agent_model_callback(
+            agent_name: str,
+            task: str,
+            suggested_model: str,
+            available_models: list[dict],
+            justification: str = "",
+        ) -> str:
+            """Called from the agent spawn thread when auto_select model approval is needed.
+
+            Emits an approval event and blocks until the user responds via
+            the /agent/model-approve endpoint.
+            """
+            request_id = str(uuid.uuid4())[:8]
+
+            tool_events.append(
+                {
+                    "event": "agent_model_approval",
+                    "data": {
+                        "request_id": request_id,
+                        "agent_name": agent_name,
+                        "task": task,
+                        "suggested_model": suggested_model,
+                        "available_models": available_models,
+                        "justification": justification,
+                    },
+                }
+            )
+
+            wait_event = threading.Event()
+            request.app.state.agent_model_events[request_id] = wait_event
+            request.app.state.agent_model_responses[request_id] = None
+
+            logger.info(
+                "Agent model approval requested for '%s' (model=%s, id=%s), waiting...",
+                agent_name,
+                suggested_model,
+                request_id,
+            )
+
+            # Block until user responds (timeout after 120s)
+            if wait_event.wait(timeout=120):
+                approved = request.app.state.agent_model_responses.get(request_id, suggested_model)
+            else:
+                approved = suggested_model
+                logger.warning(
+                    "Agent model approval %s timed out — using suggested model %s",
+                    request_id,
+                    suggested_model,
+                )
+
+            # Cleanup
+            request.app.state.agent_model_events.pop(request_id, None)
+            request.app.state.agent_model_responses.pop(request_id, None)
+
+            logger.info("Agent model approved: %s", approved)
+            return approved
+
+        def register_agent_cancel(agent_id: str) -> CancellationToken:
+            """Allocate a cancellation token for a spawned agent.
+
+            Stored in both the app-state registry (for the cancel endpoint to
+            address by agent_id) and the per-stream set (for cleanup when the
+            stream finishes).
+            """
+            tok = CancellationToken()
+            request.app.state.agent_cancel_tokens[agent_id] = tok
+            agent_tokens_for_stream[agent_id] = tok
+            return tok
+
+        # Inject the permission, model approval, and agent cancel callbacks into
+        # the conversation manager for the duration of this request.
         original_callback = conv_mgr._tool_permission_callback
+        original_model_callback = conv_mgr._agent_model_callback
+        original_agent_register = getattr(conv_mgr, "_agent_cancel_register", None)
         conv_mgr._tool_permission_callback = permission_callback
+        conv_mgr._agent_model_callback = agent_model_callback
+        conv_mgr._agent_cancel_register = register_agent_cancel
 
         try:
             loop = asyncio.get_event_loop()
@@ -117,6 +226,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     user_guid,
                     status_callback=status_callback,
                     stream_callback=stream_callback,
+                    cancel_token=turn_token,
                 ),
             )
 
@@ -167,6 +277,61 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                         }
                     elif event_type == "tool_iteration_complete":
                         yield {"event": "progress", "data": json.dumps(event_data)}
+                    elif event_type == "agent_start":
+                        yield {
+                            "event": "agent_start",
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "agent_name": event_data.get("agent_name", ""),
+                                    "task": event_data.get("task", ""),
+                                    "model_id": event_data.get("model_id", ""),
+                                    "mode": event_data.get("mode", ""),
+                                }
+                            ),
+                        }
+                    elif event_type == "agent_tool_call":
+                        yield {
+                            "event": "agent_tool_call",
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "params": event_data.get("params", {}),
+                                }
+                            ),
+                        }
+                    elif event_type == "agent_tool_result":
+                        yield {
+                            "event": "agent_tool_result",
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "tool_name": event_data.get("tool_name", ""),
+                                    "result": event_data.get("result", ""),
+                                    "status": event_data.get("status", "success"),
+                                }
+                            ),
+                        }
+                    elif event_type == "agent_complete":
+                        yield {
+                            "event": "agent_complete",
+                            "data": json.dumps(
+                                {
+                                    "agent_id": event_data.get("agent_id", ""),
+                                    "agent_name": event_data.get("agent_name", ""),
+                                    "status": event_data.get("status", "completed"),
+                                    "result": event_data.get("result", ""),
+                                    "input_tokens": event_data.get("input_tokens", 0),
+                                    "output_tokens": event_data.get("output_tokens", 0),
+                                }
+                            ),
+                        }
+                    elif event_type == "agent_model_approval":
+                        yield {
+                            "event": "agent_model_approval",
+                            "data": json.dumps(event_data),
+                        }
 
                 if final_content:
                     yield {
@@ -189,26 +354,63 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     elif event_type == "tool_result":
                         yield {"event": "tool_complete", "data": json.dumps(event_data)}
 
+                if result.get("status") == "cancelled":
+                    yield {
+                        "event": "cancelled",
+                        "data": json.dumps({"reason": turn_token.reason or "user"}),
+                    }
+                else:
+                    yield {
+                        "event": "response",
+                        "data": json.dumps(
+                            {
+                                "content": result.get("content", ""),
+                                "final": True,
+                                "usage": result.get("usage", {}),
+                                "tool_calls": len(result.get("tool_calls", [])),
+                                "iterations": result.get("iterations", 1),
+                            }
+                        ),
+                    }
                 yield {
-                    "event": "response",
-                    "data": json.dumps(
-                        {
-                            "content": result.get("content", ""),
-                            "final": True,
-                            "usage": result.get("usage", {}),
-                            "tool_calls": len(result.get("tool_calls", [])),
-                            "iterations": result.get("iterations", 1),
-                        }
-                    ),
+                    "event": "complete",
+                    "data": json.dumps({"status": result.get("status", "ok")}),
                 }
-                yield {"event": "complete", "data": json.dumps({"status": "ok"})}
 
             except Exception as e:
                 logger.error("Streaming error: %s", e)
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
         finally:
-            # Restore original callback
+            # Restore original callbacks
             conv_mgr._tool_permission_callback = original_callback
+            conv_mgr._agent_model_callback = original_model_callback
+            conv_mgr._agent_cancel_register = original_agent_register
+            # Drop registries for this stream so cancel endpoints can't address
+            # stale tokens after the turn finishes.
+            request.app.state.turn_cancel_tokens.pop(stream_id, None)
+            request.app.state.stream_agent_sets.pop(stream_id, None)
+            for aid in list(agent_tokens_for_stream):
+                request.app.state.agent_cancel_tokens.pop(aid, None)
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/cancel")
+async def cancel_stream(request: Request) -> JSONResponse:
+    """API: cancel an active stream's turn and all of its child agents."""
+    data = await request.json()
+    stream_id = data.get("stream_id", "")
+    turn_tokens = getattr(request.app.state, "turn_cancel_tokens", {})
+    stream_agents = getattr(request.app.state, "stream_agent_sets", {})
+
+    tok = turn_tokens.get(stream_id)
+    if tok is not None:
+        tok.cancel("user")
+        logger.info("Turn cancel requested for stream %s", stream_id)
+
+    for agent_id, agent_tok in (stream_agents.get(stream_id) or {}).items():
+        agent_tok.cancel("user")
+        logger.info("Cascade cancel for agent %s in stream %s", agent_id, stream_id)
+
+    return JSONResponse({"status": "ok"})
