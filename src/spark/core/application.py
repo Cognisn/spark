@@ -13,6 +13,7 @@ from konfig import AppContext
 from konfig.paths import config_dir, data_dir
 
 import spark
+from spark import mode
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,20 @@ def _get_default_db_path() -> str:
     return str(_get_data_path() / "spark.db")
 
 
+def configure_runtime(settings: object) -> mode.RuntimeSettings:
+    """Validate the mode and database settings and set the process-wide mode.
+
+    Raises :class:`spark.mode.ModeConfigError` when the settings are invalid (for
+    example server mode without a PostgreSQL ``database.url``); Spark must not start.
+    """
+    runtime = mode.resolve(
+        settings,  # type: ignore[arg-type]
+        default_sqlite_path=Path(_get_default_db_path()),
+    )
+    mode.configure(runtime)
+    return runtime
+
+
 def _ensure_config(config_path: Path) -> bool:
     """Ensure a config.yaml exists. Returns True if freshly created (first run)."""
     if config_path.exists():
@@ -99,6 +114,7 @@ def run() -> None:
             defaults=_default_settings(),
             env_prefix="SPARK",
         ) as ctx:
+            configure_runtime(ctx.settings)
             _log_startup_paths(ctx, config_path)
 
             from spark.web.server import create_and_serve
@@ -113,6 +129,9 @@ def run() -> None:
         asyncio.run(_start())
     except KeyboardInterrupt:
         logger.info("Spark shut down by user")
+    except mode.ModeConfigError as exc:
+        logger.error("Spark cannot start: %s", exc)
+        raise SystemExit(2) from None
     except Exception:
         logger.exception("Spark failed to start")
         raise
@@ -120,15 +139,12 @@ def run() -> None:
 
 def _log_startup_paths(ctx: AppContext, config_path: Path) -> None:
     """Log key file locations at startup."""
-    db_type = ctx.settings.get("database.type", "sqlite")
-    if db_type == "sqlite":
-        db_path = _get_data_path() / "spark.db"
-        logger.info("Database: %s (SQLite)", db_path)
+    runtime = mode.current()
+    logger.info("Mode:     %s", runtime.mode.value)
+    if runtime.database.sqlite_path is not None:
+        logger.info("Database: %s (SQLite)", runtime.database.sqlite_path)
     else:
-        db_host = ctx.settings.get("database.host", "localhost")
-        db_port = ctx.settings.get("database.port", "")
-        db_name = ctx.settings.get("database.name", "spark")
-        logger.info("Database: %s://%s:%s/%s", db_type, db_host, db_port, db_name)
+        logger.info("Database: PostgreSQL")
 
     logger.info("Config:   %s", config_path.resolve())
     logger.info("Data:     %s", _get_data_path())
@@ -140,6 +156,7 @@ def _log_startup_paths(ctx: AppContext, config_path: Path) -> None:
 def _default_settings() -> dict:
     """Sensible defaults so Spark can boot with an empty config."""
     return {
+        "mode": "personal",
         "logging": {
             "level": "INFO",
             "format": "text",

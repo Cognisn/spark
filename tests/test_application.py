@@ -95,3 +95,59 @@ class TestDefaultSettings:
         defaults = _default_settings()
         assert defaults["conversation"]["rollup_threshold"] == pytest.approx(0.3)
         assert defaults["conversation"]["max_tool_iterations"] == 25
+
+
+class _Settings:
+    def __init__(self, data: dict) -> None:
+        self._data = data
+
+    def get(self, key: str, default=None):
+        node = self._data
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return default
+            node = node[part]
+        return node
+
+
+class TestRuntimeConfiguration:
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from spark import mode
+
+        yield
+        mode.reset()
+
+    def test_mode_defaults_to_personal(self) -> None:
+        assert _default_settings()["mode"] == "personal"
+
+    def test_personal_defaults_configure_sqlite_in_data_dir(self) -> None:
+        from spark import mode
+        from spark.core.application import configure_runtime
+
+        rs = configure_runtime(_Settings(_default_settings()))
+        assert mode.current() is rs
+        assert rs.mode is mode.Mode.PERSONAL
+        assert rs.database.sqlite_path == Path(_get_default_db_path())
+
+    def test_server_mode_with_sqlite_refuses_to_start(self) -> None:
+        from spark import mode
+        from spark.core.application import configure_runtime
+
+        data = _default_settings()
+        data["mode"] = "server"
+        data["database"]["url"] = "sqlite:///spark.db"
+        with pytest.raises(mode.ModeConfigError):
+            configure_runtime(_Settings(data))
+        with pytest.raises(RuntimeError):
+            mode.current()
+
+    def test_server_mode_with_postgresql(self) -> None:
+        from spark import mode
+        from spark.core.application import configure_runtime
+
+        data = _default_settings()
+        data["mode"] = "server"
+        data["database"]["url"] = "postgresql://spark@db.example.com/spark"
+        assert configure_runtime(_Settings(data)).mode is mode.Mode.SERVER
+        assert mode.is_server()

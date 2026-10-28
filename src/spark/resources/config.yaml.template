@@ -5,7 +5,7 @@
 # Secrets can be referenced using secret:// URIs, e.g.:
 #   api_key: secret://anthropic_api_key
 # Environment variables override settings using the SPARK__ prefix, e.g.:
-#   SPARK__DATABASE__HOST=localhost
+#   SPARK__MODE=server
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -20,16 +20,23 @@ logging:
   console_output: auto           # auto, stderr, or none
 
 # -----------------------------------------------------------------------------
+# Mode
+# -----------------------------------------------------------------------------
+# personal: one local user, SQLite in the platform data directory (default)
+# server:   multi-user, PostgreSQL; requires database.url
+mode: personal
+
+# -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------
+# Personal mode always uses SQLite in the platform data directory.
+# Server mode requires a PostgreSQL URL, for example:
+#   url: postgresql://spark@db.example.com:5432/spark
+# or the environment variable SPARK__DATABASE__URL. MySQL and SQL Server are
+# no longer supported.
 database:
-  type: sqlite                   # sqlite, mysql, postgresql, mssql
-  path: spark.db                 # SQLite file path (relative to working dir)
-  # host: localhost
-  # port: 5432
-  # name: spark
-  # user: spark
-  # password: secret://db_password
+  type: sqlite
+  # url: postgresql://spark@db.example.com:5432/spark
 
 # -----------------------------------------------------------------------------
 # Web Interface
