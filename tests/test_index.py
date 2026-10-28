@@ -8,9 +8,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.index.embeddings import EmbeddingModel
 from spark.index.memory_index import VALID_CATEGORIES, MemoryIndex
 from spark.index.vector_index import ConversationVectorIndex
@@ -38,30 +35,18 @@ def _mock_embedder() -> MagicMock:
 
 
 @pytest.fixture()
-def db(tmp_path) -> Database:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    return Database(conn)
-
-
-@pytest.fixture()
-def conn(db: Database) -> DatabaseConnection:
-    return db.connection
-
-
-@pytest.fixture()
-def memory_index(conn: DatabaseConnection) -> MemoryIndex:
-    mi = MemoryIndex(conn, USER)
+def memory_index(sync_db: Any) -> MemoryIndex:
+    mi = MemoryIndex(sync_db, USER)
     mi._embedder = _mock_embedder()
     return mi
 
 
 @pytest.fixture()
-def vector_index(conn: DatabaseConnection) -> ConversationVectorIndex:
+def vector_index(sync_db: Any) -> ConversationVectorIndex:
     from spark.database import conversations
 
-    cid = conversations.create_conversation(conn, "Test", "model", USER)
-    vi = ConversationVectorIndex(conn, cid, USER)
+    cid = sync_db.call(conversations.create_conversation, "Test", "model", USER)
+    vi = ConversationVectorIndex(sync_db, cid, USER)
     vi._embedder = _mock_embedder()
     return vi
 
@@ -149,8 +134,8 @@ class TestMemoryIndex:
         assert "Relevant Memories" in result
         assert "dark mode" in result
 
-    def test_auto_retrieve_disabled(self, conn: DatabaseConnection) -> None:
-        mi = MemoryIndex(conn, USER, config={"auto_retrieval": {"enabled": False}})
+    def test_auto_retrieve_disabled(self, sync_db: Any) -> None:
+        mi = MemoryIndex(sync_db, USER, config={"auto_retrieval": {"enabled": False}})
         mi._embedder = _mock_embedder()
         mi.store("something", "facts")
         result = mi.auto_retrieve("anything")

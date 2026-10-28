@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from typing import Any
@@ -10,16 +11,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/knowledge")
 
 _GRAPH_NODE_CAP = 500
-
-
-def _db(request: Request) -> Any:
-    return request.app.state.conversation_manager._db
 
 
 def _user_guid(request: Request) -> str:
@@ -48,34 +46,34 @@ async def kg_status(request: Request) -> JSONResponse:
     from spark.knowledge import builder, store
     from spark.knowledge.builder import KnowledgeGraphBuilder
 
-    db = _db(request)
+    db = database(request)
     user_guid = _user_guid(request)
     _, results = _state_dicts(request)
+    plan_builder = KnowledgeGraphBuilder(sync_database(request), lambda m: None, None)
 
-    plan_builder = KnowledgeGraphBuilder(db, lambda m: None, None)
-
-    def scope_info(scope: str) -> dict:
+    async def scope_info(scope: str) -> dict:
         return {
-            "nodes": store.count_nodes(db, scope, user_guid),
-            "edges": store.count_edges(db, scope, user_guid),
+            "nodes": await store.count_nodes(db, scope, user_guid),
+            "edges": await store.count_edges(db, scope, user_guid),
             "building": builder.is_building(scope),
-            "builds": store.get_build_state(db, scope, user_guid),
+            "builds": await store.get_build_state(db, scope, user_guid),
             "last_result": results.get(scope),
-            "plan": plan_builder.plan_scope(scope, user_guid),
+            "plan": await asyncio.to_thread(plan_builder.plan_scope, scope, user_guid),
         }
 
-    scopes = {"global": scope_info("global")}
-    ph = db.placeholder
-    cur = db.execute(
-        f"""SELECT id, name FROM conversations
-            WHERE kg_local_enabled = 1 AND is_active = 1 AND user_guid = {ph}""",
+    scopes = {"global": await scope_info("global")}
+
+    rows = await db.fetch_all(
+        """SELECT id, name FROM conversations
+            WHERE kg_local_enabled = 1 AND is_active = 1 AND user_guid = ?""",
         (user_guid,),
     )
     conversation_graphs = []
-    for cid, name in cur.fetchall():
-        info = scope_info(f"conv:{cid}")
-        info.update({"conversation_id": cid, "name": name})
+    for row in rows:
+        info = await scope_info(f"conv:{row['id']}")
+        info.update({"conversation_id": row["id"], "name": row["name"]})
         conversation_graphs.append(info)
+
     return JSONResponse({"scopes": scopes, "conversation_graphs": conversation_graphs})
 
 
@@ -95,7 +93,7 @@ async def kg_build(request: Request) -> JSONResponse:
         return JSONResponse({"error": "A build is already running for this scope"}, status_code=409)
 
     conv_mgr = request.app.state.conversation_manager
-    db = _db(request)
+    db = sync_database(request)
     user_guid = _user_guid(request)
     tokens, results = _state_dicts(request)
     token = CancellationToken()
@@ -145,15 +143,15 @@ async def kg_graph(request: Request, scope: str) -> JSONResponse:
     """Nodes and edges for the visualisation, capped, without embeddings."""
     from spark.knowledge import store
 
-    db = _db(request)
+    db = database(request)
     user_guid = _user_guid(request)
-    total_nodes = store.count_nodes(db, scope, user_guid)
-    total_edges = store.count_edges(db, scope, user_guid)
-    nodes = store.get_nodes(db, scope, user_guid, limit=_GRAPH_NODE_CAP)
+    total_nodes = await store.count_nodes(db, scope, user_guid)
+    total_edges = await store.count_edges(db, scope, user_guid)
+    nodes = await store.get_nodes(db, scope, user_guid, limit=_GRAPH_NODE_CAP)
     included = {n["id"] for n in nodes}
     edges = [
         e
-        for e in store.get_edges(db, scope, user_guid)
+        for e in await store.get_edges(db, scope, user_guid)
         if e["source_node_id"] in included and e["target_node_id"] in included
     ]
     return JSONResponse(
@@ -172,7 +170,9 @@ async def kg_search(request: Request, q: str, scope: str = "global") -> JSONResp
     from spark.knowledge.query import find_entities
     from spark.knowledge.tools import _get_embedder
 
-    results = find_entities(_db(request), _get_embedder(), [scope], q, _user_guid(request))
+    results = await asyncio.to_thread(
+        find_entities, sync_database(request), _get_embedder(), [scope], q, _user_guid(request)
+    )
     return JSONResponse(
         {
             "results": [
@@ -197,5 +197,5 @@ async def kg_clear(request: Request) -> JSONResponse:
     scope = str(data.get("scope", "")).strip()
     if builder.is_building(scope):
         return JSONResponse({"error": "Cannot clear while building"}, status_code=409)
-    store.clear_scope(_db(request), scope, _user_guid(request))
+    await store.clear_scope(database(request), scope, _user_guid(request))
     return JSONResponse({"status": "ok"})

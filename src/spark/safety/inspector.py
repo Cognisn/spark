@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from spark.safety.patterns import PatternMatch, PatternMatcher
 
 if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+    from spark.db.bridge import SyncDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class PromptInspector:
         *,
         level: str = "standard",
         action: str = "warn",
-        db: DatabaseConnection | None = None,
+        db: SyncDatabase | None = None,
     ) -> None:
         self._level = level
         self._action = action
@@ -145,24 +145,19 @@ class PromptInspector:
         if not self._db:
             return
         try:
-            ph = self._db.placeholder
+            from spark.database import violations
+
             snippet = text[:200] if len(text) > 200 else text
             categories = ",".join(set(m.category for m in result.violations))
-            self._db.execute(
-                f"""INSERT INTO prompt_inspection_violations
-                    (user_guid, violation_type, severity, prompt_snippet,
-                     detection_method, action_taken, confidence_score)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
-                (
-                    user_guid,
-                    categories,
-                    result.severity,
-                    snippet,
-                    self._level,
-                    result.action,
-                    1.0,
-                ),
+            self._db.call(
+                violations.record_violation,
+                user_guid,
+                violation_type=categories,
+                severity=result.severity,
+                prompt_snippet=snippet,
+                detection_method=self._level,
+                action_taken=result.action,
+                confidence_score=1.0,
             )
-            self._db.commit()
         except Exception as e:
             logger.error("Failed to log violation: %s", e)

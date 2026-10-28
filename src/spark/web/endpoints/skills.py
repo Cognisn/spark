@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.web.db import database
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/skills")
@@ -28,10 +30,6 @@ def _manager(request: Request) -> Any:
     from spark.skills.manager import get_skills_manager
 
     return get_skills_manager()
-
-
-def _db(request: Request) -> Any:
-    return request.app.state.conversation_manager._db
 
 
 def _user_guid(request: Request) -> str:
@@ -50,7 +48,7 @@ async def list_skills(request: Request) -> JSONResponse:
     from spark.database import skills as skills_db
 
     manager = _manager(request)
-    states = skills_db.get_skill_states(_db(request), _user_guid(request))
+    states = await skills_db.get_skill_states(database(request), _user_guid(request))
     out = []
     for skill in manager.list_skills(include_invalid=True):
         out.append(
@@ -74,8 +72,8 @@ async def toggle_skill(request: Request) -> JSONResponse:
     name = str(data.get("name", "")).strip()
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
-    skills_db.set_skill_enabled(
-        _db(request), name, bool(data.get("enabled", True)), _user_guid(request)
+    await skills_db.set_skill_enabled(
+        database(request), name, bool(data.get("enabled", True)), _user_guid(request)
     )
     return JSONResponse({"status": "ok"})
 

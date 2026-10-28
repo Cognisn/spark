@@ -10,13 +10,13 @@ import numpy as np
 from spark.knowledge import store
 
 if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+    from spark.db.bridge import SyncDatabase
 
 logger = logging.getLogger(__name__)
 
 
 def find_entities(
-    db: DatabaseConnection,
+    db: SyncDatabase,
     embedder: Any,
     scopes: list[str],
     query: str,
@@ -29,7 +29,7 @@ def find_entities(
     query_vec = np.asarray(embedder.encode(query, normalize=True), dtype=np.float32)
     scored: list[dict[str, Any]] = []
     for scope in scopes:
-        for node in store.get_nodes(db, scope, user_guid):
+        for node in db.call(store.get_nodes, scope, user_guid):
             blob = node.get("embedding")
             if not blob:
                 continue
@@ -44,7 +44,7 @@ def find_entities(
 
 
 def expand(
-    db: DatabaseConnection,
+    db: SyncDatabase,
     scopes: list[str],
     seed_nodes: list[dict[str, Any]],
     user_guid: str,
@@ -64,12 +64,12 @@ def expand(
         for scope, node_id in frontier:
             by_scope.setdefault(scope, []).append(node_id)
         for scope, node_ids in by_scope.items():
-            for edge in store.get_edges_for_nodes(db, scope, node_ids, user_guid):
+            for edge in db.call(store.get_edges_for_nodes, scope, node_ids, user_guid):
                 edges_seen[(scope, edge["id"])] = {**edge, "scope": scope}
                 for endpoint in (edge["source_node_id"], edge["target_node_id"]):
                     key = (scope, endpoint)
                     if key not in nodes_by_key:
-                        fetched = store.get_nodes_by_ids(db, scope, [endpoint], user_guid)
+                        fetched = db.call(store.get_nodes_by_ids, scope, [endpoint], user_guid)
                         if fetched:
                             nodes_by_key[key] = {**fetched[0], "scope": scope}
                             next_frontier.append(key)
@@ -116,7 +116,7 @@ def render_subgraph(
 
 
 def subgraph_for_query(
-    db: DatabaseConnection,
+    db: SyncDatabase,
     embedder: Any,
     scopes: list[str],
     query: str,

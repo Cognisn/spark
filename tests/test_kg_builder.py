@@ -5,9 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spark.database import Database, conversations
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import conversations
 from spark.knowledge import store
 from spark.knowledge.builder import (
     KnowledgeGraphBuilder,
@@ -19,11 +17,9 @@ from tests.test_kg_extractor import ScriptedService, text_response, tool_respons
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(sync_db):
+    """The bridge (SyncDatabase) to a fresh migrated SQLite database."""
+    return sync_db
 
 
 class FakeEmbedder:
@@ -34,9 +30,9 @@ class FakeEmbedder:
 def _conv_with_messages(db, n=3, user="u1") -> int:
     from spark.database import messages as msg_db
 
-    cid = conversations.create_conversation(db, "c", "m", user)
+    cid = db.call(conversations.create_conversation, "c", "m", user)
     for i in range(n):
-        msg_db.add_message(db, cid, "user", f"Matthew works on Spark, message {i}", 10, user)
+        db.call(msg_db.add_message, cid, "user", f"Matthew works on Spark, message {i}", 10, user)
     return cid
 
 
@@ -64,9 +60,9 @@ class TestLocalBuild:
         b = KnowledgeGraphBuilder(db, lambda m: svc, FakeEmbedder())
         result = b.build_scope(f"conv:{cid}", "u1", "m")
         assert result["status"] == "complete" and result["entities"] == 2
-        assert store.count_nodes(db, f"conv:{cid}", "u1") == 2
-        assert store.count_edges(db, f"conv:{cid}", "u1") == 1
-        state = store.get_build_state(db, f"conv:{cid}", "u1")
+        assert db.call(store.count_nodes, f"conv:{cid}", "u1") == 2
+        assert db.call(store.count_edges, f"conv:{cid}", "u1") == 1
+        state = db.call(store.get_build_state, f"conv:{cid}", "u1")
         assert state and state[0]["watermark"] > 0
 
         # Incremental: nothing new -> zero chunks, no further LLM calls
@@ -79,7 +75,7 @@ class TestLocalBuild:
         b = KnowledgeGraphBuilder(db, lambda m: svc, FakeEmbedder())
         result = b.build_scope(f"conv:{cid}", "u1", "m")
         assert result["skipped_chunks"] == 1
-        state = store.get_build_state(db, f"conv:{cid}", "u1")
+        state = db.call(store.get_build_state, f"conv:{cid}", "u1")
         assert not state or state[0]["watermark"] == 0
 
 
@@ -88,8 +84,8 @@ class TestGlobalBuild:
         from spark.database import memories as mem_db
 
         cid = _conv_with_messages(db)
-        mem_db.add_memory(
-            db,
+        db.call(
+            mem_db.add_memory,
             "u1",
             "Prefers Australian English",
             "preferences",
@@ -100,7 +96,7 @@ class TestGlobalBuild:
         b = KnowledgeGraphBuilder(db, lambda m: svc, FakeEmbedder())
         result = b.build_scope("global", "u1", "m")
         assert result["status"] == "complete"
-        state = {s["source_key"] for s in store.get_build_state(db, "global", "u1")}
+        state = {s["source_key"] for s in db.call(store.get_build_state, "global", "u1")}
         assert f"conv:{cid}" in state and "memories" in state
 
     def test_plan_scope_counts_pending(self, db) -> None:

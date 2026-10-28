@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 
 
 def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
@@ -29,11 +31,13 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client() -> TestClient:
+def client(sqlite_settings) -> Iterator[TestClient]:
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
-    return TestClient(app)
+    app.state.user_guid = "test-user"  # the mock ctx would yield a MagicMock guid
+    with app_client(app, sqlite_settings) as c:
+        yield c
 
 
 def _auth(client: TestClient) -> dict:
@@ -71,7 +75,7 @@ class TestConversationSearch:
         from spark.database import conversations as conv_mod
 
         original = conv_mod.search_conversations
-        conv_mod.search_conversations = MagicMock(
+        conv_mod.search_conversations = AsyncMock(
             return_value=[
                 {"id": 1, "name": "Test Chat", "model_id": "m1"},
             ]
@@ -249,32 +253,27 @@ class TestUserGUID:
 
 
 class TestConversationLinksDB:
-    def test_full_lifecycle(self, tmp_path: Path) -> None:
-        from spark.database import Database, conversation_links, conversations
-        from spark.database.backends import SQLiteBackend
-        from spark.database.connection import DatabaseConnection
+    async def test_full_lifecycle(self, spark_db) -> None:
+        from spark.database import conversation_links, conversations
 
-        backend = SQLiteBackend(tmp_path / "test.db")
-        conn = DatabaseConnection(backend)
-        db = Database(conn)
-
-        c1 = conversations.create_conversation(conn, "A", "m1", "user1")
-        c2 = conversations.create_conversation(conn, "B", "m1", "user1")
-        c3 = conversations.create_conversation(conn, "C", "m1", "user1")
+        conn = spark_db
+        c1 = await conversations.create_conversation(conn, "A", "m1", "user1")
+        c2 = await conversations.create_conversation(conn, "B", "m1", "user1")
+        c3 = await conversations.create_conversation(conn, "C", "m1", "user1")
 
         # Link
-        assert conversation_links.add_link(conn, c1, c2, "user1") is True
-        assert conversation_links.add_link(conn, c1, c1, "user1") is False  # self
-        assert conversation_links.add_link(conn, c1, c2, "user1") is False  # dupe
+        assert await conversation_links.add_link(conn, c1, c2, "user1") is True
+        assert await conversation_links.add_link(conn, c1, c1, "user1") is False  # self
+        assert await conversation_links.add_link(conn, c1, c2, "user1") is False  # dupe
 
         # Get
-        links = conversation_links.get_links(conn, c1, "user1")
+        links = await conversation_links.get_links(conn, c1, "user1")
         assert len(links) == 1
 
         # Linkable
-        available = conversation_links.get_linkable_conversations(conn, c1, "user1")
+        available = await conversation_links.get_linkable_conversations(conn, c1, "user1")
         assert len(available) == 1  # Only c3
 
         # Remove
-        conversation_links.remove_link(conn, c1, c2, "user1")
-        assert len(conversation_links.get_links(conn, c1, "user1")) == 0
+        await conversation_links.remove_link(conn, c1, c2, "user1")
+        assert len(await conversation_links.get_links(conn, c1, "user1")) == 0

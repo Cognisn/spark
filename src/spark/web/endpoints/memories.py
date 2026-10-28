@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -19,13 +20,13 @@ def _get_memory_index(request: Request) -> Any:
     """Get or create a MemoryIndex from app state."""
     idx = getattr(request.app.state, "_memory_index", None)
     if idx is None:
-        db = getattr(request.app.state, "database", None)
+        db = getattr(request.app.state, "sync_db", None)
         if not db:
             return None
         from spark.index.memory_index import MemoryIndex
 
         user_guid = getattr(request.app.state, "user_guid", "default")
-        idx = MemoryIndex(db.connection, user_guid)
+        idx = MemoryIndex(db, user_guid)
         request.app.state._memory_index = idx
     return idx
 
@@ -43,7 +44,7 @@ async def list_memories(request: Request) -> JSONResponse:
     idx = _get_memory_index(request)
     if not idx:
         return JSONResponse({"memories": [], "total": 0})
-    memories = idx.list_all(category=category, limit=limit)
+    memories = await asyncio.to_thread(idx.list_all, category=category, limit=limit)
     return JSONResponse({"memories": memories, "total": len(memories)})
 
 
@@ -52,7 +53,7 @@ async def memory_stats(request: Request) -> JSONResponse:
     idx = _get_memory_index(request)
     if not idx:
         return JSONResponse({"total": 0, "by_category": {}, "avg_importance": 0})
-    all_mems = idx.list_all(limit=10000)
+    all_mems = await asyncio.to_thread(idx.list_all, limit=10000)
     total = len(all_mems)
     by_cat: dict[str, int] = {}
     imp_sum = 0.0
@@ -80,7 +81,7 @@ async def create_memory(request: Request) -> JSONResponse:
     importance = float(data.get("importance", 0.5))
     if not content:
         return JSONResponse({"error": "Content required"}, status_code=400)
-    mid = idx.store(content, category, importance=importance)
+    mid = await asyncio.to_thread(idx.store, content, category, importance=importance)
     if mid is None:
         return JSONResponse({"error": "Duplicate memory"}, status_code=409)
     return JSONResponse({"status": "ok", "id": mid})
@@ -92,7 +93,8 @@ async def update_memory(request: Request, memory_id: int) -> JSONResponse:
     if not idx:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
     data = await request.json()
-    success = idx.update(
+    success = await asyncio.to_thread(
+        idx.update,
         memory_id,
         content=data.get("content"),
         category=data.get("category"),
@@ -108,7 +110,7 @@ async def delete_memory(request: Request, memory_id: int) -> JSONResponse:
     idx = _get_memory_index(request)
     if not idx:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
-    success = idx.delete(memory_id)
+    success = await asyncio.to_thread(idx.delete, memory_id)
     if not success:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return JSONResponse({"status": "ok"})
@@ -125,7 +127,7 @@ async def delete_all_memories(request: Request) -> JSONResponse:
         data = {}
     if data.get("confirm") != "DELETE_ALL":
         return JSONResponse({"error": "Confirmation required"}, status_code=400)
-    idx.clear_all()
+    await asyncio.to_thread(idx.clear_all)
     return JSONResponse({"status": "ok"})
 
 
@@ -134,7 +136,7 @@ async def export_memories(request: Request):  # type: ignore[no-untyped-def]
     idx = _get_memory_index(request)
     if not idx:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
-    all_mems = idx.list_all(limit=100000)
+    all_mems = await asyncio.to_thread(idx.list_all, limit=100000)
     export = {
         "version": "1.0",
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -168,7 +170,7 @@ async def import_memories(request: Request) -> JSONResponse:
         if not content:
             skipped += 1
             continue
-        mid = idx.store(content, category, importance=importance)
+        mid = await asyncio.to_thread(idx.store, content, category, importance=importance)
         if mid is None:
             skipped += 1
         else:

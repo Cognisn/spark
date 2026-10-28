@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +104,7 @@ async def debate_capabilities(request: Request) -> JSONResponse:
         # Only globally-enabled skills are offered; a skill disabled in the global
         # settings never reaches the wizard, matching how tools are gated by their
         # category config. Absent state defaults to enabled.
-        conv_mgr = request.app.state.conversation_manager
-        states = skills_db.get_skill_states(conv_mgr._db, _user_guid(request))
+        states = await skills_db.get_skill_states(database(request), _user_guid(request))
         skills_out = [
             {"name": s["name"], "description": s["description"][:80]}
             for s in manager.list_skills()
@@ -121,12 +121,12 @@ async def debate_state(request: Request, conversation_id: int) -> JSONResponse:
     """Full debate record: config, agents, turns, and exhibits."""
     from spark.database import debates
 
-    db = request.app.state.conversation_manager._db
-    cfg = debates.get_debate(db, conversation_id)
+    db = database(request)
+    cfg = await debates.get_debate(db, conversation_id)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
-    turns = debates.get_turns(db, conversation_id)
-    exhibits = debates.get_exhibits(db, conversation_id)
+    turns = await debates.get_turns(db, conversation_id)
+    exhibits = await debates.get_exhibits(db, conversation_id)
     return JSONResponse(
         {
             "config": cfg,
@@ -147,17 +147,17 @@ async def debate_prompt(request: Request) -> JSONResponse:
     if not cid or not message:
         return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
-    db = request.app.state.conversation_manager._db
-    cfg = debates.get_debate(db, cid)
+    db = database(request)
+    cfg = await debates.get_debate(db, cid)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
 
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    message = resolve_trigger_for_conversation(db, _user_guid(request), cid, message)
+    message = await resolve_trigger_for_conversation(db, _user_guid(request), cid, message)
 
     orch = _orchestrator(request)
-    turn_id = orch.submit_user_prompt(cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
             None, orch.answer_qa, cid, _user_guid(request), turn_id

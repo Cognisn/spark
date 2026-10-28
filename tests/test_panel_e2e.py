@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from spark.core.panel.orchestrator import PanelOrchestrator
-from spark.database import Database, debates
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import debates
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 from tests.test_debate_orchestrator import ScriptedService, text_response, tool_response
 
 
@@ -33,28 +33,26 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client(tmp_path) -> TestClient:
-    """App with a MagicMock manager backed by a real SQLite connection."""
+def client(sqlite_settings) -> Iterator[TestClient]:
+    """App with a MagicMock manager backed by a real SQLite database."""
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
 
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
+    with app_client(app, sqlite_settings) as client:
+        sync_db = app.state.sync_db
+        mgr = MagicMock()
+        mgr._db = sync_db
 
-    mgr = MagicMock()
-    mgr._db = conn
+        def _create(name, model_id, user_guid, **kwargs):
+            from spark.database import conversations as convdb
 
-    def _create(name, model_id, user_guid, **kwargs):
-        from spark.database import conversations as convdb
+            return sync_db.call(convdb.create_conversation, name, model_id, user_guid)
 
-        return convdb.create_conversation(conn, name, model_id, user_guid)
-
-    mgr.create_conversation.side_effect = _create
-    app.state.conversation_manager = mgr
-    app.state.user_guid = "test-user"
-    return TestClient(app)
+        mgr.create_conversation.side_effect = _create
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "test-user"
+        yield client
 
 
 def _auth(client: TestClient) -> None:
@@ -130,9 +128,11 @@ def test_full_panel_with_human(client: TestClient) -> None:
 
     # 4. Resume: the round completes and the moderator synthesises.
     orch.run(cid, "test-user")
-    cfg = debates.get_debate(db, cid)
+    cfg = db.call(debates.get_debate, cid)
     assert cfg["state"] == "qa"
-    contribs = [t["role"] for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"]
+    contribs = [
+        t["role"] for t in db.call(debates.get_turns, cid) if t["turn_type"] == "contribution"
+    ]
     assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
 
     # 5. QA: the prompt endpoint answers synchronously via the moderator.

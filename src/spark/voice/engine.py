@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,7 +83,7 @@ class VoiceEngine:
             return []
         return self._client.list_voices()
 
-    def synthesise(
+    async def synthesise(
         self,
         text: str,
         voice_id: str | None = None,
@@ -105,12 +106,13 @@ class VoiceEngine:
             if cached is not None:
                 return cached
 
-        if over_cap(self._db, user_guid, self.config.monthly_character_cap):
+        if await over_cap(self._db, user_guid, self.config.monthly_character_cap):
             raise VoiceUnavailable("cap")
 
-        audio = self._client.synthesise(text, voice)  # raises VoiceUnavailable
+        # Blocking HTTP call: off the event loop. Raises VoiceUnavailable.
+        audio = await asyncio.to_thread(self._client.synthesise, text, voice)
 
-        voice_usage.record(
+        await voice_usage.record(
             self._db,
             user_guid,
             len(text),

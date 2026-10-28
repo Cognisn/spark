@@ -4,25 +4,16 @@ from __future__ import annotations
 
 import io
 import zipfile
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.skills.manager import SkillsManager, set_skills_manager
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 from tests.test_skills_manager import make_skill
-
-
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
 
 
 @pytest.fixture()
@@ -39,24 +30,26 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client(db, skills_env) -> TestClient:
+def client(sqlite_settings, skills_env) -> Iterator[TestClient]:
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
 
-    mgr = MagicMock()
-    mgr._db = db
+    with app_client(app, sqlite_settings) as client:
+        db = app.state.sync_db
+        mgr = MagicMock()
+        mgr._db = db
 
-    def _create(name, model_id, user_guid, **kwargs):
-        from spark.database import conversations as convdb
+        def _create(name, model_id, user_guid, **kwargs):
+            from spark.database import conversations as convdb
 
-        return convdb.create_conversation(db, name, model_id, user_guid)
+            return db.call(convdb.create_conversation, name, model_id, user_guid)
 
-    mgr.create_conversation.side_effect = _create
-    app.state.conversation_manager = mgr
-    app.state.skills_manager = skills_env
-    app.state.user_guid = "test-user"
-    return TestClient(app)
+        mgr.create_conversation.side_effect = _create
+        app.state.conversation_manager = mgr
+        app.state.skills_manager = skills_env
+        app.state.user_guid = "test-user"
+        yield client
 
 
 def _auth(client: TestClient) -> None:

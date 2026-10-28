@@ -4,20 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.skills.manager import SkillsManager, set_skills_manager
 from spark.skills.tools import execute
 from spark.skills.trigger import resolve_trigger_for_conversation
-
-
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
 
 
 @pytest.fixture()
@@ -28,7 +17,7 @@ def env(tmp_path):
     set_skills_manager(None)
 
 
-def test_author_then_trigger_then_load(env, db) -> None:
+def test_author_then_trigger_then_load(env, sync_db) -> None:
     # 1. Author via the tool surface (as the model would after approval)
     text, is_error = execute(
         "create_skill",
@@ -43,7 +32,9 @@ def test_author_then_trigger_then_load(env, db) -> None:
     assert not is_error
 
     # 2. The slash trigger resolves it once enabled (default on)
-    rewritten = resolve_trigger_for_conversation(db, "u1", None, "/release-notes for 0.2.0")
+    rewritten = sync_db.call(
+        resolve_trigger_for_conversation, "u1", None, "/release-notes for 0.2.0"
+    )
     assert "use_skill('release-notes')" in rewritten
 
     # 3. use_skill returns the authored instructions and resource listing

@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import ContextCompactor
-from spark.database.connection import DatabaseConnection
+from spark.db.bridge import SyncDatabase
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
 
@@ -29,7 +29,7 @@ class ConversationManager:
 
     def __init__(
         self,
-        db: DatabaseConnection,
+        db: SyncDatabase,
         llm_manager: LLMManager,
         context_limits: ContextLimitResolver,
         *,
@@ -186,7 +186,7 @@ class ConversationManager:
             # Get the content of active (non-rolled-up) messages to filter them out
             from spark.database import messages as msg_db
 
-            active_msgs = msg_db.get_messages(self._db, conversation_id)
+            active_msgs = self._db.call(msg_db.get_messages, conversation_id)
             active_content_hashes = set()
             for m in active_msgs:
                 content = m.get("content", "")
@@ -201,7 +201,7 @@ class ConversationManager:
             try:
                 from spark.database import conversation_links
 
-                linked = conversation_links.get_links(self._db, conversation_id, user_guid)
+                linked = self._db.call(conversation_links.get_links, conversation_id, user_guid)
                 for link in linked:
                     link_id = link.get("id")
                     if link_id:
@@ -417,8 +417,8 @@ class ConversationManager:
         """Create a new conversation. Returns conversation ID."""
         from spark.database import conversations
 
-        cid = conversations.create_conversation(
-            self._db,
+        cid = self._db.call(
+            conversations.create_conversation,
             name,
             model_id,
             user_guid,
@@ -437,19 +437,19 @@ class ConversationManager:
         """Get all active conversations."""
         from spark.database import conversations
 
-        return conversations.get_active_conversations(self._db, user_guid)
+        return self._db.call(conversations.get_active_conversations, user_guid)
 
     def get_conversation(self, conversation_id: int, user_guid: str) -> dict | None:
         """Get a single conversation."""
         from spark.database import conversations
 
-        return conversations.get_conversation(self._db, conversation_id, user_guid)
+        return self._db.call(conversations.get_conversation, conversation_id, user_guid)
 
     def delete_conversation(self, conversation_id: int, user_guid: str) -> None:
         """Soft-delete a conversation."""
         from spark.database import conversations
 
-        conversations.delete_conversation(self._db, conversation_id, user_guid)
+        self._db.call(conversations.delete_conversation, conversation_id, user_guid)
 
     # -- Message handling -----------------------------------------------------
 
@@ -463,7 +463,7 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        return messages.get_messages(self._db, conversation_id, include_rolled_up=True)
+        return self._db.call(messages.get_messages, conversation_id, include_rolled_up=True)
 
     def send_message(
         self,
@@ -483,7 +483,7 @@ class ConversationManager:
         from spark.database import conversations
         from spark.database import messages as msg_db
 
-        conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+        conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
 
@@ -534,8 +534,8 @@ class ConversationManager:
 
         # Add user message
         token_count = self._llm.count_tokens(user_message)
-        user_msg_id = msg_db.add_message(
-            self._db, conversation_id, "user", user_message, token_count, user_guid
+        user_msg_id = self._db.call(
+            msg_db.add_message, conversation_id, "user", user_message, token_count, user_guid
         )
 
         # Index user message in vector store
@@ -560,8 +560,8 @@ class ConversationManager:
             from spark.skills.manager import get_skills_manager
             from spark.skills.prompt import build_skills_block
 
-            enabled = skills_db.resolve_enabled(
-                self._db, get_skills_manager(), user_guid, conversation_id
+            enabled = self._db.call(
+                skills_db.resolve_enabled, get_skills_manager(), user_guid, conversation_id
             )
             skills_block = build_skills_block(enabled)
         except Exception:  # noqa: BLE001 - skills must never break a chat turn
@@ -577,9 +577,9 @@ class ConversationManager:
             )
             from spark.knowledge.tools import _get_embedder
 
-            kg_settings = conversation_kg_settings(self._db, conversation_id, user_guid)
+            kg_settings = self._db.call(conversation_kg_settings, conversation_id, user_guid)
             if kg_settings["kg_auto_context"]:
-                kg_scopes = available_scopes(self._db, conversation_id, user_guid)
+                kg_scopes = self._db.call(available_scopes, conversation_id, user_guid)
                 if kg_scopes:
                     subgraph = subgraph_for_query(
                         self._db, _get_embedder(), kg_scopes, user_message, user_guid
@@ -623,8 +623,8 @@ class ConversationManager:
                     token_count = self._llm.active_service.count_tokens(marker)
             except Exception:
                 token_count = 0
-            msg_db.add_message(
-                self._db,
+            self._db.call(
+                msg_db.add_message,
                 conversation_id,
                 "user",
                 marker,
@@ -678,8 +678,8 @@ class ConversationManager:
                     error_content = (
                         f"I encountered an error communicating with the model: {error_msg}"
                     )
-                    msg_db.add_message(
-                        self._db,
+                    self._db.call(
+                        msg_db.add_message,
                         conversation_id,
                         "assistant",
                         error_content,
@@ -739,8 +739,8 @@ class ConversationManager:
                     assistant_content = response.get("content_blocks", [])
                     assistant_text = json.dumps(assistant_content) if assistant_content else ""
                     assistant_tokens = self._llm.count_tokens(assistant_text)
-                    asst_msg_id = msg_db.add_message(
-                        self._db,
+                    asst_msg_id = self._db.call(
+                        msg_db.add_message,
                         conversation_id,
                         "assistant",
                         assistant_text,
@@ -771,8 +771,8 @@ class ConversationManager:
                     # Store tool results as user message
                     results_text = json.dumps(tool_results)
                     results_tokens = self._llm.count_tokens(results_text)
-                    msg_db.add_message(
-                        self._db,
+                    self._db.call(
+                        msg_db.add_message,
                         conversation_id,
                         "user",
                         f"{_TOOL_RESULTS_MARKER}{results_text}",
@@ -781,8 +781,8 @@ class ConversationManager:
                     )
 
                     # Update token usage
-                    conversations.update_token_usage(
-                        self._db,
+                    self._db.call(
+                        conversations.update_token_usage,
                         conversation_id,
                         model_id,
                         resp_usage.get("input_tokens", 0),
@@ -810,8 +810,8 @@ class ConversationManager:
                 # Final text response
                 final_content = response.get("content", "")
                 final_tokens = self._llm.count_tokens(final_content)
-                final_msg_id = msg_db.add_message(
-                    self._db,
+                final_msg_id = self._db.call(
+                    msg_db.add_message,
                     conversation_id,
                     "assistant",
                     final_content,
@@ -824,8 +824,8 @@ class ConversationManager:
                     conversation_id, user_guid, final_msg_id, "assistant", final_content
                 )
 
-                conversations.update_token_usage(
-                    self._db,
+                self._db.call(
+                    conversations.update_token_usage,
                     conversation_id,
                     model_id,
                     resp_usage.get("input_tokens", 0),
@@ -1032,7 +1032,7 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        raw = messages.get_messages(self._db, conversation_id)
+        raw = self._db.call(messages.get_messages, conversation_id)
         include_tools = True
         max_msgs = None
 
@@ -1107,8 +1107,8 @@ class ConversationManager:
             )
 
         # Check permissions (conversation-level, then global)
-        permission = tool_permissions.is_tool_allowed(
-            self._db, conversation_id, tool_name, user_guid=user_guid
+        permission = self._db.call(
+            tool_permissions.is_tool_allowed, conversation_id, tool_name, user_guid=user_guid
         )
 
         # System commands: always prompt when require_approval is on,
@@ -1154,18 +1154,29 @@ class ConversationManager:
                     if decision == "allowed":
                         # Approve this tool and category siblings for this conversation
                         for sibling in _get_tool_category_siblings(tool_name):
-                            tool_permissions.set_tool_permission(
-                                self._db, conversation_id, sibling, "allowed", user_guid
+                            self._db.call(
+                                tool_permissions.set_tool_permission,
+                                conversation_id,
+                                sibling,
+                                "allowed",
+                                user_guid,
                             )
                     elif decision == "allowed_global":
                         # Approve this tool and category siblings globally
                         for sibling in _get_tool_category_siblings(tool_name):
-                            tool_permissions.set_global_tool_permission(
-                                self._db, user_guid, sibling, "allowed"
+                            self._db.call(
+                                tool_permissions.set_global_tool_permission,
+                                user_guid,
+                                sibling,
+                                "allowed",
                             )
                 else:
-                    tool_permissions.set_tool_permission(
-                        self._db, conversation_id, tool_name, "denied", user_guid
+                    self._db.call(
+                        tool_permissions.set_tool_permission,
+                        conversation_id,
+                        tool_name,
+                        "denied",
+                        user_guid,
                     )
                     return _tool_result(
                         tool_id,
@@ -1210,8 +1221,8 @@ class ConversationManager:
             result_text = result_text[: self._max_tool_result_tokens * 4] + "\n... [truncated]"
 
         # Record transaction
-        mcp_ops.record_transaction(
-            self._db,
+        self._db.call(
+            mcp_ops.record_transaction,
             conversation_id,
             tool_name,
             json.dumps(tool_input),
@@ -1428,7 +1439,7 @@ class ConversationManager:
             try:
                 from spark.database import conversations
 
-                conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+                conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
                 if conv:
                     model_id = conv.get("model_id", "")
             except Exception:
@@ -1445,7 +1456,7 @@ class ConversationManager:
         try:
             from spark.database import conversations as conv_db
 
-            conv_row = conv_db.get_conversation(self._db, conversation_id, user_guid)
+            conv_row = self._db.call(conv_db.get_conversation, conversation_id, user_guid)
             per_conv = (conv_row or {}).get("agent_model_selection")
             if per_conv:
                 model_selection = per_conv
@@ -1488,8 +1499,8 @@ class ConversationManager:
                 agent_token = None
 
         # Record in database
-        agent_db.create_agent_run(
-            self._db,
+        self._db.call(
+            agent_db.create_agent_run,
             agent_id,
             conversation_id,
             agent_name,
@@ -1509,8 +1520,8 @@ class ConversationManager:
         try:
             agent_llm = self._get_llm_service_for_model(model_id)
             if not agent_llm:
-                agent_db.complete_agent_run(
-                    self._db,
+                self._db.call(
+                    agent_db.complete_agent_run,
                     agent_id,
                     status="failed",
                     result_text=f"Could not find provider for model '{model_id}'",
@@ -1541,8 +1552,8 @@ class ConversationManager:
 
             if result.get("status") == "cancelled":
                 try:
-                    agent_db.complete_agent_run(
-                        self._db,
+                    self._db.call(
+                        agent_db.complete_agent_run,
                         agent_id,
                         status="cancelled",
                         result_text=result.get("content", "[CANCELLED]"),
@@ -1563,8 +1574,8 @@ class ConversationManager:
                 )
 
             # Record completion
-            agent_db.complete_agent_run(
-                self._db,
+            self._db.call(
+                agent_db.complete_agent_run,
                 agent_id,
                 status="completed",
                 result_text=result.get("content", ""),
@@ -1577,8 +1588,8 @@ class ConversationManager:
 
         except Exception as e:
             logger.error("Agent '%s' failed: %s", agent_name, e, exc_info=True)
-            agent_db.complete_agent_run(
-                self._db,
+            self._db.call(
+                agent_db.complete_agent_run,
                 agent_id,
                 status="failed",
                 result_text=str(e),

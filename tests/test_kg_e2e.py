@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from spark.database import Database, conversation_links, conversations
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import conversation_links, conversations
 from spark.knowledge.builder import KnowledgeGraphBuilder
 from spark.knowledge.resolve import available_scopes
 from spark.knowledge.tools import execute
@@ -15,11 +13,9 @@ from tests.test_kg_query import DirectionalEmbedder
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(sync_db):
+    """The bridge (SyncDatabase) to a fresh migrated SQLite database."""
+    return sync_db
 
 
 @pytest.fixture(autouse=True)
@@ -33,11 +29,9 @@ def test_build_query_and_link_pooling(db) -> None:
     from spark.database import messages as msg_db
 
     # 1. A conversation with graph-worthy content and a local graph enabled
-    source = conversations.create_conversation(db, "research", "stub-model", "u1")
-    msg_db.add_message(db, source, "user", "Spark is developed by Cognisn", 10, "u1")
-    ph = db.placeholder
-    db.execute(f"UPDATE conversations SET kg_local_enabled = 1 WHERE id = {ph}", (source,))
-    db.commit()
+    source = db.call(conversations.create_conversation, "research", "stub-model", "u1")
+    db.call(msg_db.add_message, source, "user", "Spark is developed by Cognisn", 10, "u1")
+    db.execute("UPDATE conversations SET kg_local_enabled = 1 WHERE id = ?", (source,))
 
     # 2. Build the local graph with a scripted extraction (embedder maps 'spark')
     svc = ScriptedService(
@@ -63,7 +57,7 @@ def test_build_query_and_link_pooling(db) -> None:
     assert result["status"] == "complete"
 
     # 3. The source conversation sees its own graph
-    assert f"conv:{source}" in available_scopes(db, source, "u1")
+    assert f"conv:{source}" in db.call(available_scopes, source, "u1")
 
     # 4. The query tool renders the relationship
     text, is_error = execute(
@@ -74,10 +68,10 @@ def test_build_query_and_link_pooling(db) -> None:
     assert not is_error and "developed_by" in text and "Cognisn" in text
 
     # 5. A second conversation pools the graph through a link
-    other = conversations.create_conversation(db, "follow-up", "stub-model", "u1")
-    assert f"conv:{source}" not in available_scopes(db, other, "u1")
-    conversation_links.add_link(db, other, source, "u1")
-    assert f"conv:{source}" in available_scopes(db, other, "u1")
+    other = db.call(conversations.create_conversation, "follow-up", "stub-model", "u1")
+    assert f"conv:{source}" not in db.call(available_scopes, other, "u1")
+    db.call(conversation_links.add_link, other, source, "u1")
+    assert f"conv:{source}" in db.call(available_scopes, other, "u1")
 
     # 6. Auto-context in the linked conversation carries the pooled entities
     from spark.core.conversation_manager import ConversationManager

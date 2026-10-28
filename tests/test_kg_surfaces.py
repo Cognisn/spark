@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.knowledge import store
 from tests.test_kg_query import DirectionalEmbedder
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(sync_db):
+    """The bridge (SyncDatabase) to a fresh migrated SQLite database."""
+    return sync_db
 
 
 @pytest.fixture(autouse=True)
@@ -42,13 +37,25 @@ def _make_manager(db):
 class TestAutoContext:
     def _seed_global(self, db) -> None:
         emb = DirectionalEmbedder()
-        a = store.upsert_node(
-            db, "global", "Spark", "project", "AI kit", emb.encode("spark").tobytes(), "u1"
+        a = db.call(
+            store.upsert_node,
+            "global",
+            "Spark",
+            "project",
+            "AI kit",
+            emb.encode("spark").tobytes(),
+            "u1",
         )
-        b = store.upsert_node(
-            db, "global", "Cognisn", "organisation", "", emb.encode("org").tobytes(), "u1"
+        b = db.call(
+            store.upsert_node,
+            "global",
+            "Cognisn",
+            "organisation",
+            "",
+            emb.encode("org").tobytes(),
+            "u1",
         )
-        store.upsert_edge(db, "global", a, b, "belongs_to", "", "u1")
+        db.call(store.upsert_edge, "global", a, b, "belongs_to", "", "u1")
 
     def test_block_injected_on_match(self, db) -> None:
         self._seed_global(db)
@@ -62,9 +69,7 @@ class TestAutoContext:
         self._seed_global(db)
         mgr, stub = _make_manager(db)
         cid = mgr.create_conversation("t", "stub-model", "u1")
-        ph = db.placeholder
-        db.execute(f"UPDATE conversations SET kg_use_global = 0 WHERE id = {ph}", (cid,))
-        db.commit()
+        db.execute("UPDATE conversations SET kg_use_global = 0 WHERE id = ?", (cid,))
         mgr.send_message(cid, "tell me about spark", "u1")
         assert "## Knowledge Graph Context" not in stub.last_system
 
@@ -72,9 +77,7 @@ class TestAutoContext:
         self._seed_global(db)
         mgr, stub = _make_manager(db)
         cid = mgr.create_conversation("t", "stub-model", "u1")
-        ph = db.placeholder
-        db.execute(f"UPDATE conversations SET kg_auto_context = 0 WHERE id = {ph}", (cid,))
-        db.commit()
+        db.execute("UPDATE conversations SET kg_auto_context = 0 WHERE id = ?", (cid,))
         mgr.send_message(cid, "tell me about spark", "u1")
         assert "## Knowledge Graph Context" not in stub.last_system
 

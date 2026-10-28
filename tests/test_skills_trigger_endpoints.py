@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.skills.manager import SkillsManager, set_skills_manager
 from spark.skills.trigger import resolve_trigger_for_conversation
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 from tests.test_skills_manager import make_skill
-
-
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
 
 
 @pytest.fixture()
@@ -38,24 +29,26 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client(db) -> TestClient:
-    """App with a MagicMock manager backed by the real SQLite connection."""
+def client(sqlite_settings) -> Iterator[TestClient]:
+    """App with a MagicMock manager backed by a real SQLite database."""
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
 
-    mgr = MagicMock()
-    mgr._db = db
+    with app_client(app, sqlite_settings) as client:
+        db = app.state.sync_db
+        mgr = MagicMock()
+        mgr._db = db
 
-    def _create(name, model_id, user_guid, **kwargs):
-        from spark.database import conversations as convdb
+        def _create(name, model_id, user_guid, **kwargs):
+            from spark.database import conversations as convdb
 
-        return convdb.create_conversation(db, name, model_id, user_guid)
+            return db.call(convdb.create_conversation, name, model_id, user_guid)
 
-    mgr.create_conversation.side_effect = _create
-    app.state.conversation_manager = mgr
-    app.state.user_guid = "test-user"
-    return TestClient(app)
+        mgr.create_conversation.side_effect = _create
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "test-user"
+        yield client
 
 
 def _auth(client: TestClient) -> None:
@@ -81,19 +74,19 @@ DEBATE_PAYLOAD = {
 
 
 class TestResolver:
-    def test_rewrites_enabled_match(self, skills_env, db) -> None:
-        out = resolve_trigger_for_conversation(db, "u1", None, "/pdf-filler go")
+    async def test_rewrites_enabled_match(self, skills_env, spark_db) -> None:
+        out = await resolve_trigger_for_conversation(spark_db, "u1", None, "/pdf-filler go")
         assert "use_skill('pdf-filler')" in out
 
-    def test_disabled_skill_not_triggered(self, skills_env, db) -> None:
+    async def test_disabled_skill_not_triggered(self, skills_env, spark_db) -> None:
         from spark.database import skills as skills_db
 
-        skills_db.set_skill_enabled(db, "pdf-filler", False, "u1")
-        out = resolve_trigger_for_conversation(db, "u1", None, "/pdf-filler go")
+        await skills_db.set_skill_enabled(spark_db, "pdf-filler", False, "u1")
+        out = await resolve_trigger_for_conversation(spark_db, "u1", None, "/pdf-filler go")
         assert out == "/pdf-filler go"
 
-    def test_failure_safe(self, skills_env) -> None:
-        out = resolve_trigger_for_conversation(None, "u1", None, "/pdf-filler go")
+    async def test_failure_safe(self, skills_env) -> None:
+        out = await resolve_trigger_for_conversation(None, "u1", None, "/pdf-filler go")
         assert out == "/pdf-filler go"
 
 

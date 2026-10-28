@@ -405,7 +405,7 @@ class AgentExecutor:
             from spark.skills.prompt import build_skills_block
 
             block = build_skills_block(
-                skills_db.resolve_enabled(self._db, get_skills_manager(), self._user_guid)
+                self._db.call(skills_db.resolve_enabled, get_skills_manager(), self._user_guid)
             )
             if block:
                 base += "\n" + block + "\n"

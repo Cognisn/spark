@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 import webbrowser
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import spark
+from spark.db import Database, SyncDatabase
+from spark.mode import DatabaseSettings
 from spark.web.auth import AuthManager
 from spark.web.session import SessionManager
 
@@ -29,10 +35,78 @@ _WEB_DIR = Path(__file__).resolve().parent
 _TEMPLATE_DIR = _WEB_DIR / "templates"
 _STATIC_DIR = _WEB_DIR / "static"
 
+_DATABASE_WAIT_SECONDS = 300
+
+
+def attach_database(app: FastAPI, settings: DatabaseSettings, auto_migrate: bool) -> None:
+    """Have the app's lifespan open this database (migrating first when ``auto_migrate``)."""
+    app.state.database_settings = settings
+    app.state.database_auto_migrate = auto_migrate
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Open the database on the serving event loop, and close it on shutdown.
+
+    Endpoints await ``app.state.database``; code on worker threads uses
+    ``app.state.sync_db``. ``app.state.database_ready`` is set once either is
+    usable or opening failed (``app.state.database_error``).
+    """
+    from spark.db import migrate
+
+    settings: DatabaseSettings | None = getattr(app.state, "database_settings", None)
+    ready: threading.Event = app.state.database_ready
+    database: Database | None = None
+    if settings is not None:
+        try:
+            await asyncio.to_thread(
+                migrate.prepare,
+                settings,
+                auto_migrate=bool(getattr(app.state, "database_auto_migrate", False)),
+            )
+            database = await Database.open(settings)
+        except BaseException as exc:
+            app.state.database_error = exc
+            ready.set()
+            raise
+        app.state.database = database
+        app.state.sync_db = SyncDatabase(database)
+    ready.set()
+    try:
+        yield
+    finally:
+        if database is not None:
+            app.state.sync_db = None
+            app.state.database = None
+            await database.close()
+
+
+def _wait_for_database(app: FastAPI) -> SyncDatabase:
+    """Block a start-up thread until the lifespan has opened the database."""
+    if not app.state.database_ready.wait(_DATABASE_WAIT_SECONDS):
+        raise RuntimeError("the database was not opened in time")
+    error = getattr(app.state, "database_error", None)
+    if error is not None:
+        raise RuntimeError(f"the database could not be opened: {error}") from error
+    sync_db: SyncDatabase | None = getattr(app.state, "sync_db", None)
+    if sync_db is None:
+        raise RuntimeError("no database is configured")
+    return sync_db
+
 
 def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="Spark", version=spark.__version__, docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Spark",
+        version=spark.__version__,
+        docs_url=None,
+        redoc_url=None,
+        lifespan=_lifespan,
+    )
+    app.state.database = None
+    app.state.sync_db = None
+    app.state.database_error = None
+    app.state.database_ready = threading.Event()
 
     # -- Shared state ---------------------------------------------------------
     timeout = ctx.settings.get("interface.session_timeout_minutes", 60, cast=int)
@@ -281,12 +355,9 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             llm_manager = _init_providers(ctx)
             app.state.llm_manager = llm_manager
 
-            # Step 2: Database
+            # Step 2: Database (opened by the lifespan on the serving loop)
             status["stage"] = "Initialising database..."
-            from spark.database import Database
-
-            database = Database.from_settings(ctx.settings)
-            app.state.database = database
+            sync_db = _wait_for_database(app)
 
             # Step 3: Conversation Manager
             status["stage"] = "Setting up conversation manager..."
@@ -367,7 +438,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 app.state.skills_manager = None
 
             app.state.conversation_manager = ConversationManager(
-                database.connection,
+                sync_db,
                 llm_manager,
                 context_limits,
                 global_instructions=ctx.settings.get("conversation.global_instructions"),
@@ -411,21 +482,13 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             # Migrate any orphaned memories stored under "default" user_guid
             if app.state.user_guid != "default":
                 try:
-                    ph = database.connection.placeholder
-                    cursor = database.connection.execute(
-                        f"SELECT COUNT(*) FROM user_memories WHERE user_guid = {ph}",
-                        ("default",),
-                    )
-                    count = cursor.fetchone()[0]
-                    if count > 0:
-                        database.connection.execute(
-                            f"UPDATE user_memories SET user_guid = {ph} WHERE user_guid = {ph}",
-                            (app.state.user_guid, "default"),
-                        )
-                        database.connection.commit()
+                    from spark.database import memories as memories_db
+
+                    moved = sync_db.call(memories_db.reassign_user, "default", app.state.user_guid)
+                    if moved:
                         logger.info(
                             "Migrated %d memories from 'default' to user %s",
-                            count,
+                            moved,
                             app.state.user_guid[:8] + "...",
                         )
                 except Exception as e:
@@ -523,6 +586,11 @@ def _start_heartbeat_monitor(app: FastAPI, interval: int, max_misses: int) -> No
 async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     """Create the app and run uvicorn."""
     app = create_app(ctx, first_run=first_run)
+
+    from spark import mode
+
+    runtime = mode.current()
+    attach_database(app, runtime.database, auto_migrate=runtime.mode is mode.Mode.PERSONAL)
 
     # Set up init status tracking and start background init
     app.state.init_status = {"ready": False, "error": False, "stage": "Starting..."}

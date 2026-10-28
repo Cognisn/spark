@@ -87,6 +87,7 @@ class SparkTrayDaemon:
             "next_run": None,
         }
         self._stats_thread: threading.Thread | None = None
+        self._db_handle: Any = None
 
     def _pid_file(self) -> Path:
         from spark.core.application import _get_data_path
@@ -199,52 +200,22 @@ class SparkTrayDaemon:
     def _fetch_stats_once(self) -> None:
         """Read action stats from the database once."""
         try:
-            from spark.core.application import _get_data_path
-            from spark.database.backends import SQLiteBackend
-            from spark.database.connection import DatabaseConnection
+            handle = self._db_handle
+            if handle is None:
+                return  # the scheduler has not opened the database yet
+            from spark.database import autonomous_actions
 
-            db_path = _get_data_path() / "spark.db"
-            if not db_path.exists():
-                return
-
-            backend = SQLiteBackend(str(db_path))
-            conn = DatabaseConnection(backend)
-            from spark.database.schema import initialise_schema
-
-            initialise_schema(conn)
-            try:
-                # Total enabled actions
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM autonomous_actions WHERE is_enabled = 1"
-                )
-                row = cursor.fetchone()
-                total = row[0] if row else 0
-                if total != self._action_stats.get("total"):
-                    logger.info("Action stats updated: %d enabled actions", total)
-                self._action_stats["total"] = total
-
-                # Last run time (most recent completed run)
-                cursor = conn.execute(
-                    "SELECT completed_at FROM action_runs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1"
-                )
-                row = cursor.fetchone()
-                if row and row[0]:
-                    self._action_stats["last_run"] = _utc_to_local(str(row[0]))
-                else:
-                    self._action_stats["last_run"] = None
-
-                # Next run time
-                cursor = conn.execute(
-                    "SELECT next_run_at FROM autonomous_actions WHERE is_enabled = 1 AND next_run_at IS NOT NULL ORDER BY next_run_at ASC LIMIT 1"
-                )
-                row = cursor.fetchone()
-                if row and row[0]:
-                    self._action_stats["next_run"] = _utc_to_local(str(row[0]))
-                else:
-                    self._action_stats["next_run"] = None
-
-            finally:
-                conn.close()
+            stats = handle.sync_db.call(autonomous_actions.action_stats)
+            total = stats["total"]
+            if total != self._action_stats.get("total"):
+                logger.info("Action stats updated: %d enabled actions", total)
+            self._action_stats["total"] = total
+            self._action_stats["last_run"] = (
+                _utc_to_local(stats["last_run"]) if stats["last_run"] else None
+            )
+            self._action_stats["next_run"] = (
+                _utc_to_local(stats["next_run"]) if stats["next_run"] else None
+            )
 
             # Update tray icon title and refresh menu so stats are visible
             if self._icon and not self._paused:
@@ -315,19 +286,33 @@ class SparkTrayDaemon:
                     defaults=_default_settings(),
                     env_prefix="SPARK",
                 ) as ctx:
+                    from spark.core.application import configure_runtime
+                    from spark.db.standalone import open_standalone
+                    from spark.mode import Mode
                     from spark.scheduler.runner import ActionRunner
 
-                    daemon_id = f"tray-{os.getpid()}"
-                    runner = ActionRunner(ctx, daemon_id)
-                    runner.start()
+                    runtime = configure_runtime(ctx.settings)
+                    handle = await asyncio.to_thread(
+                        open_standalone,
+                        runtime.database,
+                        auto_migrate=runtime.mode is Mode.PERSONAL,
+                    )
+                    self._db_handle = handle
+                    try:
+                        daemon_id = f"tray-{os.getpid()}"
+                        runner = ActionRunner(ctx, daemon_id, handle.sync_db)
+                        runner.start()
 
-                    while self._running:
-                        if self._paused:
-                            await asyncio.sleep(1)
-                            continue
-                        await asyncio.sleep(5)
+                        while self._running:
+                            if self._paused:
+                                await asyncio.sleep(1)
+                                continue
+                            await asyncio.sleep(5)
 
-                    runner.stop()
+                        runner.stop()
+                    finally:
+                        self._db_handle = None
+                        await asyncio.to_thread(handle.close)
 
             asyncio.run(_init_and_run())
 

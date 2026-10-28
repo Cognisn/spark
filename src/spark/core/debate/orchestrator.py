@@ -64,7 +64,7 @@ class DebateOrchestrator:
             from spark.skills.manager import get_skills_manager
             from spark.skills.prompt import build_skills_block
 
-            enabled = skills_db.resolve_enabled(self._db, get_skills_manager(), user_guid)
+            enabled = self._db.call(skills_db.resolve_enabled, get_skills_manager(), user_guid)
             if allowed is not None:
                 enabled = [s for s in enabled if s["name"] in allowed]
             return build_skills_block(enabled)
@@ -74,7 +74,7 @@ class DebateOrchestrator:
 
     def _set_state(self, cid: int, cfg: dict, new: DebateState, **kwargs: Any) -> None:
         assert_transition(DebateState(cfg["state"]), new)
-        debates.update_debate_state(self._db, cid, new.value, **kwargs)
+        self._db.call(debates.update_debate_state, cid, new.value, **kwargs)
         cfg["state"] = new.value
         cfg.update({k: v for k, v in kwargs.items() if v is not None})
         self._emit(
@@ -96,7 +96,7 @@ class DebateOrchestrator:
         cancel_token: CancellationToken | None = None,
     ) -> None:
         """Drive the debate until QA, cancellation, or a failed turn."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         if not cfg:
             raise ValueError(f"No debate for conversation {conversation_id}")
 
@@ -138,17 +138,17 @@ class DebateOrchestrator:
 
     def submit_user_prompt(self, conversation_id: int, text: str) -> int:
         """Queue user input as a turn; typed by current debate state."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         turn_type = "qa_question" if cfg and cfg["state"] == "qa" else "user_prompt"
         round_no = cfg["current_round"] if cfg else 0
-        return debates.add_turn(self._db, conversation_id, round_no, "user", turn_type, text)
+        return self._db.call(debates.add_turn, conversation_id, round_no, "user", turn_type, text)
 
     def answer_qa(self, conversation_id: int, user_guid: str, question_turn_id: int) -> str:
         """Ask the judge to answer a QA question about its ruling."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         self._skills_block = self._compute_skills_block(user_guid)
-        turns = debates.get_turns(self._db, conversation_id)
-        exhibits = debates.get_exhibits(self._db, conversation_id)
+        turns = self._db.call(debates.get_turns, conversation_id)
+        exhibits = self._db.call(debates.get_exhibits, conversation_id)
         transcript = history.build_judge_transcript(turns, exhibits, include_qa=True)
         self._emit("floor", {"role": "judge"})
         try:
@@ -160,7 +160,7 @@ class DebateOrchestrator:
         if response is None:
             return ""
         answer = response.get("content", "")
-        debates.add_turn(self._db, conversation_id, 0, "judge", "qa_answer", answer)
+        self._db.call(debates.add_turn, conversation_id, 0, "judge", "qa_answer", answer)
         self._emit("judge_text", {"role": "judge", "text": answer, "phase": "qa"})
         return answer
 
@@ -188,10 +188,10 @@ class DebateOrchestrator:
             if tc.get("name") == "set_speaking_order":
                 first = tc.get("input", {}).get("first_speaker", "pro")
         framing = response.get("content", "") or f"The debate begins. {first} argues first."
-        debates.update_debate_state(self._db, cid, cfg["state"], opening_speaker=first)
+        self._db.call(debates.update_debate_state, cid, cfg["state"], opening_speaker=first)
         cfg["opening_speaker"] = first
-        debates.add_turn(
-            self._db,
+        self._db.call(
+            debates.add_turn,
             cid,
             0,
             "judge",
@@ -215,7 +215,7 @@ class DebateOrchestrator:
 
         done_roles = {
             t["role"]
-            for t in debates.get_turns(self._db, cid)
+            for t in self._db.call(debates.get_turns, cid)
             if t["turn_type"] == "argument" and t["round"] == round_no and t["status"] == "complete"
         }
         for role in order:
@@ -229,8 +229,8 @@ class DebateOrchestrator:
         # Round complete: the cap forces the ruling, otherwise the judge decides.
         if cfg["rounds_mode"] == "fixed" and round_no >= (cfg["max_rounds"] or 1):
             return "rule"
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = history.build_judge_transcript(turns, exhibits)
         self._emit("floor", {"role": "judge"})
         try:
@@ -252,7 +252,7 @@ class DebateOrchestrator:
                 decision = "rule"
         remarks = response.get("content", "")
         if remarks:
-            debates.add_turn(self._db, cid, round_no, "judge", "interim", remarks)
+            self._db.call(debates.add_turn, cid, round_no, "judge", "interim", remarks)
             self._emit("judge_text", {"role": "judge", "text": remarks, "phase": "interim"})
         return decision
 
@@ -264,8 +264,8 @@ class DebateOrchestrator:
             self._emit("floor", {"role": "none"})
 
     def _ruling_inner(self, cid: int, cfg: dict) -> bool:
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = history.build_judge_transcript(turns, exhibits)
         response = self._judge_invoke(
             cfg, transcript, prompts.judge_phase_instruction("ruling"), tools=None
@@ -273,7 +273,7 @@ class DebateOrchestrator:
         if response is None:
             return False
         ruling = response.get("content", "")
-        debates.add_turn(self._db, cid, 0, "judge", "ruling", ruling)
+        self._db.call(debates.add_turn, cid, 0, "judge", "ruling", ruling)
         self._emit("judge_text", {"role": "judge", "text": ruling, "phase": "ruling"})
         return True
 
@@ -341,8 +341,8 @@ class DebateOrchestrator:
                 prompt_caching=self._prompt_caching,
             )
             usage = response.get("usage", {})
-            debates.add_agent_tokens(
-                self._db,
+            self._db.call(
+                debates.add_agent_tokens,
                 cfg["conversation_id"],
                 "judge",
                 usage.get("input_tokens", 0),
@@ -384,8 +384,8 @@ class DebateOrchestrator:
         agent: dict,
     ) -> bool:
 
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = history.build_debater_transcript(role, turns, exhibits)
         task = (
             f"## Debate transcript so far\n\n{transcript}\n\n"
@@ -396,8 +396,8 @@ class DebateOrchestrator:
         try:
             from spark.database.agents import create_agent_run
 
-            create_agent_run(
-                self._db,
+            self._db.call(
+                create_agent_run,
                 agent_run_id,
                 cid,
                 f"{role} debater",
@@ -460,12 +460,12 @@ class DebateOrchestrator:
             )
         except Exception as e:  # noqa: BLE001 - any provider failure fails the turn
             logger.error("Debater %s turn failed: %s", role, e)
-            debates.add_turn(self._db, cid, round_no, role, "argument", "", status="failed")
+            self._db.call(debates.add_turn, cid, round_no, role, "argument", "", status="failed")
             self._emit("turn_failed", {"role": role, "round": round_no, "error": str(e)})
             return False
 
-        debates.add_agent_tokens(
-            self._db,
+        self._db.call(
+            debates.add_agent_tokens,
             cid,
             role,
             result.get("input_tokens", 0),
@@ -474,8 +474,8 @@ class DebateOrchestrator:
         try:
             from spark.database.agents import complete_agent_run
 
-            complete_agent_run(
-                self._db,
+            self._db.call(
+                complete_agent_run,
                 agent_run_id,
                 status=result.get("status", "completed"),
                 result_text="",
@@ -486,14 +486,14 @@ class DebateOrchestrator:
             logger.warning("Could not complete agent run for %s", agent_run_id)
 
         if result.get("status") == "cancelled":
-            debates.add_turn(self._db, cid, round_no, role, "argument", "", status="cancelled")
+            self._db.call(debates.add_turn, cid, round_no, role, "argument", "", status="cancelled")
             return False
 
         terminal = result.get("terminal_call")
         if not terminal:
             # The model finished without submitting: fail the turn (retryable).
-            debates.add_turn(
-                self._db,
+            self._db.call(
+                debates.add_turn,
                 cid,
                 round_no,
                 role,
@@ -509,8 +509,8 @@ class DebateOrchestrator:
 
         argument = terminal["input"].get("argument_markdown", "")
         exhibits_in = validate_exhibits(terminal["input"].get("exhibits"))
-        turn_id = debates.add_turn(
-            self._db,
+        turn_id = self._db.call(
+            debates.add_turn,
             cid,
             round_no,
             role,
@@ -519,7 +519,7 @@ class DebateOrchestrator:
             token_count=result.get("output_tokens", 0),
         )
         if exhibits_in:
-            debates.add_exhibits(self._db, turn_id, exhibits_in)
+            self._db.call(debates.add_exhibits, turn_id, exhibits_in)
         self._emit("argument", {"role": role, "round": round_no, "text": argument})
         self._emit("exhibits", {"role": role, "round": round_no, "items": exhibits_in})
         return True

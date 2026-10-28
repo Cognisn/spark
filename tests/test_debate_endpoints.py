@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 
 
 def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
@@ -31,29 +30,26 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client(tmp_path) -> TestClient:
-    """App with a MagicMock manager backed by a real SQLite connection."""
+def client(sqlite_settings) -> Iterator[TestClient]:
+    """App with a MagicMock manager backed by a real SQLite database."""
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
 
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
+    with app_client(app, sqlite_settings) as client:
+        sync_db = app.state.sync_db
+        mgr = MagicMock()
+        mgr._db = sync_db
 
-    mgr = MagicMock()
-    mgr._db = conn
+        def _create(name, model_id, user_guid, **kwargs):
+            from spark.database import conversations as convdb
 
-    def _create(name, model_id, user_guid, **kwargs):
-        from spark.database import conversations as convdb
+            return sync_db.call(convdb.create_conversation, name, model_id, user_guid)
 
-        return convdb.create_conversation(conn, name, model_id, user_guid)
-
-    mgr.create_conversation.side_effect = _create
-    app.state.conversation_manager = mgr
-    app.state.user_guid = "test-user"  # the mock ctx would yield a MagicMock guid
-    client = TestClient(app)
-    return client
+        mgr.create_conversation.side_effect = _create
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "test-user"  # the mock ctx would yield a MagicMock guid
+        yield client
 
 
 def _auth(client: TestClient) -> None:
@@ -174,7 +170,7 @@ class TestCapabilities:
         set_skills_manager(SkillsManager(skills_root))
         try:
             conn = client.app.state.conversation_manager._db
-            skills_db.set_skill_enabled(conn, "beta-skill", False, "test-user")
+            conn.call(skills_db.set_skill_enabled, "beta-skill", False, "test-user")
 
             _auth(client)
             data = client.get("/debate/api/capabilities").json()

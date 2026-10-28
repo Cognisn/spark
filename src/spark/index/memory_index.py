@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from spark.index.embeddings import EmbeddingModel
 
 if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+    from spark.db.bridge import SyncDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class MemoryIndex:
 
     def __init__(
         self,
-        db: DatabaseConnection,
+        db: SyncDatabase,
         user_guid: str,
         config: dict[str, Any] | None = None,
     ) -> None:
@@ -53,12 +53,12 @@ class MemoryIndex:
         if category not in VALID_CATEGORIES:
             category = "facts"
 
-        if memories.memory_exists(self._db, self._user_guid, content):
+        if self._db.call(memories.memory_exists, self._user_guid, content):
             return None
 
         embedding = self._embedder.encode(content)
-        return memories.add_memory(
-            self._db,
+        return self._db.call(
+            memories.add_memory,
             self._user_guid,
             content,
             category,
@@ -86,8 +86,8 @@ class MemoryIndex:
             for cat in categories:
                 if cat in VALID_CATEGORIES:
                     results.extend(
-                        memories.search_memories(
-                            self._db,
+                        self._db.call(
+                            memories.search_memories,
                             self._user_guid,
                             query_embedding,
                             top_k=top_k,
@@ -98,8 +98,8 @@ class MemoryIndex:
             results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
             results = results[:top_k]
         else:
-            results = memories.search_memories(
-                self._db,
+            results = self._db.call(
+                memories.search_memories,
                 self._user_guid,
                 query_embedding,
                 top_k=top_k,
@@ -109,7 +109,7 @@ class MemoryIndex:
         # Update access timestamps
         if results:
             ids = [r["id"] for r in results if "id" in r]
-            memories.update_last_accessed(self._db, ids)
+            self._db.call(memories.update_last_accessed, ids)
 
         return results
 
@@ -155,67 +155,38 @@ class MemoryIndex:
         """Update an existing memory."""
         from spark.database import memories
 
-        mem = memories.get_memory(self._db, memory_id, self._user_guid)
+        mem = self._db.call(memories.get_memory, memory_id, self._user_guid)
         if mem is None:
             return False
 
         # Re-embed if content changed
-        if content and content != mem.get("content"):
-            embedding = self._embedder.encode(content)
-            # Direct DB update with new embedding
-            import hashlib
-
-            content_hash = hashlib.sha256(content.encode()).hexdigest()
-            ph = self._db.placeholder
-            sets = [f"content = {ph}", f"content_hash = {ph}", f"embedding = {ph}"]
-            params: list[Any] = [content, content_hash, embedding.astype("float32").tobytes()]
-
-            if category:
-                sets.append(f"category = {ph}")
-                params.append(category)
-            if importance is not None:
-                sets.append(f"importance = {ph}")
-                params.append(importance)
-
-            params.extend([memory_id, self._user_guid])
-            self._db.execute(
-                f"UPDATE user_memories SET {', '.join(sets)} WHERE id = {ph} AND user_guid = {ph}",
-                tuple(params),
-            )
-            self._db.commit()
-        else:
-            updates: dict[str, Any] = {}
-            if category:
-                updates["category"] = category
-            if importance is not None:
-                updates["importance"] = importance
-            if updates:
-                ph = self._db.placeholder
-                sets_sql = ", ".join(f"{k} = {ph}" for k in updates)
-                params_list = list(updates.values()) + [memory_id, self._user_guid]
-                self._db.execute(
-                    f"UPDATE user_memories SET {sets_sql} WHERE id = {ph} AND user_guid = {ph}",
-                    tuple(params_list),
-                )
-                self._db.commit()
-
+        new_content = content if content and content != mem.get("content") else None
+        self._db.call(
+            memories.update_memory,
+            memory_id,
+            self._user_guid,
+            content=new_content,
+            embedding=self._embedder.encode(new_content) if new_content else None,
+            category=category,
+            importance=importance,
+        )
         return True
 
     def delete(self, memory_id: int) -> bool:
         """Delete a memory."""
         from spark.database import memories
 
-        mem = memories.get_memory(self._db, memory_id, self._user_guid)
+        mem = self._db.call(memories.get_memory, memory_id, self._user_guid)
         if mem is None:
             return False
-        memories.delete_memory(self._db, memory_id, self._user_guid)
+        self._db.call(memories.delete_memory, memory_id, self._user_guid)
         return True
 
     def list_all(self, *, category: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         """List all memories, optionally filtered by category."""
         from spark.database import memories
 
-        all_mems = memories.get_all_memories(self._db, self._user_guid, limit=limit)
+        all_mems = self._db.call(memories.get_all_memories, self._user_guid, limit=limit)
         if category:
             return [m for m in all_mems if m.get("category") == category]
         return all_mems
@@ -224,10 +195,10 @@ class MemoryIndex:
         """Get a single memory."""
         from spark.database import memories
 
-        return memories.get_memory(self._db, memory_id, self._user_guid)
+        return self._db.call(memories.get_memory, memory_id, self._user_guid)
 
     def clear_all(self) -> None:
         """Delete all memories for this user."""
         from spark.database import memories
 
-        memories.delete_all_memories(self._db, self._user_guid)
+        self._db.call(memories.delete_all_memories, self._user_guid)

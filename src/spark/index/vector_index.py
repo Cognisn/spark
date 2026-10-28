@@ -12,7 +12,7 @@ import numpy as np
 from spark.index.embeddings import EmbeddingModel
 
 if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+    from spark.db.bridge import SyncDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class ConversationVectorIndex:
 
     def __init__(
         self,
-        db: DatabaseConnection,
+        db: SyncDatabase,
         conversation_id: int,
         user_guid: str,
         config: dict[str, Any] | None = None,
@@ -65,8 +65,8 @@ class ConversationVectorIndex:
         embedding = self._embedder.encode(content)
         metadata_json = json.dumps(metadata) if metadata else None
 
-        result = context_index.add_index_element(
-            self._db,
+        result = self._db.call(
+            context_index.add_index_element,
             self._conversation_id,
             element_type,
             content,
@@ -165,8 +165,8 @@ class ConversationVectorIndex:
         from spark.database import context_index
 
         query_embedding = self._embedder.encode(query)
-        return context_index.search_context(
-            self._db,
+        return self._db.call(
+            context_index.search_context,
             [self._conversation_id],
             query_embedding,
             top_k=top_k,
@@ -186,8 +186,8 @@ class ConversationVectorIndex:
         from spark.database import context_index
 
         query_embedding = self._embedder.encode(query)
-        return context_index.search_context(
-            self._db,
+        return self._db.call(
+            context_index.search_context,
             conversation_ids,
             query_embedding,
             top_k=top_k,
@@ -198,7 +198,7 @@ class ConversationVectorIndex:
         """Clear all index elements for this conversation."""
         from spark.database import context_index
 
-        context_index.delete_index_elements(self._db, self._conversation_id)
+        self._db.call(context_index.delete_index_elements, self._conversation_id)
         self._cache_dirty = True
         self._cache = None
 
@@ -206,7 +206,7 @@ class ConversationVectorIndex:
         """Get element counts by type."""
         from spark.database import context_index
 
-        return context_index.get_index_stats(self._db, self._conversation_id)
+        return self._db.call(context_index.get_index_stats, self._conversation_id)
 
     def _chunk_text(self, text: str) -> list[str]:
         """Split text into overlapping chunks."""

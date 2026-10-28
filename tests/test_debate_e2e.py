@@ -8,9 +8,7 @@ import pytest
 
 from spark.core.debate.export import export_debate_json, export_debate_markdown
 from spark.core.debate.orchestrator import DebateOrchestrator
-from spark.database import Database, debates
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import debates
 from tests.test_debate_orchestrator import (
     AGENTS,
     ScriptedService,
@@ -19,29 +17,18 @@ from tests.test_debate_orchestrator import (
 )
 
 
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
-
-
-def _setup_debate(db, rounds_mode="judge", max_rounds=None) -> int:
-    ph = db.placeholder
-    cur = db.execute(
-        f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
-        f"VALUES ({ph}, {ph}, {ph}, 'debate')",
+def _setup_debate(sync_db, rounds_mode="judge", max_rounds=None) -> int:
+    cid = sync_db.fetch_value(
+        "INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+        "VALUES (?, ?, ?, 'debate') RETURNING id",
         ("D", "model-judge", "u1"),
     )
-    db.commit()
-    cid = cur.lastrowid
-    debates.create_debate(db, cid, "Topic T", rounds_mode, max_rounds, "u1", AGENTS)
+    sync_db.call(debates.create_debate, cid, "Topic T", rounds_mode, max_rounds, "u1", AGENTS)
     return cid
 
 
-def test_two_round_judge_decides_debate(db) -> None:
-    cid = _setup_debate(db)
+def test_two_round_judge_decides_debate(sync_db) -> None:
+    cid = _setup_debate(sync_db)
     services = {
         "model-judge": ScriptedService(
             [
@@ -71,17 +58,17 @@ def test_two_round_judge_decides_debate(db) -> None:
             ]
         ),
     }
-    orch = DebateOrchestrator(db, lambda m: services[m], {}, status_callback=lambda t, d: None)
+    orch = DebateOrchestrator(sync_db, lambda m: services[m], {}, status_callback=lambda t, d: None)
     orch.run(cid, "u1")
 
-    d = debates.get_debate(db, cid)
+    d = sync_db.call(debates.get_debate, cid)
     assert d["state"] == "qa" and d["opening_speaker"] == "con"
-    args = [t for t in debates.get_turns(db, cid) if t["turn_type"] == "argument"]
+    args = [t for t in sync_db.call(debates.get_turns, cid) if t["turn_type"] == "argument"]
     assert [a["role"] for a in args] == ["con", "pro", "con", "pro"]
 
     qid = orch.submit_user_prompt(cid, "Why con?")
     assert "exhibit B" in orch.answer_qa(cid, "u1", qid)
 
-    md = export_debate_markdown(db, cid)
+    md = export_debate_markdown(sync_db, cid)
     assert "## Round 2" in md and "Con wins" in md
-    assert json.loads(export_debate_json(db, cid))["state"] == "qa"
+    assert json.loads(export_debate_json(sync_db, cid))["state"] == "qa"

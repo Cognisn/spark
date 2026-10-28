@@ -5,19 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.knowledge import store
 from spark.knowledge.query import find_entities, render_subgraph, subgraph_for_query
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(sync_db):
+    """The bridge (SyncDatabase) to a fresh migrated SQLite database."""
+    return sync_db
 
 
 class DirectionalEmbedder:
@@ -34,13 +29,25 @@ class DirectionalEmbedder:
 
 def _seed_graph(db) -> tuple[int, int]:
     emb = DirectionalEmbedder()
-    a = store.upsert_node(
-        db, "global", "Spark", "project", "AI kit", emb.encode("spark").tobytes(), "u1"
+    a = db.call(
+        store.upsert_node,
+        "global",
+        "Spark",
+        "project",
+        "AI kit",
+        emb.encode("spark").tobytes(),
+        "u1",
     )
-    b = store.upsert_node(
-        db, "global", "Cognisn", "organisation", "the org", emb.encode("cognisn").tobytes(), "u1"
+    b = db.call(
+        store.upsert_node,
+        "global",
+        "Cognisn",
+        "organisation",
+        "the org",
+        emb.encode("cognisn").tobytes(),
+        "u1",
     )
-    store.upsert_edge(db, "global", a, b, "belongs_to", "", "u1")
+    db.call(store.upsert_edge, "global", a, b, "belongs_to", "", "u1")
     return a, b
 
 

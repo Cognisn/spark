@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.voice.engine import VoiceConfig
 from spark.voice.errors import VoiceUnavailable
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 
 
 def _mock_settings_get(key: str, default=None, *, cast=None):
@@ -49,7 +48,7 @@ class FakeEngine:
             return []
         return [{"voice_id": "v1", "name": "George", "labels": {}, "preview_url": ""}]
 
-    def synthesise(self, text, voice_id=None, *, user_guid, conversation_id=None):
+    async def synthesise(self, text, voice_id=None, *, user_guid, conversation_id=None):
         self.calls.append((text, voice_id, user_guid, conversation_id))
         if self._raises:
             raise VoiceUnavailable(self._raises)
@@ -57,26 +56,22 @@ class FakeEngine:
 
 
 @pytest.fixture()
-def client(tmp_path) -> TestClient:
+def client(sqlite_settings) -> Iterator[TestClient]:
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
 
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
+    with app_client(app, sqlite_settings) as c:
+        mgr = MagicMock()
+        mgr._db = app.state.sync_db
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "u1"
+        app.state.voice_engine = FakeEngine()
 
-    mgr = MagicMock()
-    mgr._db = conn
-    app.state.conversation_manager = mgr
-    app.state.user_guid = "u1"
-    app.state.voice_engine = FakeEngine()
-
-    c = TestClient(app)
-    code = app.state.auth.generate_code()
-    resp = c.post("/api/auth", data={"code": code}, follow_redirects=False)
-    c.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
-    return c
+        code = app.state.auth.generate_code()
+        resp = c.post("/api/auth", data={"code": code}, follow_redirects=False)
+        c.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+        yield c
 
 
 class TestConfig:
