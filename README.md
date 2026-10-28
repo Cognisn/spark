@@ -70,16 +70,10 @@
 
 ## Installation
 
-### Download (Standalone)
+Spark is distributed through PyPI and runs on macOS, Windows and Linux with Python 3.12 or later.
 
-Pre-built binaries with an embedded Python runtime and a native splash screen for first-run setup. Dependencies are downloaded from PyPI on first launch (~30-60 seconds, requires internet).
-
-| Platform | Architecture | Format | Download |
-|----------|-------------|--------|----------|
-| macOS | ARM64 (Apple Silicon) | Signed + notarised DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| macOS | x86_64 (Intel) | Signed + notarised DMG | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Windows | x86_64 | Signed NSIS installer | [Download](https://github.com/Cognisn/spark/releases/latest) |
-| Linux | Any | pip install (see below) | -- |
+Standalone builds (signed macOS DMGs and the Windows installer) are paused: releases since
+0.2.0b14 are published to PyPI only. Install with pip or uv as below.
 
 ### Install from PyPI
 

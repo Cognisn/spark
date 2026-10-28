@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- README installation instructions now cover PyPI and uv only; the standalone download table is replaced by a note that standalone builds are paused
+
 ## [0.2.1] - 2026-10-28
 
 0.2.0 was released on GitHub but did not reach PyPI. 0.2.1 is the first PyPI release of the 0.2 line and contains everything listed under 0.2.0.
