@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - CI now runs on pushes to release and workstream branches and on pull requests to release branches, as well as on `main`
+- The `web_fetch` and `web_search` tool documentation now uses LF line endings, like the rest of the tree
 
 ## [0.2.0b17] - 2026-07-26
 
