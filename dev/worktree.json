@@ -6,7 +6,9 @@
     "import_check": "spark"
   },
   "services": [
-    { "name": "web", "offset": 0 }
+    { "name": "web", "offset": 0 },
+    { "name": "postgres", "offset": 32 }
   ],
-  "notes": "No Compose stack in 0.2.0. Run headless with SPARK__INTERFACE__OPEN_BROWSER=false and SPARK__INTERFACE__PORT set to the web port from ports.txt. sentence-transformers downloads its embedding model on first use."
+  "compose_template": "dev/worktree-compose.yml",
+  "notes": "Personal mode needs no stack: run headless with SPARK__INTERFACE__OPEN_BROWSER=false and SPARK__INTERFACE__PORT set to the web port from ports.txt. Server mode: start the sandbox stack (compose_up in ports.txt), then set SPARK__MODE=server and SPARK__DATABASE__URL=postgresql://spark:spark-dev-only@127.0.0.1:<postgres port>/spark and run `spark migrate`. The database test suites start their own PostgreSQL through testcontainers. sentence-transformers downloads its embedding model on first use."
 }

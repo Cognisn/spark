@@ -1,0 +1,24 @@
+# Sandbox stack for a SPARK worktree, generated into the sandbox by the worktree
+# setup script ({{...}} placeholders are filled from the recipe in worktree.json).
+# PostgreSQL with pgvector for server-mode work; personal mode needs no stack.
+# Development credentials only; never reuse them anywhere else.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: {{COMPOSE_PROJECT}}-postgres
+    environment:
+      POSTGRES_USER: spark
+      POSTGRES_PASSWORD: spark-dev-only
+      POSTGRES_DB: spark
+    ports:
+      - "127.0.0.1:{{PORT_POSTGRES}}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spark -d spark"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:
