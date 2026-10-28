@@ -301,6 +301,20 @@ def _search_searxng(query: str, max_results: int, web_config: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _html_to_markdown(html: str) -> str:
+    """Readable Markdown from HTML: links kept; images, scripts and styles dropped; no wrapping."""
+    import re
+
+    from bs4 import BeautifulSoup
+    from markdownify import ATX, MarkdownConverter
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "img", "head"]):
+        tag.decompose()
+    text = MarkdownConverter(heading_style=ATX).convert_soup(soup)
+    return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+
+
 def _web_fetch(url: str, max_length: int) -> str:
     """Fetch a URL and convert to readable text."""
     try:
@@ -319,13 +333,7 @@ def _web_fetch(url: str, max_length: int) -> str:
             return resp.text[:max_length]
 
         if "text/html" in content_type or not content_type:
-            import html2text
-
-            converter = html2text.HTML2Text()
-            converter.ignore_links = False
-            converter.ignore_images = True
-            converter.body_width = 0
-            text = converter.handle(resp.text)
+            text = _html_to_markdown(resp.text)
             if len(text) > max_length:
                 text = text[:max_length] + "\n... (truncated)"
             return text

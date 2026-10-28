@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Database settings page offers the mode (personal or server) and, for server mode, the PostgreSQL URL (stored in the keychain); host, port, user and MySQL or SQL Server choices are gone
 
 ### Removed
+- The `html2text` dependency (GPL-3.0-or-later). The web fetch tool converts pages to Markdown with `markdownify` (MIT), keeping links and headings and dropping images, scripts and styles as before
 - **MySQL, MariaDB and SQL Server support**, the psycopg2 driver, and the `mysql`, `postgresql`, `mssql` and `all-databases` extras. Upgrade note: personal mode uses SQLite as before; PostgreSQL is supported in server mode (`mode: server` with `database.url`), through psycopg 3, which is now a standard dependency. A configuration that still sets `database.type` to `mysql`, `mariadb` or `mssql` is refused at start-up with a message saying so
 
 ### Fixed

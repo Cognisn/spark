@@ -75,7 +75,7 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     # Web tools
     "beautifulsoup4>=4.12.0",
-    "html2text>=2024.2.26",
+    "markdownify>=0.13.0",
     # Scheduling
     "APScheduler>=3.10.0",
     # System tray
