@@ -137,6 +137,41 @@ def run() -> None:
         raise
 
 
+def run_migrations(runtime: mode.RuntimeSettings) -> dict[str, str | None]:
+    """Run SPARK's migration chain, then any registered chain, on the configured database."""
+    from spark.db import migrate
+
+    return migrate.migrate_all(runtime.database)
+
+
+def run_migrate() -> int:
+    """``spark migrate``: load the configuration, migrate, report, and return an exit code."""
+    from spark.db.migrate import MigrationError
+
+    config_path = _get_config_path()
+    _ensure_config(config_path)
+
+    async def _load() -> mode.RuntimeSettings:
+        async with AppContext(
+            name="Spark",
+            version=spark.__version__,
+            config_file=str(config_path),
+            defaults=_default_settings(),
+            env_prefix="SPARK",
+        ) as ctx:
+            return configure_runtime(ctx.settings)
+
+    try:
+        runtime = asyncio.run(_load())
+        results = run_migrations(runtime)
+    except (mode.ModeConfigError, MigrationError) as exc:
+        print(f"spark migrate: {exc}", file=sys.stderr)
+        return 2
+    for chain, revision in results.items():
+        print(f"{chain}: {revision}")
+    return 0
+
+
 def _log_startup_paths(ctx: AppContext, config_path: Path) -> None:
     """Log key file locations at startup."""
     runtime = mode.current()
