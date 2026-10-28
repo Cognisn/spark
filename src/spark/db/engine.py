@@ -21,7 +21,7 @@ import datetime as dt
 import sqlite3
 import sys
 from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -70,6 +70,10 @@ class Executor(Protocol):
     async def execute(self, sql: str, params: Params = ()) -> int: ...
 
     async def execute_many(self, sql: str, params_seq: Iterable[Params]) -> None: ...
+
+    def transaction(self) -> AbstractAsyncContextManager[Connection]:
+        """A transaction: new on a Database, a savepoint inside a Connection's."""
+        ...
 
 
 def _sqlite_version_info() -> tuple[int, int, int]:
@@ -169,6 +173,10 @@ class Connection:
             return
         async with self._raw.cursor() as cur:
             await cur.executemany(to_driver_sql(sql, self._dialect), rows)
+
+    def transaction(self) -> AbstractAsyncContextManager[Connection]:
+        """Nest a unit of work in this connection's transaction (a savepoint)."""
+        return self._transaction()
 
     def _pg_cursor(self) -> Any:
         from psycopg.rows import dict_row

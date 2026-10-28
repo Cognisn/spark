@@ -3,14 +3,34 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+from spark.db.dialect import upsert
+from spark.db.engine import Executor, Row
+
+__all__ = [
+    "get_transactions",
+    "is_embedded_tool_enabled",
+    "is_mcp_server_enabled",
+    "record_transaction",
+    "set_embedded_tool_enabled",
+    "set_mcp_server_enabled",
+]
+
+_SERVER_UPSERT = upsert(
+    "conversation_mcp_servers",
+    ["conversation_id", "server_name", "enabled", "user_guid"],
+    ["conversation_id", "server_name"],
+)
+_EMBEDDED_UPSERT = upsert(
+    "conversation_embedded_tools",
+    ["conversation_id", "tool_name", "enabled", "user_guid"],
+    ["conversation_id", "tool_name", "user_guid"],
+)
 
 
-def record_transaction(
-    db: DatabaseConnection,
+async def record_transaction(
+    db: Executor,
     conversation_id: int,
     tool_name: str,
     tool_input: str,
@@ -24,14 +44,13 @@ def record_transaction(
     execution_time_ms: int = 0,
 ) -> int:
     """Record an MCP tool transaction. Returns transaction ID."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute(
-        f"""INSERT INTO mcp_transactions
+    new_id = await db.fetch_value(
+        """INSERT INTO mcp_transactions
             (conversation_id, message_id, user_prompt, tool_name, tool_server,
              tool_input, tool_response, is_error, execution_time_ms,
              transaction_timestamp, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
         (
             conversation_id,
             message_id,
@@ -46,86 +65,64 @@ def record_transaction(
             user_guid,
         ),
     )
-    db.commit()
-    return cursor.lastrowid
+    return int(new_id)
 
 
-def get_transactions(
-    db: DatabaseConnection,
+async def get_transactions(
+    db: Executor,
     conversation_id: int,
     *,
     limit: int = 100,
     tool_name: str | None = None,
-) -> list[dict]:
+) -> list[Row]:
     """Get MCP transactions for a conversation."""
-    ph = db.placeholder
-    sql = f"SELECT * FROM mcp_transactions WHERE conversation_id = {ph}"
-    params: list = [conversation_id]
-
+    sql = "SELECT * FROM mcp_transactions WHERE conversation_id = ?"
+    params: list[Any] = [conversation_id]
     if tool_name:
-        sql += f" AND tool_name = {ph}"
+        sql += " AND tool_name = ?"
         params.append(tool_name)
-
-    sql += f" ORDER BY transaction_timestamp DESC LIMIT {ph}"
+    sql += " ORDER BY transaction_timestamp DESC LIMIT ?"
     params.append(limit)
-
-    cursor = db.execute(sql, tuple(params))
-    return [dict(row) for row in cursor.fetchall()]
+    return await db.fetch_all(sql, tuple(params))
 
 
-def set_mcp_server_enabled(
-    db: DatabaseConnection,
+async def set_mcp_server_enabled(
+    db: Executor,
     conversation_id: int,
     server_name: str,
     enabled: bool,
     user_guid: str,
 ) -> None:
     """Set MCP server enabled state for a conversation."""
-    upsert = db.backend.upsert_sql(
-        "conversation_mcp_servers",
-        ["conversation_id", "server_name", "enabled", "user_guid"],
-        ["conversation_id", "server_name"],
-    )
-    db.execute(upsert, (conversation_id, server_name, int(enabled), user_guid))
-    db.commit()
+    await db.execute(_SERVER_UPSERT, (conversation_id, server_name, int(enabled), user_guid))
 
 
-def is_mcp_server_enabled(db: DatabaseConnection, conversation_id: int, server_name: str) -> bool:
+async def is_mcp_server_enabled(db: Executor, conversation_id: int, server_name: str) -> bool:
     """Check if an MCP server is enabled for a conversation. Default: True."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT enabled FROM conversation_mcp_servers
-            WHERE conversation_id = {ph} AND server_name = {ph}""",
+    enabled = await db.fetch_value(
+        """SELECT enabled FROM conversation_mcp_servers
+            WHERE conversation_id = ? AND server_name = ?""",
         (conversation_id, server_name),
     )
-    row = cursor.fetchone()
-    return bool(row[0]) if row else True
+    return bool(enabled) if enabled is not None else True
 
 
-def set_embedded_tool_enabled(
-    db: DatabaseConnection,
+async def set_embedded_tool_enabled(
+    db: Executor,
     conversation_id: int,
     tool_name: str,
     enabled: bool,
     user_guid: str,
 ) -> None:
     """Set embedded tool enabled state for a conversation."""
-    upsert = db.backend.upsert_sql(
-        "conversation_embedded_tools",
-        ["conversation_id", "tool_name", "enabled", "user_guid"],
-        ["conversation_id", "tool_name", "user_guid"],
-    )
-    db.execute(upsert, (conversation_id, tool_name, int(enabled), user_guid))
-    db.commit()
+    await db.execute(_EMBEDDED_UPSERT, (conversation_id, tool_name, int(enabled), user_guid))
 
 
-def is_embedded_tool_enabled(db: DatabaseConnection, conversation_id: int, tool_name: str) -> bool:
+async def is_embedded_tool_enabled(db: Executor, conversation_id: int, tool_name: str) -> bool:
     """Check if an embedded tool is enabled. Default: True."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT enabled FROM conversation_embedded_tools
-            WHERE conversation_id = {ph} AND tool_name = {ph}""",
+    enabled = await db.fetch_value(
+        """SELECT enabled FROM conversation_embedded_tools
+            WHERE conversation_id = ? AND tool_name = ?""",
         (conversation_id, tool_name),
     )
-    row = cursor.fetchone()
-    return bool(row[0]) if row else True
+    return bool(enabled) if enabled is not None else True

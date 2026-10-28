@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+from spark.db.engine import Executor, Row
+
+__all__ = ["complete_agent_run", "create_agent_run", "get_agent_run", "get_agent_runs"]
 
 
-def create_agent_run(
-    db: DatabaseConnection,
+async def create_agent_run(
+    db: Executor,
     agent_id: str,
     parent_conversation_id: int,
     agent_name: str,
@@ -21,12 +20,11 @@ def create_agent_run(
     user_guid: str,
 ) -> int:
     """Record a new agent run. Returns the row ID."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""INSERT INTO agent_runs
+    new_id = await db.fetch_value(
+        """INSERT INTO agent_runs
             (agent_id, parent_conversation_id, agent_name, task_description,
              mode, model_id, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
         (
             agent_id,
             parent_conversation_id,
@@ -37,12 +35,11 @@ def create_agent_run(
             user_guid,
         ),
     )
-    db.commit()
-    return cursor.lastrowid
+    return int(new_id)
 
 
-def complete_agent_run(
-    db: DatabaseConnection,
+async def complete_agent_run(
+    db: Executor,
     agent_id: str,
     *,
     status: str = "completed",
@@ -52,41 +49,31 @@ def complete_agent_run(
     tool_calls_json: str | None = None,
 ) -> None:
     """Mark an agent run as complete."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        f"""UPDATE agent_runs SET status = {ph}, result_text = {ph},
-            input_tokens = {ph}, output_tokens = {ph},
-            tool_calls_json = {ph}, completed_at = {ph}
-            WHERE agent_id = {ph}""",
+    await db.execute(
+        """UPDATE agent_runs SET status = ?, result_text = ?,
+            input_tokens = ?, output_tokens = ?,
+            tool_calls_json = ?, completed_at = ?
+            WHERE agent_id = ?""",
         (status, result_text, input_tokens, output_tokens, tool_calls_json, now, agent_id),
     )
-    db.commit()
 
 
-def get_agent_runs(
-    db: DatabaseConnection,
+async def get_agent_runs(
+    db: Executor,
     parent_conversation_id: int,
     *,
     limit: int = 50,
-) -> list[dict]:
+) -> list[Row]:
     """Get agent runs for a conversation, newest first."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT * FROM agent_runs
-            WHERE parent_conversation_id = {ph}
-            ORDER BY created_at DESC LIMIT {ph}""",
+    return await db.fetch_all(
+        """SELECT * FROM agent_runs
+            WHERE parent_conversation_id = ?
+            ORDER BY created_at DESC LIMIT ?""",
         (parent_conversation_id, limit),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def get_agent_run(db: DatabaseConnection, agent_id: str) -> dict | None:
+async def get_agent_run(db: Executor, agent_id: str) -> Row | None:
     """Get a single agent run by ID."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM agent_runs WHERE agent_id = {ph}",
-        (agent_id,),
-    )
-    row = cursor.fetchone()
-    return dict(row) if row else None
+    return await db.fetch_one("SELECT * FROM agent_runs WHERE agent_id = ?", (agent_id,))

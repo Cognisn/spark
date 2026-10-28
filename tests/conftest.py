@@ -13,7 +13,9 @@ import asyncio
 import os
 import sys
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -87,3 +89,67 @@ def pg_url(pg_server: str) -> Iterator[str]:
     finally:
         with psycopg.connect(pg_server, autocommit=True) as admin:
             admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+@pytest.fixture(scope="session")
+def _sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One SQLite database migrated to head per session; tests get a copy."""
+    from spark.db import migrate
+    from spark.mode import DatabaseSettings, Dialect
+
+    path = tmp_path_factory.mktemp("template") / "spark.db"
+    migrate.upgrade(DatabaseSettings(Dialect.SQLITE, sqlite_path=path))
+    return path
+
+
+@pytest.fixture(scope="session")
+def _pg_template(pg_server: str) -> str:
+    """One PostgreSQL database migrated to head per session; tests get a clone."""
+    import psycopg
+
+    from spark.db import migrate
+    from spark.mode import DatabaseSettings, Dialect
+
+    name = f"tpl_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(pg_server, autocommit=True) as admin:
+        admin.execute(f'CREATE DATABASE "{name}"')
+    migrate.upgrade(DatabaseSettings(Dialect.POSTGRESQL, url=_with_database(pg_server, name)))
+    return name
+
+
+@pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=pytest.mark.postgres)])
+def spark_db_settings(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
+    """Settings for a fresh SPARK database at head: SQLite, and (marked postgres) PostgreSQL."""
+    import shutil
+
+    import psycopg
+
+    from spark.mode import DatabaseSettings, Dialect
+
+    if request.param == "sqlite":
+        path = tmp_path / "spark.db"
+        shutil.copy(request.getfixturevalue("_sqlite_template"), path)
+        yield DatabaseSettings(Dialect.SQLITE, sqlite_path=path)
+        return
+    server = request.getfixturevalue("pg_server")
+    template = request.getfixturevalue("_pg_template")
+    name = f"t_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(server, autocommit=True) as admin:
+        admin.execute(f'CREATE DATABASE "{name}" TEMPLATE "{template}"')
+    try:
+        yield DatabaseSettings(Dialect.POSTGRESQL, url=_with_database(server, name))
+    finally:
+        with psycopg.connect(server, autocommit=True) as admin:
+            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+@pytest.fixture
+async def spark_db(spark_db_settings: Any) -> AsyncIterator[Any]:
+    """An open SPARK database at head, on the event loop of the test."""
+    from spark.db import Database
+
+    db = await Database.open(spark_db_settings)
+    try:
+        yield db
+    finally:
+        await db.close()

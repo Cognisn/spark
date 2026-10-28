@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from spark.db import engine
-from spark.db.engine import Connection, Database, DatabaseError
+from spark.db.engine import Connection, Database, DatabaseError, Executor
 from spark.mode import DatabaseSettings, Dialect
 
 TABLE = (
@@ -244,3 +244,21 @@ def test_postgres_refuses_the_proactor_loop_on_windows():
         engine.check_event_loop(loop, Dialect.SQLITE)  # aiosqlite is fine on any loop
     finally:
         loop.close()
+
+
+class TestExecutorTransactions:
+    async def test_connection_transaction_nests_in_the_callers(self, db: Database):
+        """Repositories call executor.transaction(); on a Connection it joins the caller's."""
+
+        async def unit_of_work(ex: Executor) -> None:
+            async with ex.transaction() as conn:
+                await conn.execute("INSERT INTO items (name) VALUES (?)", ("unit",))
+
+        with pytest.raises(RuntimeError):
+            async with db.transaction() as outer:
+                await unit_of_work(outer)
+                raise RuntimeError("caller fails")
+        assert await db.fetch_value("SELECT COUNT(*) FROM items") == 0
+
+        await unit_of_work(db)
+        assert await db.fetch_value("SELECT COUNT(*) FROM items") == 1

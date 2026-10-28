@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+from spark.db.dialect import upsert
+from spark.db.engine import Executor, Row
+
+__all__ = [
+    "create_conversation",
+    "delete_conversation",
+    "get_active_conversations",
+    "get_conversation",
+    "recalculate_total_tokens",
+    "search_conversations",
+    "update_conversation",
+    "update_token_usage",
+]
 
 
-def create_conversation(
-    db: DatabaseConnection,
+async def create_conversation(
+    db: Executor,
     name: str,
     model_id: str,
     user_guid: str,
@@ -21,13 +32,12 @@ def create_conversation(
     memory_enabled: bool = True,
 ) -> int:
     """Create a new conversation and return its ID."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute(
-        f"""INSERT INTO conversations
+    new_id = await db.fetch_value(
+        """INSERT INTO conversations
             (name, model_id, created_at, last_updated, instructions,
              compaction_threshold, web_search_enabled, memory_enabled, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
         (
             name,
             model_id,
@@ -40,69 +50,111 @@ def create_conversation(
             user_guid,
         ),
     )
-    db.commit()
-    return cursor.lastrowid
+    return int(new_id)
 
 
-def get_conversation(db: DatabaseConnection, conversation_id: int, user_guid: str) -> dict | None:
+async def get_conversation(db: Executor, conversation_id: int, user_guid: str) -> Row | None:
     """Get a single conversation by ID."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM conversations WHERE id = {ph} AND user_guid = {ph}",
+    return await db.fetch_one(
+        "SELECT * FROM conversations WHERE id = ? AND user_guid = ?",
         (conversation_id, user_guid),
     )
-    row = cursor.fetchone()
-    return dict(row) if row else None
 
 
-def get_active_conversations(db: DatabaseConnection, user_guid: str) -> list[dict]:
+async def get_active_conversations(db: Executor, user_guid: str) -> list[Row]:
     """Get all active conversations for a user."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT c.*, COUNT(m.id) as message_count
+    return await db.fetch_all(
+        """SELECT c.*, COUNT(m.id) as message_count
             FROM conversations c
             LEFT JOIN messages m ON c.id = m.conversation_id AND m.is_rolled_up = 0
-            WHERE c.is_active = 1 AND c.user_guid = {ph}
+            WHERE c.is_active = 1 AND c.user_guid = ?
             GROUP BY c.id
             ORDER BY c.last_updated DESC""",
         (user_guid,),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def update_conversation(
-    db: DatabaseConnection,
+_UPDATABLE = frozenset(
+    {
+        "name",
+        "model_id",
+        "total_tokens",
+        "is_active",
+        "instructions",
+        "tokens_sent",
+        "tokens_received",
+        "max_tokens",
+        "compaction_threshold",
+        "compaction_model",
+        "compaction_summary_ratio",
+        "web_search_enabled",
+        "memory_enabled",
+        "rag_enabled",
+        "rag_top_k",
+        "rag_threshold",
+        "rag_tool_enabled",
+        "max_history_messages",
+        "include_tool_results",
+        "prompt_caching",
+        "is_favourite",
+        "agents_enabled",
+        "agent_mode",
+        "agent_model_selection",
+        "conversation_type",
+        "kg_local_enabled",
+        "kg_use_global",
+        "kg_auto_context",
+    }
+)
+
+
+async def update_conversation(
+    db: Executor,
     conversation_id: int,
     user_guid: str,
     **kwargs: Any,
 ) -> None:
-    """Update conversation fields."""
+    """Update conversation fields (column names are checked against the schema)."""
     if not kwargs:
         return
-    ph = db.placeholder
-    sets = ", ".join(f"{k} = {ph}" for k in kwargs)
+    unknown = set(kwargs) - _UPDATABLE
+    if unknown:
+        raise ValueError(f"unknown conversation fields: {', '.join(sorted(unknown))}")
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
     params = list(kwargs.values()) + [conversation_id, user_guid]
-    db.execute(
+    await db.execute(
         f"UPDATE conversations SET {sets}, last_updated = CURRENT_TIMESTAMP "
-        f"WHERE id = {ph} AND user_guid = {ph}",
+        "WHERE id = ? AND user_guid = ?",
         tuple(params),
     )
-    db.commit()
 
 
-def delete_conversation(db: DatabaseConnection, conversation_id: int, user_guid: str) -> None:
+async def delete_conversation(db: Executor, conversation_id: int, user_guid: str) -> None:
     """Soft-delete a conversation."""
-    ph = db.placeholder
-    db.execute(
-        f"UPDATE conversations SET is_active = 0, last_updated = CURRENT_TIMESTAMP "
-        f"WHERE id = {ph} AND user_guid = {ph}",
+    await db.execute(
+        "UPDATE conversations SET is_active = 0, last_updated = CURRENT_TIMESTAMP "
+        "WHERE id = ? AND user_guid = ?",
         (conversation_id, user_guid),
     )
-    db.commit()
 
 
-def update_token_usage(
-    db: DatabaseConnection,
+_MODEL_USAGE = upsert(
+    "conversation_model_usage",
+    [
+        "conversation_id",
+        "model_id",
+        "input_tokens",
+        "output_tokens",
+        "first_used",
+        "last_used",
+        "user_guid",
+    ],
+    ["conversation_id", "model_id"],
+)
+
+
+async def update_token_usage(
+    db: Executor,
     conversation_id: int,
     model_id: str,
     input_tokens: int,
@@ -112,69 +164,47 @@ def update_token_usage(
     """Update per-model token usage for a conversation.
 
     `tokens_sent` and `tokens_received` are lifetime billing counters.
-    `total_tokens` is deliberately NOT touched here — it represents the current
+    `total_tokens` is deliberately NOT touched here: it represents the current
     active context size (used by the compaction threshold) and is maintained
     by `messages.add_message` / `delete_message` / `recalculate_total_tokens`.
     """
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-
-    db.execute(
-        f"""UPDATE conversations SET
-            tokens_sent = tokens_sent + {ph},
-            tokens_received = tokens_received + {ph},
-            last_updated = {ph}
-            WHERE id = {ph}""",
+    await db.execute(
+        """UPDATE conversations SET
+            tokens_sent = tokens_sent + ?,
+            tokens_received = tokens_received + ?,
+            last_updated = ?
+            WHERE id = ?""",
         (input_tokens, output_tokens, now, conversation_id),
     )
-
-    # Upsert model usage
-    upsert = db.backend.upsert_sql(
-        "conversation_model_usage",
-        [
-            "conversation_id",
-            "model_id",
-            "input_tokens",
-            "output_tokens",
-            "first_used",
-            "last_used",
-            "user_guid",
-        ],
-        ["conversation_id", "model_id"],
+    await db.execute(
+        _MODEL_USAGE,
+        (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid),
     )
-    db.execute(
-        upsert, (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid)
-    )
-    db.commit()
 
 
-def recalculate_total_tokens(db: DatabaseConnection, conversation_id: int) -> int:
+async def recalculate_total_tokens(db: Executor, conversation_id: int) -> int:
     """Recalculate and update total tokens from active messages."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT COALESCE(SUM(token_count), 0) as total
-            FROM messages WHERE conversation_id = {ph} AND is_rolled_up = 0""",
+    total = await db.fetch_value(
+        """SELECT COALESCE(SUM(token_count), 0) as total
+            FROM messages WHERE conversation_id = ? AND is_rolled_up = 0""",
         (conversation_id,),
     )
-    total = cursor.fetchone()[0]
-    db.execute(
-        f"UPDATE conversations SET total_tokens = {ph} WHERE id = {ph}",
-        (total, conversation_id),
+    await db.execute(
+        "UPDATE conversations SET total_tokens = ? WHERE id = ?",
+        (int(total), conversation_id),
     )
-    db.commit()
-    return total
+    return int(total)
 
 
-def search_conversations(db: DatabaseConnection, query: str, user_guid: str) -> list[dict]:
+async def search_conversations(db: Executor, query: str, user_guid: str) -> list[Row]:
     """Search conversations by name or message content."""
-    ph = db.placeholder
     pattern = f"%{query}%"
-    cursor = db.execute(
-        f"""SELECT DISTINCT c.* FROM conversations c
+    return await db.fetch_all(
+        """SELECT DISTINCT c.* FROM conversations c
             LEFT JOIN messages m ON c.id = m.conversation_id
-            WHERE c.is_active = 1 AND c.user_guid = {ph}
-            AND (c.name LIKE {ph} OR m.content LIKE {ph})
+            WHERE c.is_active = 1 AND c.user_guid = ?
+            AND (c.name LIKE ? OR m.content LIKE ?)
             ORDER BY c.last_updated DESC""",
         (user_guid, pattern, pattern),
     )
-    return [dict(row) for row in cursor.fetchall()]

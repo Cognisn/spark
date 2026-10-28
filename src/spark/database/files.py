@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from spark.db.engine import Executor, Row
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+__all__ = ["add_file", "delete_conversation_files", "delete_file", "get_conversation_files"]
 
 
-def add_file(
-    db: DatabaseConnection,
+async def add_file(
+    db: Executor,
     conversation_id: int,
     filename: str,
     file_type: str,
@@ -23,12 +22,11 @@ def add_file(
     tags: str | None = None,
 ) -> int:
     """Attach a file to a conversation. Returns file ID."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""INSERT INTO conversation_files
+    new_id = await db.fetch_value(
+        """INSERT INTO conversation_files
             (conversation_id, filename, file_type, file_size, content_text,
              content_base64, mime_type, token_count, tags, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
         (
             conversation_id,
             filename,
@@ -42,32 +40,22 @@ def add_file(
             user_guid,
         ),
     )
-    db.commit()
-    return cursor.lastrowid
+    return int(new_id)
 
 
-def get_conversation_files(db: DatabaseConnection, conversation_id: int) -> list[dict]:
+async def get_conversation_files(db: Executor, conversation_id: int) -> list[Row]:
     """Get all files for a conversation."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM conversation_files WHERE conversation_id = {ph} ORDER BY added_at",
+    return await db.fetch_all(
+        "SELECT * FROM conversation_files WHERE conversation_id = ? ORDER BY added_at",
         (conversation_id,),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def delete_file(db: DatabaseConnection, file_id: int) -> None:
+async def delete_file(db: Executor, file_id: int) -> None:
     """Delete a file attachment."""
-    ph = db.placeholder
-    db.execute(f"DELETE FROM conversation_files WHERE id = {ph}", (file_id,))
-    db.commit()
+    await db.execute("DELETE FROM conversation_files WHERE id = ?", (file_id,))
 
 
-def delete_conversation_files(db: DatabaseConnection, conversation_id: int) -> None:
+async def delete_conversation_files(db: Executor, conversation_id: int) -> None:
     """Delete all files for a conversation."""
-    ph = db.placeholder
-    db.execute(
-        f"DELETE FROM conversation_files WHERE conversation_id = {ph}",
-        (conversation_id,),
-    )
-    db.commit()
+    await db.execute("DELETE FROM conversation_files WHERE conversation_id = ?", (conversation_id,))

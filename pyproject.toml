@@ -100,14 +100,6 @@ dev = [
     "isort==8.0.1",
     "testcontainers[postgres]>=4.8.0",
 ]
-mysql = ["mysql-connector-python>=8.0.0"]
-postgresql = ["psycopg2-binary>=2.9.0"]
-mssql = ["pyodbc>=4.0.0"]
-all-databases = [
-    "mysql-connector-python>=8.0.0",
-    "psycopg2-binary>=2.9.0",
-    "pyodbc>=4.0.0",
-]
 
 [project.scripts]
 spark = "spark.launch:main"
