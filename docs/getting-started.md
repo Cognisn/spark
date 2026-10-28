@@ -48,22 +48,21 @@ On a headless server, disable the browser auto-open and pin a port:
 SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
 ```
 
-### Optional database drivers
+### Databases
 
-By default Spark uses SQLite, which requires no additional packages. For other databases, install the corresponding driver:
-
-| Database   | Install command                            |
-|------------|--------------------------------------------|
-| MySQL      | `pip install cognisn-spark[mysql]`         |
-| PostgreSQL | `pip install cognisn-spark[postgresql]`    |
-| MSSQL      | `pip install cognisn-spark[mssql]`         |
-| All        | `pip install cognisn-spark[all-databases]` |
-
-You can combine extras:
+By default Spark runs in personal mode and uses SQLite, which requires no additional
+packages. Server mode uses PostgreSQL through psycopg 3, which is installed with Spark:
 
 ```bash
-pip install cognisn-spark[mysql,postgresql]
+export SPARK__MODE=server
+export SPARK__DATABASE__URL=postgresql://spark@db.example.com:5432/spark
+spark migrate
+spark
 ```
+
+Personal mode applies schema changes automatically at start-up; in server mode run
+`spark migrate` after each upgrade (Spark refuses to start on an older schema). MySQL
+and SQL Server are no longer supported.
 
 ### Verifying installation
 

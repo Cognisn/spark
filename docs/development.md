@@ -81,12 +81,17 @@ spark/
 │   ├── safety/
 │   │   ├── inspector.py              # Prompt inspection engine
 │   │   └── patterns.py               # Attack pattern definitions
-│   ├── database/
-│   │   ├── schema.py                 # Table creation and migrations
-│   │   ├── backends.py               # SQLite/MySQL/PostgreSQL/MSSQL
-│   │   ├── connection.py             # Database connection wrapper
+│   ├── db/
+│   │   ├── engine.py                 # Async Database (psycopg 3 pool / aiosqlite), transactions
+│   │   ├── bridge.py                 # SyncDatabase: the bridge for worker threads
+│   │   ├── dialect.py                # Placeholders, upsert, RETURNING
+│   │   ├── loop.py                   # Selector loop, loop thread
+│   │   ├── migrate.py                # Alembic chain, legacy upgrade, head checks
+│   │   └── standalone.py             # Database for processes without a loop
+│   ├── migrations/                   # Alembic environment and revisions (0001 = 0.2.0)
+│   ├── database/                     # Async repositories (one module per area)
 │   │   ├── conversations.py          # Conversation CRUD
-│   │   ├── messages.py               # Message CRUD
+│   │   ├── messages.py               # Message CRUD, compaction
 │   │   ├── memories.py               # Memory CRUD
 │   │   ├── autonomous_actions.py     # Action CRUD
 │   │   ├── conversation_links.py     # Conversation linking
@@ -243,14 +248,14 @@ twine check dist/*
 | mcp | Model Context Protocol |
 | python-docx, openpyxl, python-pptx, pdfplumber | Document reading |
 | sentence-transformers, numpy | Embeddings and vector search |
-| beautifulsoup4, html2text | Web content parsing |
+| beautifulsoup4, markdownify | Web content parsing |
 | APScheduler | Action scheduling |
 | pystray, Pillow | System tray daemon |
 
-### Optional Database Drivers
+### Database Drivers
 
 | Package | Database |
 |---------|----------|
-| mysql-connector-python | MySQL / MariaDB |
-| psycopg2-binary | PostgreSQL |
-| pyodbc | Microsoft SQL Server |
+| aiosqlite | SQLite (personal mode) |
+| psycopg[binary,pool] | PostgreSQL (server mode) |
+| alembic | Schema migrations |

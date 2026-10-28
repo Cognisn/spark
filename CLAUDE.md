@@ -7,7 +7,7 @@
 - Workstream branches: <kind>/<version>-<aspect>, where <version> is the bare release version with no `v` (for example `feat/0.3.0-file-areas` belongs to `release/v0.3.0`)
 - Merge to main: squash
 - Commit scopes: llm, core, debate, panel, tools, mcp, skills, knowledge, index, scheduler, daemon, safety, voice, db, web, deps, ci, docs, dev, release
-- Shared modules: pyproject.toml, src/spark/database/schema.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, .github/workflows/
+- Shared modules: pyproject.toml, src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, tests/conftest.py (shared fixtures), .github/workflows/
 
 # SPARK
 
@@ -54,8 +54,17 @@ Version stamps are unscoped: `chore: stamp <version>`.
 - Update `CHANGELOG.md` under `[Unreleased]` in the same commit as the change.
 - Text files use LF line endings (`.gitattributes`); scripts that write files pass `newline="\n"`.
 
+## Data layer
+
+- Two modes (`spark.mode`): personal (SQLite) and server (PostgreSQL). Ask `spark.mode.current_mode()` or `is_server()`; never read the raw settings.
+- Repositories in `src/spark/database/` are async functions taking an `Executor` first; write SQL once with `?` placeholders in the subset SQLite and PostgreSQL share (`spark.db.dialect` for upserts and `RETURNING`). Keep every query's user scoping. A multi-statement unit of work is one repository coroutine using `executor.transaction()`.
+- Endpoints await repositories on `spark.web.db.database(request)`. Synchronous code on worker threads uses `SyncDatabase.call(repo.fn, ...)` (`spark.web.db.sync_database(request)` or the bridge it was given), and is started with `asyncio.to_thread` or its own thread, never called directly on the event loop. New code should be async.
+- Schema changes are new Alembic revisions in `src/spark/migrations/versions/` (never edits to `schema_0_2_0.py` or the baseline), each with a tested downgrade, on both SQLite and PostgreSQL. Only the integration session renumbers or re-chains revisions.
+- Tests: `spark_db` (async, SQLite and PostgreSQL), `sync_db` (the bridge, SQLite) and `tests/db_helpers.app_client` (the web app with its lifespan database). PostgreSQL tests are marked `postgres` and run in testcontainers (`pgvector/pgvector:pg16`); CI's server job sets `SPARK_TEST_POSTGRES=required`. A coroutine that is never awaited fails the suite.
+- `python scripts/licence_audit.py` must pass: no strong copyleft runtime dependency; weak copyleft only as a named exception in that script, agreed by Matthew.
+
 ## Running locally
 
-Run headless with `SPARK__INTERFACE__OPEN_BROWSER=false` and `SPARK__INTERFACE__PORT` set to the `web` port of your sandbox. sentence-transformers downloads its embedding model on first use, so the first run needs network access.
+Run headless with `SPARK__INTERFACE__OPEN_BROWSER=false` and `SPARK__INTERFACE__PORT` set to the `web` port of your sandbox. For server mode, start the sandbox stack (`compose_up` in `ports.txt`), set `SPARK__MODE=server` and `SPARK__DATABASE__URL` to the sandbox's `postgres` port, and run `spark migrate` first. sentence-transformers downloads its embedding model on first use, so the first run needs network access.
 
 The worktree recipe is `dev/worktree.json`.

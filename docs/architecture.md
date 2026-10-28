@@ -70,7 +70,7 @@ graph TB
     end
 
     subgraph Storage
-        DB[(Database<br/>SQLite / MySQL / PostgreSQL / MSSQL)]
+        DB[(Database<br/>SQLite (personal) / PostgreSQL (server))]
         KC[OS Keychain<br/>Secrets]
     end
 
@@ -119,7 +119,7 @@ graph TB
 
 ### Core
 
-- **ConversationManager** -- Central orchestrator connecting database, LLM, tools, MCP, memory, and compaction
+- **ConversationManager** -- Central orchestrator connecting database, LLM, tools, MCP, memory, and compaction; synchronous, runs on a worker thread per turn and reaches the database through the bridge (see Data Layer)
 - **ContextCompactor** -- LLM-driven intelligent context summarisation with categorised preservation
 - **UserGUID** -- Persistent user identifier stored in the OS keychain
 - **Updater** -- GitHub release checker with PyApp/pip update support
@@ -251,8 +251,8 @@ sequenceDiagram
 
     par Background Init
         BG->>BG: Init LLM providers
-        BG->>BG: Init database + schema
-        BG->>BG: Init ConversationManager
+        BG->>BG: Wait for the database (opened by the lifespan)
+        BG->>BG: Init ConversationManager (with the bridge)
         BG->>BG: Connect MCP servers
         BG->>BG: Warm up embedding model
         BG->>BG: Start daemon (if enabled)
@@ -261,8 +261,66 @@ sequenceDiagram
     end
 
     Server->>Server: Start uvicorn
+    Server->>Server: Lifespan: migrate (personal) or check head (server), open the database pool
     Server->>Server: Open browser (delayed)
 ```
+
+`application.run()` validates the mode first (`spark.mode.configure`): server mode
+refuses to start without a PostgreSQL `database.url`.
+
+## Modes
+
+One codebase, two modes, chosen by the `mode` setting (`SPARK__MODE`), read once at
+start-up. Code asks `spark.mode.current_mode()` or `spark.mode.is_server()`, never
+the raw settings.
+
+| | Personal | Server |
+|---|---|---|
+| Database | SQLite in the platform data directory | PostgreSQL from `database.url` (`SPARK__DATABASE__URL`) |
+| Schema changes | applied automatically at start-up | `spark migrate` first; start-up refuses a database behind head |
+| Users | one local user | multi-user (identity through warden from a later release) |
+
+## Data Layer
+
+```mermaid
+flowchart LR
+    EP[Endpoints<br/>async def] -->|await| R[Repositories<br/>spark.database.*<br/>async]
+    W[Worker threads<br/>chat turn, agents, debate, panel,<br/>KG builder, scheduler] -->|SyncDatabase.call| BR[Bridge<br/>spark.db.bridge]
+    BR -->|run_coroutine_threadsafe| R
+    R --> DB[(spark.db.Database<br/>psycopg 3 pool or<br/>aiosqlite pool)]
+```
+
+- `spark.db.Database` owns the connections (a psycopg 3 `AsyncConnectionPool` in server
+  mode, a WAL-mode aiosqlite pool in personal mode) and is bound to the event loop that
+  opened it: uvicorn's loop in the web process, its own loop thread in the tray daemon
+  (`spark.db.standalone`).
+- Repositories in `spark.database` are async functions taking an `Executor` (a
+  `Database` or a `Connection`) first. SQL is written once with `?` placeholders in the
+  subset both engines accept; `spark.db.dialect` adapts it.
+- `Database.transaction(conn)` joins a caller's transaction through a savepoint, so a
+  second writer (warden's audit recorder, in server mode) commits or rolls back with
+  the caller.
+- Synchronous code on worker threads uses `SyncDatabase.call(repo.fn, *args)`, the one
+  documented bridge. It refuses to run on the database loop's own thread (that would
+  deadlock) and times out instead of hanging. A unit of work needing several statements
+  is one repository coroutine, never a connection held across bridged calls.
+- PostgreSQL sessions run in UTC in the `spark` schema; timestamps are returned as
+  ISO 8601 text in both engines.
+
+## Migrations
+
+An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
+
+- PostgreSQL: SPARK's tables and `spark.alembic_version` live in the `spark` schema;
+  SQLite uses the default schema.
+- Revision `0001` (baseline) is the SPARK 0.2.0 schema exactly, built from its frozen
+  statements (`spark/migrations/schema_0_2_0.py`).
+- A SQLite database from 0.2.x or earlier (tables, no version table) gets a one-time
+  legacy upgrade: 0.2.0's statements and ALTERs, a check of every column and index
+  against the baseline (refusing and changing nothing on any difference), then a stamp.
+- `spark migrate` runs SPARK's chain, then every chain registered with
+  `spark.db.migrate.register_chain` (warden's, in its own `warden` schema, from the
+  identity release).
 
 ## Database Schema
 

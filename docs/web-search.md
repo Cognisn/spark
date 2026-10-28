@@ -67,7 +67,7 @@ No API key required. Spark scrapes the DuckDuckGo HTML search page directly. Thi
 
 ## Web Fetch
 
-The `web_fetch` tool fetches a URL and converts HTML to readable text using `html2text`. It handles:
+The `web_fetch` tool fetches a URL and converts HTML to readable Markdown using `markdownify`. It handles:
 
 - **HTML pages** -- Converted to readable markdown-like text
 - **JSON responses** -- Returned as-is
