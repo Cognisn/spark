@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+0.2.0 was released on GitHub but did not reach PyPI. 0.2.1 is the first PyPI release of the 0.2 line and contains everything listed under 0.2.0.
+
+### Fixed
+- Releases publish to PyPI again. The pinned PyPI publish action used a twine that rejects the wheel metadata (version 2.5) written by current hatchling; it is now pinned to v1.14.3. The publish step no longer ignores errors, so a failed upload fails the release run, and re-releasing an existing version is skipped instead
+
 ## [0.2.0] - 2026-10-28
 
 First stable release since 0.1.0. It consolidates the betas 0.2.0b1 to 0.2.0b17, released between 15 April and 26 July 2026, and is distributed through PyPI only: install it with `pip install cognisn-spark` or `uv tool install cognisn-spark`.
@@ -183,5 +188,6 @@ First production release of Spark -- Secure Personal AI Research Kit.
 - SonarCloud: all A ratings (0 bugs, 0 vulnerabilities, 0 hotspots)
 - CI on Ubuntu, macOS, Windows (Python 3.12, 3.13)
 
+[0.2.1]: https://github.com/Cognisn/spark/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Cognisn/spark/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Cognisn/spark/releases/tag/v0.1.0
