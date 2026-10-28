@@ -21,7 +21,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import IntEnum
-from importlib.metadata import PackageNotFoundError, distribution
+from importlib.metadata import PackageMetadata, PackageNotFoundError, distribution
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
@@ -160,7 +160,7 @@ def check(packages: Iterable[Package], exceptions: Mapping[str, str]) -> list[st
     return problems
 
 
-def _describe(meta: Mapping[str, str], classifiers: list[str]) -> str:
+def _describe(meta: PackageMetadata, classifiers: list[str]) -> str:
     expression = meta.get("License-Expression")
     if expression:
         return expression
