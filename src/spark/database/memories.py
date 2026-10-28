@@ -17,8 +17,10 @@ __all__ = [
     "get_all_memories",
     "get_memory",
     "memory_exists",
+    "reassign_user",
     "search_memories",
     "update_last_accessed",
+    "update_memory",
 ]
 
 
@@ -149,4 +151,48 @@ async def update_last_accessed(db: Executor, memory_ids: list[int]) -> None:
     await db.execute(
         f"UPDATE user_memories SET last_accessed = ? WHERE id IN ({placeholders})",
         (now, *memory_ids),
+    )
+
+
+async def update_memory(
+    db: Executor,
+    memory_id: int,
+    user_guid: str,
+    *,
+    content: str | None = None,
+    embedding: np.ndarray[Any, Any] | None = None,
+    category: str | None = None,
+    importance: float | None = None,
+) -> None:
+    """Update a memory; new content needs its new embedding (the hash is recomputed)."""
+    sets: list[str] = []
+    params: list[Any] = []
+    if content is not None:
+        if embedding is None:
+            raise ValueError("new memory content needs its embedding")
+        sets += ["content = ?", "content_hash = ?", "embedding = ?"]
+        params += [
+            content,
+            hashlib.sha256(content.encode()).hexdigest(),
+            embedding.astype(np.float32).tobytes(),
+        ]
+    if category:
+        sets.append("category = ?")
+        params.append(category)
+    if importance is not None:
+        sets.append("importance = ?")
+        params.append(importance)
+    if not sets:
+        return
+    await db.execute(
+        f"UPDATE user_memories SET {', '.join(sets)} WHERE id = ? AND user_guid = ?",
+        (*params, memory_id, user_guid),
+    )
+
+
+async def reassign_user(db: Executor, from_user_guid: str, to_user_guid: str) -> int:
+    """Move every memory of one user to another. Returns how many moved."""
+    return await db.execute(
+        "UPDATE user_memories SET user_guid = ? WHERE user_guid = ?",
+        (to_user_guid, from_user_guid),
     )

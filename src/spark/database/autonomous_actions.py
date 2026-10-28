@@ -5,9 +5,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from spark.db.dialect import upsert
 from spark.db.engine import Executor, Row
 
 __all__ = [
+    "action_stats",
+    "clear_stale_locks",
+    "get_all_actions",
+    "get_tool_permissions",
+    "set_tool_permission",
     "complete_run",
     "create_action",
     "delete_action",
@@ -185,3 +191,70 @@ async def unlock_action(db: Executor, action_id: int) -> None:
         "UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = ?",
         (action_id,),
     )
+
+
+async def get_all_actions(db: Executor) -> list[Row]:
+    """Every action, enabled or not, by name.
+
+    Not scoped by user, as in 0.2.0 (one local user); server mode must scope it
+    before multi-user use.
+    """
+    return await db.fetch_all("SELECT * FROM autonomous_actions ORDER BY name")
+
+
+_TOOL_UPSERT = upsert(
+    "action_tool_permissions",
+    ["action_id", "tool_name", "permission_state", "user_guid"],
+    ["action_id", "tool_name"],
+)
+
+
+async def get_tool_permissions(db: Executor, action_id: int) -> dict[str, str]:
+    """Tool permission states for an action, keyed by tool name."""
+    rows = await db.fetch_all(
+        "SELECT tool_name, permission_state FROM action_tool_permissions WHERE action_id = ?",
+        (action_id,),
+    )
+    return {r["tool_name"]: r["permission_state"] for r in rows}
+
+
+async def set_tool_permission(
+    db: Executor, action_id: int, tool_name: str, permission_state: str, user_guid: str
+) -> None:
+    """Set or update one tool's permission for an action."""
+    await db.execute(_TOOL_UPSERT, (action_id, tool_name, permission_state, user_guid))
+
+
+async def clear_stale_locks(db: Executor, before: str) -> list[Row]:
+    """Release locks taken before ``before`` (ISO UTC). Returns the actions released."""
+    async with db.transaction() as conn:
+        stale = await conn.fetch_all(
+            """SELECT id, name, locked_by, locked_at FROM autonomous_actions
+                WHERE locked_by IS NOT NULL AND locked_at IS NOT NULL AND locked_at < ?
+                ORDER BY id""",
+            (before,),
+        )
+        for row in stale:
+            await conn.execute(
+                "UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = ?",
+                (row["id"],),
+            )
+    return stale
+
+
+async def action_stats(db: Executor) -> dict[str, Any]:
+    """Enabled actions, the last completed run and the next scheduled run (tray menu)."""
+    total = await db.fetch_value("SELECT COUNT(*) FROM autonomous_actions WHERE is_enabled = 1")
+    last_run = await db.fetch_value(
+        "SELECT completed_at FROM action_runs WHERE status = 'completed' "
+        "ORDER BY completed_at DESC LIMIT 1"
+    )
+    next_run = await db.fetch_value(
+        "SELECT next_run_at FROM autonomous_actions WHERE is_enabled = 1 "
+        "AND next_run_at IS NOT NULL ORDER BY next_run_at ASC LIMIT 1"
+    )
+    return {
+        "total": int(total or 0),
+        "last_run": str(last_run) if last_run else None,
+        "next_run": str(next_run) if next_run else None,
+    }

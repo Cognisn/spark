@@ -262,3 +262,22 @@ class TestExecutorTransactions:
 
         await unit_of_work(db)
         assert await db.fetch_value("SELECT COUNT(*) FROM items") == 1
+
+
+class TestTimestamps:
+    async def test_utc_iso_timestamps_round_trip(self, db: Database):
+        await db.execute(
+            "INSERT INTO items (name, created_at) VALUES (?, ?)",
+            ("t", "2026-11-01T00:00:00+00:00"),
+        )
+        assert await db.fetch_value("SELECT created_at FROM items") == "2026-11-01T00:00:00+00:00"
+
+    async def test_database_defaults_are_utc(self, db: Database):
+        from datetime import datetime, timezone
+
+        await db.execute("INSERT INTO items (name) VALUES (?)", ("now",))
+        value = await db.fetch_value("SELECT created_at FROM items")
+        stored = datetime.fromisoformat(value)
+        if stored.tzinfo is None:  # SQLite's CURRENT_TIMESTAMP text is UTC without an offset
+            stored = stored.replace(tzinfo=timezone.utc)
+        assert abs((datetime.now(timezone.utc) - stored).total_seconds()) < 120

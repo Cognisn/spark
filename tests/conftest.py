@@ -153,3 +153,33 @@ async def spark_db(spark_db_settings: Any) -> AsyncIterator[Any]:
         yield db
     finally:
         await db.close()
+
+
+@pytest.fixture
+def sqlite_settings(_sqlite_template: Path, tmp_path: Path) -> Any:
+    """Settings for a fresh SQLite database at head (personal mode)."""
+    import shutil
+
+    from spark.mode import DatabaseSettings, Dialect
+
+    path = tmp_path / "spark.db"
+    shutil.copy(_sqlite_template, path)
+    return DatabaseSettings(Dialect.SQLITE, sqlite_path=path)
+
+
+@pytest.fixture
+def sync_db(sqlite_settings: Any) -> Iterator[Any]:
+    """The bridge (SyncDatabase) to a fresh SQLite database whose loop runs in a thread.
+
+    For tests of synchronous code (ConversationManager, orchestrators, builders,
+    indexes). Seed or inspect with ``sync_db.call(repo.fn, ...)`` or the raw
+    helpers ``sync_db.execute`` / ``fetch_value`` / ``fetch_one`` / ``fetch_all``
+    (``?`` placeholders; ``... RETURNING id`` for new ids).
+    """
+    from spark.db.standalone import open_standalone
+
+    handle = open_standalone(sqlite_settings, auto_migrate=True)
+    try:
+        yield handle.sync_db
+    finally:
+        handle.close()

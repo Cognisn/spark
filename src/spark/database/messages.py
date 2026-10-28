@@ -8,6 +8,7 @@ from spark.db.engine import Executor, Row
 
 __all__ = [
     "add_message",
+    "apply_compaction",
     "delete_message",
     "get_messages",
     "mark_messages_as_rolled_up",
@@ -115,3 +116,37 @@ async def delete_message(db: Executor, message_id: int, conversation_id: int) ->
                 WHERE id = ?""",
             (tokens, tokens, conversation_id),
         )
+
+
+async def apply_compaction(
+    db: Executor,
+    conversation_id: int,
+    marker: str,
+    marker_tokens: int,
+    rollup_ids: list[int],
+    user_guid: str,
+    *,
+    summary: str | None,
+    original_tokens: int | None,
+) -> int:
+    """Replace rolled-up messages with a marker, in one transaction. Returns the new total.
+
+    Adds the marker message, marks ``rollup_ids`` as rolled up, records the rollup
+    when ``summary`` is given, and recalculates the conversation's token total.
+    """
+    from spark.database import conversations
+
+    async with db.transaction() as conn:
+        await add_message(conn, conversation_id, "user", marker, marker_tokens, user_guid)
+        await mark_messages_as_rolled_up(conn, conversation_id, rollup_ids)
+        if summary is not None:
+            await record_rollup(
+                conn,
+                conversation_id,
+                len(rollup_ids),
+                summary,
+                original_tokens or 0,
+                marker_tokens,
+                user_guid,
+            )
+        return await conversations.recalculate_total_tokens(conn, conversation_id)

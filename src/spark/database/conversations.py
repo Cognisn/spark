@@ -13,6 +13,7 @@ __all__ = [
     "delete_conversation",
     "get_active_conversations",
     "get_conversation",
+    "get_conversation_type",
     "recalculate_total_tokens",
     "search_conversations",
     "update_conversation",
@@ -208,3 +209,11 @@ async def search_conversations(db: Executor, query: str, user_guid: str) -> list
             ORDER BY c.last_updated DESC""",
         (user_guid, pattern, pattern),
     )
+
+
+async def get_conversation_type(db: Executor, conversation_id: int) -> str | None:
+    """The conversation's type ('standard', 'debate', 'panel'), or None if it does not exist."""
+    value = await db.fetch_value(
+        "SELECT conversation_type FROM conversations WHERE id = ?", (conversation_id,)
+    )
+    return str(value) if value is not None else None

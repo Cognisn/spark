@@ -132,7 +132,7 @@ def _engine(settings: DatabaseSettings) -> Engine:
     return create_engine(
         f"postgresql+psycopg://{rest}",
         poolclass=NullPool,
-        connect_args={"options": f"-c search_path={SCHEMA},public"},
+        connect_args={"options": f"-c search_path={SCHEMA},public -c TimeZone=UTC"},
     )
 
 

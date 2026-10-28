@@ -10,7 +10,7 @@ transaction through a savepoint instead, so a second writer (warden's audit
 recorder, in server mode) commits or rolls back together with the caller.
 
 Rows come back as plain ``dict`` objects in both dialects. PostgreSQL date and
-time values are returned as ISO text, as SQLite returns them, and ``bool``
+time values are returned as ISO 8601 text in UTC (sessions run in UTC), and ``bool``
 parameters are stored as integers (the schema has no boolean columns).
 """
 
@@ -99,7 +99,10 @@ def _params(params: Params) -> tuple[Any, ...]:
 
 def _value(value: Any) -> Any:
     if isinstance(value, dt.datetime):
-        return value.isoformat(sep=" ")
+        # Sessions run in UTC, so a naive TIMESTAMP is UTC; return it as SPARK writes it.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=dt.timezone.utc)
+        return value.isoformat()
     if isinstance(value, (dt.date, dt.time)):
         return value.isoformat()
     if isinstance(value, memoryview):
@@ -292,7 +295,7 @@ class Database:
             open=False,
             kwargs={
                 "autocommit": True,
-                "options": f"-c search_path={POSTGRES_SCHEMA},public",
+                "options": f"-c search_path={POSTGRES_SCHEMA},public -c TimeZone=UTC",
             },
         )
         await pg_pool.open(wait=True, timeout=30)
