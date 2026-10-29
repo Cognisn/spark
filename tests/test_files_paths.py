@@ -51,6 +51,26 @@ ESCAPES = [
 ]
 
 
+# The rule expected to refuse each family of forms (the id's first word).
+REASONS = {
+    "drive-absolute": "absolute paths",
+    "drive-absolute-slash": "absolute paths",
+    "empty": "empty",
+    "blank": "empty",
+    "parent": "parent",
+    "posix": "absolute",
+    "rooted": "rooted",
+    "drive": "drive-relative",
+    "unc": "network",
+    "device": "device",
+    "long": "network",
+    "ads": "alternate data",
+    "trailing": "ending in a dot",
+    "nul": "control",
+    "control": "control",
+}
+
+
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
     area = tmp_path / "area"
@@ -63,6 +83,14 @@ class TestContainKeys:
     def test_escape_form_is_refused(self, root: Path, key: str) -> None:
         with pytest.raises(PathRefused):
             contain(root, key)
+
+    @pytest.mark.parametrize("key", [k for _, k in ESCAPES], ids=[i for i, _ in ESCAPES])
+    def test_escape_form_is_refused_by_its_own_rule(self, root: Path, key: str) -> None:
+        """Each form is caught by the rule written for it, not only by a later one."""
+        form = next(i for i, k in ESCAPES if k == key)
+        with pytest.raises(PathRefused) as info:
+            contain(root, key)
+        assert REASONS.get(form, REASONS[form.split("-")[0]]) in info.value.reason
 
     @pytest.mark.parametrize(
         "key",

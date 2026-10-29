@@ -213,3 +213,16 @@ class TestCreate:
             area.create(ALICE, "x.xlsx", broken)
         assert area.store.list(ALICE) == []
         assert bridge.call(files_db.list_user_files, ALICE) == []
+
+
+class TestCreateMany:
+    def test_a_target_outside_the_area_is_refused(self, tmp_path: Path, bridge: Any) -> None:
+        area = _area(tmp_path, bridge, quota=None, max_upload=None)
+        outside = tmp_path / "outside.txt"
+        calls: list[Path] = []
+        with pytest.raises(ValueError):
+            area.create_many(ALICE, [(outside, calls.append)])
+        with pytest.raises(ValueError):
+            area.create_many(BOB, [(area.store.local_path(ALICE, "a.txt"), calls.append)])
+        assert calls == [], "the writer ran for a target outside the area"
+        assert not outside.exists()

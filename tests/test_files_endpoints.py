@@ -127,6 +127,14 @@ class TestPerUserScoping:
     def test_unknown_id_is_not_found(self, client: TestClient) -> None:
         assert client.get("/files/api/999999").status_code == 404
 
+    def test_a_session_without_a_user_is_refused(self, client: TestClient) -> None:
+        fid = _upload(client, "a.txt", b"x").json()["file"]["id"]
+        _as(client, "")
+        assert client.get("/files/api").status_code == 401
+        assert client.get(f"/files/api/{fid}").status_code == 401
+        assert client.delete(f"/files/api/{fid}").status_code == 401
+        assert _upload(client, "b.txt", b"x").status_code == 401
+
     def test_unauthenticated_requests_are_refused(self, client: TestClient) -> None:
         client.cookies.clear()
         resp = client.get("/files/api", follow_redirects=False)
@@ -142,6 +150,19 @@ class TestLimits:
         assert resp.status_code == 413
         assert "maximum upload size" in resp.json()["error"]
         assert client.get("/files/api").json()["files"] == []
+
+    def test_a_declared_oversize_body_is_refused_before_it_is_parsed(
+        self, client: TestClient, file_settings: _Settings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from starlette.requests import Request
+
+        async def no_parsing(self: Request, **_: Any) -> Any:
+            raise AssertionError("the body was parsed")
+
+        file_settings.values["files.max_upload_mb"] = 1
+        monkeypatch.setattr(Request, "form", no_parsing)
+        resp = _upload(client, "big.bin", b"x" * (2 * MB))
+        assert resp.status_code == 413
 
     def test_over_quota_is_refused(self, client: TestClient, file_settings: _Settings) -> None:
         file_settings.values["files.quota_mb"] = 1

@@ -461,10 +461,19 @@ class TestArchiveExtraction:
         assert area.store.local_path(ALICE, "out/t.txt").read_bytes() == b"t"
 
     def test_server_extraction_over_quota_is_refused_before_writing(
-        self, server: ToolScope, area: FileArea, limits: dict[str, int | None]
+        self,
+        server: ToolScope,
+        area: FileArea,
+        limits: dict[str, int | None],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _zip(area.store.local_path(ALICE, "a.zip"), {"big.bin": b"x" * 5000})
         limits["quota"] = 1000
+
+        def no_writing(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("members were written before the quota was checked")
+
+        monkeypatch.setattr(area, "create_many", no_writing)
         with pytest.raises(files_db.QuotaExceeded):
             archives.execute(
                 "extract_archive",
