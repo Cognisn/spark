@@ -31,6 +31,11 @@ def _mock_embedder() -> MagicMock:
         return np.random.randn(len(texts), DIM).astype(np.float32)
 
     mock.encode = MagicMock(side_effect=encode_side_effect)
+    # The indexes embed through the EmbeddingModel protocol: a batch of the same vectors.
+    mock.dimension = DIM
+    mock.embed = MagicMock(
+        side_effect=lambda texts: np.stack([encode_side_effect(t) for t in texts])
+    )
     return mock
 
 

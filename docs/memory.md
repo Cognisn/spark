@@ -95,6 +95,13 @@ Memories use [sentence-transformers](https://www.sbert.net/) for generating vect
 - **Device:** CPU (configurable)
 - **Lazy loading:** The model is only downloaded on first use
 - **Thread-safe:** Multiple components share a single model instance
+- **Changing the model:** a model with a different vector size cannot be mixed with the
+  stored vectors; Spark refuses to add or search until the memory index is rebuilt with
+  the new model (`MemoryIndex.rebuild()`)
+
+In server mode the vectors are also stored and searched in PostgreSQL with pgvector,
+limited to your own memories in the same query; personal mode searches the SQLite
+database as before.
 
 ## Managing Memories via the UI
 

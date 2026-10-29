@@ -6,13 +6,17 @@ and a repeated relationship bumps the edge weight rather than duplicating.
 
 These are async repository functions over :class:`spark.db.Executor`; the
 synchronous builder and query code reach them through :class:`spark.db.SyncDatabase`.
-Each read-then-write (the upserts and the watermark) runs in one transaction.
+Nodes and edges are unique on their natural keys (revision vector_store_2), and
+the upserts are single ``INSERT ... ON CONFLICT`` statements on those keys, so
+concurrent first inserts merge instead of duplicating. The watermark's
+read-then-write runs in one transaction.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from spark.db.dialect import upsert
 from spark.db.engine import Executor
 
 __all__ = [
@@ -42,6 +46,44 @@ _NODE_COLUMNS = (
     "created_at",
     "updated_at",
 )
+# Merge on (user, scope, lowercased name): weight +1, newer description and embedding if given.
+_UPSERT_NODE = (
+    upsert(
+        "kg_nodes",
+        ("scope", "name", "name_key", "entity_type", "description", "embedding", "user_guid"),
+        ("user_guid", "scope", "name_key"),
+        update=(),
+        extra_set=(
+            "weight = kg_nodes.weight + 1",
+            "updated_at = CURRENT_TIMESTAMP",
+            "description = CASE WHEN excluded.description IS NOT NULL "
+            "AND excluded.description <> '' THEN excluded.description "
+            "ELSE kg_nodes.description END",
+            "embedding = COALESCE(excluded.embedding, kg_nodes.embedding)",
+        ),
+    )
+    + " RETURNING id"
+)
+# Merge on (user, scope, source, target, lowercased relation): weight +1.
+_UPSERT_EDGE = (
+    upsert(
+        "kg_edges",
+        (
+            "scope",
+            "source_node_id",
+            "target_node_id",
+            "relation",
+            "relation_key",
+            "description",
+            "user_guid",
+        ),
+        ("user_guid", "scope", "source_node_id", "target_node_id", "relation_key"),
+        update=(),
+        extra_set=("weight = kg_edges.weight + 1",),
+    )
+    + " RETURNING id"
+)
+
 _EDGE_COLUMNS = (
     "id",
     "scope",
@@ -65,31 +107,19 @@ async def upsert_node(
     user_guid: str,
 ) -> int:
     """Create or merge a node keyed by (scope, lowercased name). Returns node id."""
-    name_key = name.strip().lower()
-    async with db.transaction() as conn:
-        node_id = await conn.fetch_value(
-            "SELECT id FROM kg_nodes WHERE scope = ? AND name_key = ? AND user_guid = ?",
-            (scope, name_key, user_guid),
-        )
-        if node_id is not None:
-            sets = ["weight = weight + 1", "updated_at = CURRENT_TIMESTAMP"]
-            params: list[Any] = []
-            if description:
-                sets.append("description = ?")
-                params.append(description)
-            if embedding is not None:
-                sets.append("embedding = ?")
-                params.append(embedding)
-            params.append(node_id)
-            await conn.execute(f"UPDATE kg_nodes SET {', '.join(sets)} WHERE id = ?", tuple(params))
-            return int(node_id)
-        new_id = await conn.fetch_value(
-            """INSERT INTO kg_nodes (scope, name, name_key, entity_type, description,
-                                     embedding, user_guid)
-                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
-            (scope, name.strip(), name_key, entity_type, description, embedding, user_guid),
-        )
-    return int(new_id)
+    node_id = await db.fetch_value(
+        _UPSERT_NODE,
+        (
+            scope,
+            name.strip(),
+            name.strip().lower(),
+            entity_type,
+            description,
+            embedding,
+            user_guid,
+        ),
+    )
+    return int(node_id)
 
 
 async def upsert_edge(
@@ -102,23 +132,19 @@ async def upsert_edge(
     user_guid: str,
 ) -> int:
     """Create or merge an edge keyed by (scope, source, target, relation). Returns id."""
-    async with db.transaction() as conn:
-        edge_id = await conn.fetch_value(
-            """SELECT id FROM kg_edges
-                WHERE scope = ? AND source_node_id = ? AND target_node_id = ?
-                  AND LOWER(relation) = ? AND user_guid = ?""",
-            (scope, source_node_id, target_node_id, relation.strip().lower(), user_guid),
-        )
-        if edge_id is not None:
-            await conn.execute("UPDATE kg_edges SET weight = weight + 1 WHERE id = ?", (edge_id,))
-            return int(edge_id)
-        new_id = await conn.fetch_value(
-            """INSERT INTO kg_edges (scope, source_node_id, target_node_id, relation,
-                                     description, user_guid)
-                VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-            (scope, source_node_id, target_node_id, relation.strip(), description, user_guid),
-        )
-    return int(new_id)
+    edge_id = await db.fetch_value(
+        _UPSERT_EDGE,
+        (
+            scope,
+            source_node_id,
+            target_node_id,
+            relation.strip(),
+            relation.strip().lower(),
+            description,
+            user_guid,
+        ),
+    )
+    return int(edge_id)
 
 
 async def get_nodes(

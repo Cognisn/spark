@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Vector search in server mode**: memories and conversation context are searched in PostgreSQL with pgvector (an HNSW cosine index), filtered to the signed-in user in the same query. `spark migrate` creates the `vector` extension if it is missing (the database role needs the right to create it, or an administrator creates it first) and copies existing embeddings into the new tables. Personal mode keeps its SQLite storage and search unchanged
+- **Embedding and vector store interfaces** (`spark.index.EmbeddingModel`, `spark.index.VectorStore`): the local sentence-transformers model on the CPU is the one implementation for now, so other embedding providers can be added later. Each stored vector records its dimension; after a change to an embedding model of another dimension, adding or searching is refused with a message asking for the index to be rebuilt, and the memory and context indexes gain `rebuild()`
+
+### Fixed
+- Knowledge graph entities and relationships, skill states and per-conversation skill states could be duplicated when two requests created the same one at the same moment (seen on PostgreSQL). They are now unique on their natural keys and merged in one statement. Upgrading merges existing duplicates, keeping the earliest entry: entity and relationship weights are added together and relationships are moved onto the kept entity, and skills keep their most recent on or off state
+
+### Changed
+- The installation guide shows how to install the CPU-only PyTorch on Linux (`uv tool install cognisn-spark --torch-backend cpu`, or PyTorch from its CPU index before `pip install cognisn-spark`), avoiding about 2.4 GB of unused NVIDIA CUDA packages
+- New runtime dependency `pgvector` (MIT), the psycopg adapter for PostgreSQL's `vector` type, used in server mode
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added

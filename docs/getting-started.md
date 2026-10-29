@@ -42,6 +42,24 @@ spark
 runs. For a throwaway run, `uvx cognisn-spark` works too but re-downloads
 everything each time.
 
+### CPU-only PyTorch on Linux
+
+Spark computes embeddings on the CPU. On Linux the default PyTorch from PyPI also
+installs about 2.4 GB of NVIDIA CUDA packages that Spark never uses. Install the
+CPU-only build instead (macOS and Windows already get it):
+
+```bash
+# uv
+uv tool install cognisn-spark --torch-backend cpu
+
+# pip: PyTorch from its CPU index first, then Spark
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install cognisn-spark
+```
+
+With pip, upgrade Spark with `pip install --upgrade cognisn-spark`; upgrading torch
+itself without `--index-url` would bring the CUDA build back.
+
 On a headless server, disable the browser auto-open and pin a port:
 
 ```bash
@@ -63,6 +81,12 @@ spark
 Personal mode applies schema changes automatically at start-up; in server mode run
 `spark migrate` after each upgrade (Spark refuses to start on an older schema). MySQL
 and SQL Server are no longer supported.
+
+Server mode stores memory and conversation vectors with the
+[pgvector](https://github.com/pgvector/pgvector) extension, version 0.8 or later (the
+`pgvector/pgvector` PostgreSQL images include it). `spark migrate` creates the `vector`
+extension if it is missing, which needs a database role allowed to create it;
+otherwise have an administrator run `CREATE EXTENSION vector;` in the database first.
 
 ### Verifying installation
 

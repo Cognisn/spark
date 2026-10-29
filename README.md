@@ -94,6 +94,25 @@ spark
 runs, which is what you want. For a throwaway run, `uvx cognisn-spark` works too
 but re-downloads everything each time.
 
+### CPU-only PyTorch on Linux
+
+Spark's embeddings run on the CPU. On Linux the default PyTorch from PyPI also
+brings about 2.4 GB of NVIDIA CUDA packages that Spark never uses; install the
+CPU-only build instead. macOS and Windows already get a CPU-only PyTorch and
+need nothing extra.
+
+```bash
+# uv
+uv tool install cognisn-spark --torch-backend cpu
+
+# pip: PyTorch from its CPU index first, then Spark
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install cognisn-spark
+```
+
+With pip, a later `pip install --upgrade torch` without `--index-url` would bring
+the CUDA build back; upgrade Spark with `pip install --upgrade cognisn-spark` instead.
+
 On a headless server, disable the browser auto-open and pin a port:
 
 ```bash
@@ -105,8 +124,9 @@ SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
 Personal mode (the default) keeps everything in a local SQLite database and needs
 nothing extra. Server mode uses PostgreSQL through psycopg 3, which is included:
 set `mode: server` and `database.url` (or `SPARK__MODE=server` and
-`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. MySQL and SQL Server
-are no longer supported.
+`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. Server mode needs the
+pgvector extension (0.8 or later) in that PostgreSQL. MySQL and SQL Server are no
+longer supported.
 
 ## Quick Start
 
