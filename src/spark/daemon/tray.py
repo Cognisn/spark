@@ -95,7 +95,11 @@ class SparkTrayDaemon:
         return _get_data_path() / "spark_daemon_tray.pid"
 
     def run(self) -> None:
-        """Start the tray icon and action runner."""
+        """Start the tray icon and action runner (personal mode only)."""
+        from spark.daemon import guard
+
+        guard.refuse_server_mode(guard.load_runtime())
+
         import pystray
 
         # Write PID file
@@ -287,11 +291,13 @@ class SparkTrayDaemon:
                     env_prefix="SPARK",
                 ) as ctx:
                     from spark.core.application import configure_runtime
+                    from spark.daemon.guard import refuse_server_mode
                     from spark.db.standalone import open_standalone
                     from spark.mode import Mode
                     from spark.scheduler.runner import ActionRunner
 
                     runtime = configure_runtime(ctx.settings)
+                    refuse_server_mode(runtime)
                     handle = await asyncio.to_thread(
                         open_standalone,
                         runtime.database,
@@ -326,8 +332,15 @@ def run_tray_daemon() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+    from spark.daemon.guard import ServerModeRefused
+
     daemon = SparkTrayDaemon()
-    daemon.run()
+    try:
+        daemon.run()
+    except ServerModeRefused as exc:
+        logger.error("%s", exc)
+        print(f"spark-daemon: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 if __name__ == "__main__":

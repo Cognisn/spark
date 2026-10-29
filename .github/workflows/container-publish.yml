@@ -1,0 +1,19 @@
+name: Container publish
+
+# Pushes the checked image to ghcr.io: from a v* tag, or a manual dispatch.
+# Tags are the version only (0.3.0rcN or 0.3.0), never latest; see container.yml.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+    with:
+      push: true

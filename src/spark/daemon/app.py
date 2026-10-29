@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import signal
+import sys
 import threading
 import time
 import uuid
+
+from spark.daemon.guard import ServerModeRefused
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +48,13 @@ def run_daemon() -> None:
                 env_prefix="SPARK",
             ) as ctx:
                 from spark.core.application import configure_runtime
+                from spark.daemon.guard import refuse_server_mode
                 from spark.db.standalone import open_standalone
                 from spark.mode import Mode
                 from spark.scheduler.runner import ActionRunner
 
                 runtime = configure_runtime(ctx.settings)
+                refuse_server_mode(runtime)
                 handle = await asyncio.to_thread(
                     open_standalone,
                     runtime.database,
@@ -70,6 +75,9 @@ def run_daemon() -> None:
 
         asyncio.run(_run())
 
+    except ServerModeRefused as exc:
+        logger.error("%s", exc)
+        print(f"spark daemon: {exc}", file=sys.stderr)
     except Exception as e:
         logger.error("Daemon error: %s", e, exc_info=True)
     finally:
