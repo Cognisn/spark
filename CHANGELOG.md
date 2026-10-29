@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- New runtime dependency `pgvector` (MIT), the psycopg adapter for PostgreSQL's `vector` type, used in server mode
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added
