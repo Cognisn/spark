@@ -263,10 +263,15 @@ class TestDocuments:
         assert "read_pdf" in names
         assert "read_powerpoint" in names
 
-    def test_file_not_found(self) -> None:
+    def test_file_not_found(self, tmp_path: Path) -> None:
+        from spark.files.scope import ToolScope
         from spark.tools.documents import execute
 
-        result = execute("read_word", {"path": "/nonexistent/file.docx"})
+        result = execute(
+            "read_word",
+            {"path": str(tmp_path / "nonexistent" / "file.docx")},
+            scope=ToolScope.personal([tmp_path]),
+        )
         assert "not found" in result.lower()
 
 
@@ -293,9 +298,10 @@ class TestArchives:
             zf.writestr("hello.txt", "hello world")
             zf.writestr("sub/file.txt", "content")
 
+        from spark.files.scope import ToolScope
         from spark.tools.archives import execute
 
-        result = execute("list_archive", {"path": str(zp)})
+        result = execute("list_archive", {"path": str(zp)}, scope=ToolScope.personal([tmp_path]))
         assert "hello.txt" in result
         assert "2 files" in result
 
@@ -306,10 +312,14 @@ class TestArchives:
         with zipfile.ZipFile(str(zp), "w") as zf:
             zf.writestr("file.txt", "content")
 
+        from spark.files.scope import ToolScope
         from spark.tools.archives import execute
 
         result = execute(
-            "extract_archive", {"path": str(zp), "destination": str(tmp_path / "out")}, mode="list"
+            "extract_archive",
+            {"path": str(zp), "destination": str(tmp_path / "out")},
+            mode="list",
+            scope=ToolScope.personal([tmp_path]),
         )
         assert "not enabled" in result.lower()
 

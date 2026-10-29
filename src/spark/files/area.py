@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
@@ -167,24 +167,68 @@ class FileArea:
         final local path. On any failure nothing is stored or recorded.
         """
         target = self.store.local_path(user_guid, key)
-        fd, tmp_name = tempfile.mkstemp(dir=self.staging_dir(user_guid), suffix=target.suffix)
-        os.close(fd)
-        tmp = Path(tmp_name)
+        return self.create_many(
+            user_guid, [(target, writer)], conversation_id=conversation_id, mime_type=mime_type
+        )[0]
+
+    def create_many(
+        self,
+        user_guid: str,
+        targets: Sequence[tuple[Path, Callable[[Path], None]]],
+        *,
+        conversation_id: int | None = None,
+        mime_type: str | None = None,
+        source: str = "created",
+    ) -> list[Path]:
+        """Produce several files, charge them in one transaction, then move them in.
+
+        Each target must be a path inside the user's area (from
+        :meth:`MountedVolumeStore.local_path`). All or nothing.
+        """
+        area = self.store.area(user_guid)
+        staged: list[tuple[Path, Path]] = []
         try:
-            writer(tmp)
-            self._charge(
+            for target, writer in targets:
+                if not target.is_relative_to(area) or target == area:
+                    raise ValueError("a target outside the user's area")
+                fd, tmp_name = tempfile.mkstemp(
+                    dir=self.staging_dir(user_guid), suffix=target.suffix
+                )
+                os.close(fd)
+                staged.append((Path(tmp_name), target))
+                writer(Path(tmp_name))
+            self._db.call(
+                files_db.record_user_files,
                 user_guid,
-                files_db.NewUserFile(
-                    key=target.relative_to(self.store.area(user_guid)).as_posix(),
-                    filename=target.name,
-                    size=tmp.stat().st_size,
-                    mime_type=mime_type,
-                    conversation_id=conversation_id,
-                    source="created",
-                ),
+                [
+                    files_db.NewUserFile(
+                        key=target.relative_to(area).as_posix(),
+                        filename=target.name,
+                        size=tmp.stat().st_size,
+                        mime_type=mime_type,
+                        conversation_id=conversation_id,
+                        source=source,
+                    )
+                    for tmp, target in staged
+                ],
+                quota_bytes=self._limits().quota_bytes,
             )
-            target.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(tmp, target)
+            for tmp, target in staged:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(tmp, target)
         finally:
-            tmp.unlink(missing_ok=True)
-        return target
+            for tmp, _ in staged:
+                tmp.unlink(missing_ok=True)
+        return [target for _, target in staged]
+
+    def check_space(self, user_guid: str, nbytes: int) -> None:
+        """Raise :class:`QuotaExceeded` if ``nbytes`` more would exceed the quota now.
+
+        An early refusal only: the charge itself is still checked atomically.
+        """
+        quota = self._limits().quota_bytes
+        if quota is None:
+            return
+        used: int = self._db.call(files_db.get_usage, user_guid)
+        if used + nbytes > quota:
+            raise files_db.QuotaExceeded(used, nbytes, quota)

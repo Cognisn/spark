@@ -601,6 +601,9 @@ class ActionExecutor:
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
             # Resolve secret:// URIs in embedded tools config
             self._resolve_embedded_secrets(config.get("embedded_tools", {}))
+            # File tools work in this user's area (server mode)
+            config["_user_guid"] = self._user_guid
+            config["_files_db"] = self._db
 
             # Inject memory index for memory tools
             try:

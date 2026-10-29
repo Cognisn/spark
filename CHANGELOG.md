@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Storage quotas and upload limit**: `files.quota_mb` (per user; default 1024 in server mode, no quota in personal mode) and `files.max_upload_mb` (default 50); `0` means no limit. A file that would exceed either is refused with a message saying which limit applies, and nothing is stored. Usage is charged in the same database transaction that records the file, so parallel uploads cannot overrun a quota. New tables `user_files` and `user_file_usage` (migration `file_areas`)
 - **Files API** (`/files/api`): upload a file (optionally to one of your conversations), list your files with your usage and limits, download and delete them. Every route is scoped to the signed-in user; another user's file is reported as not found. Downloads are always sent as attachments
 
+### Changed
+- **File tool containment**: the document, document creation and archive tools read and write only inside the signed-in user's file area in server mode (paths are relative to the area, and documents and extracted files count towards the quota), and only inside the configured allowed paths in personal mode. Every path is checked once, after resolving symlinks; `..` components, absolute paths outside the permitted area, Windows drive, UNC and device forms, reserved device names and alternate data streams are refused. Images embedded in created documents come from the same permitted area. In server mode these tools no longer need `allowed_paths`
+- **Archive extraction** checks every member before writing anything: an archive with a member that would land outside the destination, or a link or special file member, is refused as a whole
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added
