@@ -58,6 +58,7 @@
                 {% endif %}
 
                 <form method="POST" action="/api/auth">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
                         <input
                             type="text"

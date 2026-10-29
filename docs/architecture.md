@@ -114,7 +114,8 @@ graph TB
 - **FastAPI** application with Jinja2 templates
 - **Uvicorn** ASGI server (random port per startup)
 - **SSE streaming** for real-time chat responses via `sse-starlette`
-- **Auth middleware** protecting all routes except login/static
+- **Auth middleware** protecting all routes except login/static, through `app.state.authenticator` (a `WebAuthenticator`: personal mode's single-use, expiring, rate-limited sign-in codes and one session; server mode swaps in warden)
+- **Request guard** (`spark.web.security`) refusing state-changing requests and event streams that do not come from the instance's own origin, and state-changing requests without the session's CSRF token; pages send the token through `static/js/csrf.js`
 - **Static files** served from `web/static/` (CSS, JS, fonts)
 
 ### Core

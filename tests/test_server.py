@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from spark.web.server import create_app
+from tests.web_helpers import ORIGIN, login_token, sign_in
 
 
 @pytest.fixture()
@@ -71,29 +72,37 @@ class TestAuthFlow:
     def test_login_with_valid_code(self, app: TestClient) -> None:
         # Get the auth code from the app state
         code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
+        resp = app.post(
+            "/api/auth",
+            data={"code": code, "csrf_token": login_token(app)},
+            headers={"Origin": ORIGIN},
+            follow_redirects=False,
+        )
         assert resp.status_code == 303
         assert "spark_session" in resp.cookies
 
     def test_login_with_invalid_code(self, app: TestClient) -> None:
-        resp = app.post("/api/auth", data={"code": "BADCODE1"}, follow_redirects=False)
+        resp = app.post(
+            "/api/auth",
+            data={"code": "BADCODE1", "csrf_token": login_token(app)},
+            headers={"Origin": ORIGIN},
+            follow_redirects=False,
+        )
         assert resp.status_code == 401
 
     def test_authenticated_access(self, app: TestClient) -> None:
-        code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(app)["spark_session"]
         assert session_cookie
 
         resp = app.get("/", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 200
 
     def test_logout(self, app: TestClient) -> None:
-        code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(app)["spark_session"]
 
-        resp = app.get("/logout", cookies={"spark_session": session_cookie}, follow_redirects=False)
+        resp = app.post(
+            "/logout", cookies={"spark_session": session_cookie}, follow_redirects=False
+        )
         assert resp.status_code == 303
         assert resp.headers["location"] == "/login"
 
@@ -120,9 +129,7 @@ class TestAutoLogin:
 
 class TestFirstRun:
     def test_root_redirects_to_welcome(self, first_run_app: TestClient) -> None:
-        code = first_run_app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = first_run_app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(first_run_app)["spark_session"]
 
         resp = first_run_app.get(
             "/", cookies={"spark_session": session_cookie}, follow_redirects=False
@@ -131,9 +138,7 @@ class TestFirstRun:
         assert resp.headers["location"] == "/welcome"
 
     def test_welcome_page_loads(self, first_run_app: TestClient) -> None:
-        code = first_run_app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = first_run_app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(first_run_app)["spark_session"]
 
         resp = first_run_app.get(
             "/welcome",
@@ -147,9 +152,7 @@ class TestFirstRun:
 
 class TestMainMenu:
     def test_menu_page_loads(self, app: TestClient) -> None:
-        code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(app)["spark_session"]
 
         resp = app.get("/menu", cookies={"spark_session": session_cookie}, follow_redirects=False)
         assert resp.status_code == 200
@@ -158,9 +161,7 @@ class TestMainMenu:
 
 class TestSettingsPage:
     def test_settings_page_loads(self, app: TestClient) -> None:
-        code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(app)["spark_session"]
 
         resp = app.get(
             "/settings",
@@ -174,9 +175,7 @@ class TestSettingsPage:
     def test_save_settings(
         self, app: TestClient, tmp_path: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        code = app.app.state.auth.generate_code()  # type: ignore[union-attr]
-        login_resp = app.post("/api/auth", data={"code": code}, follow_redirects=False)
-        session_cookie = login_resp.cookies.get("spark_session")
+        session_cookie = sign_in(app)["spark_session"]
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("database:\n  type: sqlite\n")

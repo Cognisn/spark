@@ -21,7 +21,8 @@ from fastapi.templating import Jinja2Templates
 import spark
 from spark.db import Database, SyncDatabase
 from spark.mode import DatabaseSettings
-from spark.web.auth import AuthManager
+from spark.web.auth import AuthManager, LoginPolicy, PersonalAuthenticator
+from spark.web.security import OriginPolicy, RequestGuardMiddleware
 from spark.web.session import SessionManager
 
 if TYPE_CHECKING:
@@ -36,6 +37,69 @@ _TEMPLATE_DIR = _WEB_DIR / "templates"
 _STATIC_DIR = _WEB_DIR / "static"
 
 _DATABASE_WAIT_SECONDS = 300
+
+# Reachable without a session. Anything else is redirected to /login.
+_PUBLIC_PATHS = frozenset({"/login", "/auto-login", "/api/auth", "/loading", "/favicon.ico"})
+_PUBLIC_PREFIXES = ("/static/", "/loading/")
+
+
+def _is_public(path: str) -> bool:
+    return path in _PUBLIC_PATHS or path.startswith(_PUBLIC_PREFIXES)
+
+
+def _login_policy(ctx: Any) -> LoginPolicy:
+    """Login code lifetime and lock-out settings (``interface.login.*``)."""
+    defaults = LoginPolicy()
+    get = ctx.settings.get
+    return LoginPolicy(
+        code_ttl_seconds=get(
+            "interface.login.code_ttl_seconds", defaults.code_ttl_seconds, cast=float
+        ),
+        max_failures=get("interface.login.max_failures", defaults.max_failures, cast=int),
+        failure_window_seconds=get(
+            "interface.login.failure_window_seconds", defaults.failure_window_seconds, cast=float
+        ),
+        lockout_seconds=get(
+            "interface.login.lockout_seconds", defaults.lockout_seconds, cast=float
+        ),
+    )
+
+
+def _extra_origins(ctx: Any) -> list[str]:
+    """Further origins allowed to make requests (``interface.allowed_origins``)."""
+    value = ctx.settings.get("interface.allowed_origins", [])
+    if isinstance(value, str):
+        return [part for part in (p.strip() for p in value.split(",")) if part]
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    return []
+
+
+def _initial_origin_policy(ctx: Any) -> OriginPolicy:
+    """The instance's own origins as far as they are known before serving.
+
+    With a fixed port they are known now; otherwise each request's Host header
+    stands in until :func:`create_and_serve` has resolved the port.
+    """
+    port = ctx.settings.get("interface.port", 0)
+    if isinstance(port, (int, str)) and str(port).isdigit() and int(port) > 0:
+        scheme = "https" if ctx.settings.get("interface.ssl.enabled", False) else "http"
+        host = str(ctx.settings.get("interface.host", "127.0.0.1"))
+        return OriginPolicy.for_instance(scheme, host, int(port), _extra_origins(ctx))
+    return OriginPolicy.same_host(_extra_origins(ctx))
+
+
+def _template_csrf_token(request: Request) -> str:
+    """The CSRF token for a page rendered for this request.
+
+    The auth middleware sets it on signed-in requests; public pages (the
+    loading page) ask the authenticator directly.
+    """
+    token = getattr(request.state, "csrf_token", None)
+    if token is None:
+        authenticator = getattr(request.app.state, "authenticator", None)
+        token = authenticator.csrf_token(request) if authenticator is not None else None
+    return str(token or "")
 
 
 def attach_database(app: FastAPI, settings: DatabaseSettings, auto_migrate: bool) -> None:
@@ -110,19 +174,24 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
 
     # -- Shared state ---------------------------------------------------------
     timeout = ctx.settings.get("interface.session_timeout_minutes", 60, cast=int)
-    auth_manager = AuthManager()
-    session_manager = SessionManager(timeout_minutes=timeout)
+    max_age = ctx.settings.get("interface.session_max_age_hours", 24, cast=float)
+    auth_manager = AuthManager(_login_policy(ctx))
+    session_manager = SessionManager(timeout_minutes=timeout, max_age_hours=max_age)
 
     from spark.core.user_guid import get_user_guid
 
     app.state.ctx = ctx
     app.state.auth = auth_manager
     app.state.session = session_manager
+    # The web layer's only view of sign-in; server mode swaps in warden here.
+    app.state.authenticator = PersonalAuthenticator(session_manager)
+    app.state.origin_policy = _initial_origin_policy(ctx)
     app.state.first_run = first_run
     app.state.init_status = {"ready": True, "error": False, "stage": "Ready"}
     app.state.user_guid = get_user_guid(ctx)
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     templates.env.globals["version"] = spark.__version__
+    templates.env.globals["csrf_token"] = _template_csrf_token
     templates.env.globals["actions_enabled"] = lambda: (
         bool(app.state.ctx.settings.get("autonomous_actions.enabled", False))
         if hasattr(app.state, "ctx") and app.state.ctx
@@ -138,25 +207,25 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
 
     register_routes(app)
 
+    # -- Origin and CSRF checks (inside the auth middleware) ---------------------
+    app.add_middleware(
+        RequestGuardMiddleware,
+        policy=lambda conn: conn.app.state.origin_policy,
+        csrf_token=lambda conn: conn.app.state.authenticator.csrf_token(conn),
+        stream_prefixes=("/stream/",),
+    )
+
     # -- Auth middleware -------------------------------------------------------
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
-        public = {
-            "/login",
-            "/auto-login",
-            "/loading",
-            "/static",
-            "/api/auth",
-            "/favicon.ico",
-        }
-        path = request.url.path
-        if any(path.startswith(p) for p in public):
+        if _is_public(request.url.path):
             return await call_next(request)
 
-        session_id = request.cookies.get("spark_session")
-        if not session_id or not session_manager.validate(session_id):
+        authenticator = request.app.state.authenticator
+        if not authenticator.is_authenticated(request):
             return RedirectResponse(url="/login", status_code=303)
 
+        request.state.csrf_token = authenticator.csrf_token(request) or ""
         return await call_next(request)
 
     return app
@@ -627,7 +696,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         import time
 
         time.sleep(2)  # Simple delay — uvicorn binds quickly once serve() is called
-        logger.debug("Opening browser at %s", login_url)
+        logger.debug("Opening browser at %s/auto-login", url)
         webbrowser.open(login_url)
 
     if _should_open_browser(ctx):
@@ -660,6 +729,9 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
                 logger.warning("Failed to generate SSL certificate: %s — falling back to HTTP", e)
                 ssl_enabled = False
                 scheme = "http"
+
+    # Only this instance's own pages may change state or open event streams.
+    app.state.origin_policy = OriginPolicy.for_instance(scheme, host, port, _extra_origins(ctx))
 
     logger.debug("Creating uvicorn config...")
     try:

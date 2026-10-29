@@ -101,7 +101,16 @@ interface:
     cert_file: /path/to/cert.pem
     key_file: /path/to/key.pem
     auto_generate: true          # Generate self-signed cert if none provided
-  session_timeout_minutes: 60
+  session_timeout_minutes: 60   # End a session after this much inactivity (0 = never)
+  session_max_age_hours: 24     # End a session this long after sign-in (0 = never)
+  login:
+    code_ttl_seconds: 300       # A sign-in code works once, within this time
+    max_failures: 5             # Failed sign-ins allowed per address...
+    failure_window_seconds: 300 # ...within this window...
+    lockout_seconds: 900        # ...before the address is locked out this long
+  allowed_origins: []           # Further origins allowed to change state, for
+                                # example ["https://spark.example.com"] behind a
+                                # reverse proxy
   browser_heartbeat:
     enabled: true
     interval_seconds: 30
@@ -109,6 +118,12 @@ interface:
 ```
 
 The port is randomly chosen on each startup. The browser heartbeat monitor shuts down the server when no browser tabs are connected (after `miss_threshold` consecutive missed heartbeats at `interval_seconds` intervals).
+
+#### Sign-in and request checks
+
+The sign-in code is shown in the terminal at start-up and carried by the link Spark opens in your browser. Each code works once and expires after `login.code_ttl_seconds`; if it has been used or has expired, reload the sign-in page and the terminal shows a new one. An address that fails `login.max_failures` times within `login.failure_window_seconds` is refused, even with the right code, for `login.lockout_seconds`.
+
+Spark accepts a state-changing request (POST, PUT, PATCH or DELETE) or an event stream only from its own pages: the browser's `Origin` (or `Referer`) must be the address Spark is served at, and state-changing requests must carry the session's CSRF token. A loopback address accepts `127.0.0.1`, `localhost` and `[::1]` alike. When `host` is `0.0.0.0`, the address in each request's `Host` header counts as Spark's own. Behind a reverse proxy, add the public address to `allowed_origins`. Anything else is refused with a 403 that says which check failed.
 
 #### Theme Persistence
 

@@ -39,8 +39,9 @@ spark/
 │   │   └── user_guid.py              # Persistent user identifier
 │   ├── web/
 │   │   ├── server.py                 # FastAPI app creation and startup
-│   │   ├── auth.py                   # One-time auth code manager
+│   │   ├── auth.py                   # Sign-in codes and the authenticator interface
 │   │   ├── session.py                # Session management
+│   │   ├── security.py               # Origin and CSRF request guard
 │   │   ├── ssl_utils.py              # Self-signed certificate generation
 │   │   ├── endpoints/
 │   │   │   ├── auth.py               # Login and auto-login
