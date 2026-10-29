@@ -156,6 +156,49 @@ class TestPersonalPage:
         assert keys
         assert [k for k in keys if not registry.is_known(k)] == []
 
+    def test_a_plain_text_secret_left_in_the_config_is_not_shown(
+        self, personal: TestClient, config_file: Path
+    ) -> None:
+        """A 0.2 config could hold the web search keys as plain text."""
+        raw = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        raw["embedded_tools"] = {"web": {"search_engine": "brave", "brave_api_key": OTHER}}
+        raw["embedded_tools"]["email"] = {"password": OTHER}
+        config_file.write_text(yaml.safe_dump(raw), encoding="utf-8", newline="\n")
+        personal.app.state.ctx.settings.reload()  # type: ignore[attr-defined]
+        resp = personal.get("/settings")
+        assert resp.status_code == 200
+        _no_secret(resp)
+        assert resp.text.count('data-secret-set="true"') >= 3
+
+    def test_tool_secret_fields_carry_only_set_or_not_set(self) -> None:
+        from spark.web.endpoints.settings import _build_tool_categories, _View
+
+        status = {"embedded_tools.web.brave_api_key": True}
+        categories = _build_tool_categories(_View(lambda key, default: OTHER, status))
+        fields = [f for c in categories for f in c["extra_fields"] if f["type"] == "secret"]
+        assert {f["key"] for f in fields} == {
+            "embedded_tools.web.brave_api_key",
+            "embedded_tools.web.google_api_key",
+            "embedded_tools.web.bing_api_key",
+            "embedded_tools.email.password",
+        }
+        assert all("value" not in f for f in fields)
+        assert {f["key"]: f["has_value"] for f in fields} == {
+            "embedded_tools.web.brave_api_key": True,
+            "embedded_tools.web.google_api_key": False,
+            "embedded_tools.web.bing_api_key": False,
+            "embedded_tools.email.password": False,
+        }
+
+    def test_the_view_never_hands_a_secret_to_the_page_builders(self) -> None:
+        from spark.web.endpoints.settings import _View
+
+        view = _View(lambda key, default: OTHER, {"providers.anthropic.api_key": True})
+        assert view.get("providers.anthropic.api_key") is None
+        assert view.get("embedded_tools.email.password", "x") is None
+        assert view.get("voice.engine") == OTHER
+        assert view.is_secret_set("providers.anthropic.api_key") is True
+
     def test_reveal_endpoint_is_gone(self, personal: TestClient) -> None:
         resp = personal.get("/settings/api/reveal-secret?key=providers.anthropic.api_key")
         assert resp.status_code == 404
