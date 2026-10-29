@@ -201,6 +201,15 @@ embedded_tools:
     # bing_api_key: ""               # Azure Cognitive Services Bing Search key
     # searxng_url: ""                # SearXNG instance URL, e.g. https://search.example.com
 
+  # Results from external sources always reach the model as marked, untrusted
+  # data. When one matches prompt injection patterns, Spark marks it, warns the
+  # model about it, or withholds it (the model is told it was withheld and why).
+  # tool_results:
+  #   web: warn                      # mark, warn or withhold
+  #   mcp: warn
+  #   documents: warn                # documents and archives
+  #   agents: warn                   # sub-agent results
+
 # -----------------------------------------------------------------------------
 # Default Model
 # -----------------------------------------------------------------------------

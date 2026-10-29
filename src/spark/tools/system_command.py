@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import platform
-import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from spark.tools.command_policy import check_command, host_dialect
 
 # Commands that are always blocked regardless of configuration.
 _ALWAYS_BLOCKED: set[str] = {"mkfs", "fdisk", "dd", "format"}
@@ -81,22 +82,15 @@ def execute(
     if not command:
         return "Error: no command provided."
 
-    # --- Blocked command check ---
+    # --- Blocked command check: every command in the chain, in the host shell's dialect ---
     blocked: set[str] = set(_ALWAYS_BLOCKED)
     extra_blocked = config.get("blocked_commands", [])
     if isinstance(extra_blocked, (list, set)):
         blocked.update(extra_blocked)
 
-    # Extract the base command name (first token) for checking.
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        tokens = command.split()
-
-    if tokens:
-        base_cmd = Path(tokens[0]).name.lower()
-        if base_cmd in blocked:
-            return f"Blocked: '{base_cmd}' is not permitted."
+    refusal = check_command(command, blocked, dialect=host_dialect())
+    if refusal is not None:
+        return refusal
 
     # --- Working directory validation ---
     working_dir = tool_input.get("working_directory")

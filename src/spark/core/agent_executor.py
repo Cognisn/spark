@@ -6,6 +6,12 @@ import logging
 from typing import Any, Callable
 
 from spark.core.cancellation import CancellationToken
+from spark.safety.untrusted import (
+    UNTRUSTED_CONTENT_INSTRUCTIONS,
+    ResultPolicy,
+    guard_tool_result,
+    new_turn_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,7 @@ class AgentExecutor:
         self._user_guid = user_guid
         self._tool_permission_callback = tool_permission_callback
         self._status_callback = status_callback
+        self._mcp_tool_names: set[str] = set()
 
     def execute(
         self,
@@ -69,6 +76,10 @@ class AgentExecutor:
             system = system_override
         else:
             system = self._build_system(agent_name, task, mode)
+        # External tool results arrive as marked, untrusted data
+        system = system + "\n\n" + UNTRUSTED_CONTENT_INSTRUCTIONS
+        turn_id = new_turn_id()
+        result_policy = ResultPolicy.from_config(self._config)
 
         # Build initial messages — chain mode inherits parent context,
         # orchestrator mode starts fresh with just the task.
@@ -200,6 +211,22 @@ class AgentExecutor:
                         )
 
                     result_text = self._execute_tool(tool_name, tool_input)
+                    model_text = result_text
+                    inspection: dict[str, Any] | None = None
+                    outcome = guard_tool_result(
+                        result_text,
+                        tool_name=tool_name,
+                        mcp=tool_name in self._mcp_tool_names,
+                        turn_id=turn_id,
+                        policy=result_policy,
+                        db=self._db,
+                        user_guid=self._user_guid,
+                        conversation_id=None,
+                    )
+                    if outcome is not None:
+                        model_text = outcome.text
+                        if outcome.flagged:
+                            inspection = outcome.event()
 
                     all_tool_calls.append(
                         {
@@ -211,21 +238,21 @@ class AgentExecutor:
 
                     # Notify the caller about the tool result
                     if self._status_callback:
-                        self._status_callback(
-                            "agent_tool_result",
-                            {
-                                "agent_id": agent_id,
-                                "tool_name": tool_name,
-                                "result": result_text[:500],
-                                "status": "success",
-                            },
-                        )
+                        event: dict[str, Any] = {
+                            "agent_id": agent_id,
+                            "tool_name": tool_name,
+                            "result": result_text[:500],
+                            "status": "success",
+                        }
+                        if inspection is not None:
+                            event["inspection"] = inspection
+                        self._status_callback("agent_tool_result", event)
 
                     tool_results.append(
                         {
                             "type": "tool_result",
                             "tool_use_id": tc.get("id", ""),
-                            "content": result_text,
+                            "content": model_text,
                         }
                     )
 
@@ -437,6 +464,7 @@ class AgentExecutor:
                                 "inputSchema": t.get("inputSchema", {}),
                             }
                         )
+                        self._mcp_tool_names.add(t.get("name", ""))
                 except Exception as e:
                     logger.warning("Agent failed to load MCP tools: %s", e)
 
@@ -450,6 +478,11 @@ class AgentExecutor:
         """Execute a tool, reusing the parent's tool infrastructure."""
         if tool_name in getattr(self, "_exclude_tools", frozenset()):
             return f"Tool '{tool_name}' is not available in this context."
+        from spark.tools.registry import unavailable_reason
+
+        refusal = unavailable_reason(tool_name)
+        if refusal is not None:
+            return refusal
         try:
             from spark.tools.registry import execute_builtin_tool, get_builtin_tools
 

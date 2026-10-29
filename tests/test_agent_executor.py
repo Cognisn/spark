@@ -182,7 +182,13 @@ class TestExecutorExtensions:
     def test_system_override_used(self, executor: AgentExecutor) -> None:
         executor._llm.invoke_model.return_value = self._end_turn()
         executor.execute("a1", "n", "task", "m", system_override="CUSTOM SYSTEM")
-        assert executor._llm.invoke_model.call_args.kwargs["system"] == "CUSTOM SYSTEM"
+        from spark.safety.untrusted import UNTRUSTED_CONTENT_INSTRUCTIONS
+
+        # The caller's prompt is used as given; the untrusted-content rules follow it.
+        assert (
+            executor._llm.invoke_model.call_args.kwargs["system"]
+            == "CUSTOM SYSTEM\n\n" + UNTRUSTED_CONTENT_INSTRUCTIONS
+        )
 
     def test_extra_tools_offered_and_excluded_removed(self, executor: AgentExecutor) -> None:
         extra = {

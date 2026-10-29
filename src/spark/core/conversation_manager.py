@@ -13,6 +13,13 @@ from spark.core.context_compaction import ContextCompactor
 from spark.db.bridge import SyncDatabase
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
+from spark.safety.untrusted import (
+    UNTRUSTED_CONTENT_INSTRUCTIONS,
+    ResultPolicy,
+    guard_tool_result,
+    new_turn_id,
+)
+from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +609,11 @@ class ConversationManager:
             len(self._get_messages_for_model(conversation_id, conv)),
         )
 
+        # One unguessable delimiter for this turn's untrusted-content blocks,
+        # and the per-source actions for flagged results.
+        turn_id = new_turn_id()
+        result_policy = ResultPolicy.from_config(self._embedded_tools_config)
+
         # Tool use loop
         self._in_tool_use_loop = True
         total_usage = {"input_tokens": 0, "output_tokens": 0}
@@ -732,6 +744,8 @@ class ConversationManager:
                         response["tool_use"],
                         user_guid,
                         status_callback=status_callback,
+                        turn_id=turn_id,
+                        result_policy=result_policy,
                     )
                     all_tool_calls.extend(response["tool_use"])
 
@@ -852,6 +866,8 @@ class ConversationManager:
 
     def _build_conversation_tool_context(self) -> str:
         """Build additional system prompt context for enabled tools."""
+        from spark.tools.registry import is_category_available
+
         embedded = self._embedded_tools_config.get("embedded_tools", {})
         parts: list[str] = []
 
@@ -860,7 +876,7 @@ class ConversationManager:
         allowed_paths = fs_config.get("allowed_paths", [])
         if isinstance(allowed_paths, str):
             allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
-        if fs_config.get("enabled", True) and allowed_paths:
+        if is_category_available("filesystem") and fs_config.get("enabled", True) and allowed_paths:
             path_list = ", ".join(f"`{p}`" for p in allowed_paths)
             parts.append(
                 "**Filesystem access:** You can read"
@@ -870,7 +886,7 @@ class ConversationManager:
 
         # System commands
         cmd_config = embedded.get("system_commands", {})
-        if cmd_config.get("enabled", False):
+        if is_category_available("system_commands") and cmd_config.get("enabled", False):
             import platform
             import sys
 
@@ -890,7 +906,11 @@ class ConversationManager:
 
         # Email
         email_config = embedded.get("email", {})
-        if email_config.get("enabled", False) and email_config.get("host"):
+        if (
+            is_category_available("email")
+            and email_config.get("enabled", False)
+            and email_config.get("host")
+        ):
             sender = email_config.get("sender", "")
             if sender:
                 parts.append(
@@ -998,6 +1018,9 @@ class ConversationManager:
             "is automatically provided below. You can reference this context in your responses."
         )
 
+        # External tool results arrive as marked, untrusted data
+        parts.append(UNTRUSTED_CONTENT_INSTRUCTIONS)
+
         # 2. Global instructions
         if self._global_instructions:
             parts.append(self._global_instructions)
@@ -1084,6 +1107,8 @@ class ConversationManager:
         user_guid: str,
         *,
         status_callback: Callable | None = None,
+        turn_id: str | None = None,
+        result_policy: ResultPolicy | None = None,
     ) -> dict:
         """Execute a single tool call and return the tool_result dict.
 
@@ -1232,18 +1257,38 @@ class ConversationManager:
             execution_time_ms=elapsed_ms,
         )
 
-        if status_callback:
-            status_callback(
-                "tool_result",
-                {
-                    "tool_use_id": tool_id,
-                    "tool_name": tool_name,
-                    "result": result_text[:500],
-                    "status": "error" if is_error else "success",
-                },
-            )
+        # External results reach the model only as marked, inspected data
+        from spark.tools.registry import tool_category
 
-        return _tool_result(tool_id, result_text, is_error=is_error)
+        model_text = result_text
+        inspection: dict[str, Any] | None = None
+        outcome = guard_tool_result(
+            result_text,
+            tool_name=tool_name,
+            mcp=tool_category(tool_name) is None and not self._is_builtin_tool(tool_name),
+            turn_id=turn_id or new_turn_id(),
+            policy=result_policy or ResultPolicy.from_config(self._embedded_tools_config),
+            db=self._db,
+            user_guid=user_guid,
+            conversation_id=conversation_id,
+        )
+        if outcome is not None:
+            model_text = outcome.text
+            if outcome.flagged:
+                inspection = outcome.event()
+
+        if status_callback:
+            event: dict[str, Any] = {
+                "tool_use_id": tool_id,
+                "tool_name": tool_name,
+                "result": result_text[:500],
+                "status": "error" if is_error else "success",
+            }
+            if inspection is not None:
+                event["inspection"] = inspection
+            status_callback("tool_result", event)
+
+        return _tool_result(tool_id, model_text, is_error=is_error)
 
     def _execute_tools(
         self,
@@ -1252,6 +1297,8 @@ class ConversationManager:
         user_guid: str,
         *,
         status_callback: Callable | None = None,
+        turn_id: str | None = None,
+        result_policy: ResultPolicy | None = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results.
 
@@ -1278,10 +1325,15 @@ class ConversationManager:
         # Dict to collect results keyed by original index for correct ordering.
         result_map: dict[int, dict] = {}
 
+        guard: dict[str, Any] = {
+            "turn_id": turn_id or new_turn_id(),
+            "result_policy": result_policy,
+        }
+
         # 1. Execute non-agent tools sequentially.
         for idx, tc in non_agent_calls:
             result_map[idx] = self._execute_single_tool(
-                tc, conversation_id, user_guid, status_callback=status_callback
+                tc, conversation_id, user_guid, status_callback=status_callback, **guard
             )
 
         # 2. Execute agent tools — in parallel when there are multiple,
@@ -1306,6 +1358,7 @@ class ConversationManager:
                         conversation_id,
                         user_guid,
                         status_callback=status_callback,
+                        **guard,
                     )
                     future_to_idx[future] = idx
 
@@ -1325,7 +1378,7 @@ class ConversationManager:
         elif len(agent_calls) == 1:
             idx, tc = agent_calls[0]
             result_map[idx] = self._execute_single_tool(
-                tc, conversation_id, user_guid, status_callback=status_callback
+                tc, conversation_id, user_guid, status_callback=status_callback, **guard
             )
 
         # 3. Reassemble results in the original tool_calls order.
@@ -1598,6 +1651,14 @@ class ConversationManager:
 
     def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
         """Execute a single tool. Returns (result_text, is_error)."""
+        from spark.tools.registry import unavailable_reason
+
+        # A tool whose category is not available is refused by name, wherever
+        # the request came from, before any built-in or MCP dispatch.
+        refusal = unavailable_reason(tool_name)
+        if refusal is not None:
+            return refusal, True
+
         # Agent tools — these need conversation context stored on the instance
         if tool_name == "spawn_agent":
             cid = self._current_conversation_id
@@ -1676,35 +1737,13 @@ class ConversationManager:
             )
 
 
+# The registry is the one source of tool categories; this view keeps the
+# list-valued shape that sibling approval and the debate setup read. The
+# knowledge graph tool was never offered by the debate setup, so it stays out.
 _TOOL_CATEGORIES: dict[str, list[str]] = {
-    "filesystem": [
-        "read_file",
-        "write_file",
-        "list_directory",
-        "search_files",
-        "get_file_info",
-        "find_in_file",
-        "get_directory_tree",
-    ],
-    "documents": [
-        "read_word",
-        "read_excel",
-        "read_pdf",
-        "read_powerpoint",
-        "create_word",
-        "create_excel",
-        "create_powerpoint",
-        "create_pdf",
-    ],
-    "archives": ["list_archive", "extract_archive"],
-    "web": ["web_search", "web_fetch"],
-    "system_commands": ["run_command"],
-    "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
-    "email": ["send_email", "draft_email"],
-    "skills": ["use_skill", "read_skill_resource"],
-    "skill_authoring": ["create_skill", "update_skill"],
-    "core": ["get_current_datetime", "get_tool_documentation"],
-    "agents": ["spawn_agent", "list_provider_models"],
+    category: list(names)
+    for category, names in _REGISTRY_CATEGORIES.items()
+    if category != "knowledge"
 }
 
 

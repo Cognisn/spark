@@ -409,7 +409,19 @@ function _addToolPanelItem(toolName, params, status, result, timestamp, dateKey)
     return itemId;
 }
 
-function updateToolPanelItem(itemId, status, result) {
+// A tool result that matched the prompt injection patterns: what was found and
+// what Spark did with it (marked, warned about, or withheld from the model).
+function _inspectionSummary(inspection) {
+    const actions = {
+        mark: 'Marked as untrusted',
+        warn: 'Passed to the model with a warning',
+        withhold: 'Withheld from the model',
+    };
+    const action = actions[inspection.action] || inspection.action || 'Flagged';
+    return `${action}: ${inspection.explanation || 'security patterns matched'} (source: ${inspection.source || 'unknown'})`;
+}
+
+function updateToolPanelItem(itemId, status, result, inspection) {
     const item = document.getElementById(itemId);
     if (!item) return;
 
@@ -422,6 +434,11 @@ function updateToolPanelItem(itemId, status, result) {
         error: '<i class="bi bi-x-circle-fill tp-status error"></i>',
     };
     header.insertAdjacentHTML('beforeend', statusIcons[status] || '');
+    if (inspection) {
+        const summary = escapeHtml(_inspectionSummary(inspection));
+        header.insertAdjacentHTML('beforeend', `<i class="bi bi-shield-exclamation tp-status inspection" title="${summary}"></i>`);
+        item.querySelector('.tp-detail').innerHTML += `<div class="tp-detail-section">Security inspection</div><div class="tp-detail-code">${summary}</div>`;
+    }
 
     // Add result to detail
     if (result) {
@@ -625,10 +642,10 @@ function appendStreamingToolStart(toolName, params, toolUseId) {
     _streamingToolIds[toolUseId] = panelItemId;
 }
 
-function updateStreamingToolComplete(toolUseId, toolName, result, status) {
+function updateStreamingToolComplete(toolUseId, toolName, result, status, inspection) {
     const panelItemId = _streamingToolIds[toolUseId];
     if (panelItemId) {
-        updateToolPanelItem(panelItemId, status, result);
+        updateToolPanelItem(panelItemId, status, result, inspection);
     }
     // Update status tracking
     const idx = _streamingToolStatuses.indexOf('running');
@@ -1046,7 +1063,7 @@ function updateStreamingAgentToolCall(agentId, toolName, params) {
     if (detail) detail.style.display = 'block';
 }
 
-function updateStreamingAgentToolResult(agentId, toolName, result, status) {
+function updateStreamingAgentToolResult(agentId, toolName, result, status, inspection) {
     const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
     const toolsContainer = document.getElementById(itemId + '-tools');
     if (!toolsContainer) return;
@@ -1065,6 +1082,10 @@ function updateStreamingAgentToolResult(agentId, toolName, result, status) {
                 icon.style.color = 'var(--app-success)';
             }
             icon.style.animation = '';
+            if (inspection) {
+                const summary = escapeHtml(_inspectionSummary(inspection));
+                icon.insertAdjacentHTML('afterend', ` <i class="bi bi-shield-exclamation" style="color: var(--app-warning)" title="${summary}"></i>`);
+            }
             break;
         }
     }

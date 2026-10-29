@@ -148,7 +148,8 @@ Each provider normalises responses to a common format:
 
 ### Tool System
 
-- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution
+- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable
+- **Command policy** (`spark.tools.command_policy`) -- Splits a system command line in the dialect of the shell that runs it (POSIX shells, cmd.exe, PowerShell), follows nested shells, and checks every command name against the blocklist; a line it cannot split with confidence is refused
 - **ToolSelector** -- Intelligently selects relevant tools based on message content
 - Each tool module exports `get_tools()` (definitions) and `execute()` (handler)
 
@@ -162,6 +163,7 @@ Each provider normalises responses to a common format:
 
 - **PromptInspector** -- Multi-level prompt inspection with configurable actions
 - **PatternMatcher** -- Compiled regex patterns for injection, jailbreak, code injection, and PII detection
+- **Untrusted content** (`spark.safety.untrusted`) -- Every result from an external source (web, MCP, documents and archives, sub-agents) reaches the model inside an `<untrusted-content>` block whose id is random for each turn, with block syntax inside the content neutralised; the system prompt tells the model to treat block contents as data. Results matching injection or jailbreak patterns are marked, warned about or withheld according to `embedded_tools.tool_results.<category>`, shown in the chat sidecar, recorded in `prompt_inspection_violations` and passed to a single audit hook (`set_audit_hook`). `guard_tool_result()` is the one call each tool loop makes
 
 ### Index
 
@@ -280,6 +282,7 @@ the raw settings.
 | Database | SQLite in the platform data directory | PostgreSQL from `database.url` (`SPARK__DATABASE__URL`) |
 | Schema changes | applied automatically at start-up | `spark migrate` first; start-up refuses a database behind head |
 | Users | one local user | multi-user (identity through warden from a later release) |
+| Local tools | system command, filesystem and email tools available | not registered, refused by name, settings hidden |
 
 ## Data Layer
 

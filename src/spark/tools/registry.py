@@ -1,11 +1,131 @@
-"""Tool registry — assembles and dispatches all built-in tools."""
+"""Tool registry — assembles and dispatches all built-in tools.
+
+Every built-in tool belongs to one category. A category is the unit of
+availability: :func:`is_category_available` is the single place that decides
+whether a category may be offered or run, and every route that registers or
+dispatches a tool by name asks it (through :func:`is_tool_available` or
+:func:`unavailable_reason`). Each category also names a permission,
+``spark.tools.<category>``, for role checks to attach to.
+"""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
+from spark.mode import Mode
+
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "LOCAL_ONLY_CATEGORIES",
+    "TOOL_CATEGORIES",
+    "execute_builtin_tool",
+    "get_builtin_tools",
+    "is_category_available",
+    "is_tool_available",
+    "permission_name",
+    "tool_category",
+    "unavailable_reason",
+]
+
+# Category -> the built-in tool names in it.
+TOOL_CATEGORIES: Mapping[str, tuple[str, ...]] = {
+    "filesystem": (
+        "read_file",
+        "write_file",
+        "list_directory",
+        "search_files",
+        "get_file_info",
+        "find_in_file",
+        "get_directory_tree",
+    ),
+    "documents": (
+        "read_word",
+        "read_excel",
+        "read_pdf",
+        "read_powerpoint",
+        "create_word",
+        "create_excel",
+        "create_powerpoint",
+        "create_pdf",
+    ),
+    "archives": ("list_archive", "extract_archive"),
+    "web": ("web_search", "web_fetch"),
+    "system_commands": ("run_command",),
+    "memory": ("store_memory", "query_memory", "list_memories", "delete_memory"),
+    "email": ("send_email", "draft_email"),
+    "skills": ("use_skill", "read_skill_resource"),
+    "skill_authoring": ("create_skill", "update_skill"),
+    "knowledge": ("query_knowledge_graph",),
+    "core": ("get_current_datetime", "get_tool_documentation"),
+    "agents": ("spawn_agent", "list_provider_models"),
+}
+
+# Categories that act on the machine Spark runs on (its shell, its disks, its
+# mail account). They assume a locally running, single-user instance, so a
+# server never offers them.
+LOCAL_ONLY_CATEGORIES: frozenset[str] = frozenset({"filesystem", "system_commands", "email"})
+
+_CATEGORY_LABELS: Mapping[str, str] = {
+    "filesystem": "filesystem tools",
+    "system_commands": "system command tools",
+    "email": "email tools",
+}
+
+_CATEGORY_OF: dict[str, str] = {
+    name: category for category, names in TOOL_CATEGORIES.items() for name in names
+}
+
+
+def tool_category(tool_name: str) -> str | None:
+    """The category of a built-in tool, or ``None`` for a tool Spark does not provide."""
+    return _CATEGORY_OF.get(tool_name)
+
+
+def permission_name(category: str) -> str:
+    """The permission that governs a category, for example ``spark.tools.web``."""
+    return f"spark.tools.{category}"
+
+
+def _current_mode() -> Mode:
+    from spark import mode as spark_mode
+
+    try:
+        return spark_mode.current_mode()
+    except RuntimeError:
+        # Every entry point configures the mode at start-up; only code that
+        # never started Spark (tests, scripts) reaches here, and Spark's
+        # default mode is personal.
+        return Mode.PERSONAL
+
+
+def is_category_available(category: str, *, mode: Mode | None = None) -> bool:
+    """Whether tools in ``category`` may be offered and run.
+
+    This is the one decision point for tool availability. ``mode`` defaults
+    to the configured deployment mode.
+    """
+    selected = mode if mode is not None else _current_mode()
+    if selected is Mode.SERVER and category in LOCAL_ONLY_CATEGORIES:
+        return False
+    return True
+
+
+def is_tool_available(tool_name: str, *, mode: Mode | None = None) -> bool:
+    """Whether a tool may be offered and run; tools outside Spark's categories are not judged here."""
+    category = tool_category(tool_name)
+    return category is None or is_category_available(category, mode=mode)
+
+
+def unavailable_reason(tool_name: str, *, mode: Mode | None = None) -> str | None:
+    """The refusal message for a tool that may not run, or ``None`` when it may."""
+    category = tool_category(tool_name)
+    if category is None or is_category_available(category, mode=mode):
+        return None
+    label = _CATEGORY_LABELS.get(category, f"{category} tools")
+    return f"Tool '{tool_name}' is not available: {label} are not available in server mode."
 
 
 def _get_tool_documentation(tool_name: str) -> str:
@@ -33,7 +153,7 @@ def _get_tool_documentation(tool_name: str) -> str:
     )
 
 
-def _has_paths(config: dict) -> bool:
+def _has_paths(config: dict[str, Any]) -> bool:
     """Check if allowed_paths is configured and non-empty."""
     paths = config.get("allowed_paths")
     if isinstance(paths, list):
@@ -47,7 +167,8 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
     """Return all enabled built-in tool definitions.
 
     Tools that require a filesystem path are excluded when no
-    ``allowed_paths`` are configured.
+    ``allowed_paths`` are configured, and tools in a category that is not
+    available (see :func:`is_category_available`) are never registered.
     """
     tools: list[dict[str, Any]] = []
     embedded = config.get("embedded_tools", {})
@@ -144,7 +265,7 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     tools.extend(mem_tools)
 
-    return tools
+    return [t for t in tools if is_tool_available(t["name"])]
 
 
 def execute_builtin_tool(
@@ -153,6 +274,10 @@ def execute_builtin_tool(
     config: dict[str, Any],
 ) -> tuple[str, bool]:
     """Execute a built-in tool. Returns (result_text, is_error)."""
+    refusal = unavailable_reason(tool_name)
+    if refusal is not None:
+        return refusal, True
+
     embedded = config.get("embedded_tools", {})
 
     try:
@@ -176,9 +301,9 @@ def execute_builtin_tool(
 
         # Datetime
         if tool_name == "get_current_datetime":
-            from spark.tools.datetime_tool import execute
+            from spark.tools.datetime_tool import execute as dt_execute
 
-            return execute(tool_input), False
+            return dt_execute(tool_input), False
 
         # Filesystem
         fs_tools = {
@@ -202,10 +327,10 @@ def execute_builtin_tool(
                     True,
                 )
 
-            from spark.tools.filesystem import execute
+            from spark.tools.filesystem import execute as fs_execute
 
-            mode = fs_config.get("mode", "read")
-            return execute(tool_name, tool_input, allowed_paths=allowed, mode=mode), False
+            fs_mode = fs_config.get("mode", "read")
+            return fs_execute(tool_name, tool_input, allowed_paths=allowed, mode=fs_mode), False
 
         # Documents (read)
         doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
@@ -217,9 +342,9 @@ def execute_builtin_tool(
                     True,
                 )
 
-            from spark.tools.documents import execute
+            from spark.tools.documents import execute as doc_execute
 
-            return execute(tool_name, tool_input), False
+            return doc_execute(tool_name, tool_input), False
 
         # Documents (create)
         doc_create_tools = {
@@ -252,16 +377,16 @@ def execute_builtin_tool(
                     True,
                 )
 
-            from spark.tools.archives import execute
+            from spark.tools.archives import execute as arc_execute
 
             arc_mode = embedded.get("archives", {}).get("mode", "list")
-            return execute(tool_name, tool_input, mode=arc_mode), False
+            return arc_execute(tool_name, tool_input, mode=arc_mode), False
 
         # Web
         if tool_name in ("web_search", "web_fetch"):
-            from spark.tools.web import execute
+            from spark.tools.web import execute as web_execute
 
-            return execute(tool_name, tool_input, config), False
+            return web_execute(tool_name, tool_input, config), False
 
         # System Commands
         if tool_name == "run_command":

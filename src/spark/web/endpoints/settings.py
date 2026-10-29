@@ -17,6 +17,39 @@ router = APIRouter(prefix="/settings")
 _LOCK_SECRET_KEY = "settings_lock_password"
 
 
+def _offers_local_tools() -> bool:
+    """Whether this mode offers the local-only tools (personal mode does, a server does not)."""
+    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+
+    return all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+
+
+def _local_tool_refusal() -> JSONResponse | None:
+    """Refuse a local-only tool setting or helper when the server does not offer those tools."""
+    if _offers_local_tools():
+        return None
+    return JSONResponse(
+        {"detail": "System command, filesystem and email tools are not available in server mode."},
+        status_code=403,
+    )
+
+
+def _touches_unavailable_tools(dotted_key: str) -> bool:
+    """Whether saving ``dotted_key`` would write settings for an unavailable tool category."""
+    from spark.tools.registry import is_category_available
+
+    parts = dotted_key.split(".")
+    if parts[0] != "embedded_tools":
+        return False
+    if len(parts) > 1 and parts[1] == "tool_results":
+        # Result actions are an administrator's policy on a server.
+        return not _offers_local_tools()
+    if len(parts) == 1:
+        # The whole embedded tools tree: it may carry any category.
+        return not _offers_local_tools()
+    return not is_category_available(parts[1])
+
+
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -229,6 +262,9 @@ async def reveal_secret(request: Request) -> JSONResponse:
 @router.post("/api/test-email")
 async def test_email(request: Request) -> JSONResponse:
     """Test the SMTP email connection and optionally send a test email."""
+    if refused := _local_tool_refusal():
+        return refused
+
     import smtplib
     import ssl as _ssl
     from email.mime.text import MIMEText
@@ -359,6 +395,9 @@ async def browse_directory(request: Request) -> JSONResponse:
 
     Restricted to the user's home directory tree to prevent path traversal.
     """
+    if refused := _local_tool_refusal():
+        return refused
+
     from pathlib import Path
 
     home = Path.home().resolve()
@@ -396,6 +435,13 @@ async def browse_directory(request: Request) -> JSONResponse:
 async def save_settings(request: Request) -> JSONResponse:
     """Persist settings changes to config.yaml."""
     data = await request.json()
+
+    # Settings for tools this mode does not offer are refused as a whole,
+    # before anything is written.
+    if any(_touches_unavailable_tools(str(k)) for k in data):
+        return _local_tool_refusal() or JSONResponse(
+            {"detail": "These tools are not available."}, status_code=403
+        )
 
     from spark.core.application import _get_config_path
 
@@ -492,7 +538,7 @@ def _resolve_embedded_secrets(embedded: dict, ctx: object) -> None:
 
 def _build_sections(settings: object) -> list[dict]:
     """Build settings sections for the template."""
-    return [
+    sections = [
         {
             "id": "providers",
             "title": "LLM Providers",
@@ -965,6 +1011,39 @@ def _build_sections(settings: object) -> list[dict]:
             ],
         },
     ]
+    # Personal mode sets the action for flagged tool results here; a server
+    # reads them from its settings keys (administrators edit them centrally).
+    if _offers_local_tools():
+        for section in sections:
+            if section["id"] == "security":
+                section["groups"].append(_tool_result_group(settings))
+    return sections
+
+
+_RESULT_SOURCES = (
+    ("web", "Web search and fetch"),
+    ("mcp", "MCP tools"),
+    ("documents", "Documents and archives"),
+    ("agents", "Sub-agents"),
+)
+
+
+def _tool_result_group(settings: object) -> dict:
+    """Per-source action for tool results that match prompt injection patterns."""
+    return {
+        "id": "tool_results",
+        "title": "Tool Result Inspection",
+        "fields": [
+            _select(
+                f"embedded_tools.tool_results.{source}",
+                label,
+                settings,
+                ["mark", "warn", "withhold"],
+                "warn",
+            )
+            for source, label in _RESULT_SOURCES
+        ],
+    }
 
 
 # -- Field helpers --
@@ -1043,9 +1122,11 @@ def _select(key: str, label: str, settings: object, options: list[str], default:
 
 def _build_tool_categories(settings: object) -> list[dict]:
     """Build embedded tool category data for the tools management panel."""
+    from spark.tools.registry import is_category_available
+
     get = settings.get  # type: ignore[union-attr]
 
-    return [
+    categories = [
         {
             "id": "filesystem",
             "title": "Filesystem",
@@ -1313,3 +1394,5 @@ def _build_tool_categories(settings: object) -> list[dict]:
             "tools": ["send_email", "draft_email"],
         },
     ]
+    # A category this mode does not offer has no settings section at all.
+    return [c for c in categories if is_category_available(c["id"])]
