@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Worker role** (server mode): `spark worker` runs scheduled actions away from the web processes. Several workers may run against one database; one is active, holding a PostgreSQL advisory lock, and the others stand by and take over when it stops or loses its database connection. The worker refuses to start in personal mode, on SQLite, or on a database behind the current schema (run `spark migrate` first). Later releases add background duties through a registration point for periodic jobs and long-running services
+- `spark web` starts the web interface; plain `spark` remains an alias for it
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added
