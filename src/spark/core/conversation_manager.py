@@ -13,6 +13,7 @@ from spark.core.context_compaction import ContextCompactor
 from spark.db.bridge import SyncDatabase
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
+from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -852,6 +853,8 @@ class ConversationManager:
 
     def _build_conversation_tool_context(self) -> str:
         """Build additional system prompt context for enabled tools."""
+        from spark.tools.registry import is_category_available
+
         embedded = self._embedded_tools_config.get("embedded_tools", {})
         parts: list[str] = []
 
@@ -860,7 +863,7 @@ class ConversationManager:
         allowed_paths = fs_config.get("allowed_paths", [])
         if isinstance(allowed_paths, str):
             allowed_paths = [p.strip() for p in allowed_paths.split(",") if p.strip()]
-        if fs_config.get("enabled", True) and allowed_paths:
+        if is_category_available("filesystem") and fs_config.get("enabled", True) and allowed_paths:
             path_list = ", ".join(f"`{p}`" for p in allowed_paths)
             parts.append(
                 "**Filesystem access:** You can read"
@@ -870,7 +873,7 @@ class ConversationManager:
 
         # System commands
         cmd_config = embedded.get("system_commands", {})
-        if cmd_config.get("enabled", False):
+        if is_category_available("system_commands") and cmd_config.get("enabled", False):
             import platform
             import sys
 
@@ -890,7 +893,11 @@ class ConversationManager:
 
         # Email
         email_config = embedded.get("email", {})
-        if email_config.get("enabled", False) and email_config.get("host"):
+        if (
+            is_category_available("email")
+            and email_config.get("enabled", False)
+            and email_config.get("host")
+        ):
             sender = email_config.get("sender", "")
             if sender:
                 parts.append(
@@ -1598,6 +1605,14 @@ class ConversationManager:
 
     def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
         """Execute a single tool. Returns (result_text, is_error)."""
+        from spark.tools.registry import unavailable_reason
+
+        # A tool whose category is not available is refused by name, wherever
+        # the request came from, before any built-in or MCP dispatch.
+        refusal = unavailable_reason(tool_name)
+        if refusal is not None:
+            return refusal, True
+
         # Agent tools — these need conversation context stored on the instance
         if tool_name == "spawn_agent":
             cid = self._current_conversation_id
@@ -1676,35 +1691,13 @@ class ConversationManager:
             )
 
 
+# The registry is the one source of tool categories; this view keeps the
+# list-valued shape that sibling approval and the debate setup read. The
+# knowledge graph tool was never offered by the debate setup, so it stays out.
 _TOOL_CATEGORIES: dict[str, list[str]] = {
-    "filesystem": [
-        "read_file",
-        "write_file",
-        "list_directory",
-        "search_files",
-        "get_file_info",
-        "find_in_file",
-        "get_directory_tree",
-    ],
-    "documents": [
-        "read_word",
-        "read_excel",
-        "read_pdf",
-        "read_powerpoint",
-        "create_word",
-        "create_excel",
-        "create_powerpoint",
-        "create_pdf",
-    ],
-    "archives": ["list_archive", "extract_archive"],
-    "web": ["web_search", "web_fetch"],
-    "system_commands": ["run_command"],
-    "memory": ["store_memory", "query_memory", "list_memories", "delete_memory"],
-    "email": ["send_email", "draft_email"],
-    "skills": ["use_skill", "read_skill_resource"],
-    "skill_authoring": ["create_skill", "update_skill"],
-    "core": ["get_current_datetime", "get_tool_documentation"],
-    "agents": ["spawn_agent", "list_provider_models"],
+    category: list(names)
+    for category, names in _REGISTRY_CATEGORIES.items()
+    if category != "knowledge"
 }
 
 

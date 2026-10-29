@@ -17,6 +17,31 @@ router = APIRouter(prefix="/settings")
 _LOCK_SECRET_KEY = "settings_lock_password"
 
 
+def _local_tool_refusal() -> JSONResponse | None:
+    """Refuse a local-only tool setting or helper when the server does not offer those tools."""
+    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+
+    if all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES):
+        return None
+    return JSONResponse(
+        {"detail": "System command, filesystem and email tools are not available in server mode."},
+        status_code=403,
+    )
+
+
+def _touches_unavailable_tools(dotted_key: str) -> bool:
+    """Whether saving ``dotted_key`` would write settings for an unavailable tool category."""
+    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+
+    parts = dotted_key.split(".")
+    if parts[0] != "embedded_tools":
+        return False
+    if len(parts) == 1:
+        # The whole embedded tools tree: it may carry any category.
+        return not all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+    return not is_category_available(parts[1])
+
+
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -229,6 +254,9 @@ async def reveal_secret(request: Request) -> JSONResponse:
 @router.post("/api/test-email")
 async def test_email(request: Request) -> JSONResponse:
     """Test the SMTP email connection and optionally send a test email."""
+    if refused := _local_tool_refusal():
+        return refused
+
     import smtplib
     import ssl as _ssl
     from email.mime.text import MIMEText
@@ -359,6 +387,9 @@ async def browse_directory(request: Request) -> JSONResponse:
 
     Restricted to the user's home directory tree to prevent path traversal.
     """
+    if refused := _local_tool_refusal():
+        return refused
+
     from pathlib import Path
 
     home = Path.home().resolve()
@@ -396,6 +427,13 @@ async def browse_directory(request: Request) -> JSONResponse:
 async def save_settings(request: Request) -> JSONResponse:
     """Persist settings changes to config.yaml."""
     data = await request.json()
+
+    # Settings for tools this mode does not offer are refused as a whole,
+    # before anything is written.
+    if any(_touches_unavailable_tools(str(k)) for k in data):
+        return _local_tool_refusal() or JSONResponse(
+            {"detail": "These tools are not available."}, status_code=403
+        )
 
     from spark.core.application import _get_config_path
 
@@ -1043,9 +1081,11 @@ def _select(key: str, label: str, settings: object, options: list[str], default:
 
 def _build_tool_categories(settings: object) -> list[dict]:
     """Build embedded tool category data for the tools management panel."""
+    from spark.tools.registry import is_category_available
+
     get = settings.get  # type: ignore[union-attr]
 
-    return [
+    categories = [
         {
             "id": "filesystem",
             "title": "Filesystem",
@@ -1313,3 +1353,5 @@ def _build_tool_categories(settings: object) -> list[dict]:
             "tools": ["send_email", "draft_email"],
         },
     ]
+    # A category this mode does not offer has no settings section at all.
+    return [c for c in categories if is_category_available(c["id"])]

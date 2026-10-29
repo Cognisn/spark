@@ -450,6 +450,11 @@ class AgentExecutor:
         """Execute a tool, reusing the parent's tool infrastructure."""
         if tool_name in getattr(self, "_exclude_tools", frozenset()):
             return f"Tool '{tool_name}' is not available in this context."
+        from spark.tools.registry import unavailable_reason
+
+        refusal = unavailable_reason(tool_name)
+        if refusal is not None:
+            return refusal
         try:
             from spark.tools.registry import execute_builtin_tool, get_builtin_tools
 

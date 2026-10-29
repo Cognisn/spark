@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tool availability by mode**: in server mode the system command, filesystem and email tools are not offered at all. They are refused by name wherever a request comes from (a model turn, a sub-agent, a scheduled action), their settings sections are hidden, and the settings API refuses to save their settings, test the email connection or browse the server's directories. Personal mode keeps them as before. Every built-in tool now belongs to a category (`spark.tools.<category>`), and one registry function decides whether a category is available
 - **Command blocklist across chained commands** (personal mode): the system command tool now checks every command in a command line against the blocklist, not only the first. It understands the chaining and nesting forms of each shell: `;`, `&&`, `||`, `|`, `&`, newlines, backticks, `$( )`, groups and `bash -c` on macOS and Linux; `&`, `|`, groups and `cmd /c` for cmd.exe; and `-Command` and `-EncodedCommand` payloads, `;`, script blocks and `Invoke-Expression` for PowerShell. A command line it cannot split with confidence (an unclosed quote or substitution, or a command name built from a variable or a wildcard) is refused with a message saying why
 
 ## [0.3.0a1] - 2026-10-29

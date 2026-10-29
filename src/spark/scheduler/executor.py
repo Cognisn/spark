@@ -595,6 +595,11 @@ class ActionExecutor:
 
     def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool and return the result text."""
+        from spark.tools.registry import unavailable_reason
+
+        refusal = unavailable_reason(tool_name)
+        if refusal is not None:
+            return refusal
         try:
             from spark.tools.registry import execute_builtin_tool
 
