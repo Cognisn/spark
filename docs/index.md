@@ -13,6 +13,7 @@ Spark is a secure personal AI research kit -- a multi-provider LLM web interface
 - [Getting Started](getting-started.md) -- Installation, first run, initial configuration
 - [Configuration](configuration.md) -- Complete config.yaml reference, environment variables, secrets
 - [Providers](providers.md) -- Setting up each LLM provider (Anthropic, AWS Bedrock, Ollama, Google Gemini, X.AI)
+- [Containers](container.md) -- The container image, the web and worker roles, Compose and upgrades
 
 ### Features
 
