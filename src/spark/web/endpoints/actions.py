@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +52,8 @@ async def list_actions(request: Request) -> JSONResponse:
         return JSONResponse([])
     from spark.database import autonomous_actions
 
-    actions = autonomous_actions.get_enabled_actions(db.connection, _user(request))
-    # Also get disabled ones
-    all_actions = _get_all_actions(db.connection)
+    # Enabled and disabled ones
+    all_actions = await autonomous_actions.get_all_actions(db)
     return JSONResponse(all_actions)
 
 
@@ -67,8 +69,8 @@ async def create_action(request: Request) -> JSONResponse:
     from spark.database import autonomous_actions
 
     try:
-        aid = autonomous_actions.create_action(
-            db.connection,
+        aid = await autonomous_actions.create_action(
+            db,
             name=data["name"],
             action_prompt=data["prompt"],
             model_id=data["model_id"],
@@ -111,7 +113,7 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     updates = {k: v for k, v in data.items() if k in allowed}
 
     try:
-        autonomous_actions.update_action(db.connection, action_id, _user(request), **updates)
+        await autonomous_actions.update_action(db, action_id, _user(request), **updates)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -127,7 +129,7 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    autonomous_actions.delete_action(db.connection, action_id, _user(request))
+    await autonomous_actions.delete_action(db, action_id, _user(request))
     return JSONResponse({"status": "ok"})
 
 
@@ -142,8 +144,8 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     data = await request.json()
     from spark.database import autonomous_actions
 
-    autonomous_actions.update_action(
-        db.connection, action_id, _user(request), is_enabled=int(bool(data.get("enabled", True)))
+    await autonomous_actions.update_action(
+        db, action_id, _user(request), is_enabled=int(bool(data.get("enabled", True)))
     )
     return JSONResponse({"status": "ok"})
 
@@ -178,11 +180,7 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
             )
 
     # Get action's tool permissions
-    cursor = db.connection.execute(
-        f"SELECT tool_name, permission_state FROM action_tool_permissions WHERE action_id = {db.connection.placeholder}",
-        (action_id,),
-    )
-    permissions = {row[0]: row[1] for row in cursor.fetchall()}
+    permissions = await autonomous_actions.get_tool_permissions(db, action_id)
 
     tools = []
     for t in all_tools:
@@ -215,14 +213,11 @@ async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
     enabled = data.get("enabled", True)
     permission_state = "allowed" if enabled else "denied"
 
-    ph = db.connection.placeholder
-    upsert = db.connection.backend.upsert_sql(
-        "action_tool_permissions",
-        ["action_id", "tool_name", "permission_state", "user_guid"],
-        ["action_id", "tool_name"],
+    from spark.database import autonomous_actions
+
+    await autonomous_actions.set_tool_permission(
+        db, action_id, tool_name, permission_state, _user(request)
     )
-    db.connection.execute(upsert, (action_id, tool_name, permission_state, _user(request)))
-    db.connection.commit()
 
     return JSONResponse({"status": "ok"})
 
@@ -237,7 +232,7 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    runs = autonomous_actions.get_action_runs(db.connection, action_id, limit=20)
+    runs = await autonomous_actions.get_action_runs(db, action_id, limit=20)
     return JSONResponse(runs)
 
 
@@ -257,16 +252,18 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    action = autonomous_actions.get_action(db.connection, action_id, _user(request))
+    action = await autonomous_actions.get_action(db, action_id, _user(request))
     if not action:
         return JSONResponse({"error": "Action not found"}, status_code=404)
 
     import threading
 
+    sync_db = sync_database(request)
+
     def _run() -> None:
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(ctx, "web-run-now")
+        executor = ActionExecutor(ctx, "web-run-now", sync_db)
         executor.execute(action_id)
 
     thread = threading.Thread(target=_run, daemon=True)
@@ -323,7 +320,7 @@ async def ai_create_message(request: Request) -> JSONResponse:
     # Inject conversation context if creating from a conversation
     if conversation_id and conv_mgr and not history:
         try:
-            conv_messages = conv_mgr.get_messages(int(conversation_id))
+            conv_messages = await asyncio.to_thread(conv_mgr.get_messages, int(conversation_id))
             if conv_messages:
                 # Build a summary of the conversation for the AI to analyse
                 conv_lines = []
@@ -370,11 +367,12 @@ async def ai_create_message(request: Request) -> JSONResponse:
         if stop_reason == "tool_use" and response.get("tool_use"):
             tool_results = []
             for tc in response["tool_use"]:
-                result_text = execute_creation_tool(
+                result_text = await asyncio.to_thread(
+                    execute_creation_tool,
                     tc["name"],
                     tc.get("input", {}),
                     config,
-                    db.connection,
+                    sync_database(request),
                 )
                 all_tool_calls.append(
                     {
@@ -410,9 +408,3 @@ async def ai_create_message(request: Request) -> JSONResponse:
             "history": messages,
         }
     )
-
-
-def _get_all_actions(db_conn: Any) -> list[dict]:
-    """Get all actions (enabled and disabled)."""
-    cursor = db_conn.execute("SELECT * FROM autonomous_actions ORDER BY name")
-    return [dict(row) for row in cursor.fetchall()]

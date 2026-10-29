@@ -100,14 +100,13 @@ On a headless server, disable the browser auto-open and pin a port:
 SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
 ```
 
-#### Optional database drivers
+#### Databases
 
-```bash
-pip install cognisn-spark[postgresql]   # PostgreSQL
-pip install cognisn-spark[mysql]        # MySQL
-pip install cognisn-spark[mssql]        # SQL Server
-pip install cognisn-spark[all-databases] # All drivers
-```
+Personal mode (the default) keeps everything in a local SQLite database and needs
+nothing extra. Server mode uses PostgreSQL through psycopg 3, which is included:
+set `mode: server` and `database.url` (or `SPARK__MODE=server` and
+`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. MySQL and SQL Server
+are no longer supported.
 
 ## Quick Start
 

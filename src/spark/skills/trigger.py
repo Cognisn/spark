@@ -20,7 +20,7 @@ def apply_skill_trigger(message: str, enabled_names: Set[str]) -> str:
     )
 
 
-def resolve_trigger_for_conversation(
+async def resolve_trigger_for_conversation(
     db: Any, user_guid: str, conversation_id: int | None, message: str
 ) -> str:
     """Failure-safe wrapper used by the streaming endpoints."""
@@ -28,7 +28,9 @@ def resolve_trigger_for_conversation(
         from spark.database import skills as skills_db
         from spark.skills.manager import get_skills_manager
 
-        enabled = skills_db.resolve_enabled(db, get_skills_manager(), user_guid, conversation_id)
+        enabled = await skills_db.resolve_enabled(
+            db, get_skills_manager(), user_guid, conversation_id
+        )
         return apply_skill_trigger(message, {s["name"] for s in enabled})
     except Exception:  # noqa: BLE001 - the trigger must never break a message
         return message

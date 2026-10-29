@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from spark.database import conversations
+from spark.web.db import database
 
 router = APIRouter(prefix="/conversations")
 
@@ -24,7 +29,7 @@ async def list_conversations(request: Request) -> JSONResponse:
         return JSONResponse([])
 
     user_guid = _get_user_guid(request)
-    convs = conv_mgr.get_conversations(user_guid)
+    convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
     return JSONResponse(convs)
 
 
@@ -138,7 +143,8 @@ async def create_conversation(request: Request) -> JSONResponse:
             }
 
     try:
-        cid = conv_mgr.create_conversation(
+        cid = await asyncio.to_thread(
+            conv_mgr.create_conversation,
             name,
             model_id,
             user_guid,
@@ -148,14 +154,9 @@ async def create_conversation(request: Request) -> JSONResponse:
         if conversation_type == "debate" and debate is not None:
             from spark.database import debates
 
-            db = conv_mgr._db
-            ph = db.placeholder
-            db.execute(
-                f"UPDATE conversations SET conversation_type = 'debate' WHERE id = {ph}",
-                (cid,),
-            )
-            db.commit()
-            debates.create_debate(
+            db = database(request)
+            await conversations.update_conversation(db, cid, user_guid, conversation_type="debate")
+            await debates.create_debate(
                 db,
                 cid,
                 debate["topic"].strip(),
@@ -167,14 +168,9 @@ async def create_conversation(request: Request) -> JSONResponse:
         if conversation_type == "panel" and panel_agents is not None:
             from spark.database import debates
 
-            db = conv_mgr._db
-            ph = db.placeholder
-            db.execute(
-                f"UPDATE conversations SET conversation_type = 'panel' WHERE id = {ph}",
-                (cid,),
-            )
-            db.commit()
-            debates.create_debate(
+            db = database(request)
+            await conversations.update_conversation(db, cid, user_guid, conversation_type="panel")
+            await debates.create_debate(
                 db,
                 cid,
                 panel["topic"].strip(),
@@ -184,10 +180,9 @@ async def create_conversation(request: Request) -> JSONResponse:
                 panel_agents,
             )
         if data.get("kg_local_enabled"):
-            db = conv_mgr._db
-            ph = db.placeholder
-            db.execute(f"UPDATE conversations SET kg_local_enabled = 1 WHERE id = {ph}", (cid,))
-            db.commit()
+            await conversations.update_conversation(
+                database(request), cid, user_guid, kg_local_enabled=1
+            )
         return JSONResponse({"id": cid, "name": name, "conversation_type": conversation_type})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -201,7 +196,7 @@ async def delete_conversation(request: Request, conversation_id: int) -> JSONRes
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = _get_user_guid(request)
-    conv_mgr.delete_conversation(conversation_id, user_guid)
+    await asyncio.to_thread(conv_mgr.delete_conversation, conversation_id, user_guid)
     return JSONResponse({"status": "ok"})
 
 
@@ -219,7 +214,7 @@ async def search_conversations(request: Request) -> JSONResponse:
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    results = conversations.search_conversations(conv_mgr._db, query, user_guid)
+    results = await conversations.search_conversations(database(request), query, user_guid)
     return JSONResponse(results)
 
 
@@ -238,7 +233,9 @@ async def rename_conversation(request: Request, conversation_id: int) -> JSONRes
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, name=name)
+    await conversations.update_conversation(
+        database(request), conversation_id, user_guid, name=name
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -257,7 +254,9 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     user_guid = _get_user_guid(request)
     from spark.database import conversations
 
-    conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, model_id=model_id)
+    await conversations.update_conversation(
+        database(request), conversation_id, user_guid, model_id=model_id
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -274,8 +273,8 @@ async def toggle_favourite(request: Request, conversation_id: int) -> JSONRespon
 
     from spark.database import conversations
 
-    conversations.update_conversation(
-        conv_mgr._db, conversation_id, user_guid, is_favourite=is_favourite
+    await conversations.update_conversation(
+        database(request), conversation_id, user_guid, is_favourite=is_favourite
     )
     return JSONResponse({"status": "ok"})
 

@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.knowledge import store
 from spark.knowledge.tools import execute, get_tools
 from tests.test_kg_query import DirectionalEmbedder
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(sync_db):
+    """The bridge (SyncDatabase) to a fresh migrated SQLite database."""
+    return sync_db
 
 
 @pytest.fixture(autouse=True)
@@ -44,13 +39,25 @@ class TestExecute:
 
     def test_query_global(self, db) -> None:
         emb = DirectionalEmbedder()
-        a = store.upsert_node(
-            db, "global", "Spark", "project", "AI kit", emb.encode("spark").tobytes(), "u1"
+        a = db.call(
+            store.upsert_node,
+            "global",
+            "Spark",
+            "project",
+            "AI kit",
+            emb.encode("spark").tobytes(),
+            "u1",
         )
-        b = store.upsert_node(
-            db, "global", "Cognisn", "organisation", "", emb.encode("org").tobytes(), "u1"
+        b = db.call(
+            store.upsert_node,
+            "global",
+            "Cognisn",
+            "organisation",
+            "",
+            emb.encode("org").tobytes(),
+            "u1",
         )
-        store.upsert_edge(db, "global", a, b, "belongs_to", "", "u1")
+        db.call(store.upsert_edge, "global", a, b, "belongs_to", "", "u1")
         text, is_error = execute(
             "query_knowledge_graph",
             {"query": "spark"},
@@ -60,8 +67,14 @@ class TestExecute:
 
     def test_no_match_is_helpful(self, db) -> None:
         emb = DirectionalEmbedder()
-        store.upsert_node(
-            db, "global", "Spark", "project", "AI kit", emb.encode("spark").tobytes(), "u1"
+        db.call(
+            store.upsert_node,
+            "global",
+            "Spark",
+            "project",
+            "AI kit",
+            emb.encode("spark").tobytes(),
+            "u1",
         )
         text, is_error = execute(
             "query_knowledge_graph",

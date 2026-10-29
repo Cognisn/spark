@@ -9,15 +9,18 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     pass
 
+from spark.db.bridge import SyncDatabase
+
 logger = logging.getLogger(__name__)
 
 
 class ActionExecutor:
     """Executes a single autonomous action."""
 
-    def __init__(self, ctx: Any, daemon_id: str) -> None:
+    def __init__(self, ctx: Any, daemon_id: str, db: SyncDatabase) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        self._db = db
         self._mcp_manager: Any | None = None
         self._mcp_loop: Any | None = None
         self._mcp_thread: Any | None = None
@@ -135,13 +138,8 @@ class ActionExecutor:
     def execute(self, action_id: int) -> None:
         """Execute an action by ID."""
         from spark.database import autonomous_actions
-        from spark.database.backends import create_backend
-        from spark.database.connection import DatabaseConnection
-        from spark.database.schema import initialise_schema
 
-        backend = create_backend(self._ctx.settings)
-        db = DatabaseConnection(backend)
-        initialise_schema(db)
+        db = self._db
 
         # Initialise MCP connections for this execution
         logger.info("Executor: initialising MCP connections for action %d", action_id)
@@ -153,7 +151,7 @@ class ActionExecutor:
         )
 
         try:
-            action = autonomous_actions.get_action(db, action_id, self._user_guid)
+            action = db.call(autonomous_actions.get_action, action_id, self._user_guid)
             if not action:
                 logger.error("Action %d not found", action_id)
                 return
@@ -163,7 +161,7 @@ class ActionExecutor:
                 return
 
             # Try to acquire lock
-            if not autonomous_actions.try_lock_action(db, action_id, self._daemon_id):
+            if not db.call(autonomous_actions.try_lock_action, action_id, self._daemon_id):
                 logger.info("Action '%s' is locked by another process", action["name"])
                 return
 
@@ -172,13 +170,13 @@ class ActionExecutor:
                 action["name"],
                 action.get("model_id"),
             )
-            run_id = autonomous_actions.start_run(db, action_id, self._user_guid)
+            run_id = db.call(autonomous_actions.start_run, action_id, self._user_guid)
 
             try:
                 result = self._run_action(db, action)
 
-                autonomous_actions.complete_run(
-                    db,
+                db.call(
+                    autonomous_actions.complete_run,
                     run_id,
                     status="completed",
                     result_text=result.get("content", ""),
@@ -193,12 +191,14 @@ class ActionExecutor:
                 )
 
                 # Reset failure count on success
-                autonomous_actions.update_action(db, action_id, self._user_guid, failure_count=0)
+                db.call(
+                    autonomous_actions.update_action, action_id, self._user_guid, failure_count=0
+                )
 
             except Exception as e:
                 logger.error("Action '%s' failed: %s", action["name"], e, exc_info=True)
-                autonomous_actions.complete_run(
-                    db,
+                db.call(
+                    autonomous_actions.complete_run,
                     run_id,
                     status="failed",
                     error_message=str(e),
@@ -215,14 +215,13 @@ class ActionExecutor:
                         action["name"],
                         new_count,
                     )
-                autonomous_actions.update_action(db, action_id, self._user_guid, **updates)
+                db.call(autonomous_actions.update_action, action_id, self._user_guid, **updates)
 
             finally:
-                autonomous_actions.unlock_action(db, action_id)
+                db.call(autonomous_actions.unlock_action, action_id)
 
         finally:
             self._cleanup_mcp()
-            db.close()
 
     def _build_action_system(
         self, db: Any, action: dict, tools: list[dict], max_tokens: int, context_mode: str
@@ -266,7 +265,7 @@ class ActionExecutor:
             from spark.skills.prompt import build_skills_block
 
             block = build_skills_block(
-                skills_db.resolve_enabled(db, get_skills_manager(), self._user_guid)
+                db.call(skills_db.resolve_enabled, get_skills_manager(), self._user_guid)
             )
             if block:
                 system += "\n\n" + block
@@ -435,7 +434,7 @@ class ActionExecutor:
         try:
             from spark.database import autonomous_actions
 
-            runs = autonomous_actions.get_action_runs(db, action["id"], limit=5)
+            runs = db.call(autonomous_actions.get_action_runs, action["id"], limit=5)
             completed = [r for r in runs if r.get("status") == "completed" and r.get("result_text")]
 
             if not completed:
@@ -605,15 +604,9 @@ class ActionExecutor:
 
             # Inject memory index for memory tools
             try:
-                from spark.database.backends import create_backend
-                from spark.database.connection import DatabaseConnection
-                from spark.database.schema import initialise_schema
                 from spark.index.memory_index import MemoryIndex
 
-                backend = create_backend(self._ctx.settings)
-                db = DatabaseConnection(backend)
-                initialise_schema(db)
-                config["_memory_index"] = MemoryIndex(db, self._user_guid)
+                config["_memory_index"] = MemoryIndex(self._db, self._user_guid)
             except Exception:
                 pass
 

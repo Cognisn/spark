@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+from spark.db.engine import Executor, Row
+
+__all__ = ["cleanup_old_usage", "get_token_usage_in_window", "get_usage_summary", "record_usage"]
 
 
-def record_usage(
-    db: DatabaseConnection,
+async def record_usage(
+    db: Executor,
     conversation_id: int,
     model_id: str,
     input_tokens: int,
@@ -21,54 +22,55 @@ def record_usage(
     cost: float = 0.0,
 ) -> None:
     """Record a token usage event."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        f"""INSERT INTO usage_tracking
-            (conversation_id, model_id, region, input_tokens, output_tokens, cost, timestamp, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+    await db.execute(
+        """INSERT INTO usage_tracking
+            (conversation_id, model_id, region, input_tokens, output_tokens, cost,
+             timestamp, user_guid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (conversation_id, model_id, region, input_tokens, output_tokens, cost, now, user_guid),
     )
-    db.commit()
 
 
-def get_token_usage_in_window(db: DatabaseConnection, user_guid: str, since: str) -> dict:
+async def get_token_usage_in_window(db: Executor, user_guid: str, since: str) -> dict[str, Any]:
     """Get total input/output tokens since a timestamp."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
-                   COALESCE(SUM(output_tokens), 0) as output_tokens,
-                   COALESCE(SUM(cost), 0.0) as total_cost
-            FROM usage_tracking WHERE user_guid = {ph} AND timestamp >= {ph}""",
+    row = await db.fetch_one(
+        """SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
+                  COALESCE(SUM(output_tokens), 0) as output_tokens,
+                  COALESCE(SUM(cost), 0.0) as total_cost
+           FROM usage_tracking WHERE user_guid = ? AND timestamp >= ?""",
         (user_guid, since),
     )
-    row = cursor.fetchone()
-    return dict(row) if row else {"input_tokens": 0, "output_tokens": 0, "total_cost": 0.0}
+    if row is None:
+        return {"input_tokens": 0, "output_tokens": 0, "total_cost": 0.0}
+    return {
+        "input_tokens": int(row["input_tokens"]),
+        "output_tokens": int(row["output_tokens"]),
+        "total_cost": float(row["total_cost"]),
+    }
 
 
-def get_usage_summary(db: DatabaseConnection, user_guid: str, since: str) -> list[dict]:
+async def get_usage_summary(db: Executor, user_guid: str, since: str) -> list[Row]:
     """Get usage breakdown by model and region."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT model_id, region,
-                   SUM(input_tokens) as input_tokens,
-                   SUM(output_tokens) as output_tokens,
-                   SUM(cost) as total_cost,
-                   COUNT(*) as request_count
-            FROM usage_tracking WHERE user_guid = {ph} AND timestamp >= {ph}
-            GROUP BY model_id, region
-            ORDER BY total_cost DESC""",
+    rows = await db.fetch_all(
+        """SELECT model_id, region,
+                  SUM(input_tokens) as input_tokens,
+                  SUM(output_tokens) as output_tokens,
+                  SUM(cost) as total_cost,
+                  COUNT(*) as request_count
+           FROM usage_tracking WHERE user_guid = ? AND timestamp >= ?
+           GROUP BY model_id, region
+           ORDER BY total_cost DESC""",
         (user_guid, since),
     )
-    return [dict(row) for row in cursor.fetchall()]
+    for row in rows:
+        row["input_tokens"] = int(row["input_tokens"])
+        row["output_tokens"] = int(row["output_tokens"])
+        row["total_cost"] = float(row["total_cost"])
+        row["request_count"] = int(row["request_count"])
+    return rows
 
 
-def cleanup_old_usage(db: DatabaseConnection, before: str) -> int:
+async def cleanup_old_usage(db: Executor, before: str) -> int:
     """Delete usage records before a cutoff timestamp. Returns count deleted."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"DELETE FROM usage_tracking WHERE timestamp < {ph}",
-        (before,),
-    )
-    db.commit()
-    return cursor.rowcount
+    return await db.execute("DELETE FROM usage_tracking WHERE timestamp < ?", (before,))

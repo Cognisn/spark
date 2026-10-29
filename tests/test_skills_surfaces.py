@@ -4,19 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.skills.manager import SkillsManager, set_skills_manager
 from tests.test_skills_manager import make_skill
-
-
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
 
 
 @pytest.fixture()
@@ -29,7 +18,7 @@ def skills_env(tmp_path):
 
 
 class TestChatSurface:
-    def test_system_instructions_contain_block(self, skills_env, db) -> None:
+    def test_system_instructions_contain_block(self, skills_env, sync_db) -> None:
         from spark.core.conversation_manager import ConversationManager
         from spark.llm.context_limits import ContextLimitResolver
         from spark.llm.manager import LLMManager
@@ -38,7 +27,7 @@ class TestChatSurface:
         stub = StubLLMService()
         llm = LLMManager()
         llm.register_provider(stub)  # type: ignore[arg-type]
-        mgr = ConversationManager(db, llm, ContextLimitResolver(), max_tool_iterations=5)
+        mgr = ConversationManager(sync_db, llm, ContextLimitResolver(), max_tool_iterations=5)
         cid = mgr.create_conversation("t", "stub-model", "u1")
         mgr.send_message(cid, "hello", "u1")
         assert "## Available Skills" in stub.last_system
@@ -46,16 +35,16 @@ class TestChatSurface:
 
 
 class TestAgentSurface:
-    def test_agent_system_contains_block(self, skills_env, db) -> None:
+    def test_agent_system_contains_block(self, skills_env, sync_db) -> None:
         from unittest.mock import MagicMock
 
         from spark.core.agent_executor import AgentExecutor
 
-        ex = AgentExecutor(MagicMock(), db, {"embedded_tools": {}}, user_guid="u1")
+        ex = AgentExecutor(MagicMock(), sync_db, {"embedded_tools": {}}, user_guid="u1")
         system = ex._build_system("worker", "do a task", "orchestrator")
         assert "## Available Skills" in system
 
-    def test_agent_block_absent_without_skills(self, db, tmp_path) -> None:
+    def test_agent_block_absent_without_skills(self, sync_db, tmp_path) -> None:
         from unittest.mock import MagicMock
 
         from spark.core.agent_executor import AgentExecutor
@@ -63,21 +52,21 @@ class TestAgentSurface:
 
         set_skills_manager(SkillsManager(tmp_path / "empty-skills"))
         try:
-            ex = AgentExecutor(MagicMock(), db, {"embedded_tools": {}}, user_guid="u1")
+            ex = AgentExecutor(MagicMock(), sync_db, {"embedded_tools": {}}, user_guid="u1")
             assert "## Available Skills" not in ex._build_system("w", "t", "orchestrator")
         finally:
             set_skills_manager(None)
 
 
 class TestActionSurface:
-    def test_action_system_contains_block(self, skills_env, db) -> None:
+    def test_action_system_contains_block(self, skills_env, sync_db) -> None:
         from unittest.mock import MagicMock
 
         from spark.scheduler.executor import ActionExecutor
 
         ctx = MagicMock()
         ctx.settings.get.side_effect = lambda key, default=None, **kw: default
-        ex = ActionExecutor(ctx, "daemon-1")
+        ex = ActionExecutor(ctx, "daemon-1", sync_db)
         ex._user_guid = "u1"
         action = {
             "name": "A",
@@ -86,7 +75,7 @@ class TestActionSurface:
             "model_id": "m",
             "max_tokens": 4096,
         }
-        system = ex._build_action_system(db, action, [], 4096, "fresh")
+        system = ex._build_action_system(sync_db, action, [], 4096, "fresh")
         assert "## Available Skills" in system
         assert "You are Spark executing an autonomous action." in system
 
@@ -105,7 +94,7 @@ class TestDebateSurface:
         )
         assert "## Available Skills" in d and "## Available Skills" in j
 
-    def test_judge_gets_read_tools_never_run_command(self, skills_env, db) -> None:
+    def test_judge_gets_read_tools_never_run_command(self, skills_env, sync_db) -> None:
         from spark.core.debate.orchestrator import DebateOrchestrator
         from spark.database import debates
         from tests.test_debate_orchestrator import (
@@ -122,15 +111,12 @@ class TestDebateSurface:
                 captured.append(kwargs)
                 return super().invoke_model(messages, **kwargs)
 
-        ph = db.placeholder
-        cur = db.execute(
-            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
-            f"VALUES ({ph}, {ph}, {ph}, 'debate')",
+        cid = sync_db.fetch_value(
+            "INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            "VALUES (?, ?, ?, 'debate') RETURNING id",
             ("D", "model-judge", "u1"),
         )
-        db.commit()
-        cid = cur.lastrowid
-        debates.create_debate(db, cid, "Topic T", "fixed", 1, "u1", AGENTS)
+        sync_db.call(debates.create_debate, cid, "Topic T", "fixed", 1, "u1", AGENTS)
 
         services = {
             "model-judge": RecordingService(
@@ -146,7 +132,9 @@ class TestDebateSurface:
                 [tool_response("submit_argument", {"argument_markdown": "C."})]
             ),
         }
-        orch = DebateOrchestrator(db, lambda m: services[m], {}, status_callback=lambda t, d: None)
+        orch = DebateOrchestrator(
+            sync_db, lambda m: services[m], {}, status_callback=lambda t, d: None
+        )
         orch.run(cid, "u1")
 
         judge_tool_names = {

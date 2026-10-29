@@ -607,33 +607,17 @@ def _build_sections(settings: object) -> list[dict]:
             "id": "database",
             "title": "Database",
             "icon": "bi-database",
-            "description": "Configure the database for conversations and memory.",
+            "description": (
+                "Personal mode keeps conversations and memory in a local SQLite database. "
+                "Server mode needs a PostgreSQL URL. A change of mode applies on restart."
+            ),
             "groups": [
                 {
                     "id": "database",
-                    "title": "Connection",
+                    "title": "Mode",
                     "fields": [
-                        _select(
-                            "database.type",
-                            "Type",
-                            settings,
-                            ["sqlite", "mysql", "postgresql", "mssql"],
-                            "sqlite",
-                        ),
-                        {**_text("database.host", "Host", settings, ""), "db_requires": "remote"},
-                        {**_number("database.port", "Port", settings, ""), "db_requires": "remote"},
-                        {
-                            **_text("database.name", "Database Name", settings, ""),
-                            "db_requires": "remote",
-                        },
-                        {
-                            **_text("database.user", "Username", settings, ""),
-                            "db_requires": "remote",
-                        },
-                        {
-                            **_secret("database.password", "Password", settings),
-                            "db_requires": "remote",
-                        },
+                        _select("mode", "Mode", settings, ["personal", "server"], "personal"),
+                        _secret("database.url", "PostgreSQL URL (server mode)", settings),
                     ],
                 },
             ],

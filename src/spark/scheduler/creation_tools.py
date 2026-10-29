@@ -104,7 +104,7 @@ def execute_creation_tool(
     config: dict[str, Any],
     db_connection: Any,
 ) -> str:
-    """Execute one of the creation tools. Returns result text."""
+    """Execute one of the creation tools (on a worker thread; ``db_connection`` is the bridge)."""
     if tool_name == "list_available_tools":
         return _list_available_tools(config)
     elif tool_name == "validate_schedule":
@@ -260,8 +260,8 @@ def _create_action(
         schedule_config = json.dumps({"cron": schedule_value})
 
     try:
-        aid = autonomous_actions.create_action(
-            db_connection,
+        aid = db_connection.call(
+            autonomous_actions.create_action,
             name=name,
             action_prompt=prompt,
             model_id=model_id,

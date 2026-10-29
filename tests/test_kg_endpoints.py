@@ -3,26 +3,18 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import Database, conversations
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import conversations
 from spark.knowledge import store
 from spark.web.server import create_app
+from tests.db_helpers import app_client
 from tests.test_kg_extractor import ScriptedService, tool_response
 from tests.test_kg_query import DirectionalEmbedder
-
-
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +29,7 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 
 @pytest.fixture()
-def client(db) -> TestClient:
+def client(sqlite_settings) -> Iterator[TestClient]:
     ctx = MagicMock()
     ctx.settings.get = _mock_settings_get
     app = create_app(ctx, first_run=False)
@@ -61,12 +53,19 @@ def client(db) -> TestClient:
             for _ in range(10)
         ]
     )
-    mgr = MagicMock()
-    mgr._db = db
-    mgr._get_llm_service_for_model.side_effect = lambda m: svc
-    app.state.conversation_manager = mgr
-    app.state.user_guid = "test-user"
-    return TestClient(app)
+    with app_client(app, sqlite_settings) as test_client:
+        mgr = MagicMock()
+        mgr._db = app.state.sync_db
+        mgr._get_llm_service_for_model.side_effect = lambda m: svc
+        app.state.conversation_manager = mgr
+        app.state.user_guid = "test-user"
+        yield test_client
+
+
+@pytest.fixture()
+def db(client):
+    """The app's bridge (SyncDatabase), for seeding and inspecting from the test thread."""
+    return client.app.state.sync_db
 
 
 def _auth(client: TestClient) -> None:
@@ -78,8 +77,8 @@ def _auth(client: TestClient) -> None:
 def _seed_conversation(db) -> int:
     from spark.database import messages as msg_db
 
-    cid = conversations.create_conversation(db, "c", "m", "test-user")
-    msg_db.add_message(db, cid, "user", "Matthew works on Spark", 10, "test-user")
+    cid = db.call(conversations.create_conversation, "c", "m", "test-user")
+    db.call(msg_db.add_message, cid, "user", "Matthew works on Spark", 10, "test-user")
     return cid
 
 
@@ -122,8 +121,8 @@ class TestSearchAndClear:
     def test_search(self, client, db) -> None:
         _auth(client)
         emb = DirectionalEmbedder()
-        store.upsert_node(
-            db,
+        db.call(
+            store.upsert_node,
             "global",
             "Spark",
             "project",
@@ -136,7 +135,7 @@ class TestSearchAndClear:
 
     def test_clear_and_page(self, client, db) -> None:
         _auth(client)
-        store.upsert_node(db, "global", "X", "concept", "", None, "test-user")
+        db.call(store.upsert_node, "global", "X", "concept", "", None, "test-user")
         assert client.post("/knowledge/api/clear", json={"scope": "global"}).status_code == 200
-        assert store.count_nodes(db, "global", "test-user") == 0
+        assert db.call(store.count_nodes, "global", "test-user") == 0
         assert "knowledge" in client.get("/knowledge").text.lower()

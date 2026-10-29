@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from spark.database import Database, voice_usage
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import voice_usage
 from spark.voice.engine import VoiceConfig, VoiceEngine
 from spark.voice.errors import VoiceUnavailable
 
 
 @pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)
-    return conn
+def db(spark_db: Any) -> Any:
+    """The async SPARK database the engine bills against (SQLite and PostgreSQL)."""
+    return spark_db
 
 
 class FakeClient:
@@ -51,80 +49,80 @@ def _config(**over) -> VoiceConfig:
 
 
 class TestAvailability:
-    def test_unavailable_when_disabled(self, db, tmp_path) -> None:
+    async def test_unavailable_when_disabled(self, db, tmp_path) -> None:
         e = VoiceEngine(_config(enabled=False), db, tmp_path, client=FakeClient())
         assert e.available() is False
 
-    def test_unavailable_without_key(self, db, tmp_path) -> None:
+    async def test_unavailable_without_key(self, db, tmp_path) -> None:
         e = VoiceEngine(_config(api_key=""), db, tmp_path, client=FakeClient())
         assert e.available() is False
 
-    def test_available_when_enabled_with_key(self, db, tmp_path) -> None:
+    async def test_available_when_enabled_with_key(self, db, tmp_path) -> None:
         e = VoiceEngine(_config(), db, tmp_path, client=FakeClient())
         assert e.available() is True
 
-    def test_synthesise_when_disabled_raises_disabled(self, db, tmp_path) -> None:
+    async def test_synthesise_when_disabled_raises_disabled(self, db, tmp_path) -> None:
         e = VoiceEngine(_config(enabled=False), db, tmp_path, client=FakeClient())
         with pytest.raises(VoiceUnavailable) as exc:
-            e.synthesise("hi", "v1", user_guid="u1")
+            await e.synthesise("hi", "v1", user_guid="u1")
         assert exc.value.reason == "disabled"
 
 
 class TestSynthesise:
-    def test_calls_api_and_bills_characters(self, db, tmp_path) -> None:
+    async def test_calls_api_and_bills_characters(self, db, tmp_path) -> None:
         client = FakeClient(b"mp3")
         e = VoiceEngine(_config(), db, tmp_path, client=client)
-        assert e.synthesise("Hello", "v1", user_guid="u1", conversation_id=3) == b"mp3"
+        assert await e.synthesise("Hello", "v1", user_guid="u1", conversation_id=3) == b"mp3"
         assert client.calls == 1
-        assert voice_usage.characters_this_month(db, "u1") == len("Hello")
+        assert await voice_usage.characters_this_month(db, "u1") == len("Hello")
 
-    def test_falls_back_to_default_voice(self, db, tmp_path) -> None:
+    async def test_falls_back_to_default_voice(self, db, tmp_path) -> None:
         client = FakeClient()
         e = VoiceEngine(_config(), db, tmp_path, client=client)
-        e.synthesise("Hello", None, user_guid="u1")
+        await e.synthesise("Hello", None, user_guid="u1")
         assert client.calls == 1  # no voice given, the default was used
 
-    def test_cache_hit_skips_api_and_bills_nothing(self, db, tmp_path) -> None:
+    async def test_cache_hit_skips_api_and_bills_nothing(self, db, tmp_path) -> None:
         client = FakeClient(b"mp3")
         e = VoiceEngine(_config(), db, tmp_path, client=client)
-        e.synthesise("Hello", "v1", user_guid="u1")
-        e.synthesise("Hello", "v1", user_guid="u1")  # identical -> cached
+        await e.synthesise("Hello", "v1", user_guid="u1")
+        await e.synthesise("Hello", "v1", user_guid="u1")  # identical -> cached
 
         assert client.calls == 1
-        assert voice_usage.characters_this_month(db, "u1") == len("Hello")
+        assert await voice_usage.characters_this_month(db, "u1") == len("Hello")
 
-    def test_cache_disabled_always_calls_api(self, db, tmp_path) -> None:
+    async def test_cache_disabled_always_calls_api(self, db, tmp_path) -> None:
         client = FakeClient(b"mp3")
         e = VoiceEngine(_config(cache_enabled=False), db, tmp_path, client=client)
-        e.synthesise("Hello", "v1", user_guid="u1")
-        e.synthesise("Hello", "v1", user_guid="u1")
+        await e.synthesise("Hello", "v1", user_guid="u1")
+        await e.synthesise("Hello", "v1", user_guid="u1")
         assert client.calls == 2
 
-    def test_api_failure_propagates_reason(self, db, tmp_path) -> None:
+    async def test_api_failure_propagates_reason(self, db, tmp_path) -> None:
         e = VoiceEngine(_config(), db, tmp_path, client=FakeClient(raises="quota"))
         with pytest.raises(VoiceUnavailable) as exc:
-            e.synthesise("Hello", "v1", user_guid="u1")
+            await e.synthesise("Hello", "v1", user_guid="u1")
         assert exc.value.reason == "quota"
-        assert voice_usage.characters_this_month(db, "u1") == 0  # nothing billed
+        assert await voice_usage.characters_this_month(db, "u1") == 0  # nothing billed
 
 
 class TestCap:
-    def test_cap_blocks_new_synthesis(self, db, tmp_path) -> None:
-        voice_usage.record(db, "u1", 100)
+    async def test_cap_blocks_new_synthesis(self, db, tmp_path) -> None:
+        await voice_usage.record(db, "u1", 100)
         client = FakeClient()
         e = VoiceEngine(_config(monthly_character_cap=100), db, tmp_path, client=client)
         with pytest.raises(VoiceUnavailable) as exc:
-            e.synthesise("Hello", "v1", user_guid="u1")
+            await e.synthesise("Hello", "v1", user_guid="u1")
         assert exc.value.reason == "cap"
         assert client.calls == 0
 
-    def test_cached_audio_still_plays_over_cap(self, db, tmp_path) -> None:
+    async def test_cached_audio_still_plays_over_cap(self, db, tmp_path) -> None:
         # Cache is checked before the cap: replaying costs nothing, so there is
         # no reason to deny it.
         client = FakeClient(b"mp3")
         e = VoiceEngine(_config(monthly_character_cap=1000), db, tmp_path, client=client)
-        e.synthesise("Hello", "v1", user_guid="u1")
+        await e.synthesise("Hello", "v1", user_guid="u1")
 
-        voice_usage.record(db, "u1", 1000)  # now over the cap
-        assert e.synthesise("Hello", "v1", user_guid="u1") == b"mp3"
+        await voice_usage.record(db, "u1", 1000)  # now over the cap
+        assert await e.synthesise("Hello", "v1", user_guid="u1") == b"mp3"
         assert client.calls == 1

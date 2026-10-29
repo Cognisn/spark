@@ -75,7 +75,7 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     # Web tools
     "beautifulsoup4>=4.12.0",
-    "html2text>=2024.2.26",
+    "markdownify>=0.13.0",
     # Scheduling
     "APScheduler>=3.10.0",
     # System tray
@@ -83,25 +83,22 @@ dependencies = [
     "Pillow>=10.0.0",
     # Markdown
     "markdown>=3.4.0",
+    # Database: SQLite (personal mode) and PostgreSQL (server mode), migrations
+    "aiosqlite>=0.20.0",
+    "psycopg[binary,pool]>=3.2.0",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=5.0.0",
     "pytest-timeout>=2.3.0",
     "mypy>=1.8.0",
     "black==26.3.1",
     "isort==8.0.1",
-]
-mysql = ["mysql-connector-python>=8.0.0"]
-postgresql = ["psycopg2-binary>=2.9.0"]
-mssql = ["pyodbc>=4.0.0"]
-all-databases = [
-    "mysql-connector-python>=8.0.0",
-    "psycopg2-binary>=2.9.0",
-    "pyodbc>=4.0.0",
+    "testcontainers[postgres]>=4.8.0",
 ]
 
 [project.scripts]
@@ -159,4 +156,10 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# A coroutine created and dropped is a database call that never ran: fail the test.
+filterwarnings = [
+    "error:coroutine .* was never awaited:RuntimeWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 addopts = "-v --tb=short --timeout=60"

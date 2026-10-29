@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import platform
+import sys
 import tempfile
 from pathlib import Path
 
@@ -75,13 +77,20 @@ class TestExecute:
 
     def test_working_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Ask Python for the working directory: `pwd` prints a POSIX-style
+            # path under the Windows shells, so compare normalised real paths.
+            command = f'"{sys.executable}" -c "import os; print(os.getcwd())"'
             result = execute(
                 "run_command",
-                {"command": "pwd", "working_directory": tmpdir},
+                {"command": command, "working_directory": tmpdir},
             )
-            # The resolved real path should appear in the output.
-            real_tmp = str(Path(tmpdir).resolve())
-            assert real_tmp in result
+            real_tmp = os.path.normcase(str(Path(tmpdir).resolve()))
+            printed = [
+                os.path.normcase(str(Path(line.strip()).resolve()))
+                for line in result.splitlines()
+                if line.strip()
+            ]
+            assert real_tmp in printed
 
     def test_invalid_working_directory(self) -> None:
         result = execute(

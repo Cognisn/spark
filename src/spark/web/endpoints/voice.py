@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, Response
 from spark.database import voice_usage
 from spark.voice.engine import VoiceEngine, load_config
 from spark.voice.errors import VoiceUnavailable
+from spark.web.db import database
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def _engine(request: Request) -> VoiceEngine:
 
     ctx = request.app.state.ctx
     config = load_config(ctx)
-    db = request.app.state.conversation_manager._db
+    db = database(request)
     cache_root = Path(str(getattr(ctx, "data_dir", "."))) / "voice-cache"
     engine = VoiceEngine(config, db, cache_root)
     request.app.state.voice_engine = engine
@@ -72,7 +73,7 @@ async def voice_speak(request: Request) -> Response:
         return JSONResponse({"error": "text required"}, status_code=400)
 
     try:
-        audio = _engine(request).synthesise(
+        audio = await _engine(request).synthesise(
             text,
             data.get("voice_id") or None,
             user_guid=_user_guid(request),
@@ -95,7 +96,7 @@ async def voice_test(request: Request) -> JSONResponse:
     request.app.state.voice_engine = None
     engine = _engine(request)
     try:
-        engine.synthesise("Spark voice is connected.", None, user_guid=_user_guid(request))
+        await engine.synthesise("Spark voice is connected.", None, user_guid=_user_guid(request))
     except VoiceUnavailable as e:
         return JSONResponse({"ok": False, "reason": e.reason})
     except Exception as e:  # noqa: BLE001
@@ -108,7 +109,6 @@ async def voice_test(request: Request) -> JSONResponse:
 async def voice_usage_summary(request: Request) -> JSONResponse:
     """Characters billed this month, against the configured cap."""
     engine = _engine(request)
-    db = request.app.state.conversation_manager._db
-    summary = voice_usage.usage_summary(db, _user_guid(request))
+    summary = await voice_usage.usage_summary(database(request), _user_guid(request))
     summary["cap"] = engine.config.monthly_character_cap
     return JSONResponse(summary)

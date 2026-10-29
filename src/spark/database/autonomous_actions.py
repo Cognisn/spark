@@ -3,14 +3,32 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+from spark.db.dialect import upsert
+from spark.db.engine import Executor, Row
+
+__all__ = [
+    "action_stats",
+    "clear_stale_locks",
+    "get_all_actions",
+    "get_tool_permissions",
+    "set_tool_permission",
+    "complete_run",
+    "create_action",
+    "delete_action",
+    "get_action",
+    "get_action_runs",
+    "get_enabled_actions",
+    "start_run",
+    "try_lock_action",
+    "unlock_action",
+    "update_action",
+]
 
 
-def create_action(
-    db: DatabaseConnection,
+async def create_action(
+    db: Executor,
     name: str,
     action_prompt: str,
     model_id: str,
@@ -24,14 +42,13 @@ def create_action(
     max_tokens: int = 8192,
 ) -> int:
     """Create an autonomous action. Returns action ID."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute(
-        f"""INSERT INTO autonomous_actions
+    new_id = await db.fetch_value(
+        """INSERT INTO autonomous_actions
             (name, description, action_prompt, model_id, schedule_type,
              schedule_config, context_mode, max_failures, max_tokens,
              created_at, user_guid)
-            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
         (
             name,
             description,
@@ -46,77 +63,90 @@ def create_action(
             user_guid,
         ),
     )
-    db.commit()
-    return cursor.lastrowid
+    return int(new_id)
 
 
-def get_action(db: DatabaseConnection, action_id: int, user_guid: str) -> dict | None:
+async def get_action(db: Executor, action_id: int, user_guid: str) -> Row | None:
     """Get an action by ID."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM autonomous_actions WHERE id = {ph} AND user_guid = {ph}",
+    return await db.fetch_one(
+        "SELECT * FROM autonomous_actions WHERE id = ? AND user_guid = ?",
         (action_id, user_guid),
     )
-    row = cursor.fetchone()
-    return dict(row) if row else None
 
 
-def get_enabled_actions(db: DatabaseConnection, user_guid: str) -> list[dict]:
+async def get_enabled_actions(db: Executor, user_guid: str) -> list[Row]:
     """Get all enabled actions for a user."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM autonomous_actions WHERE is_enabled = 1 AND user_guid = {ph} ORDER BY name",
+    return await db.fetch_all(
+        "SELECT * FROM autonomous_actions WHERE is_enabled = 1 AND user_guid = ? ORDER BY name",
         (user_guid,),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def update_action(db: DatabaseConnection, action_id: int, user_guid: str, **kwargs: Any) -> None:
-    """Update action fields."""
+_UPDATABLE = frozenset(
+    {
+        "name",
+        "description",
+        "action_prompt",
+        "model_id",
+        "schedule_type",
+        "schedule_config",
+        "context_mode",
+        "max_failures",
+        "failure_count",
+        "is_enabled",
+        "max_tokens",
+        "last_run_at",
+        "next_run_at",
+        "locked_by",
+        "locked_at",
+    }
+)
+
+
+async def update_action(db: Executor, action_id: int, user_guid: str, **kwargs: Any) -> None:
+    """Update action fields (column names are checked against the schema)."""
     if not kwargs:
         return
-    ph = db.placeholder
-    sets = ", ".join(f"{k} = {ph}" for k in kwargs)
+    unknown = set(kwargs) - _UPDATABLE
+    if unknown:
+        raise ValueError(f"unknown action fields: {', '.join(sorted(unknown))}")
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
     params = list(kwargs.values()) + [action_id, user_guid]
-    db.execute(
-        f"UPDATE autonomous_actions SET {sets}, updated_at = CURRENT_TIMESTAMP, version = version + 1 "
-        f"WHERE id = {ph} AND user_guid = {ph}",
+    await db.execute(
+        f"UPDATE autonomous_actions SET {sets}, updated_at = CURRENT_TIMESTAMP, "
+        "version = version + 1 WHERE id = ? AND user_guid = ?",
         tuple(params),
     )
-    db.commit()
 
 
-def delete_action(db: DatabaseConnection, action_id: int, user_guid: str) -> None:
-    """Delete an action and its runs."""
-    ph = db.placeholder
-    db.execute(f"DELETE FROM action_runs WHERE action_id = {ph}", (action_id,))
-    db.execute(f"DELETE FROM action_tool_permissions WHERE action_id = {ph}", (action_id,))
-    db.execute(
-        f"DELETE FROM autonomous_actions WHERE id = {ph} AND user_guid = {ph}",
-        (action_id, user_guid),
-    )
-    db.commit()
+async def delete_action(db: Executor, action_id: int, user_guid: str) -> None:
+    """Delete an action and its runs, in one transaction."""
+    async with db.transaction() as conn:
+        await conn.execute("DELETE FROM action_runs WHERE action_id = ?", (action_id,))
+        await conn.execute("DELETE FROM action_tool_permissions WHERE action_id = ?", (action_id,))
+        await conn.execute(
+            "DELETE FROM autonomous_actions WHERE id = ? AND user_guid = ?",
+            (action_id, user_guid),
+        )
 
 
-def start_run(db: DatabaseConnection, action_id: int, user_guid: str) -> int:
-    """Record the start of an action run. Returns run ID."""
-    ph = db.placeholder
+async def start_run(db: Executor, action_id: int, user_guid: str) -> int:
+    """Record the start of an action run, in one transaction. Returns run ID."""
     now = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute(
-        f"""INSERT INTO action_runs (action_id, started_at, status, user_guid)
-            VALUES ({ph}, {ph}, 'running', {ph})""",
-        (action_id, now, user_guid),
-    )
-    db.execute(
-        f"UPDATE autonomous_actions SET last_run_at = {ph} WHERE id = {ph}",
-        (now, action_id),
-    )
-    db.commit()
-    return cursor.lastrowid
+    async with db.transaction() as conn:
+        run_id = await conn.fetch_value(
+            """INSERT INTO action_runs (action_id, started_at, status, user_guid)
+                VALUES (?, ?, 'running', ?) RETURNING id""",
+            (action_id, now, user_guid),
+        )
+        await conn.execute(
+            "UPDATE autonomous_actions SET last_run_at = ? WHERE id = ?", (now, action_id)
+        )
+    return int(run_id)
 
 
-def complete_run(
-    db: DatabaseConnection,
+async def complete_run(
+    db: Executor,
     run_id: int,
     *,
     status: str = "completed",
@@ -126,46 +156,105 @@ def complete_run(
     output_tokens: int = 0,
 ) -> None:
     """Record the completion of an action run."""
-    ph = db.placeholder
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        f"""UPDATE action_runs SET
-            completed_at = {ph}, status = {ph}, result_text = {ph},
-            error_message = {ph}, input_tokens = {ph}, output_tokens = {ph}
-            WHERE id = {ph}""",
+    await db.execute(
+        """UPDATE action_runs SET
+            completed_at = ?, status = ?, result_text = ?,
+            error_message = ?, input_tokens = ?, output_tokens = ?
+            WHERE id = ?""",
         (now, status, result_text, error_message, input_tokens, output_tokens, run_id),
     )
-    db.commit()
 
 
-def get_action_runs(db: DatabaseConnection, action_id: int, *, limit: int = 20) -> list[dict]:
+async def get_action_runs(db: Executor, action_id: int, *, limit: int = 20) -> list[Row]:
     """Get recent runs for an action."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"SELECT * FROM action_runs WHERE action_id = {ph} ORDER BY started_at DESC LIMIT {ph}",
+    return await db.fetch_all(
+        "SELECT * FROM action_runs WHERE action_id = ? ORDER BY started_at DESC LIMIT ?",
         (action_id, limit),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def try_lock_action(db: DatabaseConnection, action_id: int, daemon_id: str) -> bool:
-    """Try to acquire an execution lock. Returns True if successful."""
-    ph = db.placeholder
+async def try_lock_action(db: Executor, action_id: int, daemon_id: str) -> bool:
+    """Try to acquire an execution lock. Returns True if successful (one statement, atomic)."""
     now = datetime.now(timezone.utc).isoformat()
-    cursor = db.execute(
-        f"""UPDATE autonomous_actions SET locked_by = {ph}, locked_at = {ph}
-            WHERE id = {ph} AND (locked_by IS NULL OR locked_by = {ph})""",
+    changed = await db.execute(
+        """UPDATE autonomous_actions SET locked_by = ?, locked_at = ?
+            WHERE id = ? AND (locked_by IS NULL OR locked_by = ?)""",
         (daemon_id, now, action_id, daemon_id),
     )
-    db.commit()
-    return cursor.rowcount > 0
+    return changed > 0
 
 
-def unlock_action(db: DatabaseConnection, action_id: int) -> None:
+async def unlock_action(db: Executor, action_id: int) -> None:
     """Release the execution lock."""
-    ph = db.placeholder
-    db.execute(
-        f"UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = {ph}",
+    await db.execute(
+        "UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = ?",
         (action_id,),
     )
-    db.commit()
+
+
+async def get_all_actions(db: Executor) -> list[Row]:
+    """Every action, enabled or not, by name.
+
+    Not scoped by user, as in 0.2.0 (one local user); server mode must scope it
+    before multi-user use.
+    """
+    return await db.fetch_all("SELECT * FROM autonomous_actions ORDER BY name")
+
+
+_TOOL_UPSERT = upsert(
+    "action_tool_permissions",
+    ["action_id", "tool_name", "permission_state", "user_guid"],
+    ["action_id", "tool_name"],
+)
+
+
+async def get_tool_permissions(db: Executor, action_id: int) -> dict[str, str]:
+    """Tool permission states for an action, keyed by tool name."""
+    rows = await db.fetch_all(
+        "SELECT tool_name, permission_state FROM action_tool_permissions WHERE action_id = ?",
+        (action_id,),
+    )
+    return {r["tool_name"]: r["permission_state"] for r in rows}
+
+
+async def set_tool_permission(
+    db: Executor, action_id: int, tool_name: str, permission_state: str, user_guid: str
+) -> None:
+    """Set or update one tool's permission for an action."""
+    await db.execute(_TOOL_UPSERT, (action_id, tool_name, permission_state, user_guid))
+
+
+async def clear_stale_locks(db: Executor, before: str) -> list[Row]:
+    """Release locks taken before ``before`` (ISO UTC). Returns the actions released."""
+    async with db.transaction() as conn:
+        stale = await conn.fetch_all(
+            """SELECT id, name, locked_by, locked_at FROM autonomous_actions
+                WHERE locked_by IS NOT NULL AND locked_at IS NOT NULL AND locked_at < ?
+                ORDER BY id""",
+            (before,),
+        )
+        for row in stale:
+            await conn.execute(
+                "UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = ?",
+                (row["id"],),
+            )
+    return stale
+
+
+async def action_stats(db: Executor) -> dict[str, Any]:
+    """Enabled actions, the last completed run and the next scheduled run (tray menu)."""
+    total = await db.fetch_value("SELECT COUNT(*) FROM autonomous_actions WHERE is_enabled = 1")
+    last_run = await db.fetch_value(
+        "SELECT completed_at FROM action_runs WHERE status = 'completed' "
+        "ORDER BY completed_at DESC LIMIT 1"
+    )
+    next_run = await db.fetch_value(
+        "SELECT next_run_at FROM autonomous_actions WHERE is_enabled = 1 "
+        "AND next_run_at IS NOT NULL ORDER BY next_run_at ASC LIMIT 1"
+    )
+    return {
+        "total": int(total or 0),
+        "last_run": str(last_run) if last_run else None,
+        "next_run": str(next_run) if next_run else None,
+    }

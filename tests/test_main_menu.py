@@ -1,3 +1,5 @@
+import pytest
+
 """Tests for main menu endpoint helpers."""
 
 from unittest.mock import MagicMock
@@ -200,14 +202,10 @@ class TestGetMCPServerList:
 class TestMenuConversationLinks:
     """The Home lists must route each conversation to its type's view."""
 
-    def _client(self, tmp_path):
-        import pytest  # noqa: F401 - fixture-free client construction
-        from fastapi.testclient import TestClient
-
-        from spark.database import Database
-        from spark.database.backends import SQLiteBackend
-        from spark.database.connection import DatabaseConnection
+    @pytest.fixture()
+    def menu(self, sqlite_settings):
         from spark.web.server import create_app
+        from tests.db_helpers import app_client
 
         def _settings_get(key, default=None, *, cast=None):
             values = {
@@ -223,44 +221,37 @@ class TestMenuConversationLinks:
         ctx = MagicMock()
         ctx.settings.get = _settings_get
         app = create_app(ctx, first_run=False)
-
-        backend = SQLiteBackend(tmp_path / "test.db")
-        conn = DatabaseConnection(backend)
-        Database(conn)
-
-        mgr = MagicMock()
-        mgr._db = conn
-
-        def _get_convs(user_guid):
-            from spark.database import conversations as convdb
-
-            return convdb.get_active_conversations(conn, user_guid)
-
-        mgr.get_conversations.side_effect = _get_convs
-        app.state.conversation_manager = mgr
         app.state.user_guid = "u1"
-        client = TestClient(app)
-        code = app.state.auth.generate_code()
-        resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
-        client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
-        return client, conn
+        with app_client(app, sqlite_settings) as client:
+            sync_db = app.state.sync_db
+            mgr = MagicMock()
+            mgr._db = sync_db
 
-    def test_home_lists_route_by_conversation_type(self, tmp_path) -> None:
-        client, conn = self._client(tmp_path)
-        ph = conn.placeholder
+            def _get_convs(user_guid):
+                from spark.database import conversations as convdb
+
+                return sync_db.call(convdb.get_active_conversations, user_guid)
+
+            mgr.get_conversations.side_effect = _get_convs
+            app.state.conversation_manager = mgr
+            code = app.state.auth.generate_code()
+            resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
+            client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+            yield client, sync_db
+
+    def test_home_lists_route_by_conversation_type(self, menu) -> None:
+        client, conn = menu
         ids = {}
         for name, ctype, fav in (
             ("Std", "standard", 0),
             ("Deb", "debate", 1),
             ("Pan", "panel", 0),
         ):
-            cur = conn.execute(
-                f"INSERT INTO conversations (name, model_id, user_guid, "
-                f"conversation_type, is_favourite) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+            ids[ctype] = conn.fetch_value(
+                "INSERT INTO conversations (name, model_id, user_guid, "
+                "conversation_type, is_favourite) VALUES (?, ?, ?, ?, ?) RETURNING id",
                 (name, "m", "u1", ctype, fav),
             )
-            ids[ctype] = cur.lastrowid
-        conn.commit()
 
         html = client.get("/").text
         assert f'href="/chat/{ids["standard"]}"' in html

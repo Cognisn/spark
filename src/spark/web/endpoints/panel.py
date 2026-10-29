@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.web.db import database
 
 logger = logging.getLogger(__name__)
 
@@ -41,20 +42,14 @@ def _user_guid(request: Request) -> str:
     return getattr(request.app.state, "user_guid", "default")
 
 
-def _panel_config(request: Request, conversation_id: int) -> dict | None:
+async def _panel_config(request: Request, conversation_id: int) -> dict | None:
     """The panel config, or None when the conversation is not a panel."""
-    from spark.database import debates
+    from spark.database import conversations, debates
 
-    db = request.app.state.conversation_manager._db
-    ph = db.placeholder
-    cur = db.execute(
-        f"SELECT conversation_type FROM conversations WHERE id = {ph}",
-        (conversation_id,),
-    )
-    row = cur.fetchone()
-    if not row or row[0] != "panel":
+    db = database(request)
+    if await conversations.get_conversation_type(db, conversation_id) != "panel":
         return None
-    return debates.get_debate(db, conversation_id)
+    return await debates.get_debate(db, conversation_id)
 
 
 @router.get("/panel/{conversation_id}")
@@ -69,19 +64,20 @@ async def panel_state(request: Request, conversation_id: int) -> JSONResponse:
     """Full panel record: config, agents, turns, and exhibits."""
     from spark.database import debates
 
-    cfg = _panel_config(request, conversation_id)
+    cfg = await _panel_config(request, conversation_id)
     if not cfg:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
-    db = request.app.state.conversation_manager._db
-    turns = debates.get_turns(db, conversation_id)
-    exhibits = debates.get_exhibits(db, conversation_id)
+    db = database(request)
+    turns = await debates.get_turns(db, conversation_id)
+    exhibits = await debates.get_exhibits(db, conversation_id)
     orch = _orchestrator(request)
+    awaiting = await asyncio.to_thread(orch.awaiting_human, conversation_id, _user_guid(request))
     return JSONResponse(
         {
             "config": cfg,
             "turns": turns,
             "exhibits": {str(k): v for k, v in exhibits.items()},
-            "awaiting_human": orch.awaiting_human(conversation_id, _user_guid(request)),
+            "awaiting_human": awaiting,
         }
     )
 
@@ -100,24 +96,23 @@ async def panel_prompt(request: Request) -> JSONResponse:
     if not cid or not message:
         return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
-    cfg = _panel_config(request, cid)
+    cfg = await _panel_config(request, cid)
     if not cfg:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
 
     orch = _orchestrator(request)
     user_guid = _user_guid(request)
 
-    pending = orch.awaiting_human(cid, user_guid)
+    pending = await asyncio.to_thread(orch.awaiting_human, cid, user_guid)
     if pending:
-        turn_id = orch.submit_contribution(cid, user_guid, message)
+        turn_id = await asyncio.to_thread(orch.submit_contribution, cid, user_guid, message)
         return JSONResponse({"accepted": "contribution", "turn_id": turn_id})
 
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    db = request.app.state.conversation_manager._db
-    message = resolve_trigger_for_conversation(db, user_guid, cid, message)
+    message = await resolve_trigger_for_conversation(database(request), user_guid, cid, message)
 
-    turn_id = orch.submit_user_prompt(cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
             None, orch.answer_qa, cid, user_guid, turn_id

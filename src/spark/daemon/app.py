@@ -44,17 +44,29 @@ def run_daemon() -> None:
                 config_file=str(config_path),
                 env_prefix="SPARK",
             ) as ctx:
+                from spark.core.application import configure_runtime
+                from spark.db.standalone import open_standalone
+                from spark.mode import Mode
                 from spark.scheduler.runner import ActionRunner
 
-                runner = ActionRunner(ctx, daemon_id)
-                runner.start()
+                runtime = configure_runtime(ctx.settings)
+                handle = await asyncio.to_thread(
+                    open_standalone,
+                    runtime.database,
+                    auto_migrate=runtime.mode is Mode.PERSONAL,
+                )
+                try:
+                    runner = ActionRunner(ctx, daemon_id, handle.sync_db)
+                    runner.start()
 
-                logger.info("Daemon running, waiting for shutdown signal...")
-                while not _shutdown.is_set():
-                    _shutdown.wait(timeout=5.0)
+                    logger.info("Daemon running, waiting for shutdown signal...")
+                    while not _shutdown.is_set():
+                        _shutdown.wait(timeout=5.0)
 
-                logger.info("Shutdown signal received")
-                runner.stop()
+                    logger.info("Shutdown signal received")
+                    runner.stop()
+                finally:
+                    await asyncio.to_thread(handle.close)
 
         asyncio.run(_run())
 

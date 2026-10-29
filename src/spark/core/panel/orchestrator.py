@@ -89,7 +89,7 @@ class PanelOrchestrator:
             from spark.skills.manager import get_skills_manager
             from spark.skills.prompt import build_skills_block
 
-            enabled = skills_db.resolve_enabled(self._db, get_skills_manager(), user_guid)
+            enabled = self._db.call(skills_db.resolve_enabled, get_skills_manager(), user_guid)
             if allowed is not None:
                 enabled = [s for s in enabled if s["name"] in allowed]
             return build_skills_block(enabled)
@@ -99,7 +99,7 @@ class PanelOrchestrator:
 
     def _set_state(self, cid: int, cfg: dict, new: DebateState, **kwargs: Any) -> None:
         assert_transition(DebateState(cfg["state"]), new)
-        debates.update_debate_state(self._db, cid, new.value, **kwargs)
+        self._db.call(debates.update_debate_state, cid, new.value, **kwargs)
         cfg["state"] = new.value
         cfg.update({k: v for k, v in kwargs.items() if v is not None})
         self._emit(
@@ -125,7 +125,7 @@ class PanelOrchestrator:
         cancel_token: CancellationToken | None = None,
     ) -> None:
         """Drive the panel until QA, cancellation, a failed turn, or a human pause."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         if not cfg:
             raise ValueError(f"No panel for conversation {conversation_id}")
 
@@ -167,20 +167,20 @@ class PanelOrchestrator:
 
     def submit_user_prompt(self, conversation_id: int, text: str) -> int:
         """Queue user input as a turn; typed by current panel state."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         turn_type = "qa_question" if cfg and cfg["state"] == "qa" else "user_prompt"
         round_no = cfg["current_round"] if cfg else 0
-        return debates.add_turn(self._db, conversation_id, round_no, "user", turn_type, text)
+        return self._db.call(debates.add_turn, conversation_id, round_no, "user", turn_type, text)
 
     def awaiting_human(self, conversation_id: int, user_guid: str) -> dict | None:
         """The pending human slot the rotation is paused at, or None."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         if not cfg or cfg["state"] != "round":
             return None
         round_no = cfg["current_round"]
         done = {
             t["role"]
-            for t in debates.get_turns(self._db, conversation_id)
+            for t in self._db.call(debates.get_turns, conversation_id)
             if t["turn_type"] == "contribution"
             and t["round"] == round_no
             and t["status"] == "complete"
@@ -203,8 +203,8 @@ class PanelOrchestrator:
         pending = self.awaiting_human(conversation_id, user_guid)
         if not pending:
             return None
-        return debates.add_turn(
-            self._db,
+        return self._db.call(
+            debates.add_turn,
             conversation_id,
             pending["round"],
             pending["role"],
@@ -214,10 +214,10 @@ class PanelOrchestrator:
 
     def answer_qa(self, conversation_id: int, user_guid: str, question_turn_id: int) -> str:
         """Ask the moderator to answer a QA question about the discussion."""
-        cfg = debates.get_debate(self._db, conversation_id)
+        cfg = self._db.call(debates.get_debate, conversation_id)
         self._skills_block = self._compute_skills_block(user_guid)
-        turns = debates.get_turns(self._db, conversation_id)
-        exhibits = debates.get_exhibits(self._db, conversation_id)
+        turns = self._db.call(debates.get_turns, conversation_id)
+        exhibits = self._db.call(debates.get_exhibits, conversation_id)
         transcript = build_panel_transcript(
             turns, exhibits, cfg["agents"], for_moderator=True, include_qa=True
         )
@@ -231,7 +231,7 @@ class PanelOrchestrator:
         if response is None:
             return ""
         answer = response.get("content", "")
-        debates.add_turn(self._db, conversation_id, 0, "moderator", "qa_answer", answer)
+        self._db.call(debates.add_turn, conversation_id, 0, "moderator", "qa_answer", answer)
         self._emit("moderator_text", {"role": "moderator", "text": answer, "phase": "qa"})
         return answer
 
@@ -261,10 +261,12 @@ class PanelOrchestrator:
         order = normalise_order(raw_order, roles)
         names = ", ".join(self._display_name(cfg, r) for r in order)
         framing = response.get("content", "") or f"The discussion begins with {names}."
-        debates.update_debate_state(self._db, cid, cfg["state"], opening_speaker=json.dumps(order))
+        self._db.call(
+            debates.update_debate_state, cid, cfg["state"], opening_speaker=json.dumps(order)
+        )
         cfg["opening_speaker"] = json.dumps(order)
-        debates.add_turn(
-            self._db,
+        self._db.call(
+            debates.add_turn,
             cid,
             0,
             "moderator",
@@ -287,7 +289,7 @@ class PanelOrchestrator:
 
         done_roles = {
             t["role"]
-            for t in debates.get_turns(self._db, cid)
+            for t in self._db.call(debates.get_turns, cid)
             if t["turn_type"] == "contribution"
             and t["round"] == round_no
             and t["status"] == "complete"
@@ -317,8 +319,8 @@ class PanelOrchestrator:
         # Round complete: the cap forces synthesis, otherwise the moderator decides.
         if cfg["rounds_mode"] == "fixed" and round_no >= (cfg["max_rounds"] or 1):
             return "synthesise"
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = build_panel_transcript(turns, exhibits, cfg["agents"], for_moderator=True)
         self._emit("floor", {"role": "moderator"})
         try:
@@ -340,7 +342,7 @@ class PanelOrchestrator:
                 decision = "synthesise"
         remarks = response.get("content", "")
         if remarks:
-            debates.add_turn(self._db, cid, round_no, "moderator", "interim", remarks)
+            self._db.call(debates.add_turn, cid, round_no, "moderator", "interim", remarks)
             self._emit(
                 "moderator_text",
                 {"role": "moderator", "text": remarks, "phase": "interim"},
@@ -355,8 +357,8 @@ class PanelOrchestrator:
             self._emit("floor", {"role": "none"})
 
     def _synthesis_inner(self, cid: int, cfg: dict) -> bool:
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = build_panel_transcript(turns, exhibits, cfg["agents"], for_moderator=True)
         response = self._moderator_invoke(
             cfg,
@@ -367,7 +369,7 @@ class PanelOrchestrator:
         if response is None:
             return False
         synthesis = response.get("content", "")
-        debates.add_turn(self._db, cid, 0, "moderator", "synthesis", synthesis)
+        self._db.call(debates.add_turn, cid, 0, "moderator", "synthesis", synthesis)
         self._emit(
             "moderator_text",
             {"role": "moderator", "text": synthesis, "phase": "synthesis"},
@@ -440,8 +442,8 @@ class PanelOrchestrator:
                 prompt_caching=self._prompt_caching,
             )
             usage = response.get("usage", {})
-            debates.add_agent_tokens(
-                self._db,
+            self._db.call(
+                debates.add_agent_tokens,
                 cfg["conversation_id"],
                 "moderator",
                 usage.get("input_tokens", 0),
@@ -484,8 +486,8 @@ class PanelOrchestrator:
         agent: dict,
         name: str,
     ) -> bool:
-        turns = debates.get_turns(self._db, cid)
-        exhibits = debates.get_exhibits(self._db, cid)
+        turns = self._db.call(debates.get_turns, cid)
+        exhibits = self._db.call(debates.get_exhibits, cid)
         transcript = build_panel_transcript(turns, exhibits, cfg["agents"])
         task = (
             f"## Discussion transcript so far\n\n{transcript}\n\n"
@@ -496,8 +498,8 @@ class PanelOrchestrator:
         try:
             from spark.database.agents import create_agent_run
 
-            create_agent_run(
-                self._db,
+            self._db.call(
+                create_agent_run,
                 agent_run_id,
                 cid,
                 f"{name} panellist",
@@ -560,12 +562,14 @@ class PanelOrchestrator:
             )
         except Exception as e:  # noqa: BLE001 - any provider failure fails the turn
             logger.error("Panellist %s turn failed: %s", role, e)
-            debates.add_turn(self._db, cid, round_no, role, "contribution", "", status="failed")
+            self._db.call(
+                debates.add_turn, cid, round_no, role, "contribution", "", status="failed"
+            )
             self._emit("turn_failed", {"role": role, "round": round_no, "error": str(e)})
             return False
 
-        debates.add_agent_tokens(
-            self._db,
+        self._db.call(
+            debates.add_agent_tokens,
             cid,
             role,
             result.get("input_tokens", 0),
@@ -574,8 +578,8 @@ class PanelOrchestrator:
         try:
             from spark.database.agents import complete_agent_run
 
-            complete_agent_run(
-                self._db,
+            self._db.call(
+                complete_agent_run,
                 agent_run_id,
                 status=result.get("status", "completed"),
                 result_text="",
@@ -586,14 +590,16 @@ class PanelOrchestrator:
             logger.warning("Could not complete agent run for %s", agent_run_id)
 
         if result.get("status") == "cancelled":
-            debates.add_turn(self._db, cid, round_no, role, "contribution", "", status="cancelled")
+            self._db.call(
+                debates.add_turn, cid, round_no, role, "contribution", "", status="cancelled"
+            )
             return False
 
         terminal = result.get("terminal_call")
         if not terminal:
             # The model finished without submitting: fail the turn (retryable).
-            debates.add_turn(
-                self._db,
+            self._db.call(
+                debates.add_turn,
                 cid,
                 round_no,
                 role,
@@ -613,8 +619,8 @@ class PanelOrchestrator:
 
         contribution = terminal["input"].get("contribution_markdown", "")
         exhibits_in = validate_exhibits(terminal["input"].get("exhibits"))
-        turn_id = debates.add_turn(
-            self._db,
+        turn_id = self._db.call(
+            debates.add_turn,
             cid,
             round_no,
             role,
@@ -623,7 +629,7 @@ class PanelOrchestrator:
             token_count=result.get("output_tokens", 0),
         )
         if exhibits_in:
-            debates.add_exhibits(self._db, turn_id, exhibits_in)
+            self._db.call(debates.add_exhibits, turn_id, exhibits_in)
         self._emit(
             "contribution",
             {"role": role, "name": name, "round": round_no, "text": contribution},

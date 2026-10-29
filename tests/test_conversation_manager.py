@@ -13,9 +13,6 @@ from spark.core.context_compaction import (
     _format_messages,
 )
 from spark.core.conversation_manager import ConversationManager, _tool_result
-from spark.database import Database
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
 
@@ -82,13 +79,6 @@ class StubLLMService:
 
 
 @pytest.fixture()
-def db(tmp_path) -> Database:
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    return Database(conn)
-
-
-@pytest.fixture()
 def stub_llm() -> StubLLMService:
     return StubLLMService()
 
@@ -101,9 +91,9 @@ def llm_manager(stub_llm: StubLLMService) -> LLMManager:
 
 
 @pytest.fixture()
-def manager(db: Database, llm_manager: LLMManager) -> ConversationManager:
+def manager(sync_db, llm_manager: LLMManager) -> ConversationManager:
     return ConversationManager(
-        db.connection,
+        sync_db,
         llm_manager,
         ContextLimitResolver(),
         max_tool_iterations=5,
@@ -160,10 +150,10 @@ class TestSendMessage:
         assert msgs[1]["role"] == "assistant"
 
     def test_tool_use_loop(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             max_tool_iterations=10,
@@ -197,13 +187,13 @@ class TestSendMessage:
         assert stub_llm.invoke_count == 2
 
     def test_tool_permission_denied(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         def deny_all(name: str, inp: dict) -> str:
             return "denied"
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             tool_permission_callback=deny_all,
@@ -245,7 +235,7 @@ class TestSendMessage:
         assert result["content"] == "OK, tool was denied"
 
     def test_skill_loading_is_transparent(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         """use_skill must never prompt for approval, even with a callback present."""
         asked: list[str] = []
@@ -255,7 +245,7 @@ class TestSendMessage:
             return "denied"
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             tool_permission_callback=record_and_deny,
@@ -316,10 +306,10 @@ class TestSendMessage:
             manager.send_message(99999, "Hello", USER)
 
     def test_max_iterations(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             max_tool_iterations=2,
@@ -340,7 +330,7 @@ class TestSendMessage:
         assert result["iterations"] == 2
 
     def test_status_callback(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         events: list[tuple] = []
 
@@ -348,7 +338,7 @@ class TestSendMessage:
             events.append((event, data))
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
         )
@@ -392,7 +382,7 @@ class TestSendMessage:
         assert "tool_iteration_complete" in event_types
 
     def test_tool_denial_wording_steers_against_retry(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         """When the user denies a tool, the AI must receive guidance not to retry."""
         from spark.tools.registry import get_builtin_tools
@@ -407,7 +397,7 @@ class TestSendMessage:
         tool_name = tools[0]["name"]
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             tool_permission_callback=deny_all,
@@ -444,13 +434,13 @@ class TestSendMessage:
         # the AI sees.
         from spark.database import messages as msg_db
 
-        all_msgs = msg_db.get_messages(db.connection, cid, include_rolled_up=True)
+        all_msgs = sync_db.call(msg_db.get_messages, cid, include_rolled_up=True)
         tool_result_text = " ".join(m.get("content", "") for m in all_msgs)
         assert "Do not retry this exact call" in tool_result_text
         assert "ask the user how they would like to proceed" in tool_result_text
 
     def test_cancel_token_aborts_tool_use_loop(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         """When the cancel token is set mid-loop, send_message inserts a marker and exits."""
         from spark.core.cancellation import CancellationToken
@@ -468,7 +458,7 @@ class TestSendMessage:
         stub_llm.invoke_model = cancelling_invoke  # type: ignore[method-assign]
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
         )
@@ -476,7 +466,7 @@ class TestSendMessage:
         result = mgr.send_message(cid, "hello", USER, cancel_token=token)
 
         assert result.get("status") == "cancelled"
-        all_msgs = msg_db.get_messages(db.connection, cid, include_rolled_up=True)
+        all_msgs = sync_db.call(msg_db.get_messages, cid, include_rolled_up=True)
         contents = [m["content"] for m in all_msgs]
         assert any(c.startswith("[TURN CANCELLED") for c in contents)
 
@@ -496,9 +486,9 @@ class TestSystemInstructions:
         assert "Spark" in system
         assert "Current date/time" in system
 
-    def test_includes_global_instructions(self, db: Database, llm_manager: LLMManager) -> None:
+    def test_includes_global_instructions(self, sync_db, llm_manager: LLMManager) -> None:
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             global_instructions="Always be concise.",
@@ -588,58 +578,56 @@ class TestFindInFlightToolMessages:
 
 
 class TestContextCompactor:
-    def test_no_compaction_below_threshold(self, db: Database, stub_llm: StubLLMService) -> None:
+    def test_no_compaction_below_threshold(self, sync_db, stub_llm: StubLLMService) -> None:
         from spark.database import conversations, messages
 
         compactor = ContextCompactor(
             stub_llm,
-            db.connection,
+            sync_db,
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.7,
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
-        messages.add_message(db.connection, cid, "user", "short msg", 10, USER)
+        cid = sync_db.call(conversations.create_conversation, "Test", "stub-model", USER)
+        sync_db.call(messages.add_message, cid, "user", "short msg", 10, USER)
 
         result = compactor.check_and_compact(cid, "stub-model", USER)
         assert result is False
 
-    def test_deferred_during_tool_use(self, db: Database, stub_llm: StubLLMService) -> None:
+    def test_deferred_during_tool_use(self, sync_db, stub_llm: StubLLMService) -> None:
         from spark.database import conversations
 
         compactor = ContextCompactor(
             stub_llm,
-            db.connection,
+            sync_db,
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,  # very low threshold to trigger
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
+        cid = sync_db.call(conversations.create_conversation, "Test", "stub-model", USER)
         # Manually set high token count
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=5000)
+        sync_db.call(conversations.update_conversation, cid, USER, total_tokens=5000)
 
         result = compactor.check_and_compact(cid, "stub-model", USER, in_tool_use_loop=True)
         assert result is False  # Deferred
 
-    def test_skips_when_conversation_not_found(
-        self, db: Database, stub_llm: StubLLMService
-    ) -> None:
+    def test_skips_when_conversation_not_found(self, sync_db, stub_llm: StubLLMService) -> None:
         """Wrong user_guid must not silently succeed — regression for empty user_guid bug."""
         from spark.database import conversations
 
         compactor = ContextCompactor(
             stub_llm,
-            db.connection,
+            sync_db,
             ContextLimitResolver(),  # type: ignore[arg-type]
             threshold=0.01,
         )
-        cid = conversations.create_conversation(db.connection, "Test", "stub-model", USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        cid = sync_db.call(conversations.create_conversation, "Test", "stub-model", USER)
+        sync_db.call(conversations.update_conversation, cid, USER, total_tokens=100_000)
 
         # With a real user_guid, compaction runs (stub LLM handles it).
         # With an empty user_guid, the conversation is not found and we skip.
         assert compactor.check_and_compact(cid, "stub-model", "") is False
 
     def test_get_messages_includes_rolled_up_history_for_display(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         """After compaction, ConversationManager.get_messages must still return the
         original messages so the UI shows the full conversation when reloaded.
@@ -658,7 +646,7 @@ class TestContextCompactor:
         ]
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             rollup_threshold=0.01,
@@ -666,11 +654,11 @@ class TestContextCompactor:
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
 
-        messages.add_message(db.connection, cid, "user", "first user msg", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "first reply", 50, USER)
-        messages.add_message(db.connection, cid, "user", "second user msg", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "second reply", 50, USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        sync_db.call(messages.add_message, cid, "user", "first user msg", 50, USER)
+        sync_db.call(messages.add_message, cid, "assistant", "first reply", 50, USER)
+        sync_db.call(messages.add_message, cid, "user", "second user msg", 50, USER)
+        sync_db.call(messages.add_message, cid, "assistant", "second reply", 50, USER)
+        sync_db.call(conversations.update_conversation, cid, USER, total_tokens=100_000)
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
@@ -684,7 +672,7 @@ class TestContextCompactor:
         assert any(c.startswith("[COMPACTED CONTEXT") for c in contents)
 
     def test_model_context_excludes_rolled_up_messages(
-        self, db: Database, llm_manager: LLMManager, stub_llm: StubLLMService
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService
     ) -> None:
         """The LLM context loader must continue to exclude rolled-up messages,
         otherwise compaction provides no token savings."""
@@ -701,17 +689,17 @@ class TestContextCompactor:
         ]
 
         mgr = ConversationManager(
-            db.connection,
+            sync_db,
             llm_manager,
             ContextLimitResolver(),
             rollup_threshold=0.01,
         )
         cid = mgr.create_conversation("Test", "stub-model", USER)
-        messages.add_message(db.connection, cid, "user", "rolled msg one", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "rolled reply one", 50, USER)
-        messages.add_message(db.connection, cid, "user", "rolled msg two", 50, USER)
-        messages.add_message(db.connection, cid, "assistant", "rolled reply two", 50, USER)
-        conversations.update_conversation(db.connection, cid, USER, total_tokens=100_000)
+        sync_db.call(messages.add_message, cid, "user", "rolled msg one", 50, USER)
+        sync_db.call(messages.add_message, cid, "assistant", "rolled reply one", 50, USER)
+        sync_db.call(messages.add_message, cid, "user", "rolled msg two", 50, USER)
+        sync_db.call(messages.add_message, cid, "assistant", "rolled reply two", 50, USER)
+        sync_db.call(conversations.update_conversation, cid, USER, total_tokens=100_000)
 
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True

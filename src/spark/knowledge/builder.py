@@ -6,6 +6,7 @@ import logging
 import threading
 from typing import Any, Callable
 
+from spark.db.bridge import SyncDatabase
 from spark.knowledge import store
 from spark.knowledge.extractor import chunk_messages, extract_fragment, render_chunk
 
@@ -41,7 +42,7 @@ class KnowledgeGraphBuilder:
 
     def __init__(
         self,
-        db: Any,
+        db: SyncDatabase,
         service_factory: Callable[[str], Any],
         embedder: Any,
         *,
@@ -57,7 +58,7 @@ class KnowledgeGraphBuilder:
     def _watermarks(self, scope: str, user_guid: str) -> dict[str, int]:
         return {
             row["source_key"]: row["watermark"]
-            for row in store.get_build_state(self._db, scope, user_guid)
+            for row in self._db.call(store.get_build_state, scope, user_guid)
         }
 
     def _pending_sources(self, scope: str, user_guid: str) -> list[tuple[str, list[dict]]]:
@@ -73,14 +74,14 @@ class KnowledgeGraphBuilder:
         else:
             from spark.database import conversations as conv_db
 
-            conv_ids = [c["id"] for c in conv_db.get_active_conversations(self._db, user_guid)]
+            conv_ids = [c["id"] for c in self._db.call(conv_db.get_active_conversations, user_guid)]
 
         for cid in conv_ids:
             key = f"conv:{cid}"
             watermark = marks.get(key, 0)
             msgs = [
                 m
-                for m in msg_db.get_messages(self._db, cid, include_rolled_up=True)
+                for m in self._db.call(msg_db.get_messages, cid, include_rolled_up=True)
                 if m["id"] > watermark and (m.get("content") or "").strip()
             ]
             if msgs:
@@ -96,7 +97,7 @@ class KnowledgeGraphBuilder:
                     "role": "memory",
                     "content": f"{m.get('category', 'fact')}: {m.get('content', '')}",
                 }
-                for m in mem_db.get_all_memories(self._db, user_guid, limit=100000)
+                for m in self._db.call(mem_db.get_all_memories, user_guid, limit=100000)
                 if m["id"] > watermark
             ]
             if mems:
@@ -145,11 +146,11 @@ class KnowledgeGraphBuilder:
                 if cancelled():
                     result["status"] = "cancelled"
                     return result
-                if store.count_nodes(self._db, scope, user_guid) >= NODE_CAP:
+                if self._db.call(store.count_nodes, scope, user_guid) >= NODE_CAP:
                     result["status"] = "failed"
                     result["error"] = f"Node cap ({NODE_CAP}) reached for this scope"
-                    store.set_watermark(
-                        self._db,
+                    self._db.call(
+                        store.set_watermark,
                         scope,
                         source_key,
                         self._watermarks(scope, user_guid).get(source_key, 0),
@@ -178,8 +179,8 @@ class KnowledgeGraphBuilder:
                     embedding = self._embedder.encode(
                         f"{ent['name']}: {ent['description']}"
                     ).tobytes()
-                    node_ids[ent["name"].strip().lower()] = store.upsert_node(
-                        self._db,
+                    node_ids[ent["name"].strip().lower()] = self._db.call(
+                        store.upsert_node,
                         scope,
                         ent["name"],
                         ent["entity_type"],
@@ -193,8 +194,8 @@ class KnowledgeGraphBuilder:
                     dst = node_ids.get(rel["target"].strip().lower())
                     if src is None or dst is None:
                         continue  # relationships must reference this fragment's entities
-                    store.upsert_edge(
-                        self._db,
+                    self._db.call(
+                        store.upsert_edge,
                         scope,
                         src,
                         dst,
@@ -204,7 +205,7 @@ class KnowledgeGraphBuilder:
                     )
                     result["relationships"] += 1
 
-                store.set_watermark(self._db, scope, source_key, chunk_max_id, user_guid)
+                self._db.call(store.set_watermark, scope, source_key, chunk_max_id, user_guid)
                 self._emit(
                     "kg_progress",
                     {

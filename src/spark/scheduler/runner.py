@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -16,15 +16,18 @@ from apscheduler.triggers.date import DateTrigger
 if TYPE_CHECKING:
     from konfig import AppContext
 
+from spark.db.bridge import SyncDatabase
+
 logger = logging.getLogger(__name__)
 
 
 class ActionRunner:
     """Loads enabled actions from the database and schedules them via APScheduler."""
 
-    def __init__(self, ctx: Any, daemon_id: str) -> None:
+    def __init__(self, ctx: Any, daemon_id: str, db: SyncDatabase) -> None:
         self._ctx = ctx
         self._daemon_id = daemon_id
+        self._db = db
         import tzlocal
 
         # Enable APScheduler logging to capture trigger/misfire events
@@ -44,20 +47,10 @@ class ActionRunner:
         self._poll_interval = 30
         self._poll_thread: threading.Thread | None = None
         self._running = False
-        self._db: Any = None
         self._known_action_ids: set[int] = set()
 
-    def _get_db(self) -> Any:
-        """Get or create a persistent database connection."""
-        if self._db is None:
-            from spark.database.backends import create_backend
-            from spark.database.connection import DatabaseConnection
-            from spark.database.schema import initialise_schema
-
-            backend = create_backend(self._ctx.settings)
-            self._db = DatabaseConnection(backend)
-            initialise_schema(self._db)
-            logger.info("Action runner database connection established")
+    def _get_db(self) -> SyncDatabase:
+        """The database bridge (owned and closed by whoever created the runner)."""
         return self._db
 
     def start(self) -> None:
@@ -89,9 +82,6 @@ class ActionRunner:
         if self._poll_thread:
             self._poll_thread.join(timeout=5)
         self._scheduler.shutdown(wait=False)
-        if self._db:
-            self._db.close()
-            self._db = None
         logger.info("Action runner stopped")
 
     def _poll_loop(self) -> None:
@@ -122,7 +112,7 @@ class ActionRunner:
             # Clear stale locks (locked for more than 30 minutes)
             self._clear_stale_locks(db)
 
-            actions = autonomous_actions.get_enabled_actions(db, user_guid)
+            actions = db.call(autonomous_actions.get_enabled_actions, user_guid)
             scheduled_ids = {job.id for job in self._scheduler.get_jobs()}
             current_action_ids = set()
 
@@ -156,8 +146,11 @@ class ActionRunner:
                         if stored != next_utc.isoformat():
                             from spark.database import autonomous_actions as aa
 
-                            aa.update_action(
-                                db, action_id, user_guid, next_run_at=next_utc.isoformat()
+                            db.call(
+                                aa.update_action,
+                                action_id,
+                                user_guid,
+                                next_run_at=next_utc.isoformat(),
                             )
                         logger.debug(
                             "  '%s' already scheduled, next: %s",
@@ -245,8 +238,8 @@ class ActionRunner:
 
                     # Store as UTC in database
                     next_fire_utc = next_fire.astimezone(timezone.utc)
-                    aa.update_action(
-                        self._get_db(),
+                    self._get_db().call(
+                        aa.update_action,
                         action["id"],
                         user_guid,
                         next_run_at=next_fire_utc.isoformat(),
@@ -279,7 +272,7 @@ class ActionRunner:
 
                 from spark.database import autonomous_actions as aa
 
-                aa.update_action(self._get_db(), action["id"], user_guid, next_run_at=run_at)
+                self._get_db().call(aa.update_action, action["id"], user_guid, next_run_at=run_at)
 
                 logger.info("Scheduled one-off action: '%s' at %s", action["name"], run_at)
 
@@ -291,29 +284,20 @@ class ActionRunner:
         except Exception as e:
             logger.error("Failed to schedule action '%s': %s", action.get("name"), e)
 
-    def _clear_stale_locks(self, db: Any) -> None:
+    def _clear_stale_locks(self, db: SyncDatabase) -> None:
         """Clear action locks older than 30 minutes to prevent stuck actions."""
+        from spark.database import autonomous_actions
+
         try:
-            ph = db.placeholder
-            cursor = db.execute(f"""SELECT id, name, locked_by, locked_at FROM autonomous_actions
-                    WHERE locked_by IS NOT NULL AND locked_at IS NOT NULL
-                    AND locked_at < datetime('now', '-30 minutes')""")
-            stale = cursor.fetchall()
-            for row in stale:
-                row_dict = dict(row)
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+            for row in db.call(autonomous_actions.clear_stale_locks, cutoff):
                 logger.warning(
-                    "Clearing stale lock on action '%s' (id=%d, locked_by=%s, locked_at=%s)",
-                    row_dict.get("name"),
-                    row_dict.get("id"),
-                    row_dict.get("locked_by"),
-                    row_dict.get("locked_at"),
+                    "Cleared stale lock on action '%s' (id=%d, locked_by=%s, locked_at=%s)",
+                    row.get("name"),
+                    row.get("id"),
+                    row.get("locked_by"),
+                    row.get("locked_at"),
                 )
-                db.execute(
-                    f"UPDATE autonomous_actions SET locked_by = NULL, locked_at = NULL WHERE id = {ph}",
-                    (row_dict["id"],),
-                )
-            if stale:
-                db.commit()
         except Exception as e:
             logger.debug("Stale lock check: %s", e)
 
@@ -322,7 +306,7 @@ class ActionRunner:
         logger.info("Executing action %d", action_id)
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(self._ctx, self._daemon_id)
+        executor = ActionExecutor(self._ctx, self._daemon_id, self._db)
         executor.execute(action_id)
 
         # Update next_run_at and last_run_at after execution
@@ -335,8 +319,8 @@ class ActionRunner:
             if job and job.next_run_time:
                 # Store as UTC for consistent DB storage
                 next_utc = job.next_run_time.astimezone(timezone.utc)
-                aa.update_action(
-                    self._get_db(),
+                self._get_db().call(
+                    aa.update_action,
                     action_id,
                     user_guid,
                     next_run_at=next_utc.isoformat(),

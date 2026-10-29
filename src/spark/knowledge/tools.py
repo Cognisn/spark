@@ -62,7 +62,7 @@ def execute(tool_name: str, tool_input: dict, config: dict) -> tuple[str, bool]:
         from spark.knowledge.resolve import available_scopes
 
         conversation_id = config.get("_kg_conversation_id")
-        scopes = available_scopes(db, conversation_id, user_guid)
+        scopes = db.call(available_scopes, conversation_id, user_guid)
         if not scopes:
             return (
                 "No knowledge graphs are available here. Graphs can be built "
@@ -80,7 +80,7 @@ def execute(tool_name: str, tool_input: dict, config: dict) -> tuple[str, bool]:
 
             seen = {(s["scope"], s["id"]) for s in seeds}
             for scope in scopes:
-                for node in store.get_nodes(db, scope, user_guid):
+                for node in db.call(store.get_nodes, scope, user_guid):
                     if node["name_key"] == entity_name and (scope, node["id"]) not in seen:
                         seeds.append({**node, "similarity": 1.0, "scope": scope})
 

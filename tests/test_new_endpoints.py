@@ -83,7 +83,7 @@ class TestExpandedChatSettings:
         original = conv_mod.update_conversation
         calls = []
 
-        def mock_update(db, cid, uid, **kwargs):
+        async def mock_update(db, cid, uid, **kwargs):
             calls.append(kwargs)
 
         conv_mod.update_conversation = mock_update

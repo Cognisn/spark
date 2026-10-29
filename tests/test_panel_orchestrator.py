@@ -7,30 +7,16 @@ import json
 import pytest
 
 from spark.core.panel.orchestrator import PanelOrchestrator
-from spark.database import Database, debates
-from spark.database.backends import SQLiteBackend
-from spark.database.connection import DatabaseConnection
+from spark.database import debates
 from tests.test_debate_orchestrator import ScriptedService, text_response, tool_response
 
 
-@pytest.fixture()
-def db(tmp_path) -> DatabaseConnection:
-    """Create a fresh test database and return its connection."""
-    backend = SQLiteBackend(tmp_path / "test.db")
-    conn = DatabaseConnection(backend)
-    Database(conn)  # initialises the schema
-    return conn
-
-
-def _panel(db, *, human=False, rounds_mode="fixed", max_rounds=1) -> int:
-    ph = db.placeholder
-    cur = db.execute(
-        f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
-        f"VALUES ({ph}, {ph}, {ph}, 'panel')",
+def _panel(sync_db, *, human=False, rounds_mode="fixed", max_rounds=1) -> int:
+    cid = sync_db.fetch_value(
+        "INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+        "VALUES (?, ?, ?, 'panel') RETURNING id",
         ("P", "model-mod", "u1"),
     )
-    db.commit()
-    cid = cur.lastrowid
     agents = {
         "moderator": {
             "model_id": "model-mod",
@@ -55,7 +41,7 @@ def _panel(db, *, human=False, rounds_mode="fixed", max_rounds=1) -> int:
             "display_name": "Matthew",
             "is_human": True,
         }
-    debates.create_debate(db, cid, "Topic T", rounds_mode, max_rounds, "u1", agents)
+    sync_db.call(debates.create_debate, cid, "Topic T", rounds_mode, max_rounds, "u1", agents)
     return cid
 
 
@@ -76,9 +62,9 @@ def _services(order: list[str]) -> dict[str, ScriptedService]:
     }
 
 
-def make(db, services: dict, events: list | None = None) -> PanelOrchestrator:
+def make(sync_db, services: dict, events: list | None = None) -> PanelOrchestrator:
     return PanelOrchestrator(
-        db,
+        sync_db,
         lambda m: services[m],
         {},
         status_callback=(lambda t, d: events.append((t, d))) if events is not None else None,
@@ -86,40 +72,42 @@ def make(db, services: dict, events: list | None = None) -> PanelOrchestrator:
 
 
 class TestRotation:
-    def test_one_round_follows_order_and_synthesises(self, db) -> None:
-        cid = _panel(db)
+    def test_one_round_follows_order_and_synthesises(self, sync_db) -> None:
+        cid = _panel(sync_db)
         events: list = []
-        orch = make(db, _services(["panellist:2", "panellist:1"]), events)
+        orch = make(sync_db, _services(["panellist:2", "panellist:1"]), events)
         orch.run(cid, "u1")
 
-        d = debates.get_debate(db, cid)
+        d = sync_db.call(debates.get_debate, cid)
         assert d["state"] == "qa"
         assert json.loads(d["opening_speaker"]) == ["panellist:2", "panellist:1"]
-        contribs = [t for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"]
+        contribs = [
+            t for t in sync_db.call(debates.get_turns, cid) if t["turn_type"] == "contribution"
+        ]
         assert [c["role"] for c in contribs] == ["panellist:2", "panellist:1"]
-        types = [t["turn_type"] for t in debates.get_turns(db, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
         assert "synthesis" in types
         names = [d2.get("name") for t2, d2 in events if t2 == "panellist_turn_start"]
         assert names == ["Engineer", "Economist"]
 
-    def test_invalid_order_falls_back_to_numeric(self, db) -> None:
-        cid = _panel(db)
-        orch = make(db, _services(["ghost"]))
+    def test_invalid_order_falls_back_to_numeric(self, sync_db) -> None:
+        cid = _panel(sync_db)
+        orch = make(sync_db, _services(["ghost"]))
         orch.run(cid, "u1")
-        d = debates.get_debate(db, cid)
+        d = sync_db.call(debates.get_debate, cid)
         assert json.loads(d["opening_speaker"]) == ["panellist:1", "panellist:2"]
 
 
 class TestHumanTurn:
-    def test_pause_at_human_then_resume(self, db) -> None:
-        cid = _panel(db, human=True)
+    def test_pause_at_human_then_resume(self, sync_db) -> None:
+        cid = _panel(sync_db, human=True)
         events: list = []
         services = _services(["panellist:1", "panellist:3", "panellist:2"])
-        orch = make(db, services, events)
+        orch = make(sync_db, services, events)
         orch.run(cid, "u1")
 
         # Paused at Matthew: state still round, human_turn emitted, p2 not yet run
-        d = debates.get_debate(db, cid)
+        d = sync_db.call(debates.get_debate, cid)
         assert d["state"] == "round"
         assert any(t == "human_turn" and dd["name"] == "Matthew" for t, dd in events)
         assert len(services["model-p2"].responses) == 1  # untouched
@@ -132,52 +120,51 @@ class TestHumanTurn:
         turn_id = orch.submit_contribution(cid, "u1", "My human take.")
         assert turn_id is not None
         orch.run(cid, "u1")
-        assert debates.get_debate(db, cid)["state"] == "qa"
+        assert sync_db.call(debates.get_debate, cid)["state"] == "qa"
         contribs = [
-            t["role"] for t in debates.get_turns(db, cid) if t["turn_type"] == "contribution"
+            t["role"]
+            for t in sync_db.call(debates.get_turns, cid)
+            if t["turn_type"] == "contribution"
         ]
         assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
 
-    def test_submit_contribution_refused_when_not_pending(self, db) -> None:
-        cid = _panel(db)  # no human panellist
-        orch = make(db, _services(["panellist:1", "panellist:2"]))
+    def test_submit_contribution_refused_when_not_pending(self, sync_db) -> None:
+        cid = _panel(sync_db)  # no human panellist
+        orch = make(sync_db, _services(["panellist:1", "panellist:2"]))
         assert orch.submit_contribution(cid, "u1", "x") is None
 
 
 class TestUserPromptAndQa:
-    def test_qa_question_answered_by_moderator(self, db) -> None:
-        cid = _panel(db)
+    def test_qa_question_answered_by_moderator(self, sync_db) -> None:
+        cid = _panel(sync_db)
         services = _services(["panellist:1", "panellist:2"])
-        orch = make(db, services)
+        orch = make(sync_db, services)
         orch.run(cid, "u1")
-        assert debates.get_debate(db, cid)["state"] == "qa"
+        assert sync_db.call(debates.get_debate, cid)["state"] == "qa"
 
         services["model-mod"].responses.append(text_response("Because they agreed."))
         qid = orch.submit_user_prompt(cid, "Why consensus?")
         answer = orch.answer_qa(cid, "u1", qid)
         assert answer == "Because they agreed."
-        types = [t["turn_type"] for t in debates.get_turns(db, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
         assert "qa_question" in types
         assert "qa_answer" in types
 
 
 class TestCapabilities:
-    def test_prompt_caching_threaded_to_all_agents(self, db) -> None:
+    def test_prompt_caching_threaded_to_all_agents(self, sync_db) -> None:
         """Panellists and the moderator must request prompt caching on every call."""
-        ph = db.placeholder
-        cur = db.execute(
-            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
-            f"VALUES ({ph}, {ph}, {ph}, 'panel')",
+        cid = sync_db.fetch_value(
+            "INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            "VALUES (?, ?, ?, 'panel') RETURNING id",
             ("P", "model-mod", "u1"),
         )
-        db.commit()
-        cid = cur.lastrowid
         agents = {
             "moderator": {"model_id": "model-mod", "brief": None, "display_name": "Mod"},
             "panellist:1": {"model_id": "model-p1", "brief": None, "display_name": "One"},
             "panellist:2": {"model_id": "model-p2", "brief": None, "display_name": "Two"},
         }
-        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+        sync_db.call(debates.create_debate, cid, "T", "fixed", 1, "u1", agents)
 
         captured: dict[str, list] = {"model-mod": [], "model-p1": [], "model-p2": []}
 
@@ -212,7 +199,7 @@ class TestCapabilities:
             ),
         }
         orch = PanelOrchestrator(
-            db,
+            sync_db,
             lambda m: services[m],
             {"embedded_tools": {}},
             status_callback=lambda t, d: None,
@@ -224,15 +211,12 @@ class TestCapabilities:
                 c.get("prompt_caching") is True for c in captured[key]
             ), f"{key} invocations missing prompt_caching"
 
-    def test_allowlist_enforced_per_panellist(self, db) -> None:
-        ph = db.placeholder
-        cur = db.execute(
-            f"INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
-            f"VALUES ({ph}, {ph}, {ph}, 'panel')",
+    def test_allowlist_enforced_per_panellist(self, sync_db) -> None:
+        cid = sync_db.fetch_value(
+            "INSERT INTO conversations (name, model_id, user_guid, conversation_type) "
+            "VALUES (?, ?, ?, 'panel') RETURNING id",
             ("P", "model-mod", "u1"),
         )
-        db.commit()
-        cid = cur.lastrowid
         agents = {
             "moderator": {
                 "model_id": "model-mod",
@@ -251,7 +235,7 @@ class TestCapabilities:
                 "display_name": "Free",
             },
         }
-        debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
+        sync_db.call(debates.create_debate, cid, "T", "fixed", 1, "u1", agents)
 
         captured: dict[str, list] = {"model-p1": [], "model-p2": []}
 
@@ -287,7 +271,7 @@ class TestCapabilities:
             ),
         }
         orch = PanelOrchestrator(
-            db,
+            sync_db,
             lambda m: services[m],
             {"embedded_tools": {}},
             status_callback=lambda t, d: None,

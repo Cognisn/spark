@@ -7,8 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Deployment mode**: a `mode` setting (`personal` or `server`, environment `SPARK__MODE`) read once at start-up through konfig. Personal mode keeps today's defaults (SQLite in the platform data directory). Server mode requires `database.url` to be a PostgreSQL URL and refuses to start otherwise
+- **Versioned migrations**: an Alembic chain for SPARK, kept in a `spark` PostgreSQL schema with its own version table (the default schema on SQLite). The baseline reproduces the 0.2.0 schema exactly. `spark migrate` runs the chain (and, from a later release, warden's)
+
 ### Changed
+- **Upgrading from 0.2.x (personal mode)**: on first start SPARK upgrades the existing SQLite database once: it applies 0.2.0's own schema statements, checks every column and index against the 0.2.0 baseline, and stamps the database. If anything differs it refuses with a list of the differences and changes nothing. Later schema changes are applied automatically at start-up in personal mode; in server mode run `spark migrate` first (SPARK refuses to start on a database behind the current schema)
+- **Async data layer** (`spark.db`): a psycopg 3 connection pool for PostgreSQL and a WAL-mode aiosqlite pool for SQLite, replacing the single shared connection whose cursors could be read by another thread (the knowledge-graph status race). Synchronous code reaches it through one documented bridge. New runtime dependencies: `aiosqlite`, `psycopg[binary,pool]` and `alembic`
 - README installation instructions now cover PyPI and uv only; the standalone download table is replaced by a note that standalone builds are paused
+- The Database settings page offers the mode (personal or server) and, for server mode, the PostgreSQL URL (stored in the keychain); host, port, user and MySQL or SQL Server choices are gone
+
+### Removed
+- The `html2text` dependency (GPL-3.0-or-later). The web fetch tool converts pages to Markdown with `markdownify` (MIT), keeping links and headings and dropping images, scripts and styles as before
+- **MySQL, MariaDB and SQL Server support**, the psycopg2 driver, and the `mysql`, `postgresql`, `mssql` and `all-databases` extras. Upgrade note: personal mode uses SQLite as before; PostgreSQL is supported in server mode (`mode: server` with `database.url`), through psycopg 3, which is now a standard dependency. A configuration that still sets `database.type` to `mysql`, `mariadb` or `mssql` is refused at start-up with a message saying so
+
+### Fixed
+- On Windows, checking whether the action daemon or the tray was already running sent a Ctrl+C to the console it shared (`os.kill(pid, 0)` is a Ctrl+C there); the check now asks Windows for the process state instead
+- Windows path handling for skill resources
+- The knowledge graph status page could fail with an error while a build was running, because the build and the status request shared one database connection
+- Web requests no longer block the server while they read or write the database, and a slow conversation turn no longer delays other requests' database work
+- Scheduled actions no longer open a new database connection (and re-check the schema) for every run and every tool call; the tray daemon reads its statistics through the same connection pool instead of opening the database file directly
+- Stale scheduled-action locks are now released after 30 minutes as intended (the age check compared timestamps in two different text formats)
 
 ## [0.2.1] - 2026-10-28
 

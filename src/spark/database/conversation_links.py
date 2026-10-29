@@ -1,77 +1,70 @@
-"""Conversation link operations — one-directional cross-conversation context sharing."""
+"""Conversation link operations: one-directional cross-conversation context sharing."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from spark.db.engine import Executor, Row
 
-if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+__all__ = ["add_link", "get_linkable_conversations", "get_links", "remove_link"]
 
 
-def add_link(db: DatabaseConnection, source_id: int, target_id: int, user_guid: str) -> bool:
-    """Link source conversation to target (one-directional). Returns True on success."""
+async def add_link(db: Executor, source_id: int, target_id: int, user_guid: str) -> bool:
+    """Link source conversation to target (one-directional). Returns True on success.
+
+    A duplicate link, or a link to a conversation that does not exist, is refused.
+    """
     if source_id == target_id:
         return False
-    ph = db.placeholder
     try:
-        db.execute(
-            f"""INSERT INTO conversation_links
-                (source_conversation_id, target_conversation_id, user_guid)
-                VALUES ({ph}, {ph}, {ph})""",
-            (source_id, target_id, user_guid),
-        )
-        db.commit()
-        return True
-    except Exception:
-        db.rollback()
+        async with db.transaction() as conn:
+            new_id = await conn.fetch_value(
+                """INSERT INTO conversation_links
+                    (source_conversation_id, target_conversation_id, user_guid)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (source_conversation_id, target_conversation_id) DO NOTHING
+                    RETURNING id""",
+                (source_id, target_id, user_guid),
+            )
+    except Exception:  # foreign key: the conversation does not exist
         return False
+    return new_id is not None
 
 
-def remove_link(db: DatabaseConnection, source_id: int, target_id: int, user_guid: str) -> None:
+async def remove_link(db: Executor, source_id: int, target_id: int, user_guid: str) -> None:
     """Remove a conversation link."""
-    ph = db.placeholder
-    db.execute(
-        f"""DELETE FROM conversation_links
-            WHERE source_conversation_id = {ph}
-            AND target_conversation_id = {ph}
-            AND user_guid = {ph}""",
+    await db.execute(
+        """DELETE FROM conversation_links
+            WHERE source_conversation_id = ?
+            AND target_conversation_id = ?
+            AND user_guid = ?""",
         (source_id, target_id, user_guid),
     )
-    db.commit()
 
 
-def get_links(db: DatabaseConnection, source_id: int, user_guid: str) -> list[dict]:
+async def get_links(db: Executor, source_id: int, user_guid: str) -> list[Row]:
     """Get all conversations linked from the source."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT c.id, c.name, c.model_id, c.created_at
+    return await db.fetch_all(
+        """SELECT c.id, c.name, c.model_id, c.created_at
             FROM conversation_links l
             JOIN conversations c ON c.id = l.target_conversation_id
-            WHERE l.source_conversation_id = {ph} AND l.user_guid = {ph}
+            WHERE l.source_conversation_id = ? AND l.user_guid = ?
             AND c.is_active = 1
             ORDER BY c.name""",
         (source_id, user_guid),
     )
-    return [dict(row) for row in cursor.fetchall()]
 
 
-def get_linkable_conversations(
-    db: DatabaseConnection, source_id: int, user_guid: str
-) -> list[dict]:
+async def get_linkable_conversations(db: Executor, source_id: int, user_guid: str) -> list[Row]:
     """Get active conversations that can be linked to (excluding self and already linked)."""
-    ph = db.placeholder
-    cursor = db.execute(
-        f"""SELECT c.id, c.name, c.model_id, c.created_at
+    return await db.fetch_all(
+        """SELECT c.id, c.name, c.model_id, c.created_at
             FROM conversations c
             WHERE c.is_active = 1
-            AND c.user_guid = {ph}
-            AND c.id != {ph}
+            AND c.user_guid = ?
+            AND c.id != ?
             AND c.id NOT IN (
                 SELECT target_conversation_id FROM conversation_links
-                WHERE source_conversation_id = {ph} AND user_guid = {ph}
+                WHERE source_conversation_id = ? AND user_guid = ?
             )
             ORDER BY c.name""",
         (user_guid, source_id, source_id, user_guid),
     )
-    return [dict(row) for row in cursor.fetchall()]

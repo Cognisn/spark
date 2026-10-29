@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from spark.skills.manager import NAME_RE, get_skills_manager
@@ -60,6 +60,19 @@ def get_write_tools() -> list[dict[str, Any]]:
     return [dict(_CREATE), dict(_UPDATE)]
 
 
+def _escapes_skill(raw_path: str) -> bool:
+    """True when a resource path could leave the skill folder on any platform.
+
+    Judged under Windows rules, the stricter of the two (both slashes separate
+    and drives exist), so a rooted path, a drive or drive-relative path, a UNC
+    path, or a parent step in either separator style is refused wherever SPARK runs.
+    """
+    if not raw_path.strip():
+        return True
+    parsed = PureWindowsPath(raw_path)
+    return bool(parsed.drive or parsed.root or ".." in parsed.parts)
+
+
 def _validate(name: str, description: str, instructions: str, resources: list[dict]) -> str | None:
     """Return an error message, or None when the input is acceptable."""
     if not NAME_RE.match(name) or len(name) > 64:
@@ -70,8 +83,9 @@ def _validate(name: str, description: str, instructions: str, resources: list[di
         return "Instructions must not be empty"
     total = len(instructions.encode("utf-8"))
     for res in resources:
-        path = Path(str(res.get("path", "")))
-        if path.is_absolute() or ".." in path.parts or not str(path).strip():
+        raw_path = str(res.get("path", ""))
+        path = Path(raw_path)
+        if _escapes_skill(raw_path):
             return f"Resource path '{res.get('path')}' must be relative, inside the skill"
         content = res.get("content")
         if not isinstance(content, str):

@@ -27,3 +27,6 @@ src/spark/web/static/**/*.woff2 binary
 src/spark/web/static/**/*.ttf binary
 src/spark/web/static/**/*.otf binary
 src/spark/web/static/**/*.eot binary
+
+# SQLite databases (test fixtures) are binary.
+*.db binary

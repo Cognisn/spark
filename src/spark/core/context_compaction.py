@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from spark.database.connection import DatabaseConnection
+    from spark.db.bridge import SyncDatabase
     from spark.llm.base import LLMService
     from spark.llm.context_limits import ContextLimitResolver
 
@@ -56,7 +56,7 @@ class ContextCompactor:
     def __init__(
         self,
         llm_service: LLMService,
-        db: DatabaseConnection,
+        db: SyncDatabase,
         context_limits: ContextLimitResolver,
         *,
         threshold: float = 0.7,
@@ -84,7 +84,7 @@ class ContextCompactor:
         """Check if compaction is needed and perform it. Returns True if compacted."""
         from spark.database import conversations
 
-        conv = conversations.get_conversation(self._db, conversation_id, user_guid)
+        conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
         if not conv:
             logger.warning(
                 "Compaction check skipped: conversation %d not found for user_guid=%r",
@@ -151,7 +151,7 @@ class ContextCompactor:
         """Execute LLM-driven context compaction."""
         from spark.database import conversations, messages
 
-        all_msgs = messages.get_messages(self._db, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
         if len(all_msgs) < 4:
             return False
 
@@ -215,26 +215,18 @@ class ContextCompactor:
         if not rollup_ids:
             return False
 
-        # Add compacted content as a new message
+        # Marker, roll-up, history and new total in one transaction
         compacted_tokens = self._llm.count_tokens(compacted_content)
-        messages.add_message(self._db, conversation_id, "user", marker, compacted_tokens, user_guid)
-
-        # Mark originals
-        messages.mark_messages_as_rolled_up(self._db, conversation_id, rollup_ids)
-
-        # Record rollup history
-        messages.record_rollup(
-            self._db,
+        new_total = self._db.call(
+            messages.apply_compaction,
             conversation_id,
-            len(rollup_ids),
-            compacted_content,
-            original_tokens,
+            marker,
             compacted_tokens,
+            rollup_ids,
             user_guid,
+            summary=compacted_content,
+            original_tokens=original_tokens,
         )
-
-        # Recalculate
-        new_total = conversations.recalculate_total_tokens(self._db, conversation_id)
 
         logger.info(
             "Compaction complete: %d→%d tokens (%d messages rolled up)",
@@ -262,7 +254,7 @@ class ContextCompactor:
         context_window = self._context_limits.get_context_window(model_id)
         target = int(context_window * 0.2)
 
-        all_msgs = messages.get_messages(self._db, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
         if not all_msgs:
             return False
 
@@ -283,16 +275,16 @@ class ContextCompactor:
             "[EMERGENCY TRUNCATION — older context was removed to prevent overflow. "
             "Some earlier conversation context has been lost.]"
         )
-        messages.add_message(
-            self._db,
+        self._db.call(
+            messages.apply_compaction,
             conversation_id,
-            "user",
             truncation_notice,
             self._llm.count_tokens(truncation_notice),
+            rollup_ids,
             user_guid,
+            summary=None,
+            original_tokens=None,
         )
-        messages.mark_messages_as_rolled_up(self._db, conversation_id, rollup_ids)
-        conversations.recalculate_total_tokens(self._db, conversation_id)
 
         logger.warning("Emergency truncation: removed %d messages", len(rollup_ids))
         return True

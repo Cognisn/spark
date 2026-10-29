@@ -46,7 +46,19 @@ class TestCreate:
         text, is_error = _create(name="Bad Name")
         assert is_error and "kebab-case" in text
 
-    @pytest.mark.parametrize("path", ["../evil.md", "/abs.md"])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "../evil.md",
+            "/abs.md",
+            r"\abs.md",
+            "C:abs.md",
+            "C:/abs.md",
+            r"C:\abs.md",
+            r"\\host\share\x.md",
+            r"references\..\..\evil.md",
+        ],
+    )
     def test_resource_path_jail(self, manager, path) -> None:
         text, is_error = _create(resources=[{"path": path, "content": "x"}])
         assert is_error

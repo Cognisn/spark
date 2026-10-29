@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,9 @@ async def stream_chat(request: Request) -> EventSourceResponse:
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    message = resolve_trigger_for_conversation(conv_mgr._db, user_guid, conversation_id, message)
+    message = await resolve_trigger_for_conversation(
+        database(request), user_guid, conversation_id, message
+    )
 
     # Allocate a unique stream id and per-turn cancellation token.
     stream_id = uuid.uuid4().hex

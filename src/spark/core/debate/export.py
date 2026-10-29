@@ -9,13 +9,13 @@ from spark.database import debates
 
 
 def _load(db: Any, conversation_id: int) -> tuple[dict, list[dict], dict]:
-    cfg = debates.get_debate(db, conversation_id)
+    cfg = db.call(debates.get_debate, conversation_id)
     if not cfg:
         raise ValueError(f"No debate for conversation {conversation_id}")
     return (
         cfg,
-        debates.get_turns(db, conversation_id),
-        debates.get_exhibits(db, conversation_id),
+        db.call(debates.get_turns, conversation_id),
+        db.call(debates.get_exhibits, conversation_id),
     )
 
 

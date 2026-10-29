@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -10,6 +11,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+
+from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,9 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
 
     conversation = None
     if conv_mgr:
-        conversation = conv_mgr.get_conversation(conversation_id, user_guid)
+        conversation = await asyncio.to_thread(
+            conv_mgr.get_conversation, conversation_id, user_guid
+        )
 
     if not conversation:
         return templates.TemplateResponse(
@@ -62,7 +67,7 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse([])
 
-    messages = conv_mgr.get_messages(conversation_id)
+    messages = await asyncio.to_thread(conv_mgr.get_messages, conversation_id)
     return JSONResponse(messages)
 
 
@@ -75,7 +80,7 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
 
     from spark.database import mcp_ops
 
-    transactions = mcp_ops.get_transactions(conv_mgr._db, conversation_id)
+    transactions = await mcp_ops.get_transactions(database(request), conversation_id)
     # Return newest-last so the panel renders in chronological order.
     transactions.reverse()
     # Strip the embedding-sized binary blob; keep only display fields.
@@ -104,7 +109,7 @@ async def get_agent_history(request: Request, conversation_id: int) -> JSONRespo
 
     from spark.database import agents as agent_db
 
-    runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+    runs = await agent_db.get_agent_runs(database(request), conversation_id)
     # Serialise datetime and JSON fields for the frontend.
     result = []
     for r in runs:
@@ -133,7 +138,7 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     user_guid = _get_user_guid(request)
 
     try:
-        result = conv_mgr.send_message(conversation_id, message, user_guid)
+        result = await asyncio.to_thread(conv_mgr.send_message, conversation_id, message, user_guid)
         return JSONResponse(result)
     except Exception as e:
         logger.error("Send message failed: %s", e)
@@ -151,7 +156,7 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = _get_user_guid(request)
-    conv = conv_mgr.get_conversation(conversation_id, user_guid)
+    conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
 
@@ -167,7 +172,7 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     try:
         from spark.database import agents as agent_db
 
-        runs = agent_db.get_agent_runs(conv_mgr._db, conversation_id)
+        runs = await agent_db.get_agent_runs(database(request), conversation_id)
         for r in runs:
             agent_input_tokens += r.get("input_tokens", 0) or 0
             agent_output_tokens += r.get("output_tokens", 0) or 0
@@ -259,7 +264,9 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
             updates[key] = val
 
     try:
-        conversations.update_conversation(conv_mgr._db, conversation_id, user_guid, **updates)
+        await conversations.update_conversation(
+            database(request), conversation_id, user_guid, **updates
+        )
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logger.error("Failed to update conversation settings: %s", e)
@@ -285,7 +292,9 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     all_builtin = get_builtin_tools(conv_mgr._embedded_tools_config)
     embedded = []
     for t in all_builtin:
-        enabled = mcp_ops.is_embedded_tool_enabled(conv_mgr._db, conversation_id, t["name"])
+        enabled = await mcp_ops.is_embedded_tool_enabled(
+            database(request), conversation_id, t["name"]
+        )
         embedded.append(
             {
                 "name": t["name"],
@@ -302,14 +311,14 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
         for server_name, client in mcp_mgr.servers.items():
             if not client.connected:
                 continue
-            server_enabled = mcp_ops.is_mcp_server_enabled(
-                conv_mgr._db, conversation_id, server_name
+            server_enabled = await mcp_ops.is_mcp_server_enabled(
+                database(request), conversation_id, server_name
             )
             server_tools = []
             for t in tools_cache:
                 if t.get("server") == server_name:
-                    tool_enabled = mcp_ops.is_embedded_tool_enabled(
-                        conv_mgr._db, conversation_id, t["name"]
+                    tool_enabled = await mcp_ops.is_embedded_tool_enabled(
+                        database(request), conversation_id, t["name"]
                     )
                     server_tools.append(
                         {
@@ -333,8 +342,10 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
         from spark.skills.manager import get_skills_manager
 
         manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
-        global_states = skills_db.get_skill_states(conv_mgr._db, user_guid)
-        conv_states = skills_db.get_conversation_skill_states(conv_mgr._db, conversation_id)
+        global_states = await skills_db.get_skill_states(database(request), user_guid)
+        conv_states = await skills_db.get_conversation_skill_states(
+            database(request), conversation_id
+        )
         for skill in manager.list_skills():
             enabled_flag = global_states.get(skill["name"], True) and conv_states.get(
                 skill["name"], True
@@ -368,13 +379,19 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
     from spark.database import mcp_ops
 
     if tool_type == "embedded":
-        mcp_ops.set_embedded_tool_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
+        await mcp_ops.set_embedded_tool_enabled(
+            database(request), conversation_id, name, enabled, user_guid
+        )
     elif tool_type == "mcp_server":
-        mcp_ops.set_mcp_server_enabled(conv_mgr._db, conversation_id, name, enabled, user_guid)
+        await mcp_ops.set_mcp_server_enabled(
+            database(request), conversation_id, name, enabled, user_guid
+        )
     elif tool_type == "skill":
         from spark.database import skills as skills_db
 
-        skills_db.set_conversation_skill_enabled(conv_mgr._db, conversation_id, name, enabled)
+        await skills_db.set_conversation_skill_enabled(
+            database(request), conversation_id, name, enabled
+        )
 
     return JSONResponse({"status": "ok"})
 
@@ -393,9 +410,9 @@ async def get_links(request: Request, conversation_id: int) -> JSONResponse:
 
     from spark.database import conversation_links
 
-    linked = conversation_links.get_links(conv_mgr._db, conversation_id, user_guid)
-    available = conversation_links.get_linkable_conversations(
-        conv_mgr._db, conversation_id, user_guid
+    linked = await conversation_links.get_links(database(request), conversation_id, user_guid)
+    available = await conversation_links.get_linkable_conversations(
+        database(request), conversation_id, user_guid
     )
 
     return JSONResponse({"linked": linked, "available": available})
@@ -416,7 +433,9 @@ async def add_link(request: Request, conversation_id: int) -> JSONResponse:
 
     from spark.database import conversation_links
 
-    success = conversation_links.add_link(conv_mgr._db, conversation_id, target_id, user_guid)
+    success = await conversation_links.add_link(
+        database(request), conversation_id, target_id, user_guid
+    )
     if success:
         return JSONResponse({"status": "ok"})
     return JSONResponse({"error": "Link already exists or invalid"}, status_code=400)
@@ -433,7 +452,7 @@ async def remove_link(request: Request, conversation_id: int, target_id: int) ->
 
     from spark.database import conversation_links
 
-    conversation_links.remove_link(conv_mgr._db, conversation_id, target_id, user_guid)
+    await conversation_links.remove_link(database(request), conversation_id, target_id, user_guid)
     return JSONResponse({"status": "ok"})
 
 
@@ -450,11 +469,11 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     user_guid = _get_user_guid(request)
     fmt = request.query_params.get("format", "markdown")
 
-    conv = conv_mgr.get_conversation(conversation_id, user_guid)
+    conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
 
-    msgs = conv_mgr.get_messages(conversation_id)
+    msgs = await asyncio.to_thread(conv_mgr.get_messages, conversation_id)
     name = conv.get("name", "conversation")
 
     # Debates and panels export from their structured turn record, not messages.
@@ -462,14 +481,18 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
         from spark.core.debate.export import export_debate_json, export_debate_markdown
 
         if fmt == "markdown":
-            content = export_debate_markdown(conv_mgr._db, conversation_id)
+            content = await asyncio.to_thread(
+                export_debate_markdown, sync_database(request), conversation_id
+            )
             return StreamingResponse(
                 iter([content]),
                 media_type="text/markdown",
                 headers={"Content-Disposition": f'attachment; filename="{name}.md"'},
             )
         if fmt == "json":
-            content = export_debate_json(conv_mgr._db, conversation_id)
+            content = await asyncio.to_thread(
+                export_debate_json, sync_database(request), conversation_id
+            )
             return StreamingResponse(
                 iter([content]),
                 media_type="application/json",
@@ -478,7 +501,9 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
         if fmt == "html":
             from spark.core.debate.export import export_debate_html
 
-            content = export_debate_html(conv_mgr._db, conversation_id)
+            content = await asyncio.to_thread(
+                export_debate_html, sync_database(request), conversation_id
+            )
             return StreamingResponse(
                 iter([content]),
                 media_type="text/html",
