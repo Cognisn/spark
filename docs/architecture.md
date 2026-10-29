@@ -305,7 +305,36 @@ flowchart LR
   deadlock) and times out instead of hanging. A unit of work needing several statements
   is one repository coroutine, never a connection held across bridged calls.
 - PostgreSQL sessions run in UTC in the `spark` schema; timestamps are returned as
-  ISO 8601 text in both engines.
+  ISO 8601 text in both engines. Pool connections register pgvector, so numpy arrays
+  are sent as `vector` values and `vector` columns come back as numpy arrays.
+
+## Vectors
+
+```mermaid
+flowchart LR
+    MI[MemoryIndex] --> EM[EmbeddingModel<br/>local sentence-transformers, CPU]
+    CI[ConversationVectorIndex] --> EM
+    MI --> VS{VectorStore}
+    CI --> VS
+    VS -->|personal| SQ[SQLite: embedding column,<br/>cosine in Python]
+    VS -->|server| PG[pgvector tables, HNSW cosine,<br/>user filter in the query]
+```
+
+- `spark.index.EmbeddingModel` (protocol: `name`, `dimension`, `embed(texts)`) turns
+  texts into L2-normalised vectors. `SentenceTransformerEmbedding` is the local
+  implementation; provider embeddings can implement the same protocol later.
+- `spark.index.VectorStore` (protocol: `add`, `delete`, `search`, `items`, `rebuild`)
+  keeps one vector per memory or context element and searches them for one user.
+  `vector_store(MEMORIES | CONTEXT, dialect)` picks the implementation.
+- Personal mode keeps the 0.2.0 approach: the vector is the item's `embedding` column
+  and search ranks the candidate rows in Python.
+- Server mode also writes `memory_vectors` and `context_vectors` (one row per item,
+  `ON DELETE CASCADE`) and searches in PostgreSQL: `ORDER BY` cosine distance on a
+  partial HNSW index per dimension, with the user filter in the same query and
+  pgvector's iterative index scan so the filter never starves the result.
+- Every stored vector records its dimension. A vector or query of another dimension
+  is refused (`EmbeddingDimensionMismatch`) until the index is rebuilt with the new
+  model (`MemoryIndex.rebuild()`, `ConversationVectorIndex.rebuild()`).
 
 ## Migrations
 
@@ -318,6 +347,11 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
 - A SQLite database from 0.2.x or earlier (tables, no version table) gets a one-time
   legacy upgrade: 0.2.0's statements and ALTERs, a check of every column and index
   against the baseline (refusing and changing nothing on any difference), then a stamp.
+- Revision `vector_store_1` (PostgreSQL only; nothing on SQLite) creates the `vector`
+  extension if missing, `memory_vectors` and `context_vectors`, and an HNSW cosine
+  index for 384-dimension vectors, copying existing embeddings in.
+- Revision `vector_store_2` merges duplicate knowledge graph nodes and edges, skill
+  states and conversation skill states, then makes their natural keys unique.
 - `spark migrate` runs SPARK's chain, then every chain registered with
   `spark.db.migrate.register_chain` (warden's, in its own `warden` schema, from the
   identity release).

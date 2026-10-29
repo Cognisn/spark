@@ -105,8 +105,9 @@ SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
 Personal mode (the default) keeps everything in a local SQLite database and needs
 nothing extra. Server mode uses PostgreSQL through psycopg 3, which is included:
 set `mode: server` and `database.url` (or `SPARK__MODE=server` and
-`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. MySQL and SQL Server
-are no longer supported.
+`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. Server mode needs the
+pgvector extension (0.8 or later) in that PostgreSQL. MySQL and SQL Server are no
+longer supported.
 
 ## Quick Start
 

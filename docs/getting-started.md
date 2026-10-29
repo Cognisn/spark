@@ -64,6 +64,12 @@ Personal mode applies schema changes automatically at start-up; in server mode r
 `spark migrate` after each upgrade (Spark refuses to start on an older schema). MySQL
 and SQL Server are no longer supported.
 
+Server mode stores memory and conversation vectors with the
+[pgvector](https://github.com/pgvector/pgvector) extension, version 0.8 or later (the
+`pgvector/pgvector` PostgreSQL images include it). `spark migrate` creates the `vector`
+extension if it is missing, which needs a database role allowed to create it;
+otherwise have an administrator run `CREATE EXTENSION vector;` in the database first.
+
 ### Verifying installation
 
 ```bash
