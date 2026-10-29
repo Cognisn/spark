@@ -25,9 +25,11 @@ from spark.db.migrate import (
     MigrationRequired,
 )
 from spark.migrations import schema_0_2_0
+from spark.migrations.baseline import table_names
 from spark.mode import DatabaseSettings, Dialect
 
 FIXTURES = Path(__file__).parent / "fixtures"
+BASELINE_TABLES = frozenset(table_names())
 
 
 def _sqlite(path: Path) -> DatabaseSettings:
@@ -70,6 +72,11 @@ def _sqlite_schema(path: Path, *, ordered: bool = True) -> dict[str, Any]:
         conn.close()
 
 
+def _baseline_part(schema: dict[str, Any]) -> dict[str, Any]:
+    """The baseline's tables only: later revisions add tables of their own."""
+    return {t: v for t, v in schema.items() if t in BASELINE_TABLES}
+
+
 def _alembic_version(path: Path) -> list[str]:
     conn = sqlite3.connect(path)
     try:
@@ -98,7 +105,7 @@ class TestSqliteFresh:
         assert report.legacy_upgraded is False
         assert report.to_revision == migrate.head()
         assert _alembic_version(path) == [migrate.head()]
-        assert len(_sqlite_schema(path)) == len(schema_0_2_0.TABLES)
+        assert len(_baseline_part(_sqlite_schema(path))) == len(schema_0_2_0.TABLES)
 
     def test_baseline_reproduces_the_0_2_0_schema_exactly(self, tmp_path: Path):
         """Tables, columns (in order, with types, NOT NULL, defaults, keys), FKs and indices."""
@@ -131,7 +138,7 @@ class TestLegacyUpgrade:
         assert report.legacy_upgraded is True
         assert report.from_revision is None
         assert _alembic_version(path) == [migrate.head()]
-        assert _sqlite_schema(path) == before
+        assert _baseline_part(_sqlite_schema(path)) == before
         conn = sqlite3.connect(path)
         try:
             assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 2
@@ -146,7 +153,7 @@ class TestLegacyUpgrade:
         report = migrate.upgrade(_sqlite(path))
         assert report.legacy_upgraded is True
         # ALTERed columns are appended, so compare ignoring column order.
-        assert _sqlite_schema(path, ordered=False) == _sqlite_schema(
+        assert _baseline_part(_sqlite_schema(path, ordered=False)) == _sqlite_schema(
             FIXTURES / "spark_0_2_0.db", ordered=False
         )
         conn = sqlite3.connect(path)
@@ -342,7 +349,7 @@ class TestPostgres:
             ).fetchone()
         assert version == [(migrate.head(),)]
         assert public == (0,)
-        assert len(_pg_schema(pg_url, "spark")) == len(schema_0_2_0.TABLES)
+        assert len(_baseline_part(_pg_schema(pg_url, "spark"))) == len(schema_0_2_0.TABLES)
 
     def test_baseline_matches_the_sqlite_baseline_table_for_table(self, pg_url: str, tmp_path):
         """Same tables, same columns in the same order, same nullability, same indices."""
@@ -399,7 +406,15 @@ class TestPostgres:
 
 class TestChainShape:
     def test_the_chain_has_one_head_starting_at_the_baseline(self):
-        assert migrate.head() == BASELINE
+        scripts = migrate._scripts()
+        revision = scripts.get_revision(migrate.head())
+        chain = []
+        while revision is not None:
+            chain.append(revision.revision)
+            down = revision.down_revision
+            assert not isinstance(down, tuple), "the chain must not merge branches"
+            revision = scripts.get_revision(down) if down else None
+        assert chain[-1] == BASELINE
 
     def test_a_forked_chain_is_refused(self, monkeypatch):
         class Forked:
