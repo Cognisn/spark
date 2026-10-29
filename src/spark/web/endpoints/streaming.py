@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stream")
 
 
+def _with_inspection(payload: dict, event_data: dict) -> dict:
+    """Carry a tool result's inspection hit (if any) through to the chat sidecar."""
+    if event_data.get("inspection"):
+        payload["inspection"] = event_data["inspection"]
+    return payload
+
+
 @router.get("/chat")
 async def stream_chat(request: Request) -> EventSourceResponse:
     """SSE endpoint for streaming chat responses."""
@@ -255,12 +262,15 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                         yield {
                             "event": "tool_complete",
                             "data": json.dumps(
-                                {
-                                    "tool_use_id": event_data.get("tool_use_id", ""),
-                                    "tool_name": event_data.get("tool_name", ""),
-                                    "result": event_data.get("result", ""),
-                                    "status": event_data.get("status", "success"),
-                                }
+                                _with_inspection(
+                                    {
+                                        "tool_use_id": event_data.get("tool_use_id", ""),
+                                        "tool_name": event_data.get("tool_name", ""),
+                                        "result": event_data.get("result", ""),
+                                        "status": event_data.get("status", "success"),
+                                    },
+                                    event_data,
+                                )
                             ),
                         }
                     elif event_type == "permission_request":
@@ -308,12 +318,15 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                         yield {
                             "event": "agent_tool_result",
                             "data": json.dumps(
-                                {
-                                    "agent_id": event_data.get("agent_id", ""),
-                                    "tool_name": event_data.get("tool_name", ""),
-                                    "result": event_data.get("result", ""),
-                                    "status": event_data.get("status", "success"),
-                                }
+                                _with_inspection(
+                                    {
+                                        "agent_id": event_data.get("agent_id", ""),
+                                        "tool_name": event_data.get("tool_name", ""),
+                                        "result": event_data.get("result", ""),
+                                        "status": event_data.get("status", "success"),
+                                    },
+                                    event_data,
+                                )
                             ),
                         }
                     elif event_type == "agent_complete":

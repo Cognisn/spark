@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     pass
 
 from spark.db.bridge import SyncDatabase
+from spark.safety.untrusted import (
+    UNTRUSTED_CONTENT_INSTRUCTIONS,
+    ResultPolicy,
+    guard_tool_result,
+    new_turn_id,
+)
+from spark.tools.registry import tool_category
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +305,12 @@ class ActionExecutor:
         tools = self._get_tools()
 
         system = self._build_action_system(db, action, tools, max_tokens, context_mode)
+        # External tool results arrive as marked, untrusted data
+        system += "\n\n" + UNTRUSTED_CONTENT_INSTRUCTIONS
+        turn_id = new_turn_id()
+        result_policy = ResultPolicy.from_config(
+            {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
+        )
 
         messages: list[dict] = [{"role": "user", "content": prompt}]
 
@@ -376,6 +389,16 @@ class ActionExecutor:
                     )
 
                     result_text = self._execute_tool(tool_name, tool_input)
+                    outcome = guard_tool_result(
+                        result_text,
+                        tool_name=tool_name,
+                        mcp=tool_category(tool_name) is None,
+                        turn_id=turn_id,
+                        policy=result_policy,
+                        db=db,
+                        user_guid=self._user_guid,
+                        conversation_id=None,
+                    )
                     logger.info(
                         "Action tool %s result (%d chars): %s",
                         tool_name,
@@ -386,7 +409,7 @@ class ActionExecutor:
                         {
                             "type": "tool_result",
                             "tool_use_id": tc.get("id", ""),
-                            "content": result_text,
+                            "content": outcome.text if outcome is not None else result_text,
                         }
                     )
                     activity_log.append(f"[Tool: {tool_name}] {result_text[:300]}")

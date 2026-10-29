@@ -17,11 +17,16 @@ router = APIRouter(prefix="/settings")
 _LOCK_SECRET_KEY = "settings_lock_password"
 
 
-def _local_tool_refusal() -> JSONResponse | None:
-    """Refuse a local-only tool setting or helper when the server does not offer those tools."""
+def _offers_local_tools() -> bool:
+    """Whether this mode offers the local-only tools (personal mode does, a server does not)."""
     from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
 
-    if all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES):
+    return all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+
+
+def _local_tool_refusal() -> JSONResponse | None:
+    """Refuse a local-only tool setting or helper when the server does not offer those tools."""
+    if _offers_local_tools():
         return None
     return JSONResponse(
         {"detail": "System command, filesystem and email tools are not available in server mode."},
@@ -31,14 +36,17 @@ def _local_tool_refusal() -> JSONResponse | None:
 
 def _touches_unavailable_tools(dotted_key: str) -> bool:
     """Whether saving ``dotted_key`` would write settings for an unavailable tool category."""
-    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+    from spark.tools.registry import is_category_available
 
     parts = dotted_key.split(".")
     if parts[0] != "embedded_tools":
         return False
+    if len(parts) > 1 and parts[1] == "tool_results":
+        # Result actions are an administrator's policy on a server.
+        return not _offers_local_tools()
     if len(parts) == 1:
         # The whole embedded tools tree: it may carry any category.
-        return not all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+        return not _offers_local_tools()
     return not is_category_available(parts[1])
 
 
@@ -530,7 +538,7 @@ def _resolve_embedded_secrets(embedded: dict, ctx: object) -> None:
 
 def _build_sections(settings: object) -> list[dict]:
     """Build settings sections for the template."""
-    return [
+    sections = [
         {
             "id": "providers",
             "title": "LLM Providers",
@@ -1003,6 +1011,39 @@ def _build_sections(settings: object) -> list[dict]:
             ],
         },
     ]
+    # Personal mode sets the action for flagged tool results here; a server
+    # reads them from its settings keys (administrators edit them centrally).
+    if _offers_local_tools():
+        for section in sections:
+            if section["id"] == "security":
+                section["groups"].append(_tool_result_group(settings))
+    return sections
+
+
+_RESULT_SOURCES = (
+    ("web", "Web search and fetch"),
+    ("mcp", "MCP tools"),
+    ("documents", "Documents and archives"),
+    ("agents", "Sub-agents"),
+)
+
+
+def _tool_result_group(settings: object) -> dict:
+    """Per-source action for tool results that match prompt injection patterns."""
+    return {
+        "id": "tool_results",
+        "title": "Tool Result Inspection",
+        "fields": [
+            _select(
+                f"embedded_tools.tool_results.{source}",
+                label,
+                settings,
+                ["mark", "warn", "withhold"],
+                "warn",
+            )
+            for source, label in _RESULT_SOURCES
+        ],
+    }
 
 
 # -- Field helpers --

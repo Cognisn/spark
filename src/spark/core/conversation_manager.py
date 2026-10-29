@@ -13,6 +13,12 @@ from spark.core.context_compaction import ContextCompactor
 from spark.db.bridge import SyncDatabase
 from spark.llm.context_limits import ContextLimitResolver
 from spark.llm.manager import LLMManager
+from spark.safety.untrusted import (
+    UNTRUSTED_CONTENT_INSTRUCTIONS,
+    ResultPolicy,
+    guard_tool_result,
+    new_turn_id,
+)
 from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
 
 logger = logging.getLogger(__name__)
@@ -603,6 +609,11 @@ class ConversationManager:
             len(self._get_messages_for_model(conversation_id, conv)),
         )
 
+        # One unguessable delimiter for this turn's untrusted-content blocks,
+        # and the per-source actions for flagged results.
+        turn_id = new_turn_id()
+        result_policy = ResultPolicy.from_config(self._embedded_tools_config)
+
         # Tool use loop
         self._in_tool_use_loop = True
         total_usage = {"input_tokens": 0, "output_tokens": 0}
@@ -733,6 +744,8 @@ class ConversationManager:
                         response["tool_use"],
                         user_guid,
                         status_callback=status_callback,
+                        turn_id=turn_id,
+                        result_policy=result_policy,
                     )
                     all_tool_calls.extend(response["tool_use"])
 
@@ -1005,6 +1018,9 @@ class ConversationManager:
             "is automatically provided below. You can reference this context in your responses."
         )
 
+        # External tool results arrive as marked, untrusted data
+        parts.append(UNTRUSTED_CONTENT_INSTRUCTIONS)
+
         # 2. Global instructions
         if self._global_instructions:
             parts.append(self._global_instructions)
@@ -1091,6 +1107,8 @@ class ConversationManager:
         user_guid: str,
         *,
         status_callback: Callable | None = None,
+        turn_id: str | None = None,
+        result_policy: ResultPolicy | None = None,
     ) -> dict:
         """Execute a single tool call and return the tool_result dict.
 
@@ -1239,18 +1257,38 @@ class ConversationManager:
             execution_time_ms=elapsed_ms,
         )
 
-        if status_callback:
-            status_callback(
-                "tool_result",
-                {
-                    "tool_use_id": tool_id,
-                    "tool_name": tool_name,
-                    "result": result_text[:500],
-                    "status": "error" if is_error else "success",
-                },
-            )
+        # External results reach the model only as marked, inspected data
+        from spark.tools.registry import tool_category
 
-        return _tool_result(tool_id, result_text, is_error=is_error)
+        model_text = result_text
+        inspection: dict[str, Any] | None = None
+        outcome = guard_tool_result(
+            result_text,
+            tool_name=tool_name,
+            mcp=tool_category(tool_name) is None and not self._is_builtin_tool(tool_name),
+            turn_id=turn_id or new_turn_id(),
+            policy=result_policy or ResultPolicy.from_config(self._embedded_tools_config),
+            db=self._db,
+            user_guid=user_guid,
+            conversation_id=conversation_id,
+        )
+        if outcome is not None:
+            model_text = outcome.text
+            if outcome.flagged:
+                inspection = outcome.event()
+
+        if status_callback:
+            event: dict[str, Any] = {
+                "tool_use_id": tool_id,
+                "tool_name": tool_name,
+                "result": result_text[:500],
+                "status": "error" if is_error else "success",
+            }
+            if inspection is not None:
+                event["inspection"] = inspection
+            status_callback("tool_result", event)
+
+        return _tool_result(tool_id, model_text, is_error=is_error)
 
     def _execute_tools(
         self,
@@ -1259,6 +1297,8 @@ class ConversationManager:
         user_guid: str,
         *,
         status_callback: Callable | None = None,
+        turn_id: str | None = None,
+        result_policy: ResultPolicy | None = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results.
 
@@ -1285,10 +1325,15 @@ class ConversationManager:
         # Dict to collect results keyed by original index for correct ordering.
         result_map: dict[int, dict] = {}
 
+        guard: dict[str, Any] = {
+            "turn_id": turn_id or new_turn_id(),
+            "result_policy": result_policy,
+        }
+
         # 1. Execute non-agent tools sequentially.
         for idx, tc in non_agent_calls:
             result_map[idx] = self._execute_single_tool(
-                tc, conversation_id, user_guid, status_callback=status_callback
+                tc, conversation_id, user_guid, status_callback=status_callback, **guard
             )
 
         # 2. Execute agent tools — in parallel when there are multiple,
@@ -1313,6 +1358,7 @@ class ConversationManager:
                         conversation_id,
                         user_guid,
                         status_callback=status_callback,
+                        **guard,
                     )
                     future_to_idx[future] = idx
 
@@ -1332,7 +1378,7 @@ class ConversationManager:
         elif len(agent_calls) == 1:
             idx, tc = agent_calls[0]
             result_map[idx] = self._execute_single_tool(
-                tc, conversation_id, user_guid, status_callback=status_callback
+                tc, conversation_id, user_guid, status_callback=status_callback, **guard
             )
 
         # 3. Reassemble results in the original tool_calls order.

@@ -385,6 +385,7 @@
 .tool-panel-item .tp-status.running { color: var(--app-accent); animation: app-spin 0.75s linear infinite; }
 .tool-panel-item .tp-status.success { color: var(--app-success); }
 .tool-panel-item .tp-status.error { color: var(--app-danger); }
+.tool-panel-item .tp-status.inspection { color: var(--app-warning); margin-left: 0.25rem; }
 
 .tool-panel-item .tp-detail {
     padding: 0 0.625rem 0.5rem;

@@ -77,7 +77,7 @@ function sendMessageWithSSE(conversationId, message) {
 
     currentEventSource.addEventListener('tool_complete', (e) => {
         const data = JSON.parse(e.data);
-        updateStreamingToolComplete(data.tool_use_id, data.tool_name, data.result, data.status);
+        updateStreamingToolComplete(data.tool_use_id, data.tool_name, data.result, data.status, data.inspection);
     });
 
     currentEventSource.addEventListener('permission_request', (e) => {
@@ -123,7 +123,7 @@ function sendMessageWithSSE(conversationId, message) {
 
     currentEventSource.addEventListener('agent_tool_result', (e) => {
         const data = JSON.parse(e.data);
-        updateStreamingAgentToolResult(data.agent_id, data.tool_name, data.result, data.status);
+        updateStreamingAgentToolResult(data.agent_id, data.tool_name, data.result, data.status, data.inspection);
     });
 
     currentEventSource.addEventListener('agent_complete', (e) => {
