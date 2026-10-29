@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a4] - 2026-10-30
+
 ### Added
 - **Untrusted content in tool results**: results from web search and fetch, MCP tools, documents and archives, and sub-agents now reach the model inside marked untrusted-content blocks with a delimiter that is random for each turn, and the system prompt tells the model to treat their contents as data, never instructions. This applies to chat, sub-agents, debates, panels and scheduled actions. Each result is also checked for prompt injection and jailbreak patterns; for each source (web, MCP, documents, sub-agents) Spark marks a match, warns the model about it (the default) or withholds the result and tells the model why. Matches are shown in the chat sidecar and recorded with the other prompt inspection violations. Personal mode sets the actions under Settings, Security; a server reads them from `embedded_tools.tool_results.<source>`
 - **Tool availability by mode**: in server mode the system command, filesystem and email tools are not offered at all. They are refused by name wherever a request comes from (a model turn, a sub-agent, a scheduled action), their settings sections are hidden, and the settings API refuses to save their settings, test the email connection or browse the server's directories. Personal mode keeps them as before. Every built-in tool now belongs to a category (`spark.tools.<category>`), and one registry function decides whether a category is available
