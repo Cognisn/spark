@@ -55,6 +55,14 @@ interface:
     # key_file: /path/to/key.pem
     # auto_generate: true          # Generate self-signed cert if none provided
   session_timeout_minutes: 60
+  session_max_age_hours: 24        # End a session this long after sign-in
+  login:
+    code_ttl_seconds: 300          # A sign-in code works once, within this time
+    max_failures: 5                # Failed sign-ins per address within the window
+    failure_window_seconds: 300
+    lockout_seconds: 900           # Lock-out after max_failures
+  # allowed_origins:               # Further origins, e.g. behind a reverse proxy
+  #   - https://spark.example.com
   browser_heartbeat:
     enabled: true
     interval_seconds: 30

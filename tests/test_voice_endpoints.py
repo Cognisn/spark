@@ -12,6 +12,7 @@ from spark.voice.engine import VoiceConfig
 from spark.voice.errors import VoiceUnavailable
 from spark.web.server import create_app
 from tests.db_helpers import app_client
+from tests.web_helpers import sign_in
 
 
 def _mock_settings_get(key: str, default=None, *, cast=None):
@@ -68,9 +69,7 @@ def client(sqlite_settings) -> Iterator[TestClient]:
         app.state.user_guid = "u1"
         app.state.voice_engine = FakeEngine()
 
-        code = app.state.auth.generate_code()
-        resp = c.post("/api/auth", data={"code": code}, follow_redirects=False)
-        c.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+        sign_in(c)
         yield c
 
 

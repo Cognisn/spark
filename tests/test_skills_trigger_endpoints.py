@@ -13,6 +13,7 @@ from spark.skills.trigger import resolve_trigger_for_conversation
 from spark.web.server import create_app
 from tests.db_helpers import app_client
 from tests.test_skills_manager import make_skill
+from tests.web_helpers import sign_in
 
 
 @pytest.fixture()
@@ -52,9 +53,7 @@ def client(sqlite_settings) -> Iterator[TestClient]:
 
 
 def _auth(client: TestClient) -> None:
-    code = client.app.state.auth.generate_code()
-    resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
-    client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+    sign_in(client)
 
 
 DEBATE_PAYLOAD = {

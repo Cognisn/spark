@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Sign-in codes (personal mode)**: each code works once and expires after five minutes (`interface.login.code_ttl_seconds`), including the code in the link opened in the browser at start-up. Loading the sign-in page when no code is live shows a new one in the terminal. An address that fails five times within five minutes is locked out for fifteen (`interface.login.max_failures`, `failure_window_seconds`, `lockout_seconds`); failed attempts are logged with the address, never the code
+- **Origin and CSRF checks**: every POST, PUT, PATCH and DELETE must come from Spark's own pages and carry the session's CSRF token, which the pages send automatically; chat, debate and panel event streams must come from Spark's own pages. A refused request gets a 403 saying which check failed. Further origins (for example a reverse proxy's public address) can be allowed with `interface.allowed_origins`
+- Sessions also end 24 hours after sign-in, however active (`interface.session_max_age_hours`), alongside the existing inactivity timeout
+
+### Changed
+- The session cookie is `SameSite=Strict`, and `Secure` when Spark is served over HTTPS. Following a link to Spark from another site opens the sign-in page
+- Signing out is a POST from the dashboard's Sign Out button, and ends the session on the server; `GET /logout` is no longer served
+- Scripts that call the web API directly must send an `Origin` header naming the instance and an `X-CSRF-Token` header with the session's token
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added

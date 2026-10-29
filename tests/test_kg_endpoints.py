@@ -15,6 +15,7 @@ from spark.web.server import create_app
 from tests.db_helpers import app_client
 from tests.test_kg_extractor import ScriptedService, tool_response
 from tests.test_kg_query import DirectionalEmbedder
+from tests.web_helpers import sign_in
 
 
 @pytest.fixture(autouse=True)
@@ -69,9 +70,7 @@ def db(client):
 
 
 def _auth(client: TestClient) -> None:
-    code = client.app.state.auth.generate_code()
-    resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
-    client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+    sign_in(client)
 
 
 def _seed_conversation(db) -> int:

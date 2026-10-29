@@ -2,25 +2,38 @@
 
 Spark exposes a web API through FastAPI. All endpoints except authentication require a valid session cookie (`spark_session`).
 
+Every POST, PUT, PATCH and DELETE must also send an `Origin` header naming the instance and the session's CSRF token in an `X-CSRF-Token` header (or a `csrf_token` form field); every request to `/stream/...` must send an `Origin` or `Referer` naming the instance. Spark's own pages do this for you: the token is in each page's `<meta name="csrf-token">`. A request that fails either check gets `403` with a `detail` message.
+
 ## Authentication
+
+### GET /login
+
+The sign-in page. Sets the `spark_login_csrf` cookie and the matching form field. If no sign-in code is live, a new one is shown in the terminal.
 
 ### POST /api/auth
 
-Validate an auth code and create a session.
+Redeem a sign-in code and create a session. Each code works once, within `interface.login.code_ttl_seconds`.
 
 **Form data:**
 - `code` (string) -- The authentication code displayed in the terminal
+- `csrf_token` (string) -- The token from the sign-in form
 
-**Response:** Redirect to `/loading` with session cookie set.
+**Response:** Redirect to `/loading` with the session cookie set (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS); `401` for a wrong, used or expired code; `429` while the address is locked out after repeated failures.
 
 ### GET /auto-login
 
-Auto-login via URL query parameter. Used by browser auto-open on startup.
+Auto-login via URL query parameter. Used by browser auto-open on startup. The code is spent by its first use.
 
 **Query params:**
 - `code` (string) -- The authentication code
 
 **Response:** Redirect to `/loading` with session cookie set, or redirect to `/login` on failure.
+
+### POST /logout
+
+End the session and clear its cookie. Needs the CSRF token.
+
+**Response:** Redirect to `/login`.
 
 ## Conversations
 

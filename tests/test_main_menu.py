@@ -10,6 +10,7 @@ from spark.web.endpoints.main_menu import (
     _get_mcp_stats,
     _get_provider_summary,
 )
+from tests.web_helpers import sign_in
 
 
 class TestGetProviderSummary:
@@ -234,9 +235,7 @@ class TestMenuConversationLinks:
 
             mgr.get_conversations.side_effect = _get_convs
             app.state.conversation_manager = mgr
-            code = app.state.auth.generate_code()
-            resp = client.post("/api/auth", data={"code": code}, follow_redirects=False)
-            client.cookies.set("spark_session", resp.cookies.get("spark_session", ""))
+            sign_in(client)
             yield client, sync_db
 
     def test_home_lists_route_by_conversation_type(self, menu) -> None:
