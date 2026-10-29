@@ -11,7 +11,9 @@ recorder, in server mode) commits or rolls back together with the caller.
 
 Rows come back as plain ``dict`` objects in both dialects. PostgreSQL date and
 time values are returned as ISO 8601 text in UTC (sessions run in UTC), and ``bool``
-parameters are stored as integers (the schema has no boolean columns).
+parameters are stored as integers (the schema has no boolean columns). In server
+mode numpy arrays are sent as pgvector ``vector`` values and ``vector`` columns
+come back as float32 numpy arrays (:func:`register_vector`).
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiosqlite
+from pgvector import Vector
 
 from spark.db.dialect import to_driver_sql
 from spark.mode import DatabaseSettings, Dialect
@@ -42,6 +45,7 @@ __all__ = [
     "Params",
     "Row",
     "check_event_loop",
+    "register_vector",
 ]
 
 Params = Sequence[Any]
@@ -93,6 +97,22 @@ def check_event_loop(loop: asyncio.AbstractEventLoop, dialect: Dialect) -> None:
         )
 
 
+async def register_vector(conn: AsyncConnection[Any]) -> None:
+    """Adapt numpy arrays to and from pgvector's ``vector`` type on a pool connection.
+
+    Called for every new connection in server mode. Before ``spark migrate`` has
+    created the extension there is no type to register, and the connection is
+    left as it is.
+    """
+    from pgvector.psycopg import register_vector_async
+    from psycopg import ProgrammingError
+
+    try:
+        await register_vector_async(conn)
+    except ProgrammingError:
+        pass  # "vector type not found": the extension is not installed yet
+
+
 def _params(params: Params) -> tuple[Any, ...]:
     return tuple(int(p) if isinstance(p, bool) else p for p in params)
 
@@ -107,6 +127,8 @@ def _value(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, memoryview):
         return value.tobytes()
+    if isinstance(value, Vector):
+        return value.to_numpy()
     return value
 
 
@@ -293,6 +315,7 @@ class Database:
             min_size=min_size,
             max_size=max_size,
             open=False,
+            configure=register_vector,
             kwargs={
                 "autocommit": True,
                 "options": f"-c search_path={POSTGRES_SCHEMA},public -c TimeZone=UTC",

@@ -399,7 +399,10 @@ class TestPostgres:
 
 class TestChainShape:
     def test_the_chain_has_one_head_starting_at_the_baseline(self):
-        assert migrate.head() == BASELINE
+        scripts = migrate._scripts()
+        chain = [r.revision for r in scripts.walk_revisions(base="base", head=migrate.head())]
+        assert chain[-1] == BASELINE
+        assert scripts.get_revision(BASELINE).down_revision is None
 
     def test_a_forked_chain_is_refused(self, monkeypatch):
         class Forked:
