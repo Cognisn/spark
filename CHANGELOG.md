@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MySQL, MariaDB and SQL Server support**, the psycopg2 driver, and the `mysql`, `postgresql`, `mssql` and `all-databases` extras. Upgrade note: personal mode uses SQLite as before; PostgreSQL is supported in server mode (`mode: server` with `database.url`), through psycopg 3, which is now a standard dependency. A configuration that still sets `database.type` to `mysql`, `mariadb` or `mssql` is refused at start-up with a message saying so
 
 ### Fixed
+- On Windows, checking whether the action daemon or the tray was already running sent a Ctrl+C to the console it shared (`os.kill(pid, 0)` is a Ctrl+C there); the check now asks Windows for the process state instead
 - Windows path handling for skill resources
 - The knowledge graph status page could fail with an error while a build was running, because the build and the status request shared one database connection
 - Web requests no longer block the server while they read or write the database, and a slow conversation turn no longer delays other requests' database work

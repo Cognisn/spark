@@ -309,7 +309,10 @@ def _start_tray_daemon_if_needed() -> None:
     if pid_file.exists():
         try:
             pid = int(pid_file.read_text().strip())
-            os.kill(pid, 0)  # Check if process exists
+            from spark.core.processes import pid_alive
+
+            if not pid_alive(pid):
+                raise OSError("not running")
             logger.info("Tray daemon already running (PID %d)", pid)
             return
         except (OSError, ValueError):

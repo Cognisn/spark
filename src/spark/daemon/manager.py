@@ -10,6 +10,8 @@ import sys
 import time
 from pathlib import Path
 
+from spark.core.processes import pid_alive
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PID_FILE = "spark_daemon.pid"
@@ -147,8 +149,4 @@ class DaemonManager:
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
         """Check if a process is still running."""
-        try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            return False
+        return pid_alive(pid)
