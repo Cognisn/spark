@@ -89,6 +89,13 @@ def configure_runtime(settings: object, secrets: object | None = None) -> mode.R
         default_sqlite_path=Path(_get_default_db_path()),
     )
     mode.configure(runtime)
+    from spark import files
+
+    files.configure(
+        settings,  # type: ignore[arg-type]
+        data_dir=_get_data_path(),
+        runtime_mode=runtime.mode,
+    )
     return runtime
 
 

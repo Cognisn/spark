@@ -487,6 +487,9 @@ class AgentExecutor:
             from spark.tools.registry import execute_builtin_tool, get_builtin_tools
 
             config = dict(self._config)
+            # File tools work in this user's area (server mode)
+            config["_user_guid"] = self._user_guid
+            config["_files_db"] = self._db
 
             # Inject memory index for memory-related tools
             try:

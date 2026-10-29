@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from spark.database.files import QuotaExceeded
+from spark.files.paths import PathRefused
+from spark.files.scope import ToolScope
 
 logger = logging.getLogger(__name__)
 
@@ -292,31 +297,64 @@ def get_tools() -> list[dict[str, Any]]:
     return list(TOOLS)
 
 
-def execute(tool_name: str, tool_input: dict[str, Any], allowed_paths: list[str]) -> str:
-    """Execute a document creation tool."""
-    path = Path(tool_input["path"]).resolve()
+_LABELS = {
+    "create_word": "Word document",
+    "create_excel": "Excel workbook",
+    "create_powerpoint": "PowerPoint presentation",
+    "create_pdf": "PDF document",
+}
 
-    # Validate against allowed paths
-    if allowed_paths:
-        if not any(str(path).startswith(str(Path(ap).resolve())) for ap in allowed_paths):
-            return f"Access denied: {path} is outside allowed paths."
+ImageResolver = Callable[[str], str | None]
 
-    # Ensure parent directory exists
-    path.parent.mkdir(parents=True, exist_ok=True)
+
+def _image_resolver(scope: ToolScope) -> ImageResolver:
+    """Images may only come from inside the scope; anything else is left out."""
+
+    def resolve(raw: str) -> str | None:
+        if not raw:
+            return None
+        try:
+            path = scope.resolve(raw)
+        except PathRefused:
+            logger.warning("Image outside the permitted area left out of a document")
+            return None
+        return str(path) if path.is_file() else None
+
+    return resolve
+
+
+def execute(tool_name: str, tool_input: dict[str, Any], *, scope: ToolScope) -> str:
+    """Execute a document creation tool, writing only inside ``scope``.
+
+    Raises :class:`~spark.files.paths.PathRefused` for an output path outside
+    it, and in server mode :class:`~spark.database.files.QuotaExceeded` when the
+    document would exceed the user's quota (nothing is written then).
+    """
+    creators: dict[str, Callable[[Path, dict[str, Any], ImageResolver], str]] = {
+        "create_word": _create_word,
+        "create_excel": _create_excel,
+        "create_powerpoint": _create_powerpoint,
+        "create_pdf": _create_pdf,
+    }
+    creator = creators.get(tool_name)
+    if creator is None:
+        return f"Unknown document creation tool: {tool_name}"
+
+    target = scope.resolve(str(tool_input["path"]))
+    images = _image_resolver(scope)
+    details: list[str] = []
+
+    def write(path: Path) -> None:
+        details.append(creator(path, tool_input, images))
 
     try:
-        if tool_name == "create_word":
-            return _create_word(path, tool_input)
-        elif tool_name == "create_excel":
-            return _create_excel(path, tool_input)
-        elif tool_name == "create_powerpoint":
-            return _create_powerpoint(path, tool_input)
-        elif tool_name == "create_pdf":
-            return _create_pdf(path, tool_input)
-        return f"Unknown document creation tool: {tool_name}"
+        scope.write([(target, write)])
+    except (PathRefused, QuotaExceeded):
+        raise
     except Exception as e:
         logger.error("Document creation error (%s): %s", tool_name, e, exc_info=True)
         return f"Error creating document: {e}"
+    return f"{_LABELS[tool_name]} created: {scope.show(target)}{details[0] if details else ''}"
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +362,7 @@ def execute(tool_name: str, tool_input: dict[str, Any], allowed_paths: list[str]
 # ---------------------------------------------------------------------------
 
 
-def _create_word(path: Path, tool_input: dict) -> str:
+def _create_word(path: Path, tool_input: dict[str, Any], images: ImageResolver) -> str:
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Inches, Pt, RGBColor
@@ -355,8 +393,8 @@ def _create_word(path: Path, tool_input: dict) -> str:
 
         elif block_type == "paragraph":
             p = doc.add_paragraph()
-            if block.get("alignment"):
-                p.alignment = align_map.get(block["alignment"])
+            if block.get("alignment") in align_map:
+                p.alignment = align_map[block["alignment"]]
             run = p.add_run(block.get("text", ""))
             if block.get("bold"):
                 run.bold = True
@@ -400,16 +438,16 @@ def _create_word(path: Path, tool_input: dict) -> str:
                 doc.add_paragraph(item, style=style)
 
         elif block_type == "image":
-            img_path = block.get("image_path", "")
-            if img_path and Path(img_path).is_file():
+            img_path = images(block.get("image_path", ""))
+            if img_path:
                 width = Inches(block.get("width_inches", 5))
                 doc.add_picture(img_path, width=width)
 
         elif block_type == "page_break":
-            doc.add_page_break()
+            doc.add_page_break()  # type: ignore[no-untyped-call]
 
     doc.save(str(path))
-    return f"Word document created: {path}"
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +455,7 @@ def _create_word(path: Path, tool_input: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _create_excel(path: Path, tool_input: dict) -> str:
+def _create_excel(path: Path, tool_input: dict[str, Any], images: ImageResolver) -> str:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -494,7 +532,7 @@ def _create_excel(path: Path, tool_input: dict) -> str:
 
     wb.save(str(path))
     total_rows = sum(len(s.get("rows", [])) for s in tool_input.get("sheets", []))
-    return f"Excel workbook created: {path} ({len(tool_input.get('sheets', []))} sheets, {total_rows} data rows)"
+    return f" ({len(tool_input.get('sheets', []))} sheets, {total_rows} data rows)"
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +540,7 @@ def _create_excel(path: Path, tool_input: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _create_powerpoint(path: Path, tool_input: dict) -> str:
+def _create_powerpoint(path: Path, tool_input: dict[str, Any], images: ImageResolver) -> str:
     from pptx import Presentation
     from pptx.util import Inches, Pt
 
@@ -598,8 +636,8 @@ def _create_powerpoint(path: Path, tool_input: dict) -> str:
                 txbox.text_frame.text = slide_def["title"]
                 txbox.text_frame.paragraphs[0].font.size = Pt(24)
                 txbox.text_frame.paragraphs[0].font.bold = True
-            img_path = slide_def.get("image_path", "")
-            if img_path and Path(img_path).is_file():
+            img_path = images(slide_def.get("image_path", ""))
+            if img_path:
                 slide.shapes.add_picture(img_path, Inches(1), Inches(1.5), Inches(8))
 
         elif layout_name == "blank":
@@ -611,7 +649,7 @@ def _create_powerpoint(path: Path, tool_input: dict) -> str:
             slide.notes_slide.notes_text_frame.text = slide_def["notes"]
 
     prs.save(str(path))
-    return f"PowerPoint presentation created: {path} ({len(tool_input.get('slides', []))} slides)"
+    return f" ({len(tool_input.get('slides', []))} slides)"
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +657,7 @@ def _create_powerpoint(path: Path, tool_input: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _create_pdf(path: Path, tool_input: dict) -> str:
+def _create_pdf(path: Path, tool_input: dict[str, Any], images: ImageResolver) -> str:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -728,8 +766,8 @@ def _create_pdf(path: Path, tool_input: dict) -> str:
                 flowables.append(Paragraph(f"{prefix}{item}", bullet_style))
 
         elif block_type == "image":
-            img_path = block.get("image_path", "")
-            if img_path and Path(img_path).is_file():
+            img_path = images(block.get("image_path", ""))
+            if img_path:
                 width = block.get("width", 5) * inch
                 flowables.append(Image(img_path, width=width))
 
@@ -744,4 +782,4 @@ def _create_pdf(path: Path, tool_input: dict) -> str:
         flowables.append(Paragraph("(Empty document)", styles["Normal"]))
 
     doc.build(flowables)
-    return f"PDF document created: {path}"
+    return ""

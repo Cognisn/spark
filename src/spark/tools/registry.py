@@ -14,11 +14,15 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from spark.database.files import QuotaExceeded
+from spark.files import FileAreaNotConfigured, PathRefused
+from spark.files.scope import ToolScopeUnavailable
 from spark.mode import Mode
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "FILE_TOOL_REFUSALS",
     "LOCAL_ONLY_CATEGORIES",
     "TOOL_CATEGORIES",
     "execute_builtin_tool",
@@ -128,6 +132,10 @@ def unavailable_reason(tool_name: str, *, mode: Mode | None = None) -> str | Non
     return f"Tool '{tool_name}' is not available: {label} are not available in server mode."
 
 
+# Refusals from the file tools, reported to the model as they are.
+FILE_TOOL_REFUSALS = (PathRefused, QuotaExceeded, ToolScopeUnavailable, FileAreaNotConfigured)
+
+
 def _get_tool_documentation(tool_name: str) -> str:
     """Read tool documentation from the resources/tool_docs directory."""
     from pathlib import Path
@@ -161,6 +169,32 @@ def _has_paths(config: dict[str, Any]) -> bool:
     if isinstance(paths, str):
         return len(paths.strip()) > 0
     return False
+
+
+def _server_mode() -> bool:
+    """Whether this process runs in server mode.
+
+    A process that never configured its mode (a standalone tool call or a test)
+    follows personal-mode rules, which still confine file tools to the allowed
+    roots.
+    """
+    from spark import mode
+
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
+def _file_tools_available(fs_config: dict[str, Any]) -> bool:
+    """Document and archive tools work in the user's area (server) or the allowed roots."""
+    return _server_mode() or _has_paths(fs_config)
+
+
+def _file_scope(config: dict[str, Any]) -> Any:
+    from spark.files.scope import tool_scope
+
+    return tool_scope(config, server=_server_mode())
 
 
 def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -219,9 +253,9 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(get_tools(mode=fs_config.get("mode", "read")))
 
-    # Documents — requires filesystem allowed_paths (documents live on disk)
+    # Documents — the user's file area (server) or filesystem allowed_paths
     doc_config = embedded.get("documents", {})
-    if doc_config.get("enabled", True) and _has_paths(fs_config):
+    if doc_config.get("enabled", True) and _file_tools_available(fs_config):
         from spark.tools.documents import get_tools as doc_tools
 
         tools.extend(doc_tools(mode=doc_config.get("mode", "read")))
@@ -232,9 +266,9 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
             tools.extend(doc_create_tools())
 
-    # Archives — requires filesystem allowed_paths
+    # Archives — the user's file area (server) or filesystem allowed_paths
     arc_config = embedded.get("archives", {})
-    if arc_config.get("enabled", True) and _has_paths(fs_config):
+    if arc_config.get("enabled", True) and _file_tools_available(fs_config):
         from spark.tools.archives import get_tools as arc_tools
 
         tools.extend(arc_tools(mode=arc_config.get("mode", "list")))
@@ -335,16 +369,9 @@ def execute_builtin_tool(
         # Documents (read)
         doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}
         if tool_name in doc_read_tools:
-            fs_config = embedded.get("filesystem", {})
-            if not _has_paths(fs_config):
-                return (
-                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
-                    True,
-                )
-
             from spark.tools.documents import execute as doc_execute
 
-            return doc_execute(tool_name, tool_input), False
+            return doc_execute(tool_name, tool_input, scope=_file_scope(config)), False
 
         # Documents (create)
         doc_create_tools = {
@@ -354,33 +381,19 @@ def execute_builtin_tool(
             "create_pdf",
         }
         if tool_name in doc_create_tools:
-            fs_config = embedded.get("filesystem", {})
-            allowed = fs_config.get("allowed_paths", [])
-            if isinstance(allowed, str):
-                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
-            if not allowed:
-                return (
-                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
-                    True,
-                )
-
             from spark.tools.document_creation import execute as doc_create_execute
 
-            return doc_create_execute(tool_name, tool_input, allowed), False
+            return doc_create_execute(tool_name, tool_input, scope=_file_scope(config)), False
 
         # Archives
         if tool_name in ("list_archive", "extract_archive"):
-            fs_config = embedded.get("filesystem", {})
-            if not _has_paths(fs_config):
-                return (
-                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
-                    True,
-                )
-
             from spark.tools.archives import execute as arc_execute
 
             arc_mode = embedded.get("archives", {}).get("mode", "list")
-            return arc_execute(tool_name, tool_input, mode=arc_mode), False
+            return (
+                arc_execute(tool_name, tool_input, mode=arc_mode, scope=_file_scope(config)),
+                False,
+            )
 
         # Web
         if tool_name in ("web_search", "web_fetch"):
@@ -429,6 +442,8 @@ def execute_builtin_tool(
 
         return f"Unknown tool: {tool_name}", True
 
+    except FILE_TOOL_REFUSALS as e:
+        return str(e), True
     except Exception as e:
         logger.error("Tool %s execution error: %s", tool_name, e)
         return f"Error executing {tool_name}: {e}", True

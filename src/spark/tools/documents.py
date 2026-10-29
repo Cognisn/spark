@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from spark.files.scope import ToolScope
+
 _TOOLS = [
     {
         "name": "read_word",
@@ -61,11 +63,14 @@ def get_tools(mode: str = "read") -> list[dict[str, Any]]:
     return list(_TOOLS)
 
 
-def execute(tool_name: str, tool_input: dict[str, Any]) -> str:
-    """Execute a document tool."""
-    path = Path(tool_input["path"]).resolve()
+def execute(tool_name: str, tool_input: dict[str, Any], *, scope: ToolScope) -> str:
+    """Execute a document tool on a path inside ``scope``.
+
+    Raises :class:`~spark.files.paths.PathRefused` for a path outside it.
+    """
+    path = scope.resolve(str(tool_input["path"]))
     if not path.is_file():
-        return f"File not found: {path}"
+        return f"File not found: {scope.show(path)}"
 
     if tool_name == "read_word":
         return _read_word(path)

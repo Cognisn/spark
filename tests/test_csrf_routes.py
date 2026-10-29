@@ -34,6 +34,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "chat",
     "conversations",
     "debate",
+    "files",
     "knowledge",
     "main_menu",
     "mcp_servers",
