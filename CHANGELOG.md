@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a5] - 2026-10-30
+
 ### Added
 - **Instance settings** (`spark.instance_settings`): a typed registry of every setting SPARK accepts (key, scope, default and validation), and one accessor to read a setting in either mode. In server mode the administrator's non-secret settings (providers and models offered, MCP servers, tool policy actions, email and ElevenLabs switches, file quotas) live in a new `instance_settings` table and each user's preferences (default model, system instructions, theme, voice) in `user_preferences`; personal mode keeps `config.yaml`. Run `spark migrate` in server mode for the new tables
 - **Settings propagation between web replicas**: a change made on one replica reaches the others over PostgreSQL LISTEN/NOTIFY; a dropped listening connection is re-established with back-off and every setting reloaded once it is back
