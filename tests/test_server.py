@@ -189,14 +189,15 @@ class TestSettingsPage:
         resp = app.post(
             "/settings/api/save",
             cookies={"spark_session": session_cookie},
-            json={"database.type": "postgresql"},
+            json={"voice.engine": "elevenlabs"},
         )
         assert resp.status_code == 200
 
         import yaml
 
         saved = yaml.safe_load(config_file.read_text())
-        assert saved["database"]["type"] == "postgresql"
+        assert saved["voice"]["engine"] == "elevenlabs"
+        assert saved["database"]["type"] == "sqlite"
 
 
 class TestPortResolution:

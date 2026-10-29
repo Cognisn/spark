@@ -27,15 +27,34 @@
     <!-- Header -->
     <div class="d-flex align-items-center justify-content-between mb-4">
         <div>
+            {% if page == 'instance' %}
+            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Instance settings</h4>
+            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+                Settings every user of this Spark shares. Changes apply to every replica at once.
+                Secrets are kept in the secrets store and are never shown.
+            </p>
+            {% elif page == 'preferences' %}
+            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">My preferences</h4>
+            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+                Your own defaults. They do not change anyone else's.
+            </p>
+            {% else %}
             <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Settings</h4>
             <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
                 Configure providers, database, and application behaviour.
-                Changes are saved to <code>config.yaml</code>.
+                Changes are saved to <code>config.yaml</code>; secrets go to the keychain and are never shown.
             </p>
+            {% endif %}
         </div>
+        {% if page == 'instance' %}
+        <a class="btn btn-app-ghost btn-sm" href="/settings/preferences"><i class="bi bi-person me-1"></i>My preferences</a>
+        {% elif page == 'preferences' and is_admin %}
+        <a class="btn btn-app-ghost btn-sm" href="/settings"><i class="bi bi-sliders me-1"></i>Instance settings</a>
+        {% elif page == 'personal' %}
         <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock/unlock settings">
             <i class="bi bi-lock{% if is_locked %}-fill{% endif %}" id="lock-icon"></i>
         </button>
+        {% endif %}
     </div>
 
     <div class="row g-4">
@@ -56,6 +75,7 @@
                     </nav>
                 </div>
             </div>
+            {% if tool_categories %}
             <div class="app-card">
                 <div class="card-header d-flex align-items-center gap-2" style="font-size: 0.875rem;">
                     <i class="bi bi-tools"></i> Tools
@@ -68,15 +88,18 @@
                             <i class="bi bi-puzzle"></i>
                             Embedded Tools
                         </a>
+                        {% if page == 'personal' %}
                         <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
                            href="#section-mcp-servers"
                            style="font-size: 0.875rem; color: var(--app-text-secondary);">
                             <i class="bi bi-hdd-network"></i>
                             MCP Servers
                         </a>
+                        {% endif %}
                     </nav>
                 </div>
             </div>
+            {% endif %}
             <!-- Save/Discard buttons -->
             <div class="d-flex gap-2 mt-3">
                 <button class="btn btn-app-primary btn-sm flex-grow-1" id="btn-save" onclick="saveSettings()" disabled>
@@ -166,12 +189,17 @@
                                            id="field-{{ field.key|replace('.', '-') }}"
                                            data-key="{{ field.key }}"
                                            data-is-secret="true"
+                                           data-secret-set="{{ 'true' if field.has_value else 'false' }}"
                                            {% if field.has_value %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
-                                           placeholder="{% if field.has_value %}{% else %}Enter value{% endif %}">
+                                           placeholder="{% if field.has_value %}Set (type to replace){% else %}Not set{% endif %}"
+                                           autocomplete="off">
                                     <button class="btn btn-app-ghost" type="button"
-                                            onclick="togglePasswordVisibility(this)">
+                                            onclick="togglePasswordVisibility(this)" title="Show what you typed">
                                         <i class="bi bi-eye"></i>
                                     </button>
+                                </div>
+                                <div class="secret-status" style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {% if field.has_value %}<i class="bi bi-check-circle me-1"></i>Set{% else %}<i class="bi bi-circle me-1"></i>Not set{% endif %}
                                 </div>
 
                                 {% elif field.type == 'number' %}
@@ -216,6 +244,7 @@
             </div>
             {% endfor %}
 
+            {% if tool_categories %}
             <!-- Embedded Tools -->
             <div id="section-embedded-tools" class="mb-4">
                 <div class="app-card">
@@ -303,20 +332,23 @@
                                                 {% endfor %}
                                             </select>
                                             {% elif field.type == 'secret' %}
-                                            {% set has_val = field.value and field.value|string != '' and not field.value|string|truncate(9, True, '') == 'secret://' %}
                                             <div class="input-group input-group-sm">
                                                 <input type="password"
                                                        class="form-control form-control-sm setting-input"
                                                        data-key="{{ field.key }}"
                                                        data-is-secret="true"
-                                                       {% if field.value and field.value|string != '' %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
-                                                       placeholder="{% if field.value and field.value|string != '' %}{% else %}Enter value{% endif %}"
+                                                       data-secret-set="{{ 'true' if field.has_value else 'false' }}"
+                                                       {% if field.has_value %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
+                                                       placeholder="{% if field.has_value %}Set (type to replace){% else %}Not set{% endif %}"
                                                        autocomplete="off">
                                                 <button class="btn btn-app-ghost" type="button"
                                                         onclick="togglePasswordVisibility(this)"
-                                                        title="Show/hide">
+                                                        title="Show what you typed">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
+                                            </div>
+                                            <div class="secret-status" style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                                {% if field.has_value %}<i class="bi bi-check-circle me-1"></i>Set{% else %}<i class="bi bi-circle me-1"></i>Not set{% endif %}
                                             </div>
                                             {% elif field.type == 'path_list' %}
                                             <div class="path-list-control" data-key="{{ field.key }}" id="pathlist-{{ field.key | replace('.', '-') }}">
@@ -385,6 +417,9 @@
                 </div>
             </div>
 
+            {% endif %}
+
+            {% if page == 'personal' %}
             <!-- MCP Servers -->
             <div id="section-mcp-servers" class="mb-4">
                 <div class="app-card">
@@ -406,6 +441,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <!-- MCP Server Modal -->
             <div class="modal fade" id="mcpServerModal" tabindex="-1">
@@ -644,24 +680,14 @@ function toggleSecretField(btn) {
     }
 }
 
-async function togglePasswordVisibility(btn) {
+function togglePasswordVisibility(btn) {
+    // Secrets are write-only: the server never sends a stored value, so this
+    // only shows what has been typed into the field.
     const input = btn.parentElement.querySelector('input');
     const icon = btn.querySelector('i');
     if (input.type === 'password') {
-        // Fetch actual value from server if still showing mask
         const mask = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
-        if (input.value === mask && input.dataset.key) {
-            try {
-                const resp = await fetch(`/settings/api/reveal-secret?key=${encodeURIComponent(input.dataset.key)}`);
-                const data = await resp.json();
-                if (data.value) {
-                    input.value = data.value;
-                    input.dataset.secretRevealed = 'true';
-                }
-            } catch (e) {
-                // Failed to fetch — just show the mask
-            }
-        }
+        if (input.value === mask) return;
         input.type = 'text';
         icon.classList.replace('bi-eye', 'bi-eye-slash');
     } else {
@@ -709,7 +735,7 @@ async function saveSettings() {
     btn.innerHTML = '<span class="app-spinner" style="width:1rem;height:1rem;border-width:2px;"></span> Saving...';
 
     try {
-        const resp = await fetch('/settings/api/save', {
+        const resp = await fetch({{ save_url|tojson }}, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(collectSettings()),
@@ -887,8 +913,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('[id^="section-"]').forEach(el => observer.observe(el));
 
-    // Load MCP servers
-    loadMCPServers();
+    // Load MCP servers (personal mode only)
+    if (document.getElementById('mcp-server-list')) loadMCPServers();
 
     // Track changes — enable Save/Discard buttons when anything changes
     function markDirty() {

@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings propagation between web replicas**: a change made on one replica reaches the others over PostgreSQL LISTEN/NOTIFY; a dropped listening connection is re-established with back-off and every setting reloaded once it is back
 - **Start-up configuration** validated before SPARK serves anything: the database URL (a URL or a `secret://` reference resolved through konfig), `server.public_base_url`, placeholder `warden` keys, and the secrets store. Server mode refuses the OS keychain and needs konfig's encrypted store with `KONFIG_MASTER_KEY` (`secrets.backend: encrypted_file`) or AWS Secrets Manager (`secrets.backend: aws_secrets_manager`, or `KONFIG_AWS_SECRETS_MANAGER`); each refusal names the setting
 
+- **Settings pages in server mode**: administrators get an instance settings page (providers, models offered, tools, integrations, quotas) whose changes apply to every replica, and every user gets a "My preferences" page (default model, system instructions, theme, voice). Until warden is integrated the operator signed in with the start-up code is the administrator. Personal mode keeps the one settings page
+
 ### Changed
+- **Secrets on the settings page are write-only**: each is shown as set or not set and can be replaced or cleared; no stored value is sent back to the browser
+- **Settings are validated before anything is saved**: an unknown key, a setting of the wrong kind for the page, or an invalid value refuses the whole save with a message naming the setting, and nothing is written
 - **Secret names now include their group**: `database.url` is stored as `database_url` (it was stored as `url`), `providers.anthropic.api_key` as `providers_anthropic_api_key`, and so on. On start-up (and in `spark migrate`) existing entries are moved to the new names and the references in `config.yaml` rewritten; secrets that 0.2 kept as plain text in `config.yaml` (the web search API keys) are moved into the secrets store
 
 ### Fixed
