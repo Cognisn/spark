@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Command blocklist across chained commands** (personal mode): the system command tool now checks every command in a command line against the blocklist, not only the first. It understands the chaining and nesting forms of each shell: `;`, `&&`, `||`, `|`, `&`, newlines, backticks, `$( )`, groups and `bash -c` on macOS and Linux; `&`, `|`, groups and `cmd /c` for cmd.exe; and `-Command` and `-EncodedCommand` payloads, `;`, script blocks and `Invoke-Expression` for PowerShell. A command line it cannot split with confidence (an unclosed quote or substitution, or a command name built from a variable or a wildcard) is refused with a message saying why
+
 ## [0.3.0a1] - 2026-10-29
 
 ### Added

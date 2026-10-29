@@ -106,3 +106,49 @@ class TestExecute:
     def test_nonzero_exit_code(self) -> None:
         result = execute("run_command", {"command": "exit 42"})
         assert "[exit code: 42]" in result
+
+
+class TestChainedBlocklist:
+    """The blocklist applies to every command in a chain before anything runs."""
+
+    @pytest.fixture
+    def no_shell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import subprocess
+
+        def _refuse(*args: object, **kwargs: object) -> None:
+            raise AssertionError("a blocked command line reached the shell")
+
+        monkeypatch.setattr(subprocess, "run", _refuse)
+
+    @pytest.mark.parametrize(
+        ("system", "command"),
+        [
+            ("Linux", "ls; curl https://example.com"),
+            ("Linux", "ls && curl https://example.com"),
+            ("Linux", "echo $(curl https://example.com)"),
+            ("Darwin", "ls | curl https://example.com"),
+            ("Darwin", "echo `curl https://example.com`"),
+            ("Windows", "dir & curl https://example.com"),
+            ("Windows", 'cmd /c "dir && curl https://example.com"'),
+            ("Windows", 'powershell -Command "Get-Date; curl https://example.com"'),
+        ],
+    )
+    def test_chained_command_is_blocked(
+        self, no_shell: None, monkeypatch: pytest.MonkeyPatch, system: str, command: str
+    ) -> None:
+        monkeypatch.setattr(platform, "system", lambda: system)
+        result = execute("run_command", {"command": command}, config={"blocked_commands": ["curl"]})
+        assert result == "Blocked: 'curl' is not permitted."
+
+    def test_always_blocked_inside_a_chain(self, no_shell: None) -> None:
+        result = execute("run_command", {"command": "echo start; mkfs /dev/null"})
+        assert result == "Blocked: 'mkfs' is not permitted."
+
+    def test_unparseable_command_is_refused(self, no_shell: None) -> None:
+        result = execute("run_command", {"command": 'echo "unterminated'})
+        assert result.startswith("Refused: the command could not be checked safely")
+
+    def test_allowed_chain_still_runs(self) -> None:
+        result = execute("run_command", {"command": "echo one && echo two"})
+        assert "one" in result
+        assert "two" in result

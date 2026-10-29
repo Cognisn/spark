@@ -262,7 +262,8 @@ Output that exceeds the configured limit is truncated with an indication that co
 
 | Concern | Detail |
 |---------|--------|
-| Blocked commands | Dangerous commands (e.g. `rm -rf /`, `mkfs`, `dd if=/dev/zero`) are blocked |
+| Blocked commands | Dangerous commands (e.g. `mkfs`, `dd`) and any on the configured blocklist are blocked wherever they appear in the command line, including after `;`, `&&`, `||`, `|`, inside `$( )` or backticks, and inside `bash -c`, `cmd /c` or `powershell -Command` payloads |
+| Unclear commands | A command line that cannot be split with confidence (an unclosed quote, or a command name built from a variable or a wildcard) is refused; run each command on its own instead |
 | Timeout limits | Commands exceeding the timeout are terminated automatically |
 | User context | Commands run as the same user that launched Spark — no privilege escalation |
 | No shell injection | Commands are executed directly; however, exercise caution with user-supplied input |
