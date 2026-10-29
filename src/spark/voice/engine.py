@@ -37,10 +37,14 @@ def load_config(ctx: Any) -> VoiceConfig:
         settings = ctx.settings
         enabled = settings.get("voice.engine", "browser", cast=str) == "elevenlabs"
         key = ""
-        if getattr(ctx, "secrets", None):
-            key = ctx.secrets.get("elevenlabs_api_key") or ""
+        secrets = getattr(ctx, "secrets", None)
+        if secrets:
+            # 0.3.0 names secrets with their group; 0.2 used "elevenlabs_api_key".
+            key = secrets.get("voice_elevenlabs_api_key") or secrets.get("elevenlabs_api_key") or ""
         if not key:
             key = settings.get("voice.elevenlabs.api_key", "", cast=str) or ""
+            if key.startswith("secret://"):
+                key = (secrets.resolve_uri(key) if secrets else "") or ""
         mode = settings.get("voice.interaction_mode", "listen_along", cast=str)
         return VoiceConfig(
             enabled=bool(enabled),

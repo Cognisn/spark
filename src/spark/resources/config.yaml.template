@@ -3,7 +3,8 @@
 # =============================================================================
 # Copy this file to config.yaml and customise for your environment.
 # Secrets can be referenced using secret:// URIs, e.g.:
-#   api_key: secret://anthropic_api_key
+#   api_key: secret://providers_anthropic_api_key
+# Secret names include their group (database.url is stored as database_url).
 # Environment variables override settings using the SPARK__ prefix, e.g.:
 #   SPARK__MODE=server
 # =============================================================================
@@ -37,6 +38,38 @@ mode: personal
 database:
   type: sqlite
   # url: postgresql://spark@db.example.com:5432/spark
+  # A URL holding a password belongs in the secrets store instead:
+  # url: secret://database_url
+
+# -----------------------------------------------------------------------------
+# Server mode
+# -----------------------------------------------------------------------------
+# The address users reach Spark on in server mode, for example
+# https://spark.example.com. Administrators change providers, models, MCP
+# servers, tool policy and integrations on the settings page; in server mode
+# those are kept in the database, not in this file.
+server:
+  public_base_url: ""
+
+# -----------------------------------------------------------------------------
+# Secrets
+# -----------------------------------------------------------------------------
+# Secrets are kept by konfig, never in this file or the database. Personal mode
+# uses the OS keychain. Server mode uses either konfig's encrypted store (one
+# file shared by every replica, opened with the KONFIG_MASTER_KEY environment
+# variable) or AWS Secrets Manager (set KONFIG_AWS_SECRETS_MANAGER to the ARN of
+# one secret holding a JSON bundle, or use backend: aws_secrets_manager).
+# secrets:
+#   backend: encrypted_file        # or aws_secrets_manager; required in server mode
+#   file_path: /var/lib/spark/secrets.enc
+
+# -----------------------------------------------------------------------------
+# warden (identity; placeholders until warden is integrated)
+# -----------------------------------------------------------------------------
+# warden:
+#   url: https://warden.example.com
+#   client_id: spark
+#   client_secret: secret://warden_client_secret
 
 # -----------------------------------------------------------------------------
 # Web Interface
@@ -66,7 +99,7 @@ interface:
 providers:
   anthropic:
     enabled: false
-    api_key: secret://anthropic_api_key
+    api_key: secret://providers_anthropic_api_key
     # rate_limit_retry: true
     # max_retries: 3
 
@@ -85,12 +118,12 @@ providers:
 
   google_gemini:
     enabled: false
-    api_key: secret://google_gemini_api_key
+    api_key: secret://providers_google_gemini_api_key
     # web_search_grounding: false
 
   xai:
     enabled: false
-    api_key: secret://xai_api_key
+    api_key: secret://providers_xai_api_key
 
 # -----------------------------------------------------------------------------
 # Conversation Settings
