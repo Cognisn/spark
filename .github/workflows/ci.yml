@@ -40,6 +40,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install the CPU-only torch wheel (Linux; no CUDA packages)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -90,6 +96,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Install the CPU-only torch wheel (Linux; no CUDA packages)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: |
@@ -162,6 +174,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install the CPU-only torch wheel (Linux; no CUDA packages)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -190,6 +208,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Install the CPU-only torch wheel (Linux; no CUDA packages)
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install the runtime dependencies
         run: |

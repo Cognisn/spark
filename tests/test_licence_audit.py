@@ -126,6 +126,7 @@ class TestNamedExceptions:
             "psycopg-pool",
             "certifi",
             "pystray",
+            "python-xlib",
             "tqdm",
         }
         assert all(reason.strip() for reason in audit.EXCEPTIONS.values())

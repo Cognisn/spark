@@ -45,6 +45,7 @@ EXCEPTIONS: dict[str, str] = {
     "psycopg-pool": "LGPL-3.0: psycopg's connection pool, unmodified, installed separately",
     "certifi": "MPL-2.0: CA bundle used by httpx and requests, unmodified",
     "pystray": "LGPL-3.0: system tray icon (tray daemon only), unmodified",
+    "python-xlib": "LGPL-2.0-or-later: pystray's X11 backend on Linux, unmodified",
     "tqdm": "MPL-2.0: progress bars, transitive via sentence-transformers, unmodified",
 }
 
