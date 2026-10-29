@@ -1,14 +1,32 @@
-"""Settings / setup endpoints."""
+"""Settings endpoints: the settings page in personal mode, and in server mode the
+administrator's instance settings and each user's preferences.
+
+Personal mode keeps one page writing ``config.yaml``. Server mode writes instance
+settings to the database (``/settings/api/instance``, administrators only) and
+preferences per user (``/settings/api/preferences``). Every request is checked
+against the settings registry before anything is written: an unknown key, a key
+of the wrong scope or an invalid value refuses the whole request. Secrets go
+only to konfig's secrets store and are reported as set or not set; no endpoint
+returns a secret value.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from pathlib import Path
+from collections.abc import Callable
+from typing import Any, Protocol
 
 import yaml
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+import spark.instance_settings as instance_settings
+from spark import mode
+from spark.instance_settings import access, accessor, registry
+from spark.instance_settings.registry import Scope, SettingsError
+from spark.instance_settings.secrets import SecretsWriter, reference
+from spark.web.db import database
 
 logger = logging.getLogger(__name__)
 
@@ -69,34 +87,258 @@ def _verify_lock(request: Request, password: str) -> bool:
     stored = ctx.secrets.get(_LOCK_SECRET_KEY)
     if not stored:
         return True
-    return _hash_password(password) == stored
+    return bool(_hash_password(password) == stored)
 
 
-@router.get("", response_class=HTMLResponse)
-async def settings_page(request: Request) -> HTMLResponse:
-    """Render the settings page."""
-    templates = request.app.state.templates
+def _server() -> bool:
+    """Server mode? (False when the mode was never configured, as in some tests.)"""
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
+def _writer(request: Request) -> SecretsWriter:
     ctx = request.app.state.ctx
-    settings = ctx.settings
+    return SecretsWriter(ctx.secrets, ctx.settings, server=_server())
 
-    is_locked = _is_locked(request)
 
-    sections = _build_sections(settings)
-    tool_categories = _build_tool_categories(settings)
+def _actor(request: Request) -> str:
+    return access.access_check().user_guid(request) or "operator"
 
+
+def _is_admin(request: Request) -> bool:
+    return access.access_check().is_administrator(request)
+
+
+class _SettingsGetter(Protocol):
+    def get(self, key: str, default: Any = None) -> Any: ...
+
+
+class _View:
+    """What the page builders read: values for the page, and secrets only as set or not set."""
+
+    def __init__(self, values: Callable[[str, Any], Any], status: dict[str, bool]) -> None:
+        self._values = values
+        self._status = status
+
+    def get(self, key: str, default: Any = None, **_: Any) -> Any:
+        if registry.is_known(key) and registry.spec(key).secret:
+            return None
+        return self._values(key, default)
+
+    def is_secret_set(self, key: str) -> bool:
+        return self._status.get(key, False)
+
+
+def _source_value(source: accessor.SettingsSource) -> Callable[[str, Any], Any]:
+    def value(key: str, default: Any) -> Any:
+        if registry.is_known(key):
+            return source.get(key)
+        return default
+
+    return value
+
+
+def _filter_sections(sections: list[dict[str, Any]], scopes: set[Scope]) -> list[dict[str, Any]]:
+    """Keep only fields whose registered scope is in ``scopes``; drop emptied groups."""
+    kept: list[dict[str, Any]] = []
+    for section in sections:
+        groups = []
+        for group in section["groups"]:
+            fields = [
+                f
+                for f in group["fields"]
+                if registry.is_known(f["key"]) and registry.spec(f["key"]).scope in scopes
+            ]
+            if fields:
+                groups.append({**group, "fields": fields})
+        if groups:
+            kept.append({**section, "groups": groups})
+    return kept
+
+
+def _render(
+    request: Request,
+    *,
+    page: str,
+    sections: list[dict[str, Any]],
+    tool_categories: list[dict[str, Any]],
+    save_url: str,
+) -> HTMLResponse:
     llm_manager = getattr(request.app.state, "llm_manager", None)
     available_models = llm_manager.list_all_models() if llm_manager else []
-
-    return templates.TemplateResponse(
+    response: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "settings.html",
         {
             "sections": sections,
             "tool_categories": tool_categories,
             "available_models": available_models,
-            "is_locked": is_locked,
+            "is_locked": page == "personal" and _is_locked(request),
+            "page": page,
+            "save_url": save_url,
+            "is_admin": page != "personal" and _is_admin(request),
         },
     )
+    return response
+
+
+@router.get("", response_class=HTMLResponse)
+async def settings_page(request: Request) -> Response:
+    """Personal mode: the one settings page. Server mode: the administrator's instance settings."""
+    ctx = request.app.state.ctx
+    status = _writer(request).status()
+    if not _server():
+        view = _View(lambda key, default: ctx.settings.get(key, default), status)
+        return _render(
+            request,
+            page="personal",
+            sections=_build_sections(view),
+            tool_categories=_build_tool_categories(view),
+            save_url="/settings/api/save",
+        )
+    if not _is_admin(request):
+        return RedirectResponse(url="/settings/preferences", status_code=303)
+    source = await instance_settings.server_settings(request.app, database(request), ctx.settings)
+    view = _View(_source_value(source), status)
+    sections = _filter_sections(_build_sections(view), {Scope.INSTANCE})
+    sections.append(_models_offered_section(view))
+    return _render(
+        request,
+        page="instance",
+        sections=sections,
+        tool_categories=_build_tool_categories(view),
+        save_url="/settings/api/instance",
+    )
+
+
+@router.get("/preferences", response_class=HTMLResponse)
+async def preferences_page(request: Request) -> Response:
+    """Server mode: the signed-in user's own preferences (A4)."""
+    if not _server():
+        return RedirectResponse(url="/settings", status_code=303)
+    user = access.access_check().user_guid(request)
+    prefs = await accessor.preferences(database(request), user)
+    view = _View(lambda key, default: prefs.get(key, default), {})
+    sections = [_appearance_section(view)]
+    sections += _filter_sections(_build_sections(view), {Scope.USER})
+    return _render(
+        request,
+        page="preferences",
+        sections=sections,
+        tool_categories=[],
+        save_url="/settings/api/preferences",
+    )
+
+
+def _unavailable_tool_settings(data: Any) -> JSONResponse | None:
+    """Refuse, as a whole and before anything is written, settings for tools this mode does not offer."""
+    if isinstance(data, dict) and any(_touches_unavailable_tools(str(k)) for k in data):
+        return _local_tool_refusal() or JSONResponse(
+            {"detail": "These tools are not available."}, status_code=403
+        )
+    return None
+
+
+def _refused(message: str, keys: list[str], status: int = 400) -> JSONResponse:
+    return JSONResponse({"detail": message, "keys": keys}, status_code=status)
+
+
+def _checked(data: Any, scopes: set[Scope]) -> tuple[dict[str, Any], dict[str, str]] | JSONResponse:
+    """Validate a whole request: (plain values, secrets) or the refusal. Nothing is written here.
+
+    An empty or null secret means "leave it as it is", as does a null value (an
+    emptied number field).
+    """
+    if not isinstance(data, dict):
+        return _refused("expected an object of settings", [])
+    unknown = [str(k) for k in data if not isinstance(k, str) or not registry.is_known(k)]
+    if unknown:
+        return _refused("unknown settings: " + ", ".join(unknown), unknown)
+    wrong = [k for k in data if registry.spec(k).scope not in scopes]
+    if wrong:
+        return _refused("these settings cannot be changed here: " + ", ".join(wrong), wrong)
+    plain: dict[str, Any] = {}
+    secrets: dict[str, str] = {}
+    for key, value in data.items():
+        secret = registry.spec(key).secret
+        if value is None or (secret and value == ""):
+            continue
+        if secret:
+            if not isinstance(value, str) or not value.strip():
+                return _refused(f"invalid value for {key}: a secret must be non-empty text", [key])
+            secrets[key] = value
+            continue
+        try:
+            plain[key] = registry.coerce(key, value)
+        except SettingsError as exc:
+            return _refused(str(exc), [key])
+    return plain, secrets
+
+
+@router.post("/api/instance")
+async def save_instance_settings(request: Request) -> JSONResponse:
+    """Server mode, administrators only: store instance settings and secrets."""
+    if not _server():
+        return _refused("personal mode saves settings with /settings/api/save", [], 409)
+    if not _is_admin(request):
+        return _refused("only an administrator can change instance settings", [], 403)
+    data = await request.json()
+    if refused := _unavailable_tool_settings(data):
+        return refused
+    checked = _checked(data, {Scope.INSTANCE})
+    if isinstance(checked, JSONResponse):
+        return checked
+    plain, secrets = checked
+    actor = _actor(request)
+    writer = _writer(request)
+    for key, value in secrets.items():
+        writer.set(key, value, actor=actor)
+    source = await instance_settings.server_settings(
+        request.app, database(request), request.app.state.ctx.settings
+    )
+    for key, value in plain.items():
+        await source.set(key, value, actor=actor)
+    return JSONResponse({"status": "ok", "saved": sorted([*plain, *secrets])})
+
+
+@router.post("/api/preferences")
+async def save_preferences(request: Request) -> JSONResponse:
+    """Server mode: store the signed-in user's preferences."""
+    if not _server():
+        return _refused("personal mode saves settings with /settings/api/save", [], 409)
+    user = access.access_check().user_guid(request)
+    if not user:
+        return _refused("no signed-in user", [], 403)
+    checked = _checked(await request.json(), {Scope.USER})
+    if isinstance(checked, JSONResponse):
+        return checked
+    plain, _secrets = checked
+    for key, value in plain.items():
+        await accessor.set_preference(database(request), user, key, value)
+    return JSONResponse({"status": "ok", "saved": sorted(plain)})
+
+
+@router.get("/api/secrets")
+async def secret_status(request: Request) -> JSONResponse:
+    """Every secret as set or not set (never a value); administrators only in server mode."""
+    if _server() and not _is_admin(request):
+        return _refused("only an administrator can see secrets", [], 403)
+    return JSONResponse(_writer(request).status())
+
+
+@router.post("/api/secrets/clear")
+async def clear_secret(request: Request) -> JSONResponse:
+    """Remove one secret from the store; administrators only in server mode."""
+    if _server() and not _is_admin(request):
+        return _refused("only an administrator can change secrets", [], 403)
+    data = await request.json()
+    key = data.get("key") if isinstance(data, dict) else None
+    if not isinstance(key, str) or not registry.is_known(key) or not registry.spec(key).secret:
+        return _refused("expected the key of a secret", [str(key)])
+    _writer(request).clear(key, actor=_actor(request))
+    return JSONResponse({"status": "ok", "key": key, "set": False})
 
 
 @router.post("/api/lock")
@@ -135,7 +377,7 @@ async def unlock_settings(request: Request) -> JSONResponse:
     if _verify_lock(request, password):
         # Store unlock in session (using a simple flag on app state per session)
         session_id = request.cookies.get("spark_session", "")
-        unlocked = getattr(request.app.state, "_settings_unlocked", set())
+        unlocked: set[str] = getattr(request.app.state, "_settings_unlocked", set())
         unlocked.add(session_id)
         request.app.state._settings_unlocked = unlocked
         return JSONResponse({"status": "ok"})
@@ -148,13 +390,13 @@ async def lock_status(request: Request) -> JSONResponse:
     """Check if settings are locked and whether current session has unlocked."""
     locked = _is_locked(request)
     session_id = request.cookies.get("spark_session", "")
-    unlocked_sessions = getattr(request.app.state, "_settings_unlocked", set())
+    unlocked_sessions: set[str] = getattr(request.app.state, "_settings_unlocked", set())
     unlocked = session_id in unlocked_sessions
 
     return JSONResponse({"locked": locked, "unlocked": unlocked})
 
 
-def _handle_daemon_settings(data: dict, ctx: Any) -> None:
+def _handle_daemon_settings(data: dict[str, Any], ctx: Any) -> None:
     """Start or stop the tray daemon based on settings changes."""
     import os
 
@@ -188,75 +430,6 @@ def _handle_daemon_settings(data: dict, ctx: Any) -> None:
                 logger.info("Tray daemon stopped (PID %d)", pid)
         except Exception as e:
             logger.debug("Daemon stop: %s", e)
-
-
-# Keys that hold secret values — stored in secrets backend, not config.yaml
-_SECRET_KEYS = {
-    "providers.anthropic.api_key",
-    "providers.aws_bedrock.access_key",
-    "providers.aws_bedrock.secret_key",
-    "providers.aws_bedrock.session_token",
-    "providers.google_gemini.api_key",
-    "providers.xai.api_key",
-    "database.password",
-    "embedded_tools.email.password",
-    "voice.elevenlabs.api_key",
-}
-
-# Keys whose UI value is a string "true"/"false" but stored as a boolean in config.yaml
-_BOOL_STRING_KEYS = {
-    "embedded_tools.email.use_tls",
-    "embedded_tools.email.require_approval",
-    "embedded_tools.system_commands.require_approval",
-    "voice.elevenlabs.cache_enabled",
-}
-
-# Keys whose UI value is a numeric string but stored as an integer in config.yaml
-_INT_KEYS = {
-    "voice.elevenlabs.monthly_character_cap",
-    "voice.elevenlabs.cache_max_mb",
-}
-
-# Keys whose UI value is a comma-separated string but stored as a list in config.yaml
-_LIST_KEYS = {
-    "embedded_tools.filesystem.allowed_paths",
-    "embedded_tools.system_commands.blocked_commands",
-}
-
-
-def _secret_name(dotted_key: str) -> str:
-    """Derive a secret store key name from a dotted settings key.
-
-    e.g. 'providers.google_gemini.api_key' → 'google_gemini_api_key'
-    """
-    parts = dotted_key.split(".")
-    # Drop the top-level group (e.g. 'providers' or 'database')
-    return "_".join(parts[1:])
-
-
-@router.get("/api/reveal-secret")
-async def reveal_secret(request: Request) -> JSONResponse:
-    """API: reveal a secret value (for the eye toggle in settings)."""
-    key = request.query_params.get("key", "")
-    if not key:
-        return JSONResponse({"error": "Missing key"}, status_code=400)
-
-    ctx = getattr(request.app.state, "ctx", None)
-    if not ctx:
-        return JSONResponse({"error": "Not initialised"}, status_code=503)
-
-    val = ctx.settings.get(key)
-    if val is None or str(val) == "":
-        return JSONResponse({"value": ""})
-
-    # Resolve secret:// URIs to their actual values
-    val_str = str(val)
-    if val_str.startswith("secret://") and hasattr(ctx, "secrets") and ctx.secrets:
-        from spark.web.server import _resolve_secret
-
-        val_str = _resolve_secret(ctx, val_str)
-
-    return JSONResponse({"value": val_str})
 
 
 @router.post("/api/test-email")
@@ -433,57 +606,45 @@ async def browse_directory(request: Request) -> JSONResponse:
 
 @router.post("/api/save")
 async def save_settings(request: Request) -> JSONResponse:
-    """Persist settings changes to config.yaml."""
+    """Personal mode: persist settings to config.yaml and secrets to the keychain."""
     data = await request.json()
-
-    # Settings for tools this mode does not offer are refused as a whole,
-    # before anything is written.
-    if any(_touches_unavailable_tools(str(k)) for k in data):
-        return _local_tool_refusal() or JSONResponse(
-            {"detail": "These tools are not available."}, status_code=403
+    if refused := _unavailable_tool_settings(data):
+        return refused
+    if _server():
+        return _refused(
+            "server mode keeps settings in the database: use /settings/api/instance "
+            "or /settings/api/preferences",
+            [],
+            409,
         )
+    checked = _checked(data, {Scope.INSTANCE, Scope.USER, Scope.STARTUP})
+    if isinstance(checked, JSONResponse):
+        return checked
+    plain, secrets = checked
 
     from spark.core.application import _get_config_path
 
     config_path = _get_config_path()
 
     try:
-        # Load existing config
-        if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text()) or {}
-        else:
-            raw = {}
-
+        raw = (
+            yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            if config_path.exists()
+            else {}
+        )
         ctx = request.app.state.ctx
+        writer = _writer(request)
 
-        # Apply changes — route secrets to the secrets backend
-        for dotted_key, value in data.items():
-            if dotted_key in _SECRET_KEYS and value:
-                # Store the actual value in the secrets backend
-                name = _secret_name(dotted_key)
-                ctx.secrets.set(name, str(value))
-                # Write a secret:// URI reference in the config
-                _set_nested(raw, dotted_key, f"secret://{name}")
-                logger.info("Stored secret for %s", dotted_key)
-            elif dotted_key in _LIST_KEYS:
-                # Ensure list keys are stored as lists in config.yaml
-                if isinstance(value, str):
-                    value = [p.strip() for p in value.split(",") if p.strip()]
-                elif not isinstance(value, list):
-                    value = []
-                _set_nested(raw, dotted_key, value)
-            elif dotted_key in _INT_KEYS:
-                try:
-                    _set_nested(raw, dotted_key, int(value))
-                except (TypeError, ValueError):
-                    _set_nested(raw, dotted_key, 0)
-            elif dotted_key in _BOOL_STRING_KEYS and isinstance(value, str):
-                _set_nested(raw, dotted_key, value.lower() == "true")
-            else:
-                _set_nested(raw, dotted_key, value)
+        # Secrets to the keychain; config.yaml keeps only a secret:// reference
+        for dotted_key, value in secrets.items():
+            writer.set(dotted_key, value, actor=_actor(request))
+            _set_nested(raw, dotted_key, reference(dotted_key))
+            logger.info("Stored secret for %s", dotted_key)
+        for dotted_key, value in plain.items():
+            _set_nested(raw, dotted_key, value)
 
-        # Write back
-        config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+        with config_path.open("w", encoding="utf-8", newline="\n") as fh:
+            yaml.safe_dump(raw, fh, default_flow_style=False, sort_keys=False)
 
         # Reload settings in memory
         ctx.settings.reload()
@@ -508,16 +669,16 @@ async def save_settings(request: Request) -> JSONResponse:
         request.app.state.first_run = False
 
         # Handle daemon start/stop based on settings changes
-        _handle_daemon_settings(data, ctx)
+        _handle_daemon_settings(plain, ctx)
 
         logger.info("Settings saved to %s", config_path)
         return JSONResponse({"status": "ok"})
     except Exception as exc:
-        logger.error("Failed to save settings: %s", exc)
-        return JSONResponse({"detail": str(exc)}, status_code=500)
+        logger.error("Failed to save settings: %s", type(exc).__name__)
+        return JSONResponse({"detail": "the settings could not be saved"}, status_code=500)
 
 
-def _set_nested(d: dict, dotted_key: str, value: object) -> None:
+def _set_nested(d: dict[str, Any], dotted_key: str, value: object) -> None:
     """Set a value in a nested dict using a dot-separated key."""
     keys = dotted_key.split(".")
     for key in keys[:-1]:
@@ -525,7 +686,7 @@ def _set_nested(d: dict, dotted_key: str, value: object) -> None:
     d[keys[-1]] = value
 
 
-def _resolve_embedded_secrets(embedded: dict, ctx: object) -> None:
+def _resolve_embedded_secrets(embedded: dict[str, Any], ctx: Any) -> None:
     """Resolve secret:// URIs in embedded tools config subtrees in-place."""
     from spark.web.server import _resolve_secret
 
@@ -536,7 +697,7 @@ def _resolve_embedded_secrets(embedded: dict, ctx: object) -> None:
                     cat_config[key] = _resolve_secret(ctx, val)
 
 
-def _build_sections(settings: object) -> list[dict]:
+def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build settings sections for the template."""
     sections = [
         {
@@ -717,7 +878,12 @@ def _build_sections(settings: object) -> list[dict]:
                             "voice.elevenlabs.default_voice_id",
                             "Default voice",
                             settings,
-                            [_get_val(settings, "voice.elevenlabs.default_voice_id", "") or ""],
+                            [
+                                str(
+                                    _get_val(settings, "voice.elevenlabs.default_voice_id", "")
+                                    or ""
+                                )
+                            ],
                             "",
                         ),
                         _number(
@@ -1049,11 +1215,11 @@ def _tool_result_group(settings: object) -> dict:
 # -- Field helpers --
 
 
-def _get_val(settings: object, key: str, default: object = None) -> object:
-    return settings.get(key, default)  # type: ignore[union-attr]
+def _get_val(settings: _SettingsGetter, key: str, default: Any = None) -> Any:
+    return settings.get(key, default)
 
 
-def _ensure_list(value: object) -> list:
+def _ensure_list(value: object) -> list[Any]:
     """Ensure a value is a list of path strings.
 
     Handles: proper list, comma-separated string, None, and the corruption
@@ -1074,15 +1240,17 @@ def _ensure_list(value: object) -> list:
     return []
 
 
-def _toggle(key: str, label: str, settings: object) -> dict:
+def _toggle(key: str, label: str, settings: _SettingsGetter) -> dict[str, Any]:
     return {"type": "toggle", "key": key, "label": label, "value": bool(_get_val(settings, key))}
 
 
-def _text(key: str, label: str, settings: object, default: object = "") -> dict:
+def _text(key: str, label: str, settings: _SettingsGetter, default: object = "") -> dict[str, Any]:
     return {"type": "text", "key": key, "label": label, "value": _get_val(settings, key, default)}
 
 
-def _number(key: str, label: str, settings: object, default: object = "") -> dict:
+def _number(
+    key: str, label: str, settings: _SettingsGetter, default: object = ""
+) -> dict[str, Any]:
     return {
         "type": "number",
         "key": key,
@@ -1092,8 +1260,13 @@ def _number(key: str, label: str, settings: object, default: object = "") -> dic
 
 
 def _textarea(
-    key: str, label: str, settings: object, default: str = "", rows: int = 4, help_text: str = ""
-) -> dict:
+    key: str,
+    label: str,
+    settings: _SettingsGetter,
+    default: str = "",
+    rows: int = 4,
+    help_text: str = "",
+) -> dict[str, Any]:
     return {
         "type": "textarea",
         "key": key,
@@ -1104,13 +1277,70 @@ def _textarea(
     }
 
 
-def _secret(key: str, label: str, settings: object) -> dict:
+def _secret_is_set(settings: _SettingsGetter, key: str) -> bool:
+    """Whether a secret is set; the value itself never reaches the page."""
+    if isinstance(settings, _View):
+        return settings.is_secret_set(key)
     val = _get_val(settings, key, "")
-    has_value = bool(val) and str(val) != ""
-    return {"type": "secret", "key": key, "label": label, "has_value": has_value}
+    return bool(val) and str(val) != ""
 
 
-def _select(key: str, label: str, settings: object, options: list[str], default: str = "") -> dict:
+def _secret(key: str, label: str, settings: _SettingsGetter) -> dict[str, Any]:
+    return {
+        "type": "secret",
+        "key": key,
+        "label": label,
+        "has_value": _secret_is_set(settings, key),
+    }
+
+
+def _models_offered_section(settings: _SettingsGetter) -> dict[str, Any]:
+    """Server mode: which models users may choose (empty offers every model)."""
+    offered = _get_val(settings, "models.offered", []) or []
+    return {
+        "id": "models_offered",
+        "title": "Models Offered",
+        "icon": "bi-list-check",
+        "description": "The model ids users may choose from. Leave empty to offer every model.",
+        "groups": [
+            {
+                "id": "models_offered",
+                "title": "Models",
+                "fields": [
+                    {
+                        "type": "text",
+                        "key": "models.offered",
+                        "label": "Model ids (comma-separated)",
+                        "value": ", ".join(offered) if isinstance(offered, list) else "",
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _appearance_section(settings: _SettingsGetter) -> dict[str, Any]:
+    """Server mode preferences: the user's theme."""
+    return {
+        "id": "appearance",
+        "title": "Appearance",
+        "icon": "bi-palette",
+        "description": "How Spark looks for you.",
+        "groups": [
+            {
+                "id": "appearance",
+                "title": "Theme",
+                "fields": [
+                    _select("interface.theme", "Theme", settings, ["dark", "light"], "dark")
+                ],
+            }
+        ],
+    }
+
+
+def _select(
+    key: str, label: str, settings: _SettingsGetter, options: list[str], default: str = ""
+) -> dict[str, Any]:
     return {
         "type": "select",
         "key": key,
@@ -1120,11 +1350,11 @@ def _select(key: str, label: str, settings: object, options: list[str], default:
     }
 
 
-def _build_tool_categories(settings: object) -> list[dict]:
+def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build embedded tool category data for the tools management panel."""
     from spark.tools.registry import is_category_available
 
-    get = settings.get  # type: ignore[union-attr]
+    get = settings.get
 
     categories = [
         {
@@ -1233,7 +1463,7 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "key": "embedded_tools.web.brave_api_key",
                     "label": "Brave API Key",
                     "type": "secret",
-                    "value": get("embedded_tools.web.brave_api_key", ""),
+                    "has_value": _secret_is_set(settings, "embedded_tools.web.brave_api_key"),
                     "help": "Free tier at search.brave.com/api",
                     "show_when": "brave",
                 },
@@ -1241,7 +1471,7 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "key": "embedded_tools.web.google_api_key",
                     "label": "SerpAPI Key",
                     "type": "secret",
-                    "value": get("embedded_tools.web.google_api_key", ""),
+                    "has_value": _secret_is_set(settings, "embedded_tools.web.google_api_key"),
                     "help": "Get a key at serpapi.com",
                     "show_when": "google",
                 },
@@ -1249,7 +1479,7 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "key": "embedded_tools.web.bing_api_key",
                     "label": "Bing API Key",
                     "type": "secret",
-                    "value": get("embedded_tools.web.bing_api_key", ""),
+                    "has_value": _secret_is_set(settings, "embedded_tools.web.bing_api_key"),
                     "help": "Azure Cognitive Services Bing Search key",
                     "show_when": "bing",
                 },
@@ -1351,8 +1581,8 @@ def _build_tool_categories(settings: object) -> list[dict]:
                     "key": "embedded_tools.email.password",
                     "label": "Password",
                     "type": "secret",
-                    "value": get("embedded_tools.email.password", ""),
-                    "help": "SMTP password or app-specific password. Stored securely in the OS keychain.",
+                    "has_value": _secret_is_set(settings, "embedded_tools.email.password"),
+                    "help": "SMTP password or app-specific password. Kept in the secrets store, never shown.",
                 },
                 {
                     "key": "embedded_tools.email.sender",

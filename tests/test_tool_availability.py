@@ -342,16 +342,18 @@ class TestSettingsApi:
         assert resp.status_code == 403
         assert config_path.read_bytes() == before
 
-    def test_server_mode_saves_other_settings(
+    def test_server_mode_sends_other_settings_to_the_instance_endpoint(
         self, server_mode: None, web: tuple[TestClient, dict[str, str], Path]
     ) -> None:
+        """A server keeps its settings in the database (instance settings), not config.yaml."""
         client, cookies, config_path = web
+        before = config_path.read_bytes()
         resp = client.post(
             "/settings/api/save", json={"embedded_tools.web.enabled": True}, cookies=cookies
         )
-        assert resp.status_code == 200
-        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        assert saved["embedded_tools"]["web"]["enabled"] is True
+        assert resp.status_code == 409
+        assert "/settings/api/instance" in resp.json()["detail"]
+        assert config_path.read_bytes() == before
 
     def test_personal_mode_saves_local_tool_settings(
         self, personal_mode: None, web: tuple[TestClient, dict[str, str], Path]
@@ -394,13 +396,3 @@ class TestSettingsPage:
 
         ids = {c["id"] for c in _build_tool_categories(MagicMock(get=_settings_get({})))}
         assert {"filesystem", "system_commands", "email"} <= ids
-
-    def test_server_mode_page_has_no_local_tool_fields(
-        self, server_mode: None, web: tuple[TestClient, dict[str, str], Path]
-    ) -> None:
-        client, cookies, _ = web
-        resp = client.get("/settings", cookies=cookies)
-        assert resp.status_code == 200
-        assert "embedded_tools.system_commands" not in resp.text
-        assert "embedded_tools.email.host" not in resp.text
-        assert "embedded_tools.filesystem.allowed_paths" not in resp.text

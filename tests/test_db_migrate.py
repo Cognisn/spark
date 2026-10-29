@@ -98,7 +98,10 @@ class TestSqliteFresh:
         assert report.legacy_upgraded is False
         assert report.to_revision == migrate.head()
         assert _alembic_version(path) == [migrate.head()]
-        assert len(_sqlite_schema(path)) == len(schema_0_2_0.TABLES)
+        # Later revisions add tables; every 0.2.0 table is there.
+        assert set(_sqlite_schema(path)) >= {
+            baseline.table_name(sql) for sql in schema_0_2_0.TABLES
+        }
 
     def test_baseline_reproduces_the_0_2_0_schema_exactly(self, tmp_path: Path):
         """Tables, columns (in order, with types, NOT NULL, defaults, keys), FKs and indices."""

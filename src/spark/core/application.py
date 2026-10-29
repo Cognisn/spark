@@ -69,18 +69,48 @@ def _get_default_db_path() -> str:
     return str(_get_data_path() / "spark.db")
 
 
-def configure_runtime(settings: object) -> mode.RuntimeSettings:
+def configure_runtime(settings: object, secrets: object | None = None) -> mode.RuntimeSettings:
     """Validate the mode and database settings and set the process-wide mode.
 
-    Raises :class:`spark.mode.ModeConfigError` when the settings are invalid (for
-    example server mode without a PostgreSQL ``database.url``); Spark must not start.
+    With ``secrets`` (konfig's store) a ``secret://`` ``database.url`` is resolved
+    through it. Raises :class:`spark.mode.ModeConfigError` when the settings are
+    invalid (for example server mode without a PostgreSQL ``database.url``); Spark
+    must not start.
     """
+    from spark.instance_settings import startup
+
+    view = (
+        startup.database_view(settings, secrets)  # type: ignore[arg-type]
+        if secrets is not None
+        else settings
+    )
     runtime = mode.resolve(
-        settings,  # type: ignore[arg-type]
+        view,  # type: ignore[arg-type]
         default_sqlite_path=Path(_get_default_db_path()),
     )
     mode.configure(runtime)
     return runtime
+
+
+def validate_startup(ctx: AppContext, config_path: Path) -> mode.RuntimeSettings:
+    """Migrate 0.2 secret names, validate the start-up configuration and set the mode.
+
+    Raises :class:`spark.mode.ModeConfigError` (a
+    :class:`spark.instance_settings.startup.StartupConfigError` for the start-up
+    keys) with a message naming the setting; Spark must not start.
+    """
+    from spark.instance_settings import secrets as secrets_mod
+    from spark.instance_settings import startup
+
+    if secrets_mod.migrate_config_file(config_path, ctx.secrets):
+        ctx.settings.reload()
+    config = startup.validate(
+        ctx.settings, ctx.secrets, default_sqlite_path=Path(_get_default_db_path())
+    )
+    for warning in config.warnings:
+        logger.warning("%s", warning)
+    mode.configure(config.runtime)
+    return config.runtime
 
 
 def _ensure_config(config_path: Path) -> bool:
@@ -114,7 +144,7 @@ def run() -> None:
             defaults=_default_settings(),
             env_prefix="SPARK",
         ) as ctx:
-            configure_runtime(ctx.settings)
+            validate_startup(ctx, config_path)
             _log_startup_paths(ctx, config_path)
 
             from spark.web.server import create_and_serve
@@ -159,7 +189,11 @@ def run_migrate() -> int:
             defaults=_default_settings(),
             env_prefix="SPARK",
         ) as ctx:
-            return configure_runtime(ctx.settings)
+            from spark.instance_settings.secrets import migrate_config_file
+
+            if migrate_config_file(config_path, ctx.secrets):
+                ctx.settings.reload()
+            return configure_runtime(ctx.settings, ctx.secrets)
 
     try:
         runtime = asyncio.run(_load())
