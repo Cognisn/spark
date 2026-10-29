@@ -1,0 +1,4 @@
+# The operator's env file holds real credentials.
+spark.env
+*.env
+!spark.env.example

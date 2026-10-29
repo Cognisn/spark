@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Worker role** (server mode): `spark worker` runs scheduled actions away from the web processes. Several workers may run against one database; one is active, holding a PostgreSQL advisory lock, and the others stand by and take over when it stops or loses its database connection. The worker refuses to start in personal mode, on SQLite, or on a database behind the current schema (run `spark migrate` first). Later releases add background duties through a registration point for periodic jobs and long-running services
 - `spark web` starts the web interface; plain `spark` remains an alias for it
+- **Container image**: a multi-stage `Dockerfile` (Python 3.12 slim, CPU-only PyTorch, no compiler or pip in the final image) running as the unprivileged user `spark` (uid 10001), with a healthcheck on the web role and volumes for data and the embedding model cache. The licence audit runs during the build. `deploy/check-image.sh` checks a built image (non-root, no build tools, healthcheck, no tests)
+- **Compose stack** (`deploy/compose.yaml`): PostgreSQL with pgvector, a one-shot `spark migrate`, the web role and the worker role; the web port is published on 127.0.0.1 by default and credentials come only from an env file the operator writes (`deploy/spark.env.example`)
+- **Image workflows**: CI builds and checks the image on every push and pull request; the Container publish workflow pushes to ghcr.io from a `v*` tag or a manual run, tagged only with a release candidate or final version (`0.3.0rcN`, `0.3.0`), never `latest`
 
 ### Changed
 - The tray daemon and the background action daemon refuse to start in server mode, with a message pointing to `spark worker`. Personal mode is unchanged

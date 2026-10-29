@@ -1,0 +1,82 @@
+# Spark in server mode: PostgreSQL with pgvector, a one-shot migration, the web
+# role and the worker role. See docs/container.md.
+#
+#   cp deploy/spark.env.example deploy/spark.env    # then set real credentials
+#   docker compose -p spark -f deploy/compose.yaml up -d
+#
+# Credentials come only from the env file the operator writes (SPARK_ENV_FILE,
+# default deploy/spark.env next to this file). Published ports bind to 127.0.0.1
+# unless SPARK_BIND says otherwise; put a TLS reverse proxy in front for anything
+# beyond this host.
+
+x-spark: &spark
+  image: ${SPARK_IMAGE:-ghcr.io/cognisn/spark:0.3.0}
+  init: true
+  env_file:
+    - path: ${SPARK_ENV_FILE:-spark.env}
+      required: true
+  environment:
+    SPARK__MODE: server
+    # konfig's encrypted secrets file (in the spark-data volume), keyed by
+    # KONFIG_MASTER_KEY from the env file.
+    SPARK__SECRETS__BACKEND: encrypted_file
+  volumes:
+    - spark-data:/var/lib/spark
+    - spark-models:/var/cache/spark/huggingface
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    env_file:
+      - path: ${SPARK_ENV_FILE:-spark.env}
+        required: true
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Brings the schema to the current version, then exits (A3). Web and worker
+  # start only after it succeeds; both refuse a database behind the schema.
+  migrate:
+    <<: *spark
+    command: ["migrate"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    <<: *spark
+    command: ["web"]
+    ports:
+      - "${SPARK_BIND:-127.0.0.1}:${SPARK_WEB_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Runs scheduled actions. Scale it for standby workers: one holds the
+  # PostgreSQL advisory lock and is active, the others wait to take over.
+  worker:
+    <<: *spark
+    command: ["worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      # The web role creates the instance's identity in the shared secrets
+      # file on first start; the worker reads it.
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  spark-data:
+  spark-models:

@@ -1,0 +1,90 @@
+name: Container image
+
+# Reusable: builds the Spark image and runs deploy/check-image.sh (non-root, no
+# build tools, healthcheck, no tests, worker refuses personal mode).
+#
+# * CI calls it with push: false on every CI push and pull request, including
+#   release-branch pushes: build and check only.
+# * container-publish.yml calls it with push: true from a v* tag or a manual
+#   dispatch. The image is tagged with the version in src/spark/_version.txt only
+#   when that version is final or a release candidate (0.3.0, 0.3.0rcN), and a tag
+#   must name the same version (deploy/image_tags.py). Never latest.
+#
+# The job declares no permissions of its own: it runs with the caller's token, so
+# only the publish workflow can write packages.
+
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: Push the checked image to ghcr.io
+        type: boolean
+        default: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  LOCAL_TAG: spark:ci-${{ github.run_id }}
+
+jobs:
+  image:
+    name: build and check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Image tags (refuses alpha, beta and mismatched versions)
+        id: tags
+        if: inputs.push
+        run: |
+          {
+            echo "tags<<EOF"
+            python3 deploy/image_tags.py --image "$IMAGE" \
+              --version-file src/spark/_version.txt --ref "$GITHUB_REF"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Version label
+        id: version
+        run: echo "version=$(cat src/spark/_version.txt)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image (loaded locally for the checks)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.LOCAL_TAG }}
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image size
+        run: |
+          docker image inspect --format '{{.Size}}' "$LOCAL_TAG" \
+            | awk '{printf "image size: %.0f MB\n", $1/1000000}'
+
+      - name: Check the image (fails if it runs as root)
+        run: bash deploy/check-image.sh "$LOCAL_TAG"
+
+      - name: Log in to ghcr.io
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the checked image
+        if: inputs.push
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          [ -n "$TAGS" ] || { echo "no tags to push"; exit 1; }
+          for tag in $TAGS; do
+            case "$tag" in *:latest) echo "refusing to push $tag"; exit 1 ;; esac
+            docker tag "$LOCAL_TAG" "$tag"
+            docker push "$tag"
+          done

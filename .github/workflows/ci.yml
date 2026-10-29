@@ -186,17 +186,25 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Check formatting (black)
-        run: black --check src/ tests/ scripts/
+        run: black --check src/ tests/ scripts/ deploy/
 
       - name: Check imports (isort)
-        run: isort --check-only src/ tests/ scripts/
+        run: isort --check-only src/ tests/ scripts/ deploy/
 
       - name: Strict type checking of the new and rewritten packages (blocking)
-        run: mypy --strict src/spark/db src/spark/database src/spark/migrations src/spark/mode.py scripts/licence_audit.py
+        run: mypy --strict src/spark/db src/spark/database src/spark/migrations src/spark/mode.py scripts/licence_audit.py src/spark/worker.py src/spark/launch.py src/spark/daemon/guard.py deploy/image_tags.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
         run: mypy src/spark
+
+  container:
+    name: container image
+    permissions:
+      contents: read
+    uses: ./.github/workflows/container.yml
+    with:
+      push: false
 
   licences:
     runs-on: ubuntu-latest

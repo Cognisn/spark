@@ -1,0 +1,16 @@
+# The build context holds only what the image needs: no tests, fixtures, local
+# data, configuration, secrets or version control.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!scripts/licence_audit.py
+
+**/__pycache__
+**/*.py[cod]
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/.env
+**/*.env
