@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a6] - 2026-10-30
+
 ### Added
 - **Per-user file areas** (`spark.files`): each user's files live in their own area behind a storage interface (`FileStore`); 0.3.0 stores them on a directory or mounted volume set by `files.root`, which defaults to `files` in the data directory in personal mode and must be set in server mode. Keys are always relative to the user's area
 - **Storage quotas and upload limit**: `files.quota_mb` (per user; default 1024 in server mode, no quota in personal mode) and `files.max_upload_mb` (default 50); `0` means no limit. A file that would exceed either is refused with a message saying which limit applies, and nothing is stored. Usage is charged in the same database transaction that records the file, so parallel uploads cannot overrun a quota. New tables `user_files` and `user_file_usage` (migration `file_areas`)
