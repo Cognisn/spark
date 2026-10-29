@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Knowledge graph entities and relationships, skill states and per-conversation skill states could be duplicated when two requests created the same one at the same moment (seen on PostgreSQL). They are now unique on their natural keys and merged in one statement. Upgrading merges existing duplicates, keeping the earliest entry: entity and relationship weights are added together and relationships are moved onto the kept entity, and skills keep their most recent on or off state
 
 ### Changed
+- The installation guide shows how to install the CPU-only PyTorch on Linux (`uv tool install cognisn-spark --torch-backend cpu`, or PyTorch from its CPU index before `pip install cognisn-spark`), avoiding about 2.4 GB of unused NVIDIA CUDA packages
 - New runtime dependency `pgvector` (MIT), the psycopg adapter for PostgreSQL's `vector` type, used in server mode
 
 ## [0.3.0a1] - 2026-10-29
