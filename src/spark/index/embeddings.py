@@ -1,8 +1,7 @@
 """The local embedding model: sentence-transformers on the CPU, loaded lazily and shared.
 
-:class:`SentenceTransformerEmbedding` implements :class:`spark.index.vectors.EmbeddingModel`.
-``EmbeddingModel`` in this module is its 0.2.0 name, kept so existing callers
-construct it unchanged; new code types against the protocol in :mod:`spark.index`.
+:class:`SentenceTransformerEmbedding` implements :class:`spark.index.vectors.EmbeddingModel`;
+code types against that protocol (``spark.index.EmbeddingModel``) and constructs this class.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["DEFAULT_MODEL", "EmbeddingModel", "SentenceTransformerEmbedding"]
+__all__ = ["DEFAULT_MODEL", "SentenceTransformerEmbedding"]
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +132,3 @@ class SentenceTransformerEmbedding:
             corpus_embeddings = corpus_embeddings.reshape(1, -1)
         similarities: NDArray[Any] = np.dot(corpus_embeddings, query_embedding.T).flatten()
         return similarities
-
-
-# The 0.2.0 name (web/server.py and knowledge/tools.py construct it).
-EmbeddingModel = SentenceTransformerEmbedding

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from spark.index.embeddings import EmbeddingModel
+from spark.index.embeddings import SentenceTransformerEmbedding
 from spark.index.memory_index import VALID_CATEGORIES, MemoryIndex
 from spark.index.vector_index import ConversationVectorIndex
 
@@ -21,7 +21,7 @@ DIM = 64
 
 def _mock_embedder() -> MagicMock:
     """Create a mock EmbeddingModel that returns random vectors."""
-    mock = MagicMock(spec=EmbeddingModel)
+    mock = MagicMock(spec=SentenceTransformerEmbedding)
     mock.embedding_dimension = DIM
 
     def encode_side_effect(texts: str | list[str], **kwargs: Any) -> np.ndarray:
@@ -62,19 +62,19 @@ def vector_index(sync_db: Any) -> ConversationVectorIndex:
 class TestEmbeddingModel:
     def test_compute_similarity_identical(self) -> None:
         a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-        sim = EmbeddingModel.compute_similarity(a, a)
+        sim = SentenceTransformerEmbedding.compute_similarity(a, a)
         assert sim[0] == pytest.approx(1.0)
 
     def test_compute_similarity_orthogonal(self) -> None:
         a = np.array([1.0, 0.0], dtype=np.float32)
         b = np.array([0.0, 1.0], dtype=np.float32)
-        sim = EmbeddingModel.compute_similarity(a, b)
+        sim = SentenceTransformerEmbedding.compute_similarity(a, b)
         assert sim[0] == pytest.approx(0.0)
 
     def test_compute_similarity_batch(self) -> None:
         query = np.array([1.0, 0.0], dtype=np.float32)
         corpus = np.array([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]], dtype=np.float32)
-        sims = EmbeddingModel.compute_similarity(query, corpus)
+        sims = SentenceTransformerEmbedding.compute_similarity(query, corpus)
         assert len(sims) == 3
         assert sims[0] > sims[1]
 

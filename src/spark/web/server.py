@@ -440,6 +440,17 @@ def _start_tray_daemon_if_needed() -> None:
     logger.info("Tray daemon started (PID %d)", proc.pid)
 
 
+def _warm_up_embeddings() -> None:
+    """Load the local embedding model once, so the first search does not wait for it."""
+    try:
+        from spark.index.embeddings import SentenceTransformerEmbedding
+
+        SentenceTransformerEmbedding().encode("warmup")
+        logger.info("Embedding model loaded")
+    except Exception as e:
+        logger.warning("Embedding model warmup failed (non-fatal): %s", e)
+
+
 def _start_daemon_if_enabled(ctx: AppContext, status: dict[str, Any]) -> None:
     """Start the tray daemon when actions and the daemon are enabled, in personal mode only.
 
@@ -688,14 +699,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
 
             # Step 4: Embedding model (warm up)
             status["stage"] = "Loading embedding model..."
-            try:
-                from spark.index.embeddings import EmbeddingModel
-
-                embedder = EmbeddingModel()
-                embedder.encode("warmup")
-                logger.info("Embedding model loaded")
-            except Exception as e:
-                logger.warning("Embedding model warmup failed (non-fatal): %s", e)
+            _warm_up_embeddings()
 
             # Step 5: Start daemon tray if enabled (personal mode only)
             _start_daemon_if_enabled(ctx, status)

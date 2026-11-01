@@ -169,7 +169,7 @@ Each provider normalises responses to a common format:
 
 - **ConversationVectorIndex** -- Per-conversation vector index for RAG retrieval
 - **MemoryIndex** -- Cross-conversation persistent memory with semantic search
-- **EmbeddingModel** -- Lazy-loaded sentence-transformers model (thread-safe singleton)
+- **SentenceTransformerEmbedding** -- Lazy-loaded sentence-transformers model (thread-safe singleton), the local implementation of the `spark.index.EmbeddingModel` protocol
 
 ### Scheduler
 
