@@ -731,7 +731,7 @@ def _resolve_embedded_secrets(embedded: dict[str, Any], ctx: Any) -> None:
 
 def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build settings sections for the template."""
-    sections = [
+    sections: list[dict[str, Any]] = [
         {
             "id": "providers",
             "title": "LLM Providers",
@@ -1225,7 +1225,7 @@ _RESULT_SOURCES = (
 )
 
 
-def _tool_result_group(settings: object) -> dict:
+def _tool_result_group(settings: _SettingsGetter) -> dict[str, Any]:
     """Per-source action for tool results that match prompt injection patterns."""
     return {
         "id": "tool_results",
