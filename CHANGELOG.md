@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **File areas at start-up**: `spark web` now sets up the file area from `files.root` while it validates the start-up configuration, so uploads and the file tools are available in the running app in both modes (they were set up only on the older start-up path)
 - **Container image**: the build fails if any `nvidia-*` package is installed (`scripts/check_no_nvidia.py`, run after Spark is installed on the CPU-only PyTorch wheel), and `deploy/check-image.sh` checks a built image for them too. The image prepares `/var/lib/spark-files` for users' file areas
 - **Compose stack**: users' file areas live on a named `spark-files` volume shared by the web and worker roles (`SPARK__FILES__ROOT=/var/lib/spark-files`), and the shared secrets file is named on the `spark-data` volume (`SPARK__SECRETS__FILE_PATH`), so every container reads the same one. [Running Spark in containers](docs/container.md) names the pgvector minimum (0.8 or later), the new volume and running several web replicas
 - **Dependencies**: `cognisn-konfig[aws]>=0.4.0` (konfig with its AWS extra, for the AWS Secrets Manager secrets backends in server mode); konfig is MIT and its extra adds only boto3 (Apache-2.0), which SPARK already uses
