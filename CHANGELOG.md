@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Server-mode web process**: the web role no longer starts the tray daemon in server mode (scheduled actions run in `spark worker`); personal mode starts it as before when actions and the daemon are enabled
+- **Settings propagation in the running app**: the web lifespan starts the instance settings listener in server mode once the database is open, and stops it before the database closes, so an administrator's change on one web replica reaches every other replica without a restart. A replica whose listener cannot connect at start-up refuses to serve. Personal mode installs the `config.yaml` settings source as before
+
 ## [0.3.0a7] - 2026-10-30
 
 ### Added

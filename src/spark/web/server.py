@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import spark
+import spark.instance_settings as instance_settings
 from spark.db import Database, SyncDatabase
 from spark.mode import DatabaseSettings
 from spark.web.auth import AuthManager, LoginPolicy, PersonalAuthenticator
@@ -108,6 +109,21 @@ def attach_database(app: FastAPI, settings: DatabaseSettings, auto_migrate: bool
     app.state.database_auto_migrate = auto_migrate
 
 
+async def _attach_settings(app: FastAPI, database: Database) -> None:
+    """Install the settings source for the mode; in server mode start the settings listener.
+
+    Nothing is installed when no mode was configured (an app built without
+    :func:`create_and_serve`, as some tests do).
+    """
+    from spark import mode
+
+    try:
+        mode.current()
+    except RuntimeError:
+        return
+    await instance_settings.attach(app, database, app.state.ctx.settings)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the database on the serving event loop, and close it on shutdown.
@@ -135,11 +151,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise
         app.state.database = database
         app.state.sync_db = SyncDatabase(database)
+        try:
+            await _attach_settings(app, database)
+        except BaseException as exc:
+            app.state.database_error = exc
+            ready.set()
+            await database.close()
+            raise
     ready.set()
     try:
         yield
     finally:
         if database is not None:
+            await instance_settings.detach(app)
             app.state.sync_db = None
             app.state.database = None
             await database.close()
@@ -405,6 +429,25 @@ def _start_tray_daemon_if_needed() -> None:
     logger.info("Tray daemon started (PID %d)", proc.pid)
 
 
+def _start_daemon_if_enabled(ctx: AppContext, status: dict[str, Any]) -> None:
+    """Start the tray daemon when actions and the daemon are enabled, in personal mode only.
+
+    A server runs scheduled actions in ``spark worker``; its web process never
+    starts the tray daemon.
+    """
+    from spark import mode
+
+    if mode.is_server():
+        return
+    if not (ctx.settings.get("autonomous_actions.enabled") and ctx.settings.get("daemon.enabled")):
+        return
+    status["stage"] = "Starting autonomous action daemon..."
+    try:
+        _start_tray_daemon_if_needed()
+    except Exception as e:
+        logger.warning("Daemon tray start failed (non-fatal): %s", e)
+
+
 async def _connect_and_list_mcp(mcp_manager: Any) -> None:
     """Connect all MCP servers and populate tool cache."""
     results = await mcp_manager.connect_all()
@@ -577,15 +620,8 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             except Exception as e:
                 logger.warning("Embedding model warmup failed (non-fatal): %s", e)
 
-            # Step 5: Start daemon tray if enabled
-            if ctx.settings.get("autonomous_actions.enabled") and ctx.settings.get(
-                "daemon.enabled"
-            ):
-                status["stage"] = "Starting autonomous action daemon..."
-                try:
-                    _start_tray_daemon_if_needed()
-                except Exception as e:
-                    logger.warning("Daemon tray start failed (non-fatal): %s", e)
+            # Step 5: Start daemon tray if enabled (personal mode only)
+            _start_daemon_if_enabled(ctx, status)
 
             status["stage"] = "Ready"
             status["ready"] = True
