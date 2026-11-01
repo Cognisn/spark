@@ -192,7 +192,20 @@ jobs:
         run: isort --check-only src/ tests/ scripts/ deploy/
 
       - name: Strict type checking of the new and rewritten packages (blocking)
-        run: mypy --strict src/spark/db src/spark/database src/spark/migrations src/spark/mode.py scripts/licence_audit.py src/spark/worker.py src/spark/launch.py src/spark/daemon/guard.py deploy/image_tags.py
+        run: >-
+          mypy --strict
+          src/spark/db src/spark/database src/spark/migrations src/spark/mode.py
+          scripts/licence_audit.py src/spark/worker.py src/spark/launch.py
+          src/spark/daemon/guard.py deploy/image_tags.py
+          src/spark/index src/spark/knowledge/store.py
+          src/spark/instance_settings src/spark/files
+          src/spark/web/security.py src/spark/web/auth.py src/spark/web/session.py
+          src/spark/web/endpoints/auth.py src/spark/web/endpoints/files.py
+          src/spark/web/endpoints/settings.py
+          src/spark/tools/registry.py src/spark/tools/command_policy.py
+          src/spark/tools/documents.py src/spark/tools/archives.py
+          src/spark/tools/document_creation.py
+          src/spark/safety/untrusted.py src/spark/llm/manager.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
