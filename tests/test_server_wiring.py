@@ -357,7 +357,7 @@ class TestServerTheme:
             assert client.post("/api/theme", json={"theme": "light"}).status_code == 200
             assert client.get("/api/theme").json() == {"theme": "light"}
             assert (tmp_path / "a.yaml").read_bytes() == before
-            user = client.app.state.user_guid  # type: ignore[attr-defined]
+            user = str(client.app.state.user_guid)  # type: ignore[attr-defined]
             rows = client.app.state.sync_db.fetch_all(  # type: ignore[attr-defined]
                 "SELECT user_guid, key, value FROM user_preferences"
             )

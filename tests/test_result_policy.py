@@ -182,7 +182,7 @@ class TestResultPolicyOnAServer:
         assert rows["embedded_tools.tool_results.web"] == '"withhold"'
         assert rows["embedded_tools.tool_results.mcp"] == '"mark"'
         changed = sorted(_policy_events(events), key=lambda d: d["source"])
-        user = server.app.state.user_guid  # type: ignore[attr-defined]
+        user = str(server.app.state.user_guid)  # type: ignore[attr-defined]
         assert changed == [
             {
                 "key": "embedded_tools.tool_results.mcp",
