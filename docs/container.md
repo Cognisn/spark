@@ -20,17 +20,20 @@ docker build -t spark:dev .
 
 The build has two stages:
 
-- **builder**: a virtual environment with the CPU-only PyTorch wheel (from the
-  PyTorch CPU index; the default Linux wheel pulls in the NVIDIA CUDA runtime),
-  then Spark and its dependencies. The licence audit (`scripts/licence_audit.py`)
-  runs against exactly this environment, so a dependency that breaks the licence
-  policy fails the build. pip, setuptools and wheel are then removed.
+- **builder**: a virtual environment with the CPU-only PyTorch wheel, then Spark
+  and its dependencies. pip installs `torch` first from the PyTorch CPU index
+  (`TORCH_INDEX_URL`), so installing Spark keeps it; the default Linux wheel would
+  pull in the NVIDIA CUDA runtime. `scripts/check_no_nvidia.py` then fails the
+  build if any `nvidia-*` package is installed, and the licence audit
+  (`scripts/licence_audit.py`) runs against exactly this environment, so a
+  dependency that breaks the licence policy fails the build. pip, setuptools and
+  wheel are then removed.
 - **runtime**: `python:3.12-slim` with `libmagic1`, the virtual environment
   copied in, no compiler and no pip. Spark runs as the unprivileged user
   `spark` (uid and gid 10001).
 
 `.dockerignore` limits the build context to `pyproject.toml`, `README.md`,
-`LICENSE`, `src/` and the licence audit script: no tests, fixtures, local
+`LICENSE`, `src/`, the licence audit and the NVIDIA check scripts: no tests, fixtures, local
 databases, configuration or env files reach the image.
 
 `deploy/check-image.sh IMAGE` checks a built image: it fails if the image runs as
@@ -42,7 +45,8 @@ request.
 
 | Path | Purpose |
 |---|---|
-| `/var/lib/spark` (volume) | Configuration (`config/spark/config.yaml`), data, logs and konfig's encrypted secrets file. Share it between the web and worker containers. |
+| `/var/lib/spark` (volume) | Configuration (`config/spark/config.yaml`), data, logs and konfig's encrypted secrets file (`data/spark/secrets.enc`). Share it between the web and worker containers. |
+| `/var/lib/spark-files` (volume) | Users' file areas: uploads and documents Spark creates. Server mode needs `files.root` set to it (`SPARK__FILES__ROOT`). Share it between the web and worker containers. |
 | `/var/cache/spark/huggingface` (volume) | The sentence-transformers embedding model, downloaded on first use. |
 | `/opt/venv` | Spark and its dependencies. |
 
@@ -63,9 +67,16 @@ Configuration comes through konfig, as on the desktop:
   start). Environment values override the file.
 - **Secrets**: provider keys and other secrets entered in Spark are kept in
   konfig's encrypted secrets file in the data volume
-  (`SPARK__SECRETS__BACKEND=encrypted_file`), keyed by `KONFIG_MASTER_KEY`. When
-  Spark is deployed into AWS, konfig can use AWS Secrets Manager instead
-  (`KONFIG_AWS_SECRETS_MANAGER`).
+  (`SPARK__SECRETS__BACKEND=encrypted_file`, at
+  `SPARK__SECRETS__FILE_PATH=/var/lib/spark/data/spark/secrets.enc`), keyed by
+  `KONFIG_MASTER_KEY`. Every web and worker container must read the same file,
+  so the Compose file names it on the shared volume. When Spark is deployed into
+  AWS, konfig can use AWS Secrets Manager instead (`KONFIG_AWS_SECRETS_MANAGER`).
+  A secret saved on one web replica is used by that replica at once; other
+  replicas read the file at start, so restart them after changing a secret.
+- **Instance settings** (providers, models offered, tools, tool result actions)
+  are kept in PostgreSQL. A change an administrator saves on one web replica
+  reaches every replica within a few seconds, without a restart.
 
 ## Roles
 
@@ -73,9 +84,13 @@ Configuration comes through konfig, as on the desktop:
 
 `spark web` serves the interface on port 8000. Until warden sign-in arrives in a
 later 0.3.0 build, the web role signs in with the one-time code it logs at start
-(`docker compose logs web`), and sessions are held in the process. So run one web
-replica for now. Several replicas behind a reverse proxy become useful once
-sessions move to warden.
+(`docker compose logs web`), and sessions are held in the process: each replica
+has its own code and its own sessions. Several replicas can serve one database
+(instance settings reach all of them), but behind a reverse proxy they need
+sticky sessions until sessions move to warden.
+
+In server mode the web role does not start the tray daemon; scheduled actions run
+in `spark worker`.
 
 ### Worker
 
@@ -109,6 +124,10 @@ start, with a message pointing to `spark worker`.
 | `web` | `spark web`, after `migrate` succeeds. Published on `127.0.0.1:8000` by default. |
 | `worker` | `spark worker`, after `migrate` succeeds and the web role is healthy. |
 
+Spark's vector search needs **pgvector 0.8 or later** (it uses the iterative
+index scan added in 0.8). `pgvector/pgvector:pg16` ships a recent 0.8 release; an
+external PostgreSQL needs the `vector` extension at 0.8 or later.
+
 Credentials come only from an env file you write:
 
 ```bash
@@ -130,9 +149,10 @@ docker compose -p spark -f deploy/compose.yaml logs web    # the sign-in code
 Standby workers: `docker compose -p spark -f deploy/compose.yaml up -d --scale worker=2`.
 
 The web and worker containers share the `spark-data` volume, so they share the
-configuration and the secrets file. The web role creates the instance's identity
-in that file on first start, and the worker waits for the web role to be healthy
-before starting.
+configuration and the secrets file (`SPARK__SECRETS__FILE_PATH`), and the
+`spark-files` volume, where users' file areas live (`SPARK__FILES__ROOT`). The web
+role creates the instance's identity in the secrets file on first start, and the
+worker waits for the web role to be healthy before starting.
 
 ## Upgrade
 

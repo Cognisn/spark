@@ -6,6 +6,7 @@
 !LICENSE
 !src/
 !scripts/licence_audit.py
+!scripts/check_no_nvidia.py
 
 **/__pycache__
 **/*.py[cod]

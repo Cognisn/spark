@@ -14,6 +14,9 @@ FROM ${PYTHON_IMAGE} AS builder
 
 # The CPU-only PyTorch wheel: sentence-transformers needs torch, and the default
 # Linux wheel pulls in the NVIDIA CUDA runtime (proprietary, and gigabytes).
+# pip installs torch first from the CPU index, so `pip install .` keeps it (the
+# per-installer route in docs/getting-started.md); the build then fails if any
+# nvidia-* package is installed.
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -32,9 +35,12 @@ COPY src ./src
 RUN pip install . \
     && pip check
 
-# Fail the build if the runtime closure breaks the licence policy.
+# Fail the build if a CUDA package slipped in, or the runtime closure breaks the
+# licence policy.
+COPY scripts/check_no_nvidia.py ./scripts/check_no_nvidia.py
 COPY scripts/licence_audit.py ./scripts/licence_audit.py
-RUN python scripts/licence_audit.py
+RUN python scripts/check_no_nvidia.py \
+    && python scripts/licence_audit.py
 
 # No installers in the runtime environment.
 RUN pip uninstall --yes pip setuptools wheel
@@ -61,13 +67,15 @@ RUN apt-get update \
 RUN groupadd --system --gid 10001 spark \
     && useradd --system --uid 10001 --gid 10001 --home-dir /var/lib/spark \
                --shell /usr/sbin/nologin spark \
-    && mkdir -p /var/lib/spark /var/cache/spark/huggingface \
-    && chown -R 10001:10001 /var/lib/spark /var/cache/spark
+    && mkdir -p /var/lib/spark /var/lib/spark-files /var/cache/spark/huggingface \
+    && chown -R 10001:10001 /var/lib/spark /var/lib/spark-files /var/cache/spark
 
 COPY --from=builder /opt/venv /opt/venv
 
 # Configuration, data, logs and secrets live under /var/lib/spark (one volume,
-# shared by the web and worker containers); the embedding model cache has its own.
+# shared by the web and worker containers); users' file areas live under
+# /var/lib/spark-files (server mode sets files.root to it); the embedding model
+# cache has its own.
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -83,7 +91,7 @@ ENV PATH=/opt/venv/bin:$PATH \
 
 USER 10001:10001
 WORKDIR /var/lib/spark
-VOLUME ["/var/lib/spark", "/var/cache/spark/huggingface"]
+VOLUME ["/var/lib/spark", "/var/lib/spark-files", "/var/cache/spark/huggingface"]
 EXPOSE 8000
 
 # For the web role; the worker and migrate services disable it.

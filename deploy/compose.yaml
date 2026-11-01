@@ -17,11 +17,15 @@ x-spark: &spark
       required: true
   environment:
     SPARK__MODE: server
-    # konfig's encrypted secrets file (in the spark-data volume), keyed by
-    # KONFIG_MASTER_KEY from the env file.
+    # konfig's encrypted secrets file, keyed by KONFIG_MASTER_KEY from the env
+    # file. It lives in the spark-data volume, so every container reads one file.
     SPARK__SECRETS__BACKEND: encrypted_file
+    SPARK__SECRETS__FILE_PATH: /var/lib/spark/data/spark/secrets.enc
+    # Users' file areas (uploads and documents Spark creates), on their own volume.
+    SPARK__FILES__ROOT: /var/lib/spark-files
   volumes:
     - spark-data:/var/lib/spark
+    - spark-files:/var/lib/spark-files
     - spark-models:/var/cache/spark/huggingface
   restart: unless-stopped
 
@@ -79,4 +83,5 @@ services:
 volumes:
   postgres-data:
   spark-data:
+  spark-files:
   spark-models:
