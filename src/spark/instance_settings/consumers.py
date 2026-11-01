@@ -86,12 +86,6 @@ class InstanceView:
         return cast(value) if cast is not None else value
 
 
-def _available(category: str) -> bool:
-    from spark.tools.registry import is_category_available
-
-    return category == "tool_results" or is_category_available(category)
-
-
 def embedded_tools_config(source: SettingsSource, secrets: SecretResolver) -> dict[str, Any]:
     """The conversation manager's embedded tools configuration from the instance settings.
 
@@ -99,11 +93,11 @@ def embedded_tools_config(source: SettingsSource, secrets: SecretResolver) -> di
     out; prompt inspection is passed in the ``_prompt_inspection_*`` keys as at start-up.
     """
     tree: dict[str, Any] = {}
-    for key in registry.keys(Scope.INSTANCE):
+    for key in registry.offered_keys(Scope.INSTANCE):
         if not key.startswith(_EMBEDDED):
             continue
         category, *rest = key[len(_EMBEDDED) :].split(".")
-        if not rest or not _available(category):
+        if not rest:
             continue
         value = secrets.resolve(key) if registry.spec(key).secret else source.get(key)
         node = tree.setdefault(category, {})

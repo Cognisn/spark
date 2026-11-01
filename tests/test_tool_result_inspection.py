@@ -526,7 +526,7 @@ class TestResultActionSettings:
             assert f["options"] == ["mark", "warn", "withhold"]
             assert f["value"] == "warn"
 
-    def test_server_mode_hides_the_actions(self) -> None:
+    def test_server_mode_shows_the_actions_as_instance_policy(self) -> None:
         from spark import mode
         from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 
@@ -537,11 +537,12 @@ class TestResultActionSettings:
             )
         )
         try:
-            assert "tool_results" not in self._security_groups()
+            group = self._security_groups()["tool_results"]
+            assert [f["key"] for f in group["fields"]] == self.KEYS
         finally:
             mode.reset()
 
-    def test_server_mode_refuses_saving_the_actions(
+    def test_server_mode_refuses_saving_the_actions_to_the_config_file(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from unittest.mock import MagicMock
@@ -576,5 +577,6 @@ class TestResultActionSettings:
             )
         finally:
             mode.reset()
-        assert resp.status_code == 403
+        # Administrator policy on a server: saved only through /settings/api/instance.
+        assert resp.status_code == 409
         assert config_path.read_text(encoding="utf-8") == "embedded_tools: {}\n"

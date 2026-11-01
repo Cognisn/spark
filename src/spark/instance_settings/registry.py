@@ -32,7 +32,9 @@ __all__ = [
     "UnknownSettingError",
     "coerce",
     "is_known",
+    "is_offered",
     "keys",
+    "offered_keys",
     "legacy_secret_name",
     "secret_keys",
     "secret_name",
@@ -373,7 +375,7 @@ _SPECS: tuple[SettingSpec, ...] = (
     _int_spec("embedded_tools.email.max_attachment_mb", 25, 1),
     _toggle("embedded_tools.email.require_approval", default=True),
     # Untrusted tool results: the action on an injection or jailbreak match, per source.
-    # A server hides and refuses them until they become administrator policy.
+    # An administrator's policy on a server (instance settings, audited on change).
     *(
         _pick(f"embedded_tools.tool_results.{source}", ("mark", "warn", "withhold"), "warn")
         for source in ("web", "mcp", "documents", "agents")
@@ -429,6 +431,30 @@ def keys(scope: Scope | None = None) -> list[str]:
 
 def secret_keys() -> list[str]:
     return [s.key for s in _SPECS if s.secret]
+
+
+_EMBEDDED_PREFIX = "embedded_tools."
+
+
+def is_offered(key: str) -> bool:
+    """Whether this mode offers ``key``: a server has no settings for the local-only tools (A6).
+
+    ``embedded_tools.<category>.*`` belongs to a tool category; the result actions
+    (``embedded_tools.tool_results.*``) belong to none and are offered in both modes.
+    """
+    if not key.startswith(_EMBEDDED_PREFIX):
+        return True
+    category = key[len(_EMBEDDED_PREFIX) :].split(".", 1)[0]
+    if category == "tool_results":
+        return True
+    from spark.tools.registry import is_category_available
+
+    return is_category_available(category)
+
+
+def offered_keys(scope: Scope | None = None) -> list[str]:
+    """The registry as this mode offers it: :func:`keys` without the keys of unavailable tools."""
+    return [k for k in keys(scope) if is_offered(k)]
 
 
 def coerce(key: str, value: Any) -> Any:
