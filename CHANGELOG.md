@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Server-mode web process**: the web role no longer starts the tray daemon in server mode (scheduled actions run in `spark worker`); personal mode starts it as before when actions and the daemon are enabled
 - **Settings propagation in the running app**: the web lifespan starts the instance settings listener in server mode once the database is open, and stops it before the database closes, so an administrator's change on one web replica reaches every other replica without a restart. A replica whose listener cannot connect at start-up refuses to serve. Personal mode installs the `config.yaml` settings source as before
+- **Server mode follows the instance settings** (`spark.instance_settings.consumers`): the LLM providers, the models offered, the conversation manager's embedded tools configuration (with prompt inspection) and the tool execution limits are read from the administrator's instance settings and secrets store, and follow every change without a restart. Providers are rebuilt only when a provider setting or credential changes; the model list shows only the models offered when that list is set. Local-only tool categories are left out of a server's tools configuration. Personal mode keeps reading `config.yaml`
+- **Theme on a server** is each user's own preference: `/api/theme` reads and saves the signed-in user's `interface.theme` in server mode instead of writing `config.yaml`
 
 ## [0.3.0a7] - 2026-10-30
 

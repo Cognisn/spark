@@ -300,6 +300,10 @@ async def save_instance_settings(request: Request) -> JSONResponse:
     )
     for key, value in plain.items():
         await source.set(key, value, actor=actor)
+    follower = getattr(request.app.state, "settings_follower", None)
+    if secrets and follower is not None:
+        # A secret changes no database row: refresh this replica's consumers directly.
+        follower.changed()
     return JSONResponse({"status": "ok", "saved": sorted([*plain, *secrets])})
 
 

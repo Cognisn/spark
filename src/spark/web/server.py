@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 import spark
 import spark.instance_settings as instance_settings
 from spark.db import Database, SyncDatabase
+from spark.instance_settings import consumers
 from spark.mode import DatabaseSettings
 from spark.web.auth import AuthManager, LoginPolicy, PersonalAuthenticator
 from spark.web.security import OriginPolicy, RequestGuardMiddleware
@@ -295,12 +296,27 @@ def _resolve_secret(ctx: AppContext, value: str | None) -> str:
     return str(value)
 
 
-def _init_providers(ctx: AppContext) -> "LLMManager":
-    """Initialise LLM providers from settings and return an LLMManager."""
+def _init_providers(ctx: AppContext, settings: Any = None) -> "LLMManager":
+    """Initialise LLM providers from settings and return an LLMManager.
+
+    ``settings`` defaults to konfig (``config.yaml``); server mode passes the
+    instance settings view.
+    """
     from spark.llm.manager import LLMManager
 
     mgr = LLMManager()
-    settings = ctx.settings
+    for provider in _build_providers(ctx, settings if settings is not None else ctx.settings):
+        mgr.register_provider(provider)
+    if mgr.providers:
+        logger.info("LLM providers ready: %s", ", ".join(mgr.providers.keys()))
+    else:
+        logger.warning("No LLM providers configured")
+    return mgr
+
+
+def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
+    """The enabled LLM providers described by ``settings``."""
+    providers: list[Any] = []
 
     # Anthropic Direct
     if settings.get("providers.anthropic.enabled"):
@@ -310,7 +326,7 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             api_key = _resolve_secret(ctx, settings.get("providers.anthropic.api_key", ""))
             if api_key:
                 provider = AnthropicDirectProvider(api_key=api_key)
-                mgr.register_provider(provider)
+                providers.append(provider)
         except Exception as e:
             logger.warning("Failed to init Anthropic provider: %s", e)
 
@@ -342,7 +358,7 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
                 provider = BedrockProvider(
                     region=region, profile=profile, read_timeout=read_timeout
                 )
-            mgr.register_provider(provider)
+            providers.append(provider)
         except Exception as e:
             logger.warning("Failed to init AWS Bedrock provider: %s", e)
 
@@ -353,7 +369,7 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
 
             base_url = settings.get("providers.ollama.base_url", "http://localhost:11434")
             provider = OllamaProvider(base_url=base_url)
-            mgr.register_provider(provider)
+            providers.append(provider)
         except Exception as e:
             logger.warning("Failed to init Ollama provider: %s", e)
 
@@ -365,7 +381,7 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             api_key = _resolve_secret(ctx, settings.get("providers.google_gemini.api_key", ""))
             if api_key:
                 provider = GoogleGeminiProvider(api_key=api_key)
-                mgr.register_provider(provider)
+                providers.append(provider)
         except Exception as e:
             logger.warning("Failed to init Google Gemini provider: %s", e)
 
@@ -377,16 +393,11 @@ def _init_providers(ctx: AppContext) -> "LLMManager":
             api_key = _resolve_secret(ctx, settings.get("providers.xai.api_key", ""))
             if api_key:
                 provider = XAIProvider(api_key=api_key)
-                mgr.register_provider(provider)
+                providers.append(provider)
         except Exception as e:
             logger.warning("Failed to init X.AI provider: %s", e)
 
-    if mgr.providers:
-        logger.info("LLM providers ready: %s", ", ".join(mgr.providers.keys()))
-    else:
-        logger.warning("No LLM providers configured")
-
-    return mgr
+    return providers
 
 
 def _start_tray_daemon_if_needed() -> None:
@@ -458,6 +469,54 @@ async def _connect_and_list_mcp(mcp_manager: Any) -> None:
     logger.info("MCP tool cache: %d tools loaded", len(tools))
 
 
+class _ServerConsumers:
+    """Server mode: the instance settings and secrets the web process's consumers read."""
+
+    def __init__(self, ctx: AppContext, source: Any, secrets: Any) -> None:
+        self._ctx = ctx
+        self.source = source
+        self.secrets = secrets
+        self.view = consumers.InstanceView(source, secrets)
+
+    def conversation_settings(self) -> dict[str, Any]:
+        return {
+            key.split(".", 1)[1]: self.source.get(key)
+            for key in (
+                "conversation.max_tool_iterations",
+                "conversation.max_tool_selections",
+                "conversation.max_tool_result_tokens",
+                "conversation.rollup_threshold",
+                "conversation.rollup_summary_ratio",
+                "conversation.emergency_rollup_threshold",
+            )
+        }
+
+    def embedded_tools_config(self) -> dict[str, Any]:
+        return consumers.embedded_tools_config(self.source, self.secrets)
+
+    def follow(self, llm_manager: Any, conversation_manager: Any) -> consumers.SettingsFollower:
+        follower = consumers.follow(
+            self.source,
+            self.secrets,
+            llm_manager=llm_manager,
+            conversation_manager=conversation_manager,
+            build_providers=lambda view: _build_providers(self._ctx, view),
+        )
+        follower.changed()  # catch up with any change made while starting
+        return follower
+
+
+def _server_consumers(app: FastAPI, ctx: AppContext) -> _ServerConsumers | None:
+    """The server-mode settings consumers, or ``None`` in personal mode."""
+    from spark import mode
+    from spark.instance_settings.secrets import SecretsWriter
+
+    source = getattr(app.state, "instance_settings", None)
+    if not mode.is_server() or not isinstance(source, instance_settings.ServerSettings):
+        return None
+    return _ServerConsumers(ctx, source, SecretsWriter(ctx.secrets, ctx.settings, server=True))
+
+
 def _background_init(app: FastAPI, ctx: AppContext) -> None:
     """Heavy initialisation running in a background thread after server start."""
     import threading
@@ -465,14 +524,16 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
     def _init() -> None:
         status = app.state.init_status
         try:
-            # Step 1: LLM Providers
-            status["stage"] = "Connecting to LLM providers..."
-            llm_manager = _init_providers(ctx)
-            app.state.llm_manager = llm_manager
-
-            # Step 2: Database (opened by the lifespan on the serving loop)
+            # Step 1: Database (opened by the lifespan on the serving loop)
             status["stage"] = "Initialising database..."
             sync_db = _wait_for_database(app)
+            # Server mode reads the administrator's instance settings, not config.yaml.
+            instance = _server_consumers(app, ctx)
+
+            # Step 2: LLM Providers
+            status["stage"] = "Connecting to LLM providers..."
+            llm_manager = _init_providers(ctx, instance.view if instance else None)
+            app.state.llm_manager = llm_manager
 
             # Step 3: Conversation Manager
             status["stage"] = "Setting up conversation manager..."
@@ -482,8 +543,16 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             context_limits = ContextLimitResolver(
                 ctx.settings.get("context_limits") if ctx.settings.get("context_limits") else None
             )
-            conv_settings = ctx.settings.get("conversation") or {}
-            embedded_tools_config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+            conv_settings = (
+                instance.conversation_settings()
+                if instance
+                else ctx.settings.get("conversation") or {}
+            )
+            embedded_tools_config = (
+                instance.embedded_tools_config()
+                if instance
+                else {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
+            )
 
             # Resolve secret:// URIs within embedded tools config
             for _cat, cat_config in embedded_tools_config.get("embedded_tools", {}).items():
@@ -492,8 +561,8 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                         if isinstance(val, str) and val.startswith("secret://"):
                             cat_config[key] = _resolve_secret(ctx, val)
 
-            # Pass prompt inspection settings into the config
-            if ctx.settings.get("prompt_inspection.enabled"):
+            # Pass prompt inspection settings into the config (server mode: already there)
+            if not instance and ctx.settings.get("prompt_inspection.enabled"):
                 embedded_tools_config["_prompt_inspection_enabled"] = True
                 embedded_tools_config["_prompt_inspection_level"] = ctx.settings.get(
                     "prompt_inspection.level", "standard"
@@ -591,8 +660,16 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 mcp_manager=mcp_manager,
                 user_guid=app.state.user_guid,
                 mcp_loop=getattr(app.state, "_mcp_loop", None),
-                prompt_caching=bool(ctx.settings.get("conversation.prompt_caching", True)),
+                prompt_caching=bool(
+                    instance.view.get("conversation.prompt_caching", True)
+                    if instance
+                    else ctx.settings.get("conversation.prompt_caching", True)
+                ),
             )
+            if instance:
+                app.state.settings_follower = instance.follow(
+                    llm_manager, app.state.conversation_manager
+                )
 
             # Migrate any orphaned memories stored under "default" user_guid
             if app.state.user_guid != "default":

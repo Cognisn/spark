@@ -19,9 +19,25 @@ async def heartbeat(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+def _server() -> bool:
+    from spark import mode
+
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
 @router.get("/api/theme")
 async def get_theme(request: Request) -> JSONResponse:
-    """Get the saved theme preference."""
+    """Get the saved theme preference (server mode: the signed-in user's preference)."""
+    if _server():
+        from spark.instance_settings import access, accessor
+        from spark.web.db import database
+
+        user = access.access_check().user_guid(request)
+        prefs = await accessor.preferences(database(request), user)
+        return JSONResponse({"theme": prefs["interface.theme"]})
     ctx = getattr(request.app.state, "ctx", None)
     if ctx:
         theme = ctx.settings.get("interface.theme", "dark")
@@ -31,7 +47,7 @@ async def get_theme(request: Request) -> JSONResponse:
 
 @router.post("/api/theme")
 async def set_theme(request: Request) -> JSONResponse:
-    """Save the theme preference to config.yaml."""
+    """Save the theme preference: config.yaml in personal mode, the user's preference on a server."""
     import yaml
 
     data = await request.json()
@@ -39,15 +55,33 @@ async def set_theme(request: Request) -> JSONResponse:
     if theme not in ("dark", "light"):
         return JSONResponse({"error": "Invalid theme"}, status_code=400)
 
+    if _server():
+        from spark.instance_settings import access, accessor
+        from spark.web.db import database
+
+        user = access.access_check().user_guid(request)
+        if not user:
+            return JSONResponse({"error": "No signed-in user"}, status_code=403)
+        await accessor.set_preference(database(request), user, "interface.theme", theme)
+        return JSONResponse({"status": "ok", "theme": theme})
+
     from spark.core.application import _get_config_path
 
     config_path = _get_config_path()
     try:
-        raw = yaml.safe_load(config_path.read_text()) or {} if config_path.exists() else {}
+        raw = (
+            yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            if config_path.exists()
+            else {}
+        )
         if "interface" not in raw:
             raw["interface"] = {}
         raw["interface"]["theme"] = theme
-        config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+        config_path.write_text(
+            yaml.dump(raw, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+            newline="\n",
+        )
 
         ctx = getattr(request.app.state, "ctx", None)
         if ctx:
