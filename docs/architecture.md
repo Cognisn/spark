@@ -193,7 +193,15 @@ starts, under `spark.`:
 
 ### LLM Layer
 
-- **LLMManager** -- Routes requests across multiple registered providers
+- **LLMManager** -- Routes requests across multiple registered providers. On a server it
+  follows `models.offered` (empty offers every model): `list_all_models()` lists only the
+  models offered and `is_offered()` answers, by the same rule, whether a model may be
+  chosen. `set_model()` never asks, so a conversation pinned to a model that has left
+  the list keeps working. Sub-agents may be given only an offered model (the
+  conversation's own model, used when none is named, keeps working), the models listed
+  to the LLM for them are only those offered, and the action creation assistant may
+  create an action only with an offered model. One manager serves every user of a
+  server, so creating a conversation there never sets its model
 - **LLMService** -- Abstract base class that all providers implement
 - **ContextLimitResolver** -- Resolves context window and max output for any model ID
 

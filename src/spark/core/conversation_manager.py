@@ -500,11 +500,13 @@ class ConversationManager:
             instructions=instructions,
             web_search_enabled=web_search_enabled,
         )
-        # Set the model on the LLM manager
-        try:
-            self._llm.set_model(model_id)
-        except ValueError:
-            logger.warning("Model %s not found in any provider", model_id)
+        # Personal mode sets the model on the LLM manager. A server never does on a
+        # user's choice: the manager is shared, and each turn sets its own model.
+        if not self._server():
+            try:
+                self._llm.set_model(model_id)
+            except ValueError:
+                logger.warning("Model %s not found in any provider", model_id)
 
         return cid
 
@@ -1041,7 +1043,7 @@ class ConversationManager:
                 try:
                     provider_name = self._llm.active_provider
                     if provider_name and provider_name in self._llm.providers:
-                        models = self._llm.providers[provider_name].list_available_models()
+                        models = self._offered_provider_models(provider_name)
                         if models:
                             model_lines = []
                             for m in models[:10]:
@@ -1573,7 +1575,7 @@ class ConversationManager:
             provider_name = self._llm.active_provider
             if not provider_name or provider_name not in self._llm.providers:
                 return "No active provider.", True
-            models = self._llm.providers[provider_name].list_available_models()
+            models = self._offered_provider_models(provider_name)
             if not models:
                 return f"No models available from {provider_name}.", False
             lines = [f"Available models from {provider_name}:\n"]
@@ -1586,6 +1588,20 @@ class ConversationManager:
             return "\n".join(lines), False
         except Exception as e:
             return f"Error listing models: {e}", True
+
+    @staticmethod
+    def _server() -> bool:
+        from spark import mode
+
+        try:
+            return mode.is_server()
+        except RuntimeError:
+            return False
+
+    def _offered_provider_models(self, provider_name: str) -> list[dict]:
+        """A provider's models that users may choose (``models.offered``, when set)."""
+        models = self._llm.providers[provider_name].list_available_models()
+        return [m for m in models if self._llm.is_offered(m.get("id", ""))]
 
     @staticmethod
     def _may_spawn_agents(permissions: Permissions) -> bool:
@@ -1629,6 +1645,13 @@ class ConversationManager:
 
         if not task:
             return "Error: task description is required.", True
+        if model_id and not self._llm.is_offered(model_id):
+            # The conversation's own (pinned) model, used when none is named, keeps working.
+            return (
+                f"Error: the model '{model_id}' is not offered on this instance. "
+                "Use list_provider_models to see the models offered, or omit model_id.",
+                True,
+            )
         if not self._may_spawn_agents(permissions):
             return (
                 "Error: spawning sub-agents needs the spark.agents permission, "
@@ -1673,7 +1696,7 @@ class ConversationManager:
             provider_name = self._llm.active_provider
             available_models: list[dict] = []
             if provider_name and provider_name in self._llm.providers:
-                available_models = self._llm.providers[provider_name].list_available_models()
+                available_models = self._offered_provider_models(provider_name)
 
             model_justification = tool_input.get("model_justification", "")
             approved_model = callbacks.agent_model(

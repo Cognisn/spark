@@ -29,8 +29,21 @@ class LLMManager:
         logger.info("LLM providers now: %s", ", ".join(replaced) or "none")
 
     def set_offered(self, offered: Callable[[], Sequence[str]] | None) -> None:
-        """Limit the models listed to those ``offered()`` names (empty offers every model)."""
+        """Limit the models listed and chosen to those ``offered()`` names (empty offers every model)."""
         self._offered = offered
+
+    def offered_models(self) -> frozenset[str]:
+        """The model ids users may choose from; empty when every model is offered."""
+        return frozenset(self._offered()) if self._offered is not None else frozenset()
+
+    def is_offered(self, model_id: str) -> bool:
+        """Whether a user may choose ``model_id`` (the same rule as :meth:`list_all_models`).
+
+        :meth:`set_model` never asks: a conversation pinned to a model that has
+        left the list keeps working.
+        """
+        offered = self.offered_models()
+        return not offered or model_id in offered
 
     def register_provider(self, provider: LLMService) -> None:
         """Register an LLM provider."""
@@ -86,7 +99,7 @@ class LLMManager:
         models = []
         for provider in self._providers.values():
             models.extend(provider.list_available_models())
-        offered = set(self._offered()) if self._offered is not None else set()
+        offered = self.offered_models()
         if offered:
             models = [m for m in models if m.get("id") in offered]
         return models
