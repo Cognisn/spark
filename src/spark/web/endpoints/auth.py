@@ -1,4 +1,8 @@
-"""Personal-mode sign-in and sign-out endpoints."""
+"""Personal-mode sign-in and sign-out endpoints.
+
+Server mode signs in through warden (:mod:`spark.web.endpoints.identity`); there
+the menu's ``POST /logout`` ends the warden session instead.
+"""
 
 from __future__ import annotations
 
@@ -125,8 +129,15 @@ async def auto_login(request: Request) -> RedirectResponse:
 
 
 @router.post("/logout")
-async def logout(request: Request) -> RedirectResponse:
+async def logout(request: Request) -> Response:
     """End this browser's session and return to the sign-in page."""
+    from spark.identity.web import WardenAuthenticator
+
+    if isinstance(getattr(request.app.state, "authenticator", None), WardenAuthenticator):
+        # Server mode: the menu's sign-out form ends the warden session.
+        from spark.web.endpoints.identity import sign_out_response
+
+        return await sign_out_response(request)
     _sessions(request).destroy(request.cookies.get(SESSION_COOKIE) or "")
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, httponly=True, samesite="strict")

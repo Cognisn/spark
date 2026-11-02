@@ -33,9 +33,11 @@ __all__ = [
     "SparkIdentity",
     "WardenAccess",
     "current_identity",
+    "current_user_guid",
     "has_permission",
     "identity_from_principal",
     "install",
+    "optional_user_guid",
     "request_permissions",
     "require_permission",
     "tools_config_for",
@@ -99,6 +101,33 @@ def current_identity(request: Request) -> SparkIdentity | None:
         return _local_operator(request)
     identity = getattr(request.state, STATE_KEY, None)
     return identity if isinstance(identity, SparkIdentity) else None
+
+
+def optional_user_guid(request: Request) -> str | None:
+    """The guid whose data this request may touch, or None when no one is signed in.
+
+    Server mode: the signed-in user's guid, never the process's own guid.
+    Personal mode: the single local user's guid (``app.state.user_guid``).
+    """
+    if not _server():
+        guid = getattr(request.app.state, "user_guid", None)
+        return str(guid) if guid else None
+    identity = current_identity(request)
+    return identity.user_guid if identity is not None and identity.user_guid else None
+
+
+def current_user_guid(request: Request) -> str:
+    """The request's user guid; 401 in server mode when no one is signed in.
+
+    Personal mode keeps its old fallback, ``"default"``, for an app that never
+    resolved a guid.
+    """
+    guid = optional_user_guid(request)
+    if guid is not None:
+        return guid
+    if _server():
+        raise HTTPException(status_code=401, detail="not signed in")
+    return "default"
 
 
 def request_permissions(request: Request) -> frozenset[str] | None:

@@ -208,7 +208,7 @@ jobs:
           src/spark/safety/untrusted.py src/spark/llm/manager.py
           src/spark/tools/filesystem.py src/spark/core/processes.py
           src/spark/web/db.py scripts/check_no_nvidia.py
-          src/spark/identity
+          src/spark/identity src/spark/web/endpoints/identity.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true

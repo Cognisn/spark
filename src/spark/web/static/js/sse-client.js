@@ -32,6 +32,17 @@ function sendMessageWithSSE(conversationId, message) {
     });
 
     const url = `/stream/chat?${params.toString()}`;
+    // A server-mode session is refreshed first: an EventSource cannot read a 401.
+    const ready = window.SparkSession ? window.SparkSession.ensure() : Promise.resolve(true);
+    ready.then(() => {
+        if (!isRequestCancelled) openChatStream(url);
+    });
+}
+
+/**
+ * Open the chat stream and attach its handlers.
+ */
+function openChatStream(url) {
     currentEventSource = new EventSource(url);
 
     currentEventSource.addEventListener('status', (e) => {

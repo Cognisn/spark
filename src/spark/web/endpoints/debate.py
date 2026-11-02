@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -38,10 +39,6 @@ def _orchestrator(request: Request, status_callback: Any = None):
         tool_permission_callback=getattr(conv_mgr, "_tool_permission_callback", None),
         prompt_caching=getattr(conv_mgr, "_prompt_caching_enabled", True),
     )
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 @router.get("/debate/{conversation_id}")
@@ -108,7 +105,7 @@ async def debate_capabilities(request: Request) -> JSONResponse:
         # Only globally-enabled skills are offered; a skill disabled in the global
         # settings never reaches the wizard, matching how tools are gated by their
         # category config. Absent state defaults to enabled.
-        states = await skills_db.get_skill_states(database(request), _user_guid(request))
+        states = await skills_db.get_skill_states(database(request), current_user_guid(request))
         skills_out = [
             {"name": s["name"], "description": s["description"][:80]}
             for s in manager.list_skills()
@@ -158,13 +155,13 @@ async def debate_prompt(request: Request) -> JSONResponse:
 
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    message = await resolve_trigger_for_conversation(db, _user_guid(request), cid, message)
+    message = await resolve_trigger_for_conversation(db, current_user_guid(request), cid, message)
 
     orch = _orchestrator(request)
     turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
-            None, orch.answer_qa, cid, _user_guid(request), turn_id
+            None, orch.answer_qa, cid, current_user_guid(request), turn_id
         )
         return JSONResponse({"queued": False, "answer": answer})
     return JSONResponse({"queued": True, "turn_id": turn_id})
@@ -185,7 +182,7 @@ async def stream_debate(request: Request, conversation_id: int) -> EventSourceRe
 
     events: queue.Queue = queue.Queue()
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     loop = asyncio.get_running_loop()
 
     async def event_generator():

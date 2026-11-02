@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -18,10 +19,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/knowledge")
 
 _GRAPH_NODE_CAP = 500
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 def _state_dicts(request: Request) -> tuple[dict, dict]:
@@ -47,7 +44,7 @@ async def kg_status(request: Request) -> JSONResponse:
     from spark.knowledge.builder import KnowledgeGraphBuilder
 
     db = database(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     _, results = _state_dicts(request)
     plan_builder = KnowledgeGraphBuilder(sync_database(request), lambda m: None, None)
 
@@ -94,7 +91,7 @@ async def kg_build(request: Request) -> JSONResponse:
 
     conv_mgr = request.app.state.conversation_manager
     db = sync_database(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     tokens, results = _state_dicts(request)
     token = CancellationToken()
     tokens[scope] = token
@@ -144,7 +141,7 @@ async def kg_graph(request: Request, scope: str) -> JSONResponse:
     from spark.knowledge import store
 
     db = database(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     total_nodes = await store.count_nodes(db, scope, user_guid)
     total_edges = await store.count_edges(db, scope, user_guid)
     nodes = await store.get_nodes(db, scope, user_guid, limit=_GRAPH_NODE_CAP)
@@ -171,7 +168,12 @@ async def kg_search(request: Request, q: str, scope: str = "global") -> JSONResp
     from spark.knowledge.tools import _get_embedder
 
     results = await asyncio.to_thread(
-        find_entities, sync_database(request), _get_embedder(), [scope], q, _user_guid(request)
+        find_entities,
+        sync_database(request),
+        _get_embedder(),
+        [scope],
+        q,
+        current_user_guid(request),
     )
     return JSONResponse(
         {
@@ -197,5 +199,5 @@ async def kg_clear(request: Request) -> JSONResponse:
     scope = str(data.get("scope", "")).strip()
     if builder.is_building(scope):
         return JSONResponse({"error": "Cannot clear while building"}, status_code=409)
-    await store.clear_scope(database(request), scope, _user_guid(request))
+    await store.clear_scope(database(request), scope, current_user_guid(request))
     return JSONResponse({"status": "ok"})

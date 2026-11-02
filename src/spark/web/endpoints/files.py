@@ -25,6 +25,7 @@ from spark.db.engine import Row
 from spark.files.area import FileArea, FileAreaNotConfigured
 from spark.files.paths import PathRefused
 from spark.files.store import UploadTooLarge
+from spark.identity.access import optional_user_guid
 from spark.web.db import database, sync_database
 
 __all__ = ["router"]
@@ -34,14 +35,6 @@ router = APIRouter(prefix="/files")
 _UNSAFE = re.compile(r"[^A-Za-z0-9._ ()+-]")
 _MULTIPART_OVERHEAD = 64 * 1024
 _CHUNK = 256 * 1024
-
-
-def _user_guid(request: Request) -> str | None:
-    """The signed-in user (the identity layer sets ``request.state.user_guid``)."""
-    user = getattr(request.state, "user_guid", None) or getattr(
-        request.app.state, "user_guid", None
-    )
-    return str(user) if user else None
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -75,7 +68,7 @@ def _area(request: Request) -> FileArea:
 
 @router.get("/api")
 async def list_files(request: Request) -> Response:
-    user = _user_guid(request)
+    user = optional_user_guid(request)
     if user is None:
         return _error(401, "Sign in to see your files.")
     try:
@@ -97,7 +90,7 @@ async def list_files(request: Request) -> Response:
 
 @router.post("/api")
 async def upload_file(request: Request) -> Response:
-    user = _user_guid(request)
+    user = optional_user_guid(request)
     if user is None:
         return _error(401, "Sign in to upload files.")
     try:
@@ -165,7 +158,7 @@ def _disposition(filename: str) -> str:
 
 @router.get("/api/{file_id}")
 async def download_file(request: Request, file_id: int) -> Response:
-    user = _user_guid(request)
+    user = optional_user_guid(request)
     if user is None:
         return _error(401, "Sign in to download files.")
     row = await files_db.get_user_file(database(request), user, file_id)
@@ -190,7 +183,7 @@ async def download_file(request: Request, file_id: int) -> Response:
 
 @router.delete("/api/{file_id}")
 async def delete_file(request: Request, file_id: int) -> Response:
-    user = _user_guid(request)
+    user = optional_user_guid(request)
     if user is None:
         return _error(401, "Sign in to delete files.")
     try:

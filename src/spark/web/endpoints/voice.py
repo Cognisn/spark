@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 from spark.database import voice_usage
+from spark.identity.access import current_user_guid
 from spark.voice.engine import VoiceEngine, load_config
 from spark.voice.errors import VoiceUnavailable
 from spark.web.db import database
@@ -21,10 +22,6 @@ from spark.web.db import database
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 def _engine(request: Request) -> VoiceEngine:
@@ -76,7 +73,7 @@ async def voice_speak(request: Request) -> Response:
         audio = await _engine(request).synthesise(
             text,
             data.get("voice_id") or None,
-            user_guid=_user_guid(request),
+            user_guid=current_user_guid(request),
             conversation_id=data.get("conversation_id"),
         )
     except VoiceUnavailable as e:
@@ -96,7 +93,9 @@ async def voice_test(request: Request) -> JSONResponse:
     request.app.state.voice_engine = None
     engine = _engine(request)
     try:
-        await engine.synthesise("Spark voice is connected.", None, user_guid=_user_guid(request))
+        await engine.synthesise(
+            "Spark voice is connected.", None, user_guid=current_user_guid(request)
+        )
     except VoiceUnavailable as e:
         return JSONResponse({"ok": False, "reason": e.reason})
     except Exception as e:  # noqa: BLE001
@@ -109,6 +108,6 @@ async def voice_test(request: Request) -> JSONResponse:
 async def voice_usage_summary(request: Request) -> JSONResponse:
     """Characters billed this month, against the configured cap."""
     engine = _engine(request)
-    summary = await voice_usage.usage_summary(database(request), _user_guid(request))
+    summary = await voice_usage.usage_summary(database(request), current_user_guid(request))
     summary["cap"] = engine.config.monthly_character_cap
     return JSONResponse(summary)

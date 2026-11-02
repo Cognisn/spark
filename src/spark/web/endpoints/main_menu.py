@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.responses import Response
 
+from spark.identity.access import current_user_guid
+
 router = APIRouter()
 
 
@@ -472,7 +474,7 @@ async def _get_recent_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        user_guid = getattr(request.app.state, "user_guid", "default")
+        user_guid = current_user_guid(request)
         all_convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
         non_favs = [c for c in all_convs if not c.get("is_favourite")]
         return non_favs[:5]
@@ -486,7 +488,7 @@ async def _get_favourite_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        user_guid = getattr(request.app.state, "user_guid", "default")
+        user_guid = current_user_guid(request)
         all_convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
         return [c for c in all_convs if c.get("is_favourite")]
     except Exception:

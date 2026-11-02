@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -38,10 +39,6 @@ def _orchestrator(request: Request, status_callback: Any = None):
         tool_permission_callback=getattr(conv_mgr, "_tool_permission_callback", None),
         prompt_caching=getattr(conv_mgr, "_prompt_caching_enabled", True),
     )
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 async def _panel_config(request: Request, conversation_id: int) -> dict | None:
@@ -73,7 +70,9 @@ async def panel_state(request: Request, conversation_id: int) -> JSONResponse:
     turns = await debates.get_turns(db, conversation_id)
     exhibits = await debates.get_exhibits(db, conversation_id)
     orch = _orchestrator(request)
-    awaiting = await asyncio.to_thread(orch.awaiting_human, conversation_id, _user_guid(request))
+    awaiting = await asyncio.to_thread(
+        orch.awaiting_human, conversation_id, current_user_guid(request)
+    )
     return JSONResponse(
         {
             "config": cfg,
@@ -103,7 +102,7 @@ async def panel_prompt(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
 
     orch = _orchestrator(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
 
     pending = await asyncio.to_thread(orch.awaiting_human, cid, user_guid)
     if pending:
@@ -140,7 +139,7 @@ async def stream_panel(request: Request, conversation_id: int) -> EventSourceRes
 
     events: queue.Queue = queue.Queue()
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     loop = asyncio.get_running_loop()
 
     async def event_generator():

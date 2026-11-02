@@ -22,7 +22,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from starlette.requests import HTTPConnection
+from starlette.requests import HTTPConnection, Request
+from starlette.responses import Response
 
 if TYPE_CHECKING:
     from spark.web.session import SessionManager
@@ -52,6 +53,24 @@ class WebAuthenticator(Protocol):
 
     def csrf_token(self, conn: HTTPConnection) -> str | None:
         """The CSRF token this request must carry, or None if it cannot carry one."""
+        ...
+
+
+@runtime_checkable
+class GatingAuthenticator(WebAuthenticator, Protocol):
+    """An authenticator that decides every request itself (server mode: warden).
+
+    The auth middleware awaits :meth:`admit` instead of applying personal
+    mode's public paths and session check; the request guard asks
+    :meth:`csrf_exempt` whether a request carries no ambient credential.
+    """
+
+    async def admit(self, request: Request) -> Response | None:
+        """None to let the request through, or the response that answers it."""
+        ...
+
+    def csrf_exempt(self, conn: HTTPConnection) -> bool:
+        """Whether the request was authenticated by a bearer credential, not a cookie."""
         ...
 
 

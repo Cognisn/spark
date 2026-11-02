@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
         return EventSourceResponse(error_gen())
 
-    user_guid = getattr(request.app.state, "user_guid", "default")
+    user_guid = current_user_guid(request)
 
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation

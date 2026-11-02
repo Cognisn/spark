@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.identity.access import current_user_guid
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,6 @@ def _manager(request: Request) -> Any:
     return get_skills_manager()
 
 
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
-
-
 @router.get("", response_class=HTMLResponse)
 async def skills_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
@@ -48,7 +45,7 @@ async def list_skills(request: Request) -> JSONResponse:
     from spark.database import skills as skills_db
 
     manager = _manager(request)
-    states = await skills_db.get_skill_states(database(request), _user_guid(request))
+    states = await skills_db.get_skill_states(database(request), current_user_guid(request))
     out = []
     for skill in manager.list_skills(include_invalid=True):
         out.append(
@@ -73,7 +70,7 @@ async def toggle_skill(request: Request) -> JSONResponse:
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
     await skills_db.set_skill_enabled(
-        database(request), name, bool(data.get("enabled", True)), _user_guid(request)
+        database(request), name, bool(data.get("enabled", True)), current_user_guid(request)
     )
     return JSONResponse({"status": "ok"})
 

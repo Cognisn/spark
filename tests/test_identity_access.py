@@ -227,3 +227,66 @@ class TestInstall:
         ctx.settings.get = lambda key, default=None, **_: default
         create_app(ctx, first_run=False)
         assert isinstance(settings_access.access_check(), settings_access.SingleOperatorAccess)
+
+
+class TestRequestUserGuid:
+    """The one helper endpoints use for the request's user guid."""
+
+    @pytest.fixture
+    def guid_client(self, holder: Holder) -> Iterator[TestClient]:
+        app = FastAPI()
+        app.state.user_guid = "process-guid"
+
+        @app.get("/guid")
+        def guid(request: Request) -> dict[str, object]:
+            return {
+                "optional": access.optional_user_guid(request),
+                "current": access.current_user_guid(request),
+            }
+
+        app.add_middleware(AsIdentity, holder=holder)
+        with TestClient(app) as test_client:
+            yield test_client
+
+    def test_server_mode_uses_the_signed_in_user(
+        self, server_mode: None, holder: Holder, guid_client: TestClient
+    ) -> None:
+        holder.identity = identity_for(USER, user_guid="ada-guid")
+        assert guid_client.get("/guid").json() == {"optional": "ada-guid", "current": "ada-guid"}
+
+    def test_server_mode_never_falls_back_to_the_process_guid(
+        self, server_mode: None, guid_client: TestClient
+    ) -> None:
+        resp = guid_client.get("/guid")
+        assert resp.status_code == 401
+
+    def test_server_mode_optional_is_none_without_identity(self, server_mode: None) -> None:
+        from starlette.requests import Request as StarletteRequest
+
+        app = FastAPI()
+        app.state.user_guid = "process-guid"
+        request = StarletteRequest({"type": "http", "app": app, "headers": [], "state": {}})
+        assert access.optional_user_guid(request) is None
+
+    def test_server_mode_ignores_a_stray_request_state_guid(
+        self, server_mode: None, holder: Holder, guid_client: TestClient
+    ) -> None:
+        # Only the identity counts; nothing else on request.state is trusted.
+        holder.identity = identity_for(USER, user_guid="ada-guid")
+        assert guid_client.get("/guid").json()["current"] == "ada-guid"
+
+    def test_personal_mode_uses_the_process_guid(
+        self, personal_mode: None, guid_client: TestClient
+    ) -> None:
+        assert guid_client.get("/guid").json() == {
+            "optional": "process-guid",
+            "current": "process-guid",
+        }
+
+    def test_personal_mode_without_a_guid_is_default(self, personal_mode: None) -> None:
+        from starlette.requests import Request as StarletteRequest
+
+        app = FastAPI()
+        request = StarletteRequest({"type": "http", "app": app, "headers": [], "state": {}})
+        assert access.optional_user_guid(request) is None
+        assert access.current_user_guid(request) == "default"

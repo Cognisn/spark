@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.database import conversations
+from spark.identity.access import current_user_guid
 from spark.web.db import database
 
 router = APIRouter(prefix="/conversations")
@@ -28,7 +29,7 @@ async def list_conversations(request: Request) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse([])
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
     return JSONResponse(convs)
 
@@ -46,7 +47,7 @@ async def create_conversation(request: Request) -> JSONResponse:
     instructions = data.get("instructions")
     web_search = data.get("web_search_enabled", False)
     conversation_type = data.get("conversation_type", "standard")
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     # Validate a debate payload BEFORE creating anything, so a bad request
     # never leaves an orphan conversation row.
@@ -195,7 +196,7 @@ async def delete_conversation(request: Request, conversation_id: int) -> JSONRes
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     await asyncio.to_thread(conv_mgr.delete_conversation, conversation_id, user_guid)
     return JSONResponse({"status": "ok"})
 
@@ -211,7 +212,7 @@ async def search_conversations(request: Request) -> JSONResponse:
     if not query:
         return JSONResponse([])
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     from spark.database import conversations
 
     results = await conversations.search_conversations(database(request), query, user_guid)
@@ -230,7 +231,7 @@ async def rename_conversation(request: Request, conversation_id: int) -> JSONRes
     if not name:
         return JSONResponse({"error": "Name required"}, status_code=400)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     from spark.database import conversations
 
     await conversations.update_conversation(
@@ -251,7 +252,7 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     if not model_id:
         return JSONResponse({"error": "model_id required"}, status_code=400)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     from spark.database import conversations
 
     await conversations.update_conversation(
@@ -269,7 +270,7 @@ async def toggle_favourite(request: Request, conversation_id: int) -> JSONRespon
 
     data = await request.json()
     is_favourite = int(bool(data.get("favourite", False)))
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     from spark.database import conversations
 
@@ -316,8 +317,3 @@ async def list_models(request: Request) -> JSONResponse:
             "mandatory": False,
         }
     )
-
-
-def _get_user_guid(request: Request) -> str:
-    """Get the persistent user GUID from app state."""
-    return getattr(request.app.state, "user_guid", "default")

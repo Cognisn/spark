@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
     """Render the chat page for a conversation."""
     templates = request.app.state.templates
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     conversation = None
     if conv_mgr:
@@ -135,7 +136,7 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     if not message:
         return JSONResponse({"error": "Empty message"}, status_code=400)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     try:
         result = await asyncio.to_thread(conv_mgr.send_message, conversation_id, message, user_guid)
@@ -155,7 +156,7 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
@@ -219,7 +220,7 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     data = await request.json()
 
     from spark.database import conversations
@@ -283,7 +284,7 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"embedded": [], "mcp_servers": []})
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     from spark.database import mcp_ops
     from spark.identity.access import tools_config_for
@@ -371,7 +372,7 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     data = await request.json()
     tool_type = data.get("type", "embedded")  # embedded | mcp_server
     name = data.get("name", "")
@@ -407,7 +408,7 @@ async def get_links(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"linked": [], "available": []})
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     from spark.database import conversation_links
 
@@ -426,7 +427,7 @@ async def add_link(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     data = await request.json()
     target_id = data.get("target_id")
     if not target_id:
@@ -449,7 +450,7 @@ async def remove_link(request: Request, conversation_id: int, target_id: int) ->
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
 
     from spark.database import conversation_links
 
@@ -467,7 +468,7 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = _get_user_guid(request)
+    user_guid = current_user_guid(request)
     fmt = request.query_params.get("format", "markdown")
 
     conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
@@ -625,7 +626,3 @@ async def cancel_agent(request: Request) -> JSONResponse:
     else:
         logger.info("Agent cancel for unknown id %s — ignored", agent_id)
     return JSONResponse({"status": "ok"})
-
-
-def _get_user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")

@@ -114,8 +114,46 @@ graph TB
 - **FastAPI** application with Jinja2 templates
 - **Uvicorn** ASGI server (random port per startup)
 - **SSE streaming** for real-time chat responses via `sse-starlette`
-- **Auth middleware** protecting all routes except login/static, through `app.state.authenticator` (a `WebAuthenticator`: personal mode's single-use, expiring, rate-limited sign-in codes and one session; server mode swaps in warden)
+- **Auth middleware** protecting all routes except login/static, through `app.state.authenticator` (a `WebAuthenticator`: personal mode's single-use, expiring, rate-limited sign-in codes and one session; server mode's warden sessions, below)
 - **Request guard** (`spark.web.security`) refusing state-changing requests and event streams that do not come from the instance's own origin, and state-changing requests without the session's CSRF token; pages send the token through `static/js/csrf.js`
+- **Origin pin**: personal mode accepts its own bind address (or, bound to every address, the request's own Host); a server accepts exactly the origin of `server.public_base_url` (plus `interface.allowed_origins`) and refuses any other Host header, event streams included
+
+### Warden sessions (server mode)
+
+`spark.identity.runtime.IdentityRuntime` starts warden inside the web process once the
+database is open: warden's configuration is derived from `server.public_base_url`
+(required in server mode, https unless loopback) and the `warden` section of konfig;
+the audit recorder is installed first; a missing signing key is rotated in and the
+TOTP and CSRF keys are generated into konfig's secrets store, under an advisory lock
+so replicas agree. `spark.identity.web.WardenAuthenticator` then answers the auth
+middleware on every request:
+
+| Cookie | Attributes | Holds |
+|---|---|---|
+| `__Host-spark-access` | HttpOnly, Secure, SameSite=Strict, path `/` | warden's access token (kept as long as the refresh token, so an expired one still reaches the server) |
+| `__Secure-spark-refresh` | HttpOnly, Secure, SameSite=Strict, path `/auth/session/refresh` only | the rotating refresh token |
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant M as Auth middleware
+    participant R as /auth/session/refresh
+    B->>M: GET /chat (access token expired)
+    M-->>B: 303 /auth/session/refresh?next=/chat
+    B->>R: GET (refresh cookie sent only here)
+    R-->>B: 303 /chat, both cookies rotated
+    B->>M: fetch /conversations/api/list (expired)
+    M-->>B: 401 X-Spark-Session: refresh
+    B->>R: POST (Origin and CSRF checked), csrf.js, one at a time
+    R-->>B: 204, both cookies rotated; csrf.js retries the fetch
+```
+
+- A request with no usable session is sent to `/auth/sign-in?next=...` (page loads) or answered 401 with `X-Spark-Session: sign-in`. `next` is only ever a same-origin path.
+- The signed-in user is `request.state.identity` (a `SparkIdentity`, permissions from warden) and `request.state.user_guid`, the guid mapped to the warden user (`user_identities`). Endpoints ask `spark.identity.access.current_user_guid(request)`, which in server mode never falls back to the process's own guid.
+- CSRF: a session's token is an HMAC-SHA256 of its warden session id under a per-instance key in konfig's secrets store (`spark.csrf-key`), so it survives refreshes and never matches another session; the sign-in form has its own cookie-bound token.
+- API keys: `Authorization: Bearer wdn_...` authenticates through warden (the key's scopes intersected with its user's permissions) and needs no CSRF token, having no ambient credential; Origin and Referer are still checked when present, and a bearer together with a session cookie is refused.
+- Event streams cannot read a 401, so the chat, debate and panel pages call `SparkSession.ensure()` (in `csrf.js`) before opening one.
+- `/auth/sign-out` (and the menu's `/logout`) revokes the warden session and clears both cookies. A second-factor challenge lands on `/auth/challenge`, whose TOTP, enrolment and recovery-code screens are a later step.
 - **Static files** served from `web/static/` (CSS, JS, fonts)
 
 ### Core
@@ -269,7 +307,9 @@ sequenceDiagram
 ```
 
 `application.run()` validates the mode first (`spark.mode.configure`): server mode
-refuses to start without a PostgreSQL `database.url`.
+refuses to start without a PostgreSQL `database.url` or a valid `server.public_base_url`,
+or with an invalid `warden` section. A server generates no sign-in code and opens no
+browser; its lifespan also starts warden's runtime (above).
 
 ## Modes
 
@@ -281,7 +321,7 @@ the raw settings.
 |---|---|---|
 | Database | SQLite in the platform data directory | PostgreSQL from `database.url` (`SPARK__DATABASE__URL`) |
 | Schema changes | applied automatically at start-up | `spark migrate` first; start-up refuses a database behind head |
-| Users | one local user | multi-user (identity through warden from a later release) |
+| Users | one local user, terminal sign-in code | multi-user, signed in through warden (email and password, second factor, API keys) |
 | Local tools | system command, filesystem and email tools available | not registered, refused by name, settings hidden |
 
 ## Data Layer

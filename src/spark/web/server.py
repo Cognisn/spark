@@ -17,19 +17,21 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.requests import HTTPConnection
 
 import spark
 import spark.instance_settings as instance_settings
 from spark.db import Database, SyncDatabase
 from spark.instance_settings import consumers
 from spark.mode import DatabaseSettings
-from spark.web.auth import AuthManager, LoginPolicy, PersonalAuthenticator
+from spark.web.auth import AuthManager, GatingAuthenticator, LoginPolicy, PersonalAuthenticator
 from spark.web.security import OriginPolicy, RequestGuardMiddleware
 from spark.web.session import SessionManager
 
 if TYPE_CHECKING:
     from konfig import AppContext
 
+    from spark.identity.runtime import IdentityRuntime
     from spark.llm.manager import LLMManager
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,8 @@ _STATIC_DIR = _WEB_DIR / "static"
 
 _DATABASE_WAIT_SECONDS = 300
 
-# Reachable without a session. Anything else is redirected to /login.
+# Personal mode: reachable without a session. Anything else is redirected to
+# /login. Server mode's public paths are warden's (spark.identity.web).
 _PUBLIC_PATHS = frozenset({"/login", "/auto-login", "/api/auth", "/loading", "/favicon.ico"})
 _PUBLIC_PREFIXES = ("/static/", "/loading/")
 
@@ -110,6 +113,45 @@ def attach_database(app: FastAPI, settings: DatabaseSettings, auto_migrate: bool
     app.state.database_auto_migrate = auto_migrate
 
 
+def attach_identity(app: FastAPI) -> None:
+    """Sign users in through warden (server mode): call before serving, after ``attach_database``.
+
+    Pins the Origin policy to ``server.public_base_url`` (plus
+    ``interface.allowed_origins``), never the Host-header fallback, and makes
+    warden the authenticator. Until the lifespan has started warden's runtime
+    every request is refused (503). Raises
+    :class:`spark.instance_settings.startup.StartupConfigError` without a valid
+    public address.
+    """
+    from spark.identity.web import WardenAuthenticator
+    from spark.instance_settings.startup import public_base_url
+
+    ctx = app.state.ctx
+    base_url = public_base_url(ctx.settings.get("server.public_base_url", ""))
+    app.state.identity_attached = True
+    app.state.authenticator = WardenAuthenticator()
+    app.state.origin_policy = OriginPolicy.pinned(base_url, _extra_origins(ctx))
+
+
+async def _start_identity(app: FastAPI, database: Database) -> IdentityRuntime | None:
+    """Start warden's runtime when the app signs in through warden."""
+    if not getattr(app.state, "identity_attached", False):
+        return None
+    from spark.identity.runtime import IdentityRuntime
+
+    ctx = app.state.ctx
+    runtime = await IdentityRuntime.start(database, ctx.settings, ctx.secrets)
+    runtime.identity.install(app)
+    app.state.identity_runtime = runtime
+    return runtime
+
+
+def _csrf_exempt(conn: HTTPConnection) -> bool:
+    """Whether the authenticator says this request carries no ambient credential."""
+    authenticator = conn.app.state.authenticator
+    return isinstance(authenticator, GatingAuthenticator) and authenticator.csrf_exempt(conn)
+
+
 async def _attach_settings(app: FastAPI, database: Database) -> None:
     """Install the settings source for the mode; in server mode start the settings listener.
 
@@ -132,6 +174,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     Endpoints await ``app.state.database``; code on worker threads uses
     ``app.state.sync_db``. ``app.state.database_ready`` is set once either is
     usable or opening failed (``app.state.database_error``).
+
+    With warden attached (server mode), warden's runtime starts once the
+    database is open, runs for the app's lifetime and stops before the
+    database closes.
     """
     from spark.db import migrate
     from spark.identity import migrations as identity_migrations
@@ -141,6 +187,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: DatabaseSettings | None = getattr(app.state, "database_settings", None)
     ready: threading.Event = app.state.database_ready
     database: Database | None = None
+    identity: IdentityRuntime | None = None
     if settings is not None:
         try:
             await asyncio.to_thread(
@@ -157,14 +204,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.sync_db = SyncDatabase(database)
         try:
             await _attach_settings(app, database)
+            identity = await _start_identity(app, database)
         except BaseException as exc:
             app.state.database_error = exc
             ready.set()
+            await instance_settings.detach(app)
             await database.close()
             raise
     ready.set()
     try:
-        yield
+        if identity is None:
+            yield
+        else:
+            async with identity.running():
+                app.state.authenticator.bind(identity)
+                try:
+                    yield
+                finally:
+                    app.state.authenticator.bind(None)
+                    app.state.identity_runtime = None
     finally:
         if database is not None:
             await instance_settings.detach(app)
@@ -246,15 +304,24 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
         policy=lambda conn: conn.app.state.origin_policy,
         csrf_token=lambda conn: conn.app.state.authenticator.csrf_token(conn),
         stream_prefixes=("/stream/",),
+        csrf_exempt=_csrf_exempt,
     )
 
     # -- Auth middleware -------------------------------------------------------
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        authenticator = request.app.state.authenticator
+        if isinstance(authenticator, GatingAuthenticator):
+            # Server mode: warden decides, including which paths are public.
+            answer = await authenticator.admit(request)
+            if answer is not None:
+                return answer
+            request.state.csrf_token = authenticator.csrf_token(request) or ""
+            return await call_next(request)
+
         if _is_public(request.url.path):
             return await call_next(request)
 
-        authenticator = request.app.state.authenticator
         if not authenticator.is_authenticated(request):
             return RedirectResponse(url="/login", status_code=303)
 
@@ -787,7 +854,10 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     from spark import mode
 
     runtime = mode.current()
-    attach_database(app, runtime.database, auto_migrate=runtime.mode is mode.Mode.PERSONAL)
+    server_mode = runtime.mode is mode.Mode.SERVER
+    attach_database(app, runtime.database, auto_migrate=not server_mode)
+    if server_mode:
+        attach_identity(app)
 
     # Set up init status tracking and start background init
     app.state.init_status = {"ready": False, "error": False, "stage": "Starting..."}
@@ -797,14 +867,22 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     port = _resolve_port(ctx, host)
     ssl_enabled = ctx.settings.get("interface.ssl.enabled", False)
 
-    # Generate auth code and build auto-login URL
-    auth_code = app.state.auth.generate_code()
     scheme = "https" if ssl_enabled else "http"
     url = f"{scheme}://{host}:{port}"
-    login_url = f"{url}/auto-login?code={auth_code}"
-
-    logger.info("Spark web interface starting at %s", url)
-    logger.info("Authentication code: %s", auth_code)
+    if server_mode:
+        # Users sign in through warden at the public address; no login code.
+        login_url = ""
+        logger.info(
+            "Spark server listening on %s, serving %s",
+            url,
+            ctx.settings.get("server.public_base_url"),
+        )
+    else:
+        # Generate auth code and build auto-login URL
+        auth_code = app.state.auth.generate_code()
+        login_url = f"{url}/auto-login?code={auth_code}"
+        logger.info("Spark web interface starting at %s", url)
+        logger.info("Authentication code: %s", auth_code)
     logger.debug("Pre-startup: writing URL file and scheduling browser open")
 
     # Write URL file so the tray daemon can find us
@@ -824,7 +902,9 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         logger.debug("Opening browser at %s/auto-login", url)
         webbrowser.open(login_url)
 
-    if _should_open_browser(ctx):
+    if server_mode:
+        logger.info("Browser auto-open is off in server mode")
+    elif _should_open_browser(ctx):
         threading.Thread(target=_open_browser_delayed, daemon=True).start()
         logger.debug("Browser open scheduled, configuring server...")
     else:
@@ -855,8 +935,11 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
                 ssl_enabled = False
                 scheme = "http"
 
-    # Only this instance's own pages may change state or open event streams.
-    app.state.origin_policy = OriginPolicy.for_instance(scheme, host, port, _extra_origins(ctx))
+    # Only this instance's own pages may change state or open event streams. A
+    # server keeps the public origin attach_identity pinned (D18; Q14 keeps the
+    # bind-address fallback for personal mode only).
+    if not server_mode:
+        app.state.origin_policy = OriginPolicy.for_instance(scheme, host, port, _extra_origins(ctx))
 
     logger.debug("Creating uvicorn config...")
     try:

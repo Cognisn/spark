@@ -249,6 +249,12 @@
     }
 
     function connect() {
+        // A server-mode session is refreshed first: an EventSource cannot read a 401.
+        const ready = window.SparkSession ? window.SparkSession.ensure() : Promise.resolve(true);
+        ready.then(openStream);
+    }
+
+    function openStream() {
         evtSource = new EventSource(`/stream/debate?conversation_id=${cid}`);
         const handlers = {
             stream_start: d => { streamId = d.stream_id; },

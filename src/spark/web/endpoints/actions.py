@@ -9,15 +9,12 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/actions")
-
-
-def _user(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 def _actions_enabled(request: Request) -> bool:
@@ -74,7 +71,7 @@ async def create_action(request: Request) -> JSONResponse:
             name=data["name"],
             action_prompt=data["prompt"],
             model_id=data["model_id"],
-            user_guid=_user(request),
+            user_guid=current_user_guid(request),
             description=data.get("description"),
             schedule_type=data.get("schedule_type", "one_off"),
             schedule_config=data.get("schedule_config"),
@@ -113,7 +110,7 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     updates = {k: v for k, v in data.items() if k in allowed}
 
     try:
-        await autonomous_actions.update_action(db, action_id, _user(request), **updates)
+        await autonomous_actions.update_action(db, action_id, current_user_guid(request), **updates)
         return JSONResponse({"status": "ok"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -129,7 +126,7 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    await autonomous_actions.delete_action(db, action_id, _user(request))
+    await autonomous_actions.delete_action(db, action_id, current_user_guid(request))
     return JSONResponse({"status": "ok"})
 
 
@@ -145,7 +142,7 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     from spark.database import autonomous_actions
 
     await autonomous_actions.update_action(
-        db, action_id, _user(request), is_enabled=int(bool(data.get("enabled", True)))
+        db, action_id, current_user_guid(request), is_enabled=int(bool(data.get("enabled", True)))
     )
     return JSONResponse({"status": "ok"})
 
@@ -217,7 +214,7 @@ async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
     from spark.database import autonomous_actions
 
     await autonomous_actions.set_tool_permission(
-        db, action_id, tool_name, permission_state, _user(request)
+        db, action_id, tool_name, permission_state, current_user_guid(request)
     )
 
     return JSONResponse({"status": "ok"})
@@ -253,7 +250,7 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    action = await autonomous_actions.get_action(db, action_id, _user(request))
+    action = await autonomous_actions.get_action(db, action_id, current_user_guid(request))
     if not action:
         return JSONResponse({"error": "Action not found"}, status_code=404)
 
@@ -318,7 +315,7 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     # A copy: the shared configuration never carries one user's guid or permissions.
     config = tools_config_for(request, conv_mgr._embedded_tools_config if conv_mgr else {})
-    config["_user_guid"] = _user(request)
+    config["_user_guid"] = current_user_guid(request)
 
     # Augment system prompt with pre-selected name and model
     system_prompt = ACTION_CREATION_SYSTEM_PROMPT
