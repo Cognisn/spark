@@ -294,11 +294,12 @@ class SqliteVectorStore(_ColumnStore):
                 threshold=threshold,
                 category=filters.get("category"),
             )
-        # Context search stays scoped by conversation as in 0.2.0: personal mode has one
-        # user, and rows from older versions may carry another user_guid for that user.
+        # Context search is scoped through the conversations' owner, not each row's
+        # user_guid: rows from older versions may carry another guid for the same user.
         ids = filters["conversation_id"]
         return await context_index.search_context(
             db,
+            user_guid,
             list(ids) if isinstance(ids, (list, tuple)) else [ids],
             vec,
             top_k=top_k,

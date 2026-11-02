@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from spark.database.scope import OWNED_CONVERSATIONS, owns_conversation
 from spark.db.engine import Executor, Row
 
 __all__ = ["add_index_element", "delete_index_elements", "get_index_stats", "search_context"]
@@ -22,10 +23,15 @@ async def add_index_element(
     *,
     metadata_json: str | None = None,
 ) -> int | None:
-    """Add a context element with embedding. Returns ID, or None if duplicate."""
+    """Add a context element with embedding to one of the user's conversations.
+
+    Returns the ID, or None for a duplicate or another user's conversation.
+    """
     content_hash = hashlib.sha256(content_text.encode()).hexdigest()
     embedding_bytes = embedding.astype(np.float32).tobytes()
     async with db.transaction() as conn:
+        if not await owns_conversation(conn, user_guid, conversation_id):
+            return None
         existing = await conn.fetch_value(
             """SELECT id FROM context_index_elements
                 WHERE conversation_id = ? AND content_hash = ?""",
@@ -53,6 +59,7 @@ async def add_index_element(
 
 async def search_context(
     db: Executor,
+    user_guid: str,
     conversation_ids: list[int],
     query_embedding: np.ndarray[Any, Any],
     *,
@@ -60,12 +67,18 @@ async def search_context(
     threshold: float = 0.3,
     element_type: str | None = None,
 ) -> list[Row]:
-    """Search context elements by cosine similarity across conversations."""
+    """Search context elements by cosine similarity across the user's conversations.
+
+    Ids of other users' conversations contribute nothing.
+    """
     if not conversation_ids:
         return []
     placeholders = ", ".join("?" for _ in conversation_ids)
-    sql = f"SELECT * FROM context_index_elements WHERE conversation_id IN ({placeholders})"
-    params: list[Any] = list(conversation_ids)
+    sql = (
+        f"SELECT * FROM context_index_elements WHERE conversation_id IN ({placeholders}) "
+        f"AND conversation_id IN ({OWNED_CONVERSATIONS})"
+    )
+    params: list[Any] = [*conversation_ids, user_guid]
     if element_type:
         sql += " AND element_type = ?"
         params.append(element_type)
@@ -87,19 +100,22 @@ async def search_context(
     return results[:top_k]
 
 
-async def delete_index_elements(db: Executor, conversation_id: int) -> None:
-    """Delete all index elements for a conversation."""
+async def delete_index_elements(db: Executor, user_guid: str, conversation_id: int) -> None:
+    """Delete all index elements of one of the user's conversations."""
     await db.execute(
-        "DELETE FROM context_index_elements WHERE conversation_id = ?", (conversation_id,)
+        f"""DELETE FROM context_index_elements WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, user_guid),
     )
 
 
-async def get_index_stats(db: Executor, conversation_id: int) -> dict[str, int]:
-    """Get element count by type for a conversation."""
+async def get_index_stats(db: Executor, user_guid: str, conversation_id: int) -> dict[str, int]:
+    """Element count by type for one of the user's conversations."""
     rows = await db.fetch_all(
-        """SELECT element_type, COUNT(*) as count
+        f"""SELECT element_type, COUNT(*) as count
             FROM context_index_elements WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})
             GROUP BY element_type""",
-        (conversation_id,),
+        (conversation_id, user_guid),
     )
     return {row["element_type"]: int(row["count"]) for row in rows}

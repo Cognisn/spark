@@ -68,7 +68,9 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse([])
 
-    messages = await asyncio.to_thread(conv_mgr.get_messages, conversation_id)
+    messages = await asyncio.to_thread(
+        conv_mgr.get_messages, conversation_id, current_user_guid(request)
+    )
     return JSONResponse(messages)
 
 
@@ -81,7 +83,9 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
 
     from spark.database import mcp_ops
 
-    transactions = await mcp_ops.get_transactions(database(request), conversation_id)
+    transactions = await mcp_ops.get_transactions(
+        database(request), current_user_guid(request), conversation_id
+    )
     # Return newest-last so the panel renders in chronological order.
     transactions.reverse()
     # Strip the embedding-sized binary blob; keep only display fields.
@@ -110,7 +114,9 @@ async def get_agent_history(request: Request, conversation_id: int) -> JSONRespo
 
     from spark.database import agents as agent_db
 
-    runs = await agent_db.get_agent_runs(database(request), conversation_id)
+    runs = await agent_db.get_agent_runs(
+        database(request), current_user_guid(request), conversation_id
+    )
     # Serialise datetime and JSON fields for the frontend.
     result = []
     for r in runs:
@@ -173,7 +179,7 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     try:
         from spark.database import agents as agent_db
 
-        runs = await agent_db.get_agent_runs(database(request), conversation_id)
+        runs = await agent_db.get_agent_runs(database(request), user_guid, conversation_id)
         for r in runs:
             agent_input_tokens += r.get("input_tokens", 0) or 0
             agent_output_tokens += r.get("output_tokens", 0) or 0
@@ -295,7 +301,7 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     embedded = []
     for t in all_builtin:
         enabled = await mcp_ops.is_embedded_tool_enabled(
-            database(request), conversation_id, t["name"]
+            database(request), user_guid, conversation_id, t["name"]
         )
         embedded.append(
             {
@@ -314,13 +320,13 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
             if not client.connected:
                 continue
             server_enabled = await mcp_ops.is_mcp_server_enabled(
-                database(request), conversation_id, server_name
+                database(request), user_guid, conversation_id, server_name
             )
             server_tools = []
             for t in tools_cache:
                 if t.get("server") == server_name:
                     tool_enabled = await mcp_ops.is_embedded_tool_enabled(
-                        database(request), conversation_id, t["name"]
+                        database(request), user_guid, conversation_id, t["name"]
                     )
                     server_tools.append(
                         {
@@ -346,7 +352,7 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
         manager = getattr(request.app.state, "skills_manager", None) or get_skills_manager()
         global_states = await skills_db.get_skill_states(database(request), user_guid)
         conv_states = await skills_db.get_conversation_skill_states(
-            database(request), conversation_id
+            database(request), user_guid, conversation_id
         )
         for skill in manager.list_skills():
             enabled_flag = global_states.get(skill["name"], True) and conv_states.get(
@@ -392,7 +398,7 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
         from spark.database import skills as skills_db
 
         await skills_db.set_conversation_skill_enabled(
-            database(request), conversation_id, name, enabled
+            database(request), user_guid, conversation_id, name, enabled
         )
 
     return JSONResponse({"status": "ok"})
@@ -475,7 +481,7 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
 
-    msgs = await asyncio.to_thread(conv_mgr.get_messages, conversation_id)
+    msgs = await asyncio.to_thread(conv_mgr.get_messages, conversation_id, user_guid)
     name = conv.get("name", "conversation")
 
     # Debates and panels export from their structured turn record, not messages.
@@ -484,7 +490,7 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
 
         if fmt == "markdown":
             content = await asyncio.to_thread(
-                export_debate_markdown, sync_database(request), conversation_id
+                export_debate_markdown, sync_database(request), user_guid, conversation_id
             )
             return StreamingResponse(
                 iter([content]),
@@ -493,7 +499,7 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
             )
         if fmt == "json":
             content = await asyncio.to_thread(
-                export_debate_json, sync_database(request), conversation_id
+                export_debate_json, sync_database(request), user_guid, conversation_id
             )
             return StreamingResponse(
                 iter([content]),
@@ -504,7 +510,7 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
             from spark.core.debate.export import export_debate_html
 
             content = await asyncio.to_thread(
-                export_debate_html, sync_database(request), conversation_id
+                export_debate_html, sync_database(request), user_guid, conversation_id
             )
             return StreamingResponse(
                 iter([content]),

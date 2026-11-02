@@ -26,22 +26,25 @@ def panel_cid(sync_db) -> int:
         },
     }
     sync_db.call(debates.create_debate, cid, "Topic T", "fixed", 1, "u1", agents)
-    sync_db.call(debates.add_turn, cid, 0, "moderator", "announcement", "Welcome & frame.")
+    sync_db.call(debates.add_turn, "u1", cid, 0, "moderator", "announcement", "Welcome & frame.")
     t1 = sync_db.call(
-        debates.add_turn, cid, 1, "panellist:1", "contribution", "Growth **matters**."
+        debates.add_turn, "u1", cid, 1, "panellist:1", "contribution", "Growth **matters**."
     )
     sync_db.call(
         debates.add_exhibits,
+        "u1",
         t1,
         [{"label": "A", "title": "Data", "content": "Numbers", "source": "ABS"}],
     )
-    sync_db.call(debates.add_turn, cid, 1, "panellist:2", "contribution", "Lived experience.")
-    sync_db.call(debates.add_turn, cid, 0, "moderator", "synthesis", "Broad agreement overall.")
+    sync_db.call(debates.add_turn, "u1", cid, 1, "panellist:2", "contribution", "Lived experience.")
+    sync_db.call(
+        debates.add_turn, "u1", cid, 0, "moderator", "synthesis", "Broad agreement overall."
+    )
     return cid
 
 
 def test_markdown_uses_names_and_synthesis(sync_db, panel_cid) -> None:
-    md = export_debate_markdown(sync_db, panel_cid)
+    md = export_debate_markdown(sync_db, "u1", panel_cid)
     assert "# Panel: Topic T" in md
     assert "### Economist" in md
     assert "### Matthew" in md
@@ -51,7 +54,7 @@ def test_markdown_uses_names_and_synthesis(sync_db, panel_cid) -> None:
 
 
 def test_html_uses_names_and_synthesis(sync_db, panel_cid) -> None:
-    html = export_debate_html(sync_db, panel_cid)
+    html = export_debate_html(sync_db, "u1", panel_cid)
     assert "Panel: Topic T" in html
     assert "<h3>Economist</h3>" in html
     assert "<h2>Synthesis</h2>" in html

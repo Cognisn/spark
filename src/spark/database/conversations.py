@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from spark.database.scope import owns_conversation
 from spark.db.dialect import upsert
 from spark.db.engine import Executor, Row
 
@@ -162,7 +163,7 @@ async def update_token_usage(
     output_tokens: int,
     user_guid: str,
 ) -> None:
-    """Update per-model token usage for a conversation.
+    """Update per-model token usage for one of the user's conversations (nothing otherwise).
 
     `tokens_sent` and `tokens_received` are lifetime billing counters.
     `total_tokens` is deliberately NOT touched here: it represents the current
@@ -170,31 +171,40 @@ async def update_token_usage(
     by `messages.add_message` / `delete_message` / `recalculate_total_tokens`.
     """
     now = datetime.now(timezone.utc).isoformat()
-    await db.execute(
-        """UPDATE conversations SET
-            tokens_sent = tokens_sent + ?,
-            tokens_received = tokens_received + ?,
-            last_updated = ?
-            WHERE id = ?""",
-        (input_tokens, output_tokens, now, conversation_id),
-    )
-    await db.execute(
-        _MODEL_USAGE,
-        (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid),
-    )
+    async with db.transaction() as conn:
+        if not await owns_conversation(conn, user_guid, conversation_id):
+            return
+        await conn.execute(
+            """UPDATE conversations SET
+                tokens_sent = tokens_sent + ?,
+                tokens_received = tokens_received + ?,
+                last_updated = ?
+                WHERE id = ? AND user_guid = ?""",
+            (input_tokens, output_tokens, now, conversation_id, user_guid),
+        )
+        await conn.execute(
+            _MODEL_USAGE,
+            (conversation_id, model_id, input_tokens, output_tokens, now, now, user_guid),
+        )
 
 
-async def recalculate_total_tokens(db: Executor, conversation_id: int) -> int:
-    """Recalculate and update total tokens from active messages."""
-    total = await db.fetch_value(
-        """SELECT COALESCE(SUM(token_count), 0) as total
-            FROM messages WHERE conversation_id = ? AND is_rolled_up = 0""",
-        (conversation_id,),
-    )
-    await db.execute(
-        "UPDATE conversations SET total_tokens = ? WHERE id = ?",
-        (int(total), conversation_id),
-    )
+async def recalculate_total_tokens(db: Executor, user_guid: str, conversation_id: int) -> int:
+    """Recalculate one of the user's conversations' total tokens from its active messages.
+
+    Returns 0, changing nothing, for another user's conversation.
+    """
+    async with db.transaction() as conn:
+        if not await owns_conversation(conn, user_guid, conversation_id):
+            return 0
+        total = await conn.fetch_value(
+            """SELECT COALESCE(SUM(token_count), 0) as total
+                FROM messages WHERE conversation_id = ? AND is_rolled_up = 0""",
+            (conversation_id,),
+        )
+        await conn.execute(
+            "UPDATE conversations SET total_tokens = ? WHERE id = ? AND user_guid = ?",
+            (int(total), conversation_id, user_guid),
+        )
     return int(total)
 
 
@@ -211,9 +221,13 @@ async def search_conversations(db: Executor, query: str, user_guid: str) -> list
     )
 
 
-async def get_conversation_type(db: Executor, conversation_id: int) -> str | None:
-    """The conversation's type ('standard', 'debate', 'panel'), or None if it does not exist."""
+async def get_conversation_type(db: Executor, user_guid: str, conversation_id: int) -> str | None:
+    """The type ('standard', 'debate', 'panel') of one of the user's conversations.
+
+    None when it does not exist or is another user's.
+    """
     value = await db.fetch_value(
-        "SELECT conversation_type FROM conversations WHERE id = ?", (conversation_id,)
+        "SELECT conversation_type FROM conversations WHERE id = ? AND user_guid = ?",
+        (conversation_id, user_guid),
     )
     return str(value) if value is not None else None

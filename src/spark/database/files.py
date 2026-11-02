@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from spark.database.scope import OWNED_CONVERSATIONS, require_conversation
 from spark.db.engine import Connection, Executor, Row
 
 __all__ = [
@@ -195,7 +196,40 @@ async def add_file(
     token_count: int = 0,
     tags: str | None = None,
 ) -> int:
-    """Attach a file to a conversation. Returns file ID."""
+    """Attach a file to one of the user's conversations. Returns file ID.
+
+    Raises :class:`spark.database.scope.NotOwned` for another user's conversation.
+    """
+    async with db.transaction() as conn:
+        await require_conversation(conn, user_guid, conversation_id)
+        return await _insert_file(
+            conn,
+            conversation_id,
+            filename,
+            file_type,
+            file_size,
+            user_guid,
+            content_text,
+            content_base64,
+            mime_type,
+            token_count,
+            tags,
+        )
+
+
+async def _insert_file(
+    db: Executor,
+    conversation_id: int,
+    filename: str,
+    file_type: str,
+    file_size: int,
+    user_guid: str,
+    content_text: str | None,
+    content_base64: str | None,
+    mime_type: str | None,
+    token_count: int,
+    tags: str | None,
+) -> int:
     new_id = await db.fetch_value(
         """INSERT INTO conversation_files
             (conversation_id, filename, file_type, file_size, content_text,
@@ -217,19 +251,28 @@ async def add_file(
     return int(new_id)
 
 
-async def get_conversation_files(db: Executor, conversation_id: int) -> list[Row]:
-    """Get all files for a conversation."""
+async def get_conversation_files(db: Executor, user_guid: str, conversation_id: int) -> list[Row]:
+    """All files of one of the user's conversations."""
     return await db.fetch_all(
-        "SELECT * FROM conversation_files WHERE conversation_id = ? ORDER BY added_at",
-        (conversation_id,),
+        f"""SELECT * FROM conversation_files WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS}) ORDER BY added_at""",
+        (conversation_id, user_guid),
     )
 
 
-async def delete_file(db: Executor, file_id: int) -> None:
-    """Delete a file attachment."""
-    await db.execute("DELETE FROM conversation_files WHERE id = ?", (file_id,))
+async def delete_file(db: Executor, user_guid: str, file_id: int) -> None:
+    """Delete a file attachment of one of the user's conversations."""
+    await db.execute(
+        f"""DELETE FROM conversation_files WHERE id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (file_id, user_guid),
+    )
 
 
-async def delete_conversation_files(db: Executor, conversation_id: int) -> None:
-    """Delete all files for a conversation."""
-    await db.execute("DELETE FROM conversation_files WHERE conversation_id = ?", (conversation_id,))
+async def delete_conversation_files(db: Executor, user_guid: str, conversation_id: int) -> None:
+    """Delete all files of one of the user's conversations."""
+    await db.execute(
+        f"""DELETE FROM conversation_files WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, user_guid),
+    )

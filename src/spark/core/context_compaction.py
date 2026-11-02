@@ -151,7 +151,9 @@ class ContextCompactor:
         """Execute LLM-driven context compaction."""
         from spark.database import conversations, messages
 
-        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=False
+        )
         if len(all_msgs) < 4:
             return False
 
@@ -254,7 +256,9 @@ class ContextCompactor:
         context_window = self._context_limits.get_context_window(model_id)
         target = int(context_window * 0.2)
 
-        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=False
+        )
         if not all_msgs:
             return False
 

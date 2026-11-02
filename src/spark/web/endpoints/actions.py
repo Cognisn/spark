@@ -49,8 +49,8 @@ async def list_actions(request: Request) -> JSONResponse:
         return JSONResponse([])
     from spark.database import autonomous_actions
 
-    # Enabled and disabled ones
-    all_actions = await autonomous_actions.get_all_actions(db)
+    # The user's enabled and disabled ones
+    all_actions = await autonomous_actions.get_all_actions(db, current_user_guid(request))
     return JSONResponse(all_actions)
 
 
@@ -178,7 +178,11 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
             )
 
     # Get action's tool permissions
-    permissions = await autonomous_actions.get_tool_permissions(db, action_id)
+    from spark.database import autonomous_actions
+
+    permissions = await autonomous_actions.get_tool_permissions(
+        db, current_user_guid(request), action_id
+    )
 
     tools = []
     for t in all_tools:
@@ -230,7 +234,9 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    runs = await autonomous_actions.get_action_runs(db, action_id, limit=20)
+    runs = await autonomous_actions.get_action_runs(
+        db, current_user_guid(request), action_id, limit=20
+    )
     return JSONResponse(runs)
 
 
@@ -325,7 +331,9 @@ async def ai_create_message(request: Request) -> JSONResponse:
     # Inject conversation context if creating from a conversation
     if conversation_id and conv_mgr and not history:
         try:
-            conv_messages = await asyncio.to_thread(conv_mgr.get_messages, int(conversation_id))
+            conv_messages = await asyncio.to_thread(
+                conv_mgr.get_messages, int(conversation_id), current_user_guid(request)
+            )
             if conv_messages:
                 # Build a summary of the conversation for the AI to analyse
                 conv_lines = []

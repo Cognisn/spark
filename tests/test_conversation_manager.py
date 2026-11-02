@@ -128,7 +128,7 @@ class TestConversationLifecycle:
 
     def test_get_messages_empty(self, manager: ConversationManager) -> None:
         cid = manager.create_conversation("Test", "stub-model", USER)
-        msgs = manager.get_messages(cid)
+        msgs = manager.get_messages(cid, USER)
         assert len(msgs) == 0
 
 
@@ -143,7 +143,7 @@ class TestSendMessage:
     def test_messages_stored(self, manager: ConversationManager) -> None:
         cid = manager.create_conversation("Test", "stub-model", USER)
         manager.send_message(cid, "Hello!", USER)
-        msgs = manager.get_messages(cid)
+        msgs = manager.get_messages(cid, USER)
         # user message + assistant response
         assert len(msgs) == 2
         assert msgs[0]["role"] == "user"
@@ -434,7 +434,7 @@ class TestSendMessage:
         # the AI sees.
         from spark.database import messages as msg_db
 
-        all_msgs = sync_db.call(msg_db.get_messages, cid, include_rolled_up=True)
+        all_msgs = sync_db.call(msg_db.get_messages, USER, cid, include_rolled_up=True)
         tool_result_text = " ".join(m.get("content", "") for m in all_msgs)
         assert "Do not retry this exact call" in tool_result_text
         assert "ask the user how they would like to proceed" in tool_result_text
@@ -466,7 +466,7 @@ class TestSendMessage:
         result = mgr.send_message(cid, "hello", USER, cancel_token=token)
 
         assert result.get("status") == "cancelled"
-        all_msgs = sync_db.call(msg_db.get_messages, cid, include_rolled_up=True)
+        all_msgs = sync_db.call(msg_db.get_messages, USER, cid, include_rolled_up=True)
         contents = [m["content"] for m in all_msgs]
         assert any(c.startswith("[TURN CANCELLED") for c in contents)
 
@@ -663,7 +663,7 @@ class TestContextCompactor:
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
 
-        loaded = mgr.get_messages(cid)
+        loaded = mgr.get_messages(cid, USER)
         contents = [m["content"] for m in loaded]
         assert "first user msg" in contents
         assert "first reply" in contents
@@ -704,7 +704,7 @@ class TestContextCompactor:
         assert mgr._compactor is not None
         assert mgr._compactor.check_and_compact(cid, "stub-model", USER) is True
 
-        model_msgs = mgr._get_messages_for_model(cid)
+        model_msgs = mgr._get_messages_for_model(cid, USER)
         contents = [m.get("content", "") for m in model_msgs]
         joined = " ".join(c if isinstance(c, str) else json.dumps(c) for c in contents)
         assert "rolled msg one" not in joined

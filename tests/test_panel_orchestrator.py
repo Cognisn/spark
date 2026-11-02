@@ -78,14 +78,16 @@ class TestRotation:
         orch = make(sync_db, _services(["panellist:2", "panellist:1"]), events)
         orch.run(cid, "u1")
 
-        d = sync_db.call(debates.get_debate, cid)
+        d = sync_db.call(debates.get_debate, "u1", cid)
         assert d["state"] == "qa"
         assert json.loads(d["opening_speaker"]) == ["panellist:2", "panellist:1"]
         contribs = [
-            t for t in sync_db.call(debates.get_turns, cid) if t["turn_type"] == "contribution"
+            t
+            for t in sync_db.call(debates.get_turns, "u1", cid)
+            if t["turn_type"] == "contribution"
         ]
         assert [c["role"] for c in contribs] == ["panellist:2", "panellist:1"]
-        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, "u1", cid)]
         assert "synthesis" in types
         names = [d2.get("name") for t2, d2 in events if t2 == "panellist_turn_start"]
         assert names == ["Engineer", "Economist"]
@@ -94,7 +96,7 @@ class TestRotation:
         cid = _panel(sync_db)
         orch = make(sync_db, _services(["ghost"]))
         orch.run(cid, "u1")
-        d = sync_db.call(debates.get_debate, cid)
+        d = sync_db.call(debates.get_debate, "u1", cid)
         assert json.loads(d["opening_speaker"]) == ["panellist:1", "panellist:2"]
 
 
@@ -107,7 +109,7 @@ class TestHumanTurn:
         orch.run(cid, "u1")
 
         # Paused at Matthew: state still round, human_turn emitted, p2 not yet run
-        d = sync_db.call(debates.get_debate, cid)
+        d = sync_db.call(debates.get_debate, "u1", cid)
         assert d["state"] == "round"
         assert any(t == "human_turn" and dd["name"] == "Matthew" for t, dd in events)
         assert len(services["model-p2"].responses) == 1  # untouched
@@ -120,10 +122,10 @@ class TestHumanTurn:
         turn_id = orch.submit_contribution(cid, "u1", "My human take.")
         assert turn_id is not None
         orch.run(cid, "u1")
-        assert sync_db.call(debates.get_debate, cid)["state"] == "qa"
+        assert sync_db.call(debates.get_debate, "u1", cid)["state"] == "qa"
         contribs = [
             t["role"]
-            for t in sync_db.call(debates.get_turns, cid)
+            for t in sync_db.call(debates.get_turns, "u1", cid)
             if t["turn_type"] == "contribution"
         ]
         assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
@@ -140,13 +142,13 @@ class TestUserPromptAndQa:
         services = _services(["panellist:1", "panellist:2"])
         orch = make(sync_db, services)
         orch.run(cid, "u1")
-        assert sync_db.call(debates.get_debate, cid)["state"] == "qa"
+        assert sync_db.call(debates.get_debate, "u1", cid)["state"] == "qa"
 
         services["model-mod"].responses.append(text_response("Because they agreed."))
-        qid = orch.submit_user_prompt(cid, "Why consensus?")
+        qid = orch.submit_user_prompt(cid, "u1", "Why consensus?")
         answer = orch.answer_qa(cid, "u1", qid)
         assert answer == "Because they agreed."
-        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, "u1", cid)]
         assert "qa_question" in types
         assert "qa_answer" in types
 

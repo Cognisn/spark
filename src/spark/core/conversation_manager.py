@@ -228,7 +228,7 @@ class ConversationManager:
             # Get the content of active (non-rolled-up) messages to filter them out
             from spark.database import messages as msg_db
 
-            active_msgs = self._db.call(msg_db.get_messages, conversation_id)
+            active_msgs = self._db.call(msg_db.get_messages, user_guid, conversation_id)
             active_content_hashes = set()
             for m in active_msgs:
                 content = m.get("content", "")
@@ -510,8 +510,8 @@ class ConversationManager:
 
     # -- Message handling -----------------------------------------------------
 
-    def get_messages(self, conversation_id: int) -> list[dict]:
-        """Get messages for a conversation, for UI display.
+    def get_messages(self, conversation_id: int, user_guid: str) -> list[dict]:
+        """Messages of one of the user's conversations, for UI display (none for another's).
 
         Includes rolled-up messages so the user sees the full chat history
         when reloading a compacted conversation. The LLM-context loader
@@ -520,7 +520,9 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        return self._db.call(messages.get_messages, conversation_id, include_rolled_up=True)
+        return self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=True
+        )
 
     def send_message(
         self,
@@ -660,7 +662,7 @@ class ConversationManager:
         logger.debug(
             "System prompt: %d chars, %d messages in history",
             len(system),
-            len(self._get_messages_for_model(conversation_id, conv)),
+            len(self._get_messages_for_model(conversation_id, user_guid, conv)),
         )
 
         # One unguessable delimiter for this turn's untrusted-content blocks,
@@ -715,7 +717,7 @@ class ConversationManager:
                     }
 
                 # Get messages for model (respects conv settings)
-                history = self._get_messages_for_model(conversation_id, conv)
+                history = self._get_messages_for_model(conversation_id, user_guid, conv)
 
                 # Invoke model (with error recovery)
                 try:
@@ -1100,9 +1102,9 @@ class ConversationManager:
     # -- Message formatting ---------------------------------------------------
 
     def _get_messages_for_model(
-        self, conversation_id: int, conv: dict | None = None
+        self, conversation_id: int, user_guid: str, conv: dict | None = None
     ) -> list[dict[str, Any]]:
-        """Format stored messages for the LLM API.
+        """Format the stored messages of one of the user's conversations for the LLM API.
 
         Respects per-conversation settings:
         - max_history_messages: limit to last N messages (None = all)
@@ -1110,7 +1112,7 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        raw = self._db.call(messages.get_messages, conversation_id)
+        raw = self._db.call(messages.get_messages, user_guid, conversation_id)
         include_tools = True
         max_msgs = None
 
@@ -1189,7 +1191,7 @@ class ConversationManager:
 
         # Check permissions (conversation-level, then global)
         permission = self._db.call(
-            tool_permissions.is_tool_allowed, conversation_id, tool_name, user_guid=user_guid
+            tool_permissions.is_tool_allowed, user_guid, conversation_id, tool_name
         )
 
         # System commands: always prompt when require_approval is on,
@@ -1628,7 +1630,7 @@ class ConversationManager:
         # Get parent messages if chain mode
         parent_messages = None
         if mode == "chain":
-            parent_messages = self._get_messages_for_model(conversation_id)
+            parent_messages = self._get_messages_for_model(conversation_id, user_guid)
 
         # Create and run agent — get a dedicated LLM service for the model
         # to avoid conflicts with concurrent conversations using different providers.
@@ -1637,6 +1639,7 @@ class ConversationManager:
             if not agent_llm:
                 self._db.call(
                     agent_db.complete_agent_run,
+                    user_guid,
                     agent_id,
                     status="failed",
                     result_text=f"Could not find provider for model '{model_id}'",
@@ -1672,6 +1675,7 @@ class ConversationManager:
                 try:
                     self._db.call(
                         agent_db.complete_agent_run,
+                        user_guid,
                         agent_id,
                         status="cancelled",
                         result_text=result.get("content", "[CANCELLED]"),
@@ -1694,6 +1698,7 @@ class ConversationManager:
             # Record completion
             self._db.call(
                 agent_db.complete_agent_run,
+                user_guid,
                 agent_id,
                 status="completed",
                 result_text=result.get("content", ""),
@@ -1708,6 +1713,7 @@ class ConversationManager:
             logger.error("Agent '%s' failed: %s", agent_name, e, exc_info=True)
             self._db.call(
                 agent_db.complete_agent_run,
+                user_guid,
                 agent_id,
                 status="failed",
                 result_text=str(e),

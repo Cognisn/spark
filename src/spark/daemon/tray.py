@@ -88,6 +88,7 @@ class SparkTrayDaemon:
         }
         self._stats_thread: threading.Thread | None = None
         self._db_handle: Any = None
+        self._user_guid: str | None = None  # the local user, once the scheduler starts
 
     def _pid_file(self) -> Path:
         from spark.core.application import _get_data_path
@@ -205,11 +206,11 @@ class SparkTrayDaemon:
         """Read action stats from the database once."""
         try:
             handle = self._db_handle
-            if handle is None:
+            if handle is None or self._user_guid is None:
                 return  # the scheduler has not opened the database yet
             from spark.database import autonomous_actions
 
-            stats = handle.sync_db.call(autonomous_actions.action_stats)
+            stats = handle.sync_db.call(autonomous_actions.action_stats, self._user_guid)
             total = stats["total"]
             if total != self._action_stats.get("total"):
                 logger.info("Action stats updated: %d enabled actions", total)
@@ -303,6 +304,9 @@ class SparkTrayDaemon:
                         runtime.database,
                         auto_migrate=runtime.mode is Mode.PERSONAL,
                     )
+                    from spark.core.user_guid import get_user_guid
+
+                    self._user_guid = get_user_guid(ctx)
                     self._db_handle = handle
                     try:
                         daemon_id = f"tray-{os.getpid()}"

@@ -8,14 +8,14 @@ from typing import Any
 from spark.database import debates
 
 
-def _load(db: Any, conversation_id: int) -> tuple[dict, list[dict], dict]:
-    cfg = db.call(debates.get_debate, conversation_id)
+def _load(db: Any, user_guid: str, conversation_id: int) -> tuple[dict, list[dict], dict]:
+    cfg = db.call(debates.get_debate, user_guid, conversation_id)
     if not cfg:
         raise ValueError(f"No debate for conversation {conversation_id}")
     return (
         cfg,
-        db.call(debates.get_turns, conversation_id),
-        db.call(debates.get_exhibits, conversation_id),
+        db.call(debates.get_turns, user_guid, conversation_id),
+        db.call(debates.get_exhibits, user_guid, conversation_id),
     )
 
 
@@ -28,8 +28,8 @@ def _speaker_label(turn: dict, cfg: dict) -> str:
     return agent.get("display_name") or turn["role"].upper()
 
 
-def export_debate_markdown(db: Any, conversation_id: int) -> str:
-    cfg, turns, exhibits = _load(db, conversation_id)
+def export_debate_markdown(db: Any, user_guid: str, conversation_id: int) -> str:
+    cfg, turns, exhibits = _load(db, user_guid, conversation_id)
     panel = _is_panel(cfg)
     kind = "Panel" if panel else "Debate"
     lines = [f"# {kind}: {cfg['topic']}", ""]
@@ -70,8 +70,8 @@ def export_debate_markdown(db: Any, conversation_id: int) -> str:
     return "\n".join(lines)
 
 
-def export_debate_json(db: Any, conversation_id: int) -> str:
-    cfg, turns, exhibits = _load(db, conversation_id)
+def export_debate_json(db: Any, user_guid: str, conversation_id: int) -> str:
+    cfg, turns, exhibits = _load(db, user_guid, conversation_id)
     return json.dumps(
         {
             "topic": cfg["topic"],
@@ -143,11 +143,11 @@ def _markdown_to_html(text: str) -> str:
     return "\n".join(out)
 
 
-def export_debate_html(db: Any, conversation_id: int) -> str:
+def export_debate_html(db: Any, user_guid: str, conversation_id: int) -> str:
     """A fully self-contained HTML document of the debate transcript."""
     import html as html_mod
 
-    cfg, turns, exhibits = _load(db, conversation_id)
+    cfg, turns, exhibits = _load(db, user_guid, conversation_id)
     panel = _is_panel(cfg)
     kind = "Panel" if panel else "Debate"
     speaker = "Moderator" if panel else "Judge"

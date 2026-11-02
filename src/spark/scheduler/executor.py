@@ -25,9 +25,16 @@ class ActionExecutor:
     """Executes a single autonomous action."""
 
     def __init__(
-        self, ctx: Any, daemon_id: str, db: SyncDatabase, *, permissions: Permissions = None
+        self,
+        ctx: Any,
+        daemon_id: str,
+        db: SyncDatabase,
+        *,
+        permissions: Permissions = None,
+        user_guid: str | None = None,
     ) -> None:
-        """``permissions`` are those of the user the action runs as.
+        """``permissions`` are those of the user the action runs as, ``user_guid`` that
+        user (the signed-in user for run now; the local user when omitted).
 
         In server mode an action's tools follow its owner's roles, and without
         permissions every built-in tool is refused (fail closed). Personal mode
@@ -42,7 +49,7 @@ class ActionExecutor:
         self._mcp_thread: Any | None = None
         from spark.core.user_guid import get_user_guid
 
-        self._user_guid = get_user_guid(ctx)
+        self._user_guid = user_guid or get_user_guid(ctx)
 
     def _init_mcp(self) -> None:
         """Initialise independent MCP connections for this executor."""
@@ -193,6 +200,7 @@ class ActionExecutor:
 
                 db.call(
                     autonomous_actions.complete_run,
+                    self._user_guid,
                     run_id,
                     status="completed",
                     result_text=result.get("content", ""),
@@ -215,6 +223,7 @@ class ActionExecutor:
                 logger.error("Action '%s' failed: %s", action["name"], e, exc_info=True)
                 db.call(
                     autonomous_actions.complete_run,
+                    self._user_guid,
                     run_id,
                     status="failed",
                     error_message=str(e),
@@ -466,7 +475,9 @@ class ActionExecutor:
         try:
             from spark.database import autonomous_actions
 
-            runs = db.call(autonomous_actions.get_action_runs, action["id"], limit=5)
+            runs = db.call(
+                autonomous_actions.get_action_runs, self._user_guid, action["id"], limit=5
+            )
             completed = [r for r in runs if r.get("status") == "completed" and r.get("result_text")]
 
             if not completed:

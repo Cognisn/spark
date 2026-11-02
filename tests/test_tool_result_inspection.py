@@ -206,7 +206,7 @@ class TestConversationTurn:
         [result] = _tool_result_texts(model.calls[1]["messages"])
         assert "attacker@example.com" not in result
         assert "withheld" in result
-        stored = json.dumps(mgr.get_messages(cid))
+        stored = json.dumps(mgr.get_messages(cid, USER))
         assert "attacker@example.com" not in stored
 
     def test_hit_is_recorded_shown_and_audited(
@@ -330,7 +330,7 @@ class TestLocalSources:
         model.script_tool_call("run_command", {"command": "type notes.txt"})
         mgr.send_message(cid, "Run it", USER)
         [result] = _tool_result_texts(model.calls[1]["messages"])
-        return result, json.dumps(mgr.get_messages(cid))
+        return result, json.dumps(mgr.get_messages(cid, USER))
 
     def test_file_read_reaches_the_model_wrapped(
         self, sync_db: Any, model: StubModel, tmp_path: Any

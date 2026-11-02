@@ -123,11 +123,12 @@ async def debate_state(request: Request, conversation_id: int) -> JSONResponse:
     from spark.database import debates
 
     db = database(request)
-    cfg = await debates.get_debate(db, conversation_id)
+    user_guid = current_user_guid(request)
+    cfg = await debates.get_debate(db, user_guid, conversation_id)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
-    turns = await debates.get_turns(db, conversation_id)
-    exhibits = await debates.get_exhibits(db, conversation_id)
+    turns = await debates.get_turns(db, user_guid, conversation_id)
+    exhibits = await debates.get_exhibits(db, user_guid, conversation_id)
     return JSONResponse(
         {
             "config": cfg,
@@ -149,19 +150,20 @@ async def debate_prompt(request: Request) -> JSONResponse:
         return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
     db = database(request)
-    cfg = await debates.get_debate(db, cid)
+    user_guid = current_user_guid(request)
+    cfg = await debates.get_debate(db, user_guid, cid)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
 
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    message = await resolve_trigger_for_conversation(db, current_user_guid(request), cid, message)
+    message = await resolve_trigger_for_conversation(db, user_guid, cid, message)
 
     orch = _orchestrator(request)
-    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
-            None, orch.answer_qa, cid, current_user_guid(request), turn_id
+            None, orch.answer_qa, cid, user_guid, turn_id
         )
         return JSONResponse({"queued": False, "answer": answer})
     return JSONResponse({"queued": True, "turn_id": turn_id})

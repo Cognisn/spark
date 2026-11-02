@@ -46,9 +46,10 @@ async def _panel_config(request: Request, conversation_id: int) -> dict | None:
     from spark.database import conversations, debates
 
     db = database(request)
-    if await conversations.get_conversation_type(db, conversation_id) != "panel":
+    user_guid = current_user_guid(request)
+    if await conversations.get_conversation_type(db, user_guid, conversation_id) != "panel":
         return None
-    return await debates.get_debate(db, conversation_id)
+    return await debates.get_debate(db, user_guid, conversation_id)
 
 
 @router.get("/panel/{conversation_id}")
@@ -67,8 +68,9 @@ async def panel_state(request: Request, conversation_id: int) -> JSONResponse:
     if not cfg:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
     db = database(request)
-    turns = await debates.get_turns(db, conversation_id)
-    exhibits = await debates.get_exhibits(db, conversation_id)
+    user_guid = current_user_guid(request)
+    turns = await debates.get_turns(db, user_guid, conversation_id)
+    exhibits = await debates.get_exhibits(db, user_guid, conversation_id)
     orch = _orchestrator(request)
     awaiting = await asyncio.to_thread(
         orch.awaiting_human, conversation_id, current_user_guid(request)
@@ -113,7 +115,7 @@ async def panel_prompt(request: Request) -> JSONResponse:
 
     message = await resolve_trigger_for_conversation(database(request), user_guid, cid, message)
 
-    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
             None, orch.answer_qa, cid, user_guid, turn_id

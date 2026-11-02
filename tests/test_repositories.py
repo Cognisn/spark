@@ -78,7 +78,7 @@ class TestParallelUnitsOfWork:
         )
         row = await conversations.get_conversation(spark_db, cid, ALICE)
         assert row is not None and row["total_tokens"] == 90
-        assert len(await messages.get_messages(spark_db, cid)) == 30
+        assert len(await messages.get_messages(spark_db, ALICE, cid)) == 30
 
     async def test_only_one_daemon_wins_an_action_lock(self, spark_db: Database):
         aid = await autonomous_actions.create_action(spark_db, "once", "p", "m", ALICE)
@@ -112,7 +112,7 @@ class TestCompaction:
             original_tokens=30,
         )
         assert total == 15  # the marker (5) and the one message left (10)
-        active = await messages.get_messages(spark_db, cid)
+        active = await messages.get_messages(spark_db, ALICE, cid)
         assert [m["content"] for m in active] == ["m3", "[COMPACTED] summary"]
         history = await spark_db.fetch_all(
             "SELECT original_message_count, summarised_token_count FROM rollup_history"
@@ -133,7 +133,7 @@ class TestCompaction:
             await messages.apply_compaction(
                 spark_db, cid, "[COMPACTED]", 5, ids, ALICE, summary="s", original_tokens=20
             )
-        active = await messages.get_messages(spark_db, cid)
+        active = await messages.get_messages(spark_db, ALICE, cid)
         assert [m["content"] for m in active] == ["m0", "m1"]
         assert await spark_db.fetch_value("SELECT COUNT(*) FROM rollup_history") == 0
 
@@ -186,7 +186,7 @@ class TestActionHelpers:
         await autonomous_actions.set_tool_permission(spark_db, aid, "web_search", "denied", ALICE)
         await autonomous_actions.set_tool_permission(spark_db, aid, "web_search", "allowed", ALICE)
         await autonomous_actions.set_tool_permission(spark_db, aid, "read_file", "denied", ALICE)
-        assert await autonomous_actions.get_tool_permissions(spark_db, aid) == {
+        assert await autonomous_actions.get_tool_permissions(spark_db, ALICE, aid) == {
             "web_search": "allowed",
             "read_file": "denied",
         }
@@ -195,7 +195,7 @@ class TestActionHelpers:
         a = await autonomous_actions.create_action(spark_db, "b-action", "p", "m", ALICE)
         await autonomous_actions.create_action(spark_db, "a-action", "p", "m", ALICE)
         await autonomous_actions.update_action(spark_db, a, ALICE, is_enabled=0)
-        names = [r["name"] for r in await autonomous_actions.get_all_actions(spark_db)]
+        names = [r["name"] for r in await autonomous_actions.get_all_actions(spark_db, ALICE)]
         assert names == ["a-action", "b-action"]
 
     async def test_clear_stale_locks_releases_only_old_locks(self, spark_db: Database):
@@ -213,7 +213,7 @@ class TestActionHelpers:
         assert (await autonomous_actions.get_action(spark_db, fresh, ALICE))["locked_by"] == "d2"
 
     async def test_action_stats(self, spark_db: Database):
-        assert await autonomous_actions.action_stats(spark_db) == {
+        assert await autonomous_actions.action_stats(spark_db, ALICE) == {
             "total": 0,
             "last_run": None,
             "next_run": None,
@@ -223,8 +223,8 @@ class TestActionHelpers:
             spark_db, aid, ALICE, next_run_at="2026-11-01T00:00:00+00:00"
         )
         run = await autonomous_actions.start_run(spark_db, aid, ALICE)
-        await autonomous_actions.complete_run(spark_db, run)
-        stats = await autonomous_actions.action_stats(spark_db)
+        await autonomous_actions.complete_run(spark_db, ALICE, run)
+        stats = await autonomous_actions.action_stats(spark_db, ALICE)
         assert stats["total"] == 1
         assert stats["next_run"] == "2026-11-01T00:00:00+00:00"
         assert stats["last_run"] is not None
@@ -233,10 +233,10 @@ class TestActionHelpers:
 class TestConversationType:
     async def test_conversation_type(self, spark_db: Database):
         cid = await conversations.create_conversation(spark_db, "c", "m", ALICE)
-        assert await conversations.get_conversation_type(spark_db, cid) == "standard"
+        assert await conversations.get_conversation_type(spark_db, ALICE, cid) == "standard"
         await conversations.update_conversation(spark_db, cid, ALICE, conversation_type="panel")
-        assert await conversations.get_conversation_type(spark_db, cid) == "panel"
-        assert await conversations.get_conversation_type(spark_db, 99999) is None
+        assert await conversations.get_conversation_type(spark_db, ALICE, cid) == "panel"
+        assert await conversations.get_conversation_type(spark_db, ALICE, 99999) is None
 
 
 class TestViolations:

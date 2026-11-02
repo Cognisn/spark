@@ -27,11 +27,13 @@ class TestSkillStates:
         assert await skills_db.get_skill_states(db, "other") == {}
 
     async def test_conversation_upsert_and_read(self, db) -> None:
+        from spark.database import conversations
         from spark.database import skills as skills_db
 
-        await skills_db.set_conversation_skill_enabled(db, 7, "pdf-filler", False)
-        await skills_db.set_conversation_skill_enabled(db, 7, "pdf-filler", True)
-        assert await skills_db.get_conversation_skill_states(db, 7) == {"pdf-filler": True}
+        cid = await conversations.create_conversation(db, "c", "m", "u1")
+        await skills_db.set_conversation_skill_enabled(db, "u1", cid, "pdf-filler", False)
+        await skills_db.set_conversation_skill_enabled(db, "u1", cid, "pdf-filler", True)
+        assert await skills_db.get_conversation_skill_states(db, "u1", cid) == {"pdf-filler": True}
 
     async def test_resolve_enabled_defaults_on_and_layers(self, db) -> None:
         from spark.database import skills as skills_db
@@ -50,6 +52,9 @@ class TestSkillStates:
         await skills_db.set_skill_enabled(db, "a", False, "u1")
         assert [s["name"] for s in await skills_db.resolve_enabled(db, m, "u1")] == ["b"]
         # Conversation disable layers on top
-        await skills_db.set_conversation_skill_enabled(db, 9, "b", False)
-        assert await skills_db.resolve_enabled(db, m, "u1", conversation_id=9) == []
+        from spark.database import conversations
+
+        cid = await conversations.create_conversation(db, "c", "m", "u1")
+        await skills_db.set_conversation_skill_enabled(db, "u1", cid, "b", False)
+        assert await skills_db.resolve_enabled(db, m, "u1", conversation_id=cid) == []
         assert [s["name"] for s in await skills_db.resolve_enabled(db, m, "u1")] == ["b"]

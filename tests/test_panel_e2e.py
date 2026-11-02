@@ -127,10 +127,12 @@ def test_full_panel_with_human(client: TestClient) -> None:
 
     # 4. Resume: the round completes and the moderator synthesises.
     orch.run(cid, "test-user")
-    cfg = db.call(debates.get_debate, cid)
+    cfg = db.call(debates.get_debate, "test-user", cid)
     assert cfg["state"] == "qa"
     contribs = [
-        t["role"] for t in db.call(debates.get_turns, cid) if t["turn_type"] == "contribution"
+        t["role"]
+        for t in db.call(debates.get_turns, "test-user", cid)
+        if t["turn_type"] == "contribution"
     ]
     assert contribs == ["panellist:1", "panellist:3", "panellist:2"]
 
