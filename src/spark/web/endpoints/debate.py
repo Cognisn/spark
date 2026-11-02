@@ -169,13 +169,20 @@ async def debate_prompt(request: Request) -> JSONResponse:
     return JSONResponse({"queued": True, "turn_id": turn_id})
 
 
-@router.get("/stream/debate")
-async def stream_debate(request: Request, conversation_id: int) -> EventSourceResponse:
+@router.get("/stream/debate", response_model=None)
+async def stream_debate(
+    request: Request, conversation_id: int
+) -> EventSourceResponse | JSONResponse:
     """Drive the debate loop, translating orchestrator events to SSE.
 
     Mirrors the structure of stream_chat in streaming.py: a worker thread
     runs the orchestrator, a queue carries events, and the poller emits them.
     """
+    from spark.database import debates
+
+    user_guid = current_user_guid(request)
+    if not await debates.get_debate(database(request), user_guid, conversation_id):
+        return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()
     if not hasattr(request.app.state, "turn_cancel_tokens"):
@@ -184,7 +191,6 @@ async def stream_debate(request: Request, conversation_id: int) -> EventSourceRe
 
     events: queue.Queue = queue.Queue()
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
-    user_guid = current_user_guid(request)
     loop = asyncio.get_running_loop()
 
     async def event_generator():

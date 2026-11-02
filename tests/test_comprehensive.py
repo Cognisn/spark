@@ -45,6 +45,16 @@ def _auth(client: TestClient) -> dict:
     return sign_in(client)
 
 
+def _conversation(client: TestClient) -> int:
+    """A conversation of the local user (ids of no conversation answer 404)."""
+    from spark.database import conversations
+
+    cid: int = client.app.state.sync_db.call(
+        conversations.create_conversation, "Synthetic", "m", "test-user"
+    )
+    return cid
+
+
 # -- Heartbeat ---------------------------------------------------------------
 
 
@@ -98,7 +108,7 @@ class TestConversationRename:
         client.app.state.conversation_manager = mock_mgr
 
         resp = client.post(
-            "/conversations/api/1/rename",
+            f"/conversations/api/{_conversation(client)}/rename",
             cookies=cookies,
             json={"name": "New Name"},
         )
@@ -110,7 +120,7 @@ class TestConversationRename:
         client.app.state.conversation_manager = mock_mgr
 
         resp = client.post(
-            "/conversations/api/1/rename",
+            f"/conversations/api/{_conversation(client)}/rename",
             cookies=cookies,
             json={"name": ""},
         )
@@ -127,7 +137,7 @@ class TestModelSwitch:
         client.app.state.conversation_manager = mock_mgr
 
         resp = client.post(
-            "/conversations/api/1/model",
+            f"/conversations/api/{_conversation(client)}/model",
             cookies=cookies,
             json={"model_id": "new-model"},
         )
@@ -139,7 +149,7 @@ class TestModelSwitch:
         client.app.state.conversation_manager = mock_mgr
 
         resp = client.post(
-            "/conversations/api/1/model",
+            f"/conversations/api/{_conversation(client)}/model",
             cookies=cookies,
             json={"model_id": ""},
         )
@@ -156,7 +166,7 @@ class TestFavourite:
         client.app.state.conversation_manager = mock_mgr
 
         resp = client.post(
-            "/conversations/api/1/favourite",
+            f"/conversations/api/{_conversation(client)}/favourite",
             cookies=cookies,
             json={"favourite": True},
         )

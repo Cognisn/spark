@@ -124,8 +124,10 @@ async def panel_prompt(request: Request) -> JSONResponse:
     return JSONResponse({"queued": True, "turn_id": turn_id})
 
 
-@router.get("/stream/panel")
-async def stream_panel(request: Request, conversation_id: int) -> EventSourceResponse:
+@router.get("/stream/panel", response_model=None)
+async def stream_panel(
+    request: Request, conversation_id: int
+) -> EventSourceResponse | JSONResponse:
     """Drive the panel loop, translating orchestrator events to SSE.
 
     Mirrors stream_debate: a worker thread runs the orchestrator, a queue
@@ -133,6 +135,8 @@ async def stream_panel(request: Request, conversation_id: int) -> EventSourceRes
     with a human_turn event already emitted; the client posts the
     contribution then reconnects to resume.
     """
+    if not await _panel_config(request, conversation_id):
+        return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()
     if not hasattr(request.app.state, "turn_cancel_tokens"):

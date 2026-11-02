@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
+from spark.web.scope import not_found, owned_action
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,8 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     data = await request.json()
     from spark.database import autonomous_actions
 
@@ -126,6 +129,8 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     await autonomous_actions.delete_action(db, action_id, current_user_guid(request))
     return JSONResponse({"status": "ok"})
 
@@ -138,6 +143,8 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     data = await request.json()
     from spark.database import autonomous_actions
 
@@ -155,6 +162,8 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"tools": []})
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
 
     # Get all available tools
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
@@ -217,9 +226,10 @@ async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    await autonomous_actions.set_tool_permission(
+    if not await autonomous_actions.set_tool_permission(
         db, action_id, tool_name, permission_state, current_user_guid(request)
-    )
+    ):
+        return not_found("Action not found")
 
     return JSONResponse({"status": "ok"})
 
@@ -234,6 +244,8 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     runs = await autonomous_actions.get_action_runs(
         db, current_user_guid(request), action_id, limit=20
     )
@@ -267,11 +279,14 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
 
     # Run now acts for the signed-in user, with their permissions.
     permissions = request_permissions(request)
+    user_guid = current_user_guid(request)
 
     def _run() -> None:
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(ctx, "web-run-now", sync_db, permissions=permissions)
+        executor = ActionExecutor(
+            ctx, "web-run-now", sync_db, permissions=permissions, user_guid=user_guid
+        )
         executor.execute(action_id)
 
     thread = threading.Thread(target=_run, daemon=True)

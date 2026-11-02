@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from spark.database import conversations
 from spark.identity.access import current_user_guid
 from spark.web.db import database
+from spark.web.scope import not_found, owned_conversation
 
 router = APIRouter(prefix="/conversations")
 
@@ -197,6 +198,8 @@ async def delete_conversation(request: Request, conversation_id: int) -> JSONRes
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     await asyncio.to_thread(conv_mgr.delete_conversation, conversation_id, user_guid)
     return JSONResponse({"status": "ok"})
 
@@ -226,6 +229,8 @@ async def rename_conversation(request: Request, conversation_id: int) -> JSONRes
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     name = data.get("name", "").strip()
     if not name:
@@ -247,6 +252,8 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     model_id = data.get("model_id", "").strip()
     if not model_id:
@@ -268,6 +275,8 @@ async def toggle_favourite(request: Request, conversation_id: int) -> JSONRespon
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     is_favourite = int(bool(data.get("favourite", False)))
     user_guid = current_user_guid(request)

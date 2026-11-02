@@ -353,6 +353,32 @@ flowchart LR
   ISO 8601 text in both engines. Pool connections register pgvector, so numpy arrays
   are sent as `vector` values and `vector` columns come back as numpy arrays.
 
+### User scoping
+
+- Every repository read and write a user's request can reach takes the caller's user
+  guid (after the executor) and is scoped by it. Rows with their own `user_guid` filter
+  on it; rows reached through a parent id (a conversation's messages, files, tool
+  states, index elements, agent runs and debate turns; an action's runs and tool
+  permissions; a turn's exhibits) are scoped through the parent's owner, with the
+  subqueries in `spark.database.scope` (`OWNED_CONVERSATIONS`, `OWNED_ACTIONS`). A
+  caller holding another user's id gets nothing back and changes nothing; a write
+  under another user's parent raises `NotOwned` or returns without writing.
+- Endpoints answer such an id with 404, exactly as for an id that does not exist, so
+  one user never learns that another user's data exists (`spark.web.scope`).
+- Deliberately unscoped, and never reached from a user's request: the scheduler
+  worker's action locks (`try_lock_action`, `unlock_action`, `clear_stale_locks`),
+  usage retention (`usage.cleanup_old_usage`) and personal mode's start-up move of
+  memories from the 0.1 placeholder guid (`memories.reassign_user`).
+- One conversation manager serves every user of a server. A turn's user guid and its
+  interactive callbacks (tool approval, agent model approval, agent cancellation,
+  `TurnCallbacks`) are passed down each call to memory tools, the knowledge graph
+  tools, file tools and sub-agents, never kept on the shared instance. Personal mode's
+  single local user is used only when a call names no user, and never on a server.
+- On a server, the routes that act on the host process (`/api/quit`,
+  `/api/open-folder`, `/settings/api/lock`, `/settings/api/unlock`) answer 404, and
+  the MCP server settings (`/settings/mcp/*`, which write `config.yaml`) need
+  `spark.settings.instance`.
+
 ## Vectors
 
 ```mermaid

@@ -45,6 +45,11 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         return EventSourceResponse(error_gen())
 
     user_guid = current_user_guid(request)
+    from spark.web.scope import not_found, owned_conversation
+
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()  # type: ignore[return-value]
+
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation
 

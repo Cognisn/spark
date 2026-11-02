@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
+from spark.web.scope import not_found, owned_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,12 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
 
 @router.get("/{conversation_id}/api/history")
 async def get_history(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get message history for a conversation."""
+    """API: get message history for one of the user's conversations."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     messages = await asyncio.to_thread(
         conv_mgr.get_messages, conversation_id, current_user_guid(request)
@@ -76,10 +79,12 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.get("/{conversation_id}/api/tool-activity")
 async def get_tool_activity(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get tool call history for a conversation."""
+    """API: get tool call history for one of the user's conversations."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     from spark.database import mcp_ops
 
@@ -107,10 +112,12 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
 
 @router.get("/{conversation_id}/api/agent-history")
 async def get_agent_history(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get agent run history for a conversation."""
+    """API: get agent run history for one of the user's conversations."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     from spark.database import agents as agent_db
 
@@ -137,6 +144,8 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     message = data.get("message", "").strip()
     if not message:
@@ -227,6 +236,8 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
 
     from spark.database import conversations
@@ -291,6 +302,8 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
         return JSONResponse({"embedded": [], "mcp_servers": []})
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     from spark.database import mcp_ops
     from spark.identity.access import tools_config_for
@@ -379,6 +392,8 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     tool_type = data.get("type", "embedded")  # embedded | mcp_server
     name = data.get("name", "")
@@ -415,6 +430,8 @@ async def get_links(request: Request, conversation_id: int) -> JSONResponse:
         return JSONResponse({"linked": [], "available": []})
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     from spark.database import conversation_links
 
@@ -434,10 +451,14 @@ async def add_link(request: Request, conversation_id: int) -> JSONResponse:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
     data = await request.json()
     target_id = data.get("target_id")
     if not target_id:
         return JSONResponse({"error": "target_id required"}, status_code=400)
+    if not isinstance(target_id, int) or await owned_conversation(request, target_id) is None:
+        return not_found()
 
     from spark.database import conversation_links
 
@@ -457,6 +478,8 @@ async def remove_link(request: Request, conversation_id: int, target_id: int) ->
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     user_guid = current_user_guid(request)
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()
 
     from spark.database import conversation_links
 

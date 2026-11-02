@@ -535,12 +535,13 @@ class TestScheduledAction:
 
 
 class TestSidecarStream:
-    def test_inspection_reaches_the_sidecar_events(self) -> None:
+    def test_inspection_reaches_the_sidecar_events(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import time
         from unittest.mock import MagicMock
 
         from fastapi.testclient import TestClient
 
+        from spark.web import scope
         from spark.web.server import create_app
 
         def _settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
@@ -597,6 +598,11 @@ class TestSidecarStream:
         mgr = MagicMock()
         mgr.send_message.side_effect = _send
         app.state.conversation_manager = mgr
+
+        async def owned(request: object, conversation_id: int) -> dict:
+            return {"id": conversation_id}  # no database here: the id is the local user's
+
+        monkeypatch.setattr(scope, "owned_conversation", owned)
 
         body = client.get("/stream/chat?message=hello&conversation_id=1", cookies=cookies).text
         payloads = {}

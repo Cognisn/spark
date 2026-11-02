@@ -380,7 +380,9 @@ async def clear_secret(request: Request) -> JSONResponse:
 
 @router.post("/api/lock")
 async def set_lock(request: Request) -> JSONResponse:
-    """Set or update the settings lock password."""
+    """Set or update the settings lock password (personal mode; not on a server)."""
+    if _server():
+        return JSONResponse({"error": "Not found"}, status_code=404)
     data = await request.json()
     password = data.get("password", "").strip()
     current_password = data.get("current_password", "")
@@ -407,7 +409,9 @@ async def set_lock(request: Request) -> JSONResponse:
 
 @router.post("/api/unlock")
 async def unlock_settings(request: Request) -> JSONResponse:
-    """Verify the lock password to gain access."""
+    """Verify the lock password to gain access (personal mode; not on a server)."""
+    if _server():
+        return JSONResponse({"error": "Not found"}, status_code=404)
     data = await request.json()
     password = data.get("password", "")
 

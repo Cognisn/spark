@@ -96,9 +96,14 @@ async def set_theme(request: Request) -> JSONResponse:
 
 @router.post("/api/open-folder")
 async def open_folder(request: Request) -> JSONResponse:
-    """Open a system folder in the file browser."""
+    """Open a system folder in the file browser (personal mode: never on a server)."""
     import asyncio
     import sys
+
+    from spark.web.scope import server_refusal
+
+    if refused := server_refusal():
+        return refused
 
     folder_type = request.query_params.get("type", "logs")
 
@@ -127,11 +132,16 @@ async def open_folder(request: Request) -> JSONResponse:
 
 @router.post("/api/quit")
 async def quit_app(request: Request) -> JSONResponse:
-    """Shut down the Spark application."""
+    """Shut down the Spark application (personal mode: never on a server)."""
     import asyncio
     import logging
     import os
     import signal
+
+    from spark.web.scope import server_refusal
+
+    if refused := server_refusal():
+        return refused
 
     logger = logging.getLogger(__name__)
     logger.info("Quit requested via web UI — shutting down")

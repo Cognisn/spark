@@ -103,17 +103,18 @@ class TestBuildLifecycle:
     def test_conflict_while_building(self, client) -> None:
         _auth(client)
         from spark.knowledge import builder
+        from spark.web.endpoints.knowledge import build_key
 
-        assert builder.try_acquire("global")
+        key = build_key(str(client.app.state.user_guid), "global")
+        assert builder.try_acquire(key)
         try:
             assert client.post("/knowledge/api/build", json={"scope": "global"}).status_code == 409
         finally:
-            builder.release("global")
+            builder.release(key)
 
-    def test_unknown_scope_graph_is_empty(self, client) -> None:
+    def test_unknown_conversation_scope_is_not_found(self, client) -> None:
         _auth(client)
-        g = client.get("/knowledge/api/graph?scope=conv:999").json()
-        assert g["total_nodes"] == 0
+        assert client.get("/knowledge/api/graph?scope=conv:999").status_code == 404
 
 
 class TestSearchAndClear:
