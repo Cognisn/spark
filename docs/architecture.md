@@ -442,7 +442,11 @@ flowchart LR
   `spark.actions` (`require_permission`), while listing, reading and deleting one's own
   actions stay open; importing, deleting and reloading skills, which every user of
   the instance shares, need `spark.settings.instance`, while turning a skill on or off
-  for oneself stays open.
+  for oneself stays open. Spawning a sub-agent needs `spark.agents` at the one point
+  every sub-agent starts (`ConversationManager._execute_agent_spawn`, for chat turns,
+  actions and agents alike); `spark.tools.agents` only offers the tool. Knowledge graph
+  builds are per user (each user's own global and conversation graphs), so
+  `spark.knowledge.instance` gates nothing yet.
 
 ## Vectors
 

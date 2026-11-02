@@ -1587,6 +1587,27 @@ class ConversationManager:
         except Exception as e:
             return f"Error listing models: {e}", True
 
+    @staticmethod
+    def _may_spawn_agents(permissions: Permissions) -> bool:
+        """Whether the turn's user may spawn sub-agents: ``spark.agents`` on a server.
+
+        Every sub-agent starts here, from a chat turn, an action or another agent,
+        so this is the one gate. ``spark.tools.agents`` only offers the tool.
+        Personal mode's local operator may always spawn.
+        """
+        from spark import mode
+
+        try:
+            server = mode.is_server()
+        except RuntimeError:
+            server = False
+        if not server:
+            return True
+        from spark.identity.permissions import AGENTS
+        from spark.tools.registry import ANY_ROLE
+
+        return permissions is not None and permissions is not ANY_ROLE and AGENTS in permissions
+
     def _execute_agent_spawn(
         self,
         tool_input: dict,
@@ -1608,6 +1629,12 @@ class ConversationManager:
 
         if not task:
             return "Error: task description is required.", True
+        if not self._may_spawn_agents(permissions):
+            return (
+                "Error: spawning sub-agents needs the spark.agents permission, "
+                "which your role does not grant.",
+                True,
+            )
 
         # Determine model — fall back to the current conversation's model
         if not model_id:

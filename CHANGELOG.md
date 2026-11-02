@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`spark worker` resolves a `secret://` database URL** (server mode): the worker configures its runtime with konfig's secrets before any database or tool work, as `spark web` and `spark migrate` do, so a `database.url` kept in the secrets store no longer stops it starting
 - **Pending chat interactions belong to their user** (server mode): a stream's tool permission prompts, agent model approvals, agent cancel tokens and the stream itself are bound to the user whose turn raised them, so `/chat/permission/respond`, `/chat/agent/model-approve`, `/chat/agent/cancel` and `/stream/cancel` answer another user's id, or one that has ended, with 404 and change nothing. Personal mode is unchanged
 - **Actions and skills follow the user's role** (server mode): creating, editing, toggling, running now and AI-creating actions need `spark.actions` (a Power user's), and a User is refused with 403 while still listing their own actions; importing, deleting and reloading skills, shared by every user, need `spark.settings.instance`, while each user still turns skills on or off for themselves. Personal mode is unchanged
+- **Sub-agents need `spark.agents`** (server mode): spawning a sub-agent needs `spark.agents` wherever the spawn comes from (a chat turn, an action or another agent), beyond the `spark.tools.agents` permission that offers the tool; a refused spawn returns a tool error and starts nothing. Personal mode is unchanged
 
 ## [0.3.0a9] - 2026-11-02
 
