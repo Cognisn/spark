@@ -153,9 +153,31 @@ sequenceDiagram
 - CSRF: a session's token is an HMAC-SHA256 of its warden session id under a per-instance key in konfig's secrets store (`spark.csrf-key`), so it survives refreshes and never matches another session; the sign-in form has its own cookie-bound token.
 - API keys: `Authorization: Bearer wdn_...` authenticates through warden (the key's scopes intersected with its user's permissions) and needs no CSRF token, having no ambient credential; Origin and Referer are still checked when present, and a bearer together with a session cookie is refused.
 - Event streams cannot read a 401, so the chat, debate and panel pages call `SparkSession.ensure()` (in `csrf.js`) before opening one.
-- `/auth/sign-out` (and the menu's `/logout`) revokes the warden session and clears both cookies. A second-factor challenge lands on `/auth/challenge`, whose TOTP, enrolment and recovery-code screens are a later step.
+- `/auth/sign-out` (and the menu's `/logout`) revokes the warden session and clears both cookies.
 - `spark identity create-admin --email EMAIL [--link-user-guid GUID]` creates the first administrator (idempotent) and can bind the interim single-user guid to them.
 - **Static files** served from `web/static/` (CSS, JS, fonts)
+
+### Identity screens (server mode)
+
+SPARK renders every identity screen (Jinja and Bootstrap) and calls warden's Python API
+on the server; warden's JSON routers are not mounted. Every route answers 404 in
+personal mode, whose sign-in is unchanged.
+
+| Screens | Module | Needs |
+|---|---|---|
+| `/auth/sign-in`, `/auth/challenge` (TOTP or recovery code; the enrolment warden requires, with the recovery codes shown once) | `endpoints/identity.py` | nothing (public) |
+| `/auth/invitation`, `/auth/password-reset`, `/auth/reset`, `/identity/auth/sso/start` and `/callback`, `/auth/sso/complete` | `endpoints/lifecycle.py` | nothing (public) |
+| `/account` (profile, password, authenticator), `/account/api-keys` | `endpoints/account.py` | a session; `spark.api_keys` for keys |
+| `/admin/users`, `/admin/invitations`, `/admin/api-keys` | `endpoints/administration.py` | `spark.users.admin` |
+| `/audit`, `/audit/export` (CSV or NDJSON) | `endpoints/audit.py` | `spark.audit.read`; `spark.audit.export` to export |
+
+- **Before a session**: the screens extend the standalone `auth_layout.html`. Each form used before a session exists keeps its CSRF token in a cookie scoped to its own path (`__Secure-spark-sign-in` for sign-in, `__Secure-spark-form` for the invitation and reset screens); the challenge's token lives only in `__Secure-spark-challenge` (path `/auth/challenge`) and its forms' CSRF token is bound to it. Screens carrying a token or a secret are `no-store` and `no-referrer`, and the page takes a link's token out of the address bar. Every refused code, link or handoff gets one fixed message.
+- **TOTP**: the enrolment's `otpauth://` URI is drawn as a QR code on the server (`spark.web.qr`, reportlab's QR widget, an SVG data URI), beside the key and URI as text. warden 0.1.0 cannot replace a confirmed enrolment for its own user, so replacing one is an administrator's TOTP reset.
+- **Single sign-on**: the provider's redirect URI is `server.public_base_url` + `/identity/auth/sso/callback` (warden's auth prefix). The login binding cookie (`__Secure-warden-sso`, SameSite=Lax) is scoped to `/identity/auth/sso`; the callback hands the same binding to `/auth/sso/complete` alone (`__Secure-spark-sso`), which exchanges the handoff code on the server and sets the session cookies.
+- **Mail**: SPARK has no mail service in server mode, so warden's `MailSender` is `spark.identity.mail.LinkCapture`. Inside an administrator's invitation or reset request it keeps the message so the screen shows the link once; anywhere else (a signed-out reset request, warden's enrolment notice) the message is dropped. `IdentityRuntime.start(mail_sender=...)` takes a real sender.
+- **API keys**: a user's own key may not carry scopes beyond the permissions of the request creating it, so a key cannot mint a wider one (warden also caps scopes at the user's permissions).
+- **Menu**: `spark.web.menu.identity_menu`, a template global, lists the entries the user's permissions allow in an Account menu with sign-out; it is empty in personal mode.
+- **Audit**: warden records every identity and administration change itself, and its export records the export; the screens add no audit events of their own.
 
 ### Audit (server mode)
 

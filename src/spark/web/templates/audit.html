@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Spark - Audit Trail{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1300px;">
+    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Audit trail</h4>
+    {% include "_page_messages.html" %}
+
+    <form method="GET" action="/audit" class="app-card mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="actor" class="form-label">Actor</label>
+                    <input type="text" id="actor" name="actor" class="form-control form-control-sm" value="{{ filters.actor }}" placeholder="Email address or user id">
+                </div>
+                <div class="col-md-3">
+                    <label for="action" class="form-label">Action</label>
+                    <input type="text" id="action" name="action" class="form-control form-control-sm" value="{{ filters.action }}" placeholder="warden.identity.sign_in">
+                </div>
+                <div class="col-md-2">
+                    <label for="outcome" class="form-label">Outcome</label>
+                    <select id="outcome" name="outcome" class="form-select form-select-sm">
+                        <option value="">Any</option>
+                        <option value="success" {% if filters.outcome == "success" %}selected{% endif %}>Success</option>
+                        <option value="failure" {% if filters.outcome == "failure" %}selected{% endif %}>Failure</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="since" class="form-label">From (UTC)</label>
+                    <input type="date" id="since" name="since" class="form-control form-control-sm" value="{{ filters.since if filters.since|length == 10 else '' }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="until" class="form-label">To (UTC)</label>
+                    <input type="date" id="until" name="until" class="form-control form-control-sm" value="{{ filters.until if filters.until|length == 10 else '' }}">
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-funnel me-1"></i> Filter</button>
+                <a class="btn btn-app-ghost btn-sm" href="/audit">Clear</a>
+                {% if may_export %}
+                <button type="submit" formaction="/audit/export" name="format" value="csv" class="btn btn-app-outline btn-sm ms-auto"><i class="bi bi-filetype-csv me-1"></i> Export CSV</button>
+                <button type="submit" formaction="/audit/export" name="format" value="ndjson" class="btn btn-app-outline btn-sm"><i class="bi bi-filetype-json me-1"></i> Export NDJSON</button>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    <div class="app-card">
+        <div class="card-body">
+            {% if rows %}
+            <div class="app-table-responsive">
+            <table class="app-table" style="font-size: 0.75rem;">
+                <thead><tr><th>Id</th><th>When (UTC)</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Resource</th><th>Address</th><th>Details</th></tr></thead>
+                <tbody>
+                {% for row in rows %}
+                <tr class="audit-row" data-id="{{ row.id }}" data-action="{{ row.action }}">
+                    <td>{{ row.id }}</td>
+                    <td class="text-nowrap">{{ row.occurred_at }}</td>
+                    <td><code>{{ row.action }}</code></td>
+                    <td><span class="badge-app {{ 'badge-app-success' if row.outcome == 'success' else 'badge-app-danger' }}">{{ row.outcome }}</span></td>
+                    <td>{{ actors.get(row.actor, row.actor) }}</td>
+                    <td>{{ row.resource }}</td>
+                    <td>{{ row.source_ip }}</td>
+                    <td><code style="font-size: 0.7rem; word-break: break-all;">{{ row.details }}</code></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">No events match.</p>
+            {% endif %}
+            <div class="d-flex gap-2 mt-3">
+                <a class="btn btn-app-ghost btn-sm" href="/audit?{{ newest }}">Newest</a>
+                {% if older %}
+                <a class="btn btn-app-ghost btn-sm" href="/audit?{{ older }}">Older <i class="bi bi-chevron-right"></i></a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

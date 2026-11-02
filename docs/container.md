@@ -111,6 +111,39 @@ to nobody until it is linked this way.
 In server mode the web role does not start the tray daemon; scheduled actions run
 in `spark worker`.
 
+#### Users, two-step verification and single sign-on
+
+- **First administrator**: run `identity create-admin` as above, then sign in at
+  `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
+  sign-in asks the administrator to set up an authenticator app (a QR code, or the
+  key typed in) and shows ten recovery codes once: keep them somewhere safe.
+- **Inviting users**: an administrator invites from **Account > Invitations**
+  (`/admin/invitations`), choosing the roles granted on acceptance. Spark has no
+  mail service in server mode, so the invitation link is shown to the
+  administrator once, to pass on privately; it works once and expires after
+  `warden.identity.invitation_ttl_seconds` (7 days by default). The same applies to
+  a password reset link sent from a user's page. A user who asks for a reset at
+  `/auth/password-reset` gets a neutral answer and no link, so they ask an
+  administrator instead.
+- **Two-step verification**: `SPARK__WARDEN__IDENTITY__REQUIRE_MFA` (default
+  `true`) makes every password sign-in use an authenticator app. A user who has
+  lost both their authenticator and their recovery codes needs an administrator
+  to reset it from their user page (confirm who they are some other way first);
+  they set it up again at their next sign-in.
+- **Single sign-on** (OIDC, one provider): register
+  `https://<public address>/identity/auth/sso/callback` as the redirect URI with
+  the provider, then set the `warden.sso` section, for example
+  `SPARK__WARDEN__SSO__ENABLED=true`, `SPARK__WARDEN__SSO__ISSUER_URL` and
+  `SPARK__WARDEN__SSO__CLIENT_ID`, with the client secret in the secrets store
+  under the name `warden.sso.client-secret`.
+  Users must already exist (created or invited); the sign-in page then offers
+  single sign-on, and an invitation can be accepted through it. A provider behind
+  a private CA needs `SSL_CERT_FILE` naming a bundle that holds it and the public
+  CAs.
+- **Roles**: `administrator` (everything), `auditor` (the audit trail at `/audit`
+  and its export, nothing else), `power_user` and `user`. Users create their own
+  API keys at `/account/api-keys`, limited to their own permissions.
+
 ### Worker
 
 `spark worker` runs scheduled actions. It refuses to start in personal mode, on
