@@ -202,6 +202,15 @@ starts, under `spark.`:
   to the LLM for them are only those offered, and the action creation assistant may
   create an action only with an offered model. One manager serves every user of a
   server, so creating a conversation there never sets its model
+- **Models offered at every choice** (`spark.web.models`) -- Every endpoint where a user
+  chooses a model asks `not_offered()` first and answers 409, naming the model, for one
+  not offered: creating a conversation (its debate and panel agents included), changing
+  a conversation's model, creating and editing an action, AI-creating an action,
+  approving a sub-agent's model and the default model preference. The chat info
+  (`model_offered`, `model_notice`) and page tell the user when their conversation's
+  model is no longer offered. AI-creating an action answers through a service of its
+  own for the chosen model, so no user's choice changes the shared manager's model.
+  There is no per-role model permission: every signed-in user is offered the same models
 - **LLMService** -- Abstract base class that all providers implement
 - **ContextLimitResolver** -- Resolves context window and max output for any model ID
 

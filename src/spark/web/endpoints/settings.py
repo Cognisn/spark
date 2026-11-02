@@ -352,6 +352,11 @@ async def save_preferences(request: Request) -> JSONResponse:
     if isinstance(checked, JSONResponse):
         return checked
     plain, _secrets = checked
+    from spark.web.models import is_offered, refusal_message
+
+    model = plain.get("default_model.model_id")
+    if isinstance(model, str) and model and not is_offered(request, model):
+        return _refused(refusal_message(model), ["default_model.model_id"], 409)
     for key, value in plain.items():
         await accessor.set_preference(database(request), user, key, value)
     return JSONResponse({"status": "ok", "saved": sorted(plain)})

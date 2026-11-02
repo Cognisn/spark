@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.identity.access import current_user_guid
 from spark.web import interactions
+from spark.web import models as offered_models
 from spark.web.db import database, sync_database
 from spark.web.scope import not_found, owned_conversation
 
@@ -56,6 +57,8 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
         "chat.html",
         {
             "conversation": conversation,
+            # A conversation pinned to a model no longer offered keeps working, with a notice.
+            "model_notice": offered_models.notice(request, conversation.get("model_id")),
         },
     )
 
@@ -201,6 +204,10 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "id": conv.get("id"),
             "name": conv.get("name"),
             "model_id": model_id,
+            # False (with model_notice) once the model has left models.offered: the
+            # conversation keeps working, and the page says the model is no longer offered.
+            "model_offered": offered_models.is_offered(request, model_id) if model_id else True,
+            "model_notice": offered_models.notice(request, model_id),
             "created_at": conv.get("created_at"),
             "tokens_sent": (conv.get("tokens_sent", 0) or 0) + agent_input_tokens,
             "tokens_received": (conv.get("tokens_received", 0) or 0) + agent_output_tokens,
@@ -625,6 +632,8 @@ async def approve_agent_model(request: Request) -> JSONResponse:
     model_id = data.get("model_id", "")
     if not interactions.belongs_to_caller(request, interactions.AGENT_MODEL, request_id):
         return not_found()
+    if refused := offered_models.not_offered(request, model_id):
+        return refused
 
     events = getattr(request.app.state, "agent_model_events", {})
     responses = getattr(request.app.state, "agent_model_responses", {})

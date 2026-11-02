@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from spark.database import conversations
 from spark.identity.access import current_user_guid
 from spark.web.db import database
+from spark.web.models import not_offered
 from spark.web.scope import not_found, owned_conversation
 
 router = APIRouter(prefix="/conversations")
@@ -144,6 +145,15 @@ async def create_conversation(request: Request) -> JSONResponse:
                 "is_human": True,
             }
 
+    # Every model chosen here, the debate's and panel's agents included, must be offered.
+    chosen: list[object] = [model_id]
+    if debate is not None:
+        chosen += [(spec or {}).get("model_id") for spec in (debate.get("agents") or {}).values()]
+    if panel_agents is not None:
+        chosen += [spec.get("model_id") for spec in panel_agents.values()]
+    if refused := not_offered(request, *chosen):
+        return refused
+
     try:
         cid = await asyncio.to_thread(
             conv_mgr.create_conversation,
@@ -258,6 +268,8 @@ async def change_model(request: Request, conversation_id: int) -> JSONResponse:
     model_id = data.get("model_id", "").strip()
     if not model_id:
         return JSONResponse({"error": "model_id required"}, status_code=400)
+    if refused := not_offered(request, model_id):
+        return refused
 
     user_guid = current_user_guid(request)
     from spark.database import conversations

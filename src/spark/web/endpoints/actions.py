@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from spark.identity.access import current_user_guid, require_permission
 from spark.identity.permissions import ACTIONS
 from spark.web.db import database, sync_database
+from spark.web.models import not_offered, offered_models
 from spark.web.scope import not_found, owned_action
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ async def create_action(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     data = await request.json()
+    if refused := not_offered(request, data.get("model_id")):
+        return refused
     from spark.database import autonomous_actions
 
     try:
@@ -105,6 +108,8 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     if await owned_action(request, action_id) is None:
         return not_found("Action not found")
     data = await request.json()
+    if refused := not_offered(request, data.get("model_id")):
+        return refused
     from spark.database import autonomous_actions
 
     allowed = {
@@ -325,6 +330,8 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     if not message:
         return JSONResponse({"error": "Empty message"}, status_code=400)
+    if refused := not_offered(request, model_id):
+        return refused
 
     from spark.scheduler.creation_tools import (
         ACTION_CREATION_SYSTEM_PROMPT,
@@ -332,22 +339,24 @@ async def ai_create_message(request: Request) -> JSONResponse:
         execute_creation_tool,
     )
 
-    # Set the model for this creation session
-    if model_id:
-        try:
-            llm_manager.set_model(model_id)
-        except ValueError:
-            pass
-
     messages = list(history)
     messages.append({"role": "user", "content": message})
 
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    # This session's model answers through a service of its own, so one user's
+    # choice never changes the shared manager's model for anyone else.
+    service = llm_manager
+    if model_id and conv_mgr is not None:
+        service = (
+            await asyncio.to_thread(conv_mgr._get_llm_service_for_model, model_id) or llm_manager
+        )
     from spark.identity.access import tools_config_for
 
     # A copy: the shared configuration never carries one user's guid or permissions.
     config = tools_config_for(request, conv_mgr._embedded_tools_config if conv_mgr else {})
     config["_user_guid"] = current_user_guid(request)
+    # The action the assistant creates may use only an offered model.
+    config["_offered_models"] = sorted(offered_models(request))
 
     # Augment system prompt with pre-selected name and model
     system_prompt = ACTION_CREATION_SYSTEM_PROMPT
@@ -393,7 +402,7 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     all_tool_calls: list[dict] = []
     for _ in range(10):
-        response = llm_manager.invoke_model(
+        response = service.invoke_model(
             messages,
             max_tokens=4096,
             temperature=0.7,
