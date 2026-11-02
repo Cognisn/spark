@@ -45,7 +45,9 @@ database:
 # Server mode
 # -----------------------------------------------------------------------------
 # The address users reach Spark on in server mode, for example
-# https://spark.example.com. Administrators change providers, models, MCP
+# https://spark.example.com (required in server mode; https unless the host is
+# loopback; no path). Sign-in cookies, the Origin check and every link Spark
+# sends are built from it. Administrators change providers, models, MCP
 # servers, tool policy and integrations on the settings page; in server mode
 # those are kept in the database, not in this file.
 server:
@@ -64,12 +66,18 @@ server:
 #   file_path: /var/lib/spark/secrets.enc
 
 # -----------------------------------------------------------------------------
-# warden (identity; placeholders until warden is integrated)
+# warden (identity and audit, server mode only)
 # -----------------------------------------------------------------------------
+# warden runs inside Spark. Its public address and screen links come from
+# server.public_base_url, so do not set warden.http. Everything else is
+# optional; the defaults are warden's own. A value may be secret://<name>.
 # warden:
-#   url: https://warden.example.com
-#   client_id: spark
-#   client_secret: secret://warden_client_secret
+#   identity:
+#     require_mfa: true
+#     access_token_ttl_seconds: 900
+#     session_lifespan_seconds: 43200
+#   audit:
+#     trusted_proxies: 10.0.0.0/8
 
 # -----------------------------------------------------------------------------
 # Web Interface

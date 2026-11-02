@@ -1,4 +1,8 @@
-"""MCP Server management endpoints."""
+"""MCP Server management endpoints.
+
+They read and write config.yaml, the host's configuration: on a server only a
+holder of spark.settings.instance may use them.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +12,30 @@ import logging
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/settings/mcp")
+
+def _instance_settings(request: Request) -> None:
+    """On a server, refuse anyone without spark.settings.instance (personal mode: no check)."""
+    from spark.identity.access import current_identity
+    from spark.identity.permissions import SETTINGS_INSTANCE
+    from spark.web.scope import is_server
+
+    if not is_server():
+        return
+    identity = current_identity(request)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="not signed in")
+    if SETTINGS_INSTANCE not in identity.permissions:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+
+router = APIRouter(prefix="/settings/mcp", dependencies=[Depends(_instance_settings)])
 
 
 @router.get("/api/list")

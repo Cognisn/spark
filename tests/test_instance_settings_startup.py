@@ -23,6 +23,19 @@ class Konfig:
     def get(self, key: str, default: Any = None) -> Any:
         return self.values.get(key, default)
 
+    def get_section(self, prefix: str) -> dict[str, Any]:
+        """The flat ``prefix.*`` keys as a nested dict, as konfig returns them."""
+        section: dict[str, Any] = {}
+        for key, value in self.values.items():
+            if not key.startswith(prefix + "."):
+                continue
+            *parents, last = key[len(prefix) + 1 :].split(".")
+            node = section
+            for part in parents:
+                node = node.setdefault(part, {})
+            node[last] = value
+        return section
+
 
 class Store:
     def __init__(self, data: dict[str, str] | None = None) -> None:
@@ -147,24 +160,71 @@ class TestPublicBaseUrlAndWarden:
                 KONFIG_MASTER_KEY="mk-dev-only",
             )
 
-    def test_missing_public_base_url_is_a_warning_in_server_mode(self) -> None:
+    def test_missing_public_base_url_refused_in_server_mode(self) -> None:
         values = _server()
         del values["server.public_base_url"]
-        config = _validate(values, KONFIG_MASTER_KEY="mk-dev-only")
-        assert any("server.public_base_url" in w for w in config.warnings)
+        with pytest.raises(StartupConfigError, match="server.public_base_url"):
+            _validate(values, KONFIG_MASTER_KEY="mk-dev-only")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://spark.example.com",
+            "https://spark.example.com/spark",
+            "https://spark.example.com/?x=1",
+            "https://user@spark.example.com",
+            "https://0.0.0.0",
+        ],
+    )
+    def test_public_base_url_must_be_an_https_origin(self, url: str) -> None:
+        with pytest.raises(StartupConfigError, match="server.public_base_url"):
+            _validate(_server(**{"server.public_base_url": url}), KONFIG_MASTER_KEY="mk-dev-only")
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://spark.example.com/", "https://spark.example.com"),
+            ("https://spark.example.com:8443", "https://spark.example.com:8443"),
+            ("http://127.0.0.1:22401", "http://127.0.0.1:22401"),
+            ("http://localhost:22401", "http://localhost:22401"),
+        ],
+    )
+    def test_public_base_url_accepted(self, url: str, expected: str) -> None:
+        config = _validate(
+            _server(**{"server.public_base_url": url}), KONFIG_MASTER_KEY="mk-dev-only"
+        )
+        assert config.public_base_url == expected
 
     def test_public_base_url_returned(self) -> None:
         config = _validate(_server(), KONFIG_MASTER_KEY="mk-dev-only")
         assert config.public_base_url == "https://spark.example.com"
 
-    def test_warden_placeholders_validated_when_set(self) -> None:
-        with pytest.raises(StartupConfigError, match="warden.url"):
-            _validate(_server(**{"warden.url": "warden"}), KONFIG_MASTER_KEY="mk-dev-only")
+    def test_personal_mode_needs_no_public_base_url(self) -> None:
+        config = _validate({}, Store())
+        assert config.public_base_url == ""
+        assert config.warden is None
+
+    def test_warden_configuration_is_derived_and_validated(self) -> None:
         config = _validate(
-            _server(**{"warden.url": "https://warden.example.com", "warden.client_id": "spark"}),
-            KONFIG_MASTER_KEY="mk-dev-only",
+            _server(**{"warden.identity.require_mfa": False}), KONFIG_MASTER_KEY="mk-dev-only"
         )
-        assert config.warden == {"url": "https://warden.example.com", "client_id": "spark"}
+        assert config.warden is not None
+        assert config.warden.http.public_base_url == "https://spark.example.com"
+        assert config.warden.identity.require_mfa is False
+
+    def test_invalid_warden_setting_refused_by_name(self) -> None:
+        with pytest.raises(StartupConfigError, match="warden.identity.access_token_ttl_seconds"):
+            _validate(
+                _server(**{"warden.identity.access_token_ttl_seconds": 1}),
+                KONFIG_MASTER_KEY="mk-dev-only",
+            )
+
+    def test_retired_warden_placeholders_refused(self) -> None:
+        with pytest.raises(StartupConfigError, match="warden.url"):
+            _validate(
+                _server(**{"warden.url": "https://warden.example.com"}),
+                KONFIG_MASTER_KEY="mk-dev-only",
+            )
 
 
 class TestDatabaseView:

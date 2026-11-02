@@ -114,7 +114,7 @@ async def test_parallel_first_conversation_skill_states_make_one_row(wide_db: Da
         await _all_at_once(
             PARALLEL,
             lambda: skills.set_conversation_skill_enabled(
-                wide_db, cid, f"example-skill-{k}", False
+                wide_db, USER, cid, f"example-skill-{k}", False
             ),
         )
 

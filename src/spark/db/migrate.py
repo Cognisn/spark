@@ -9,12 +9,14 @@ live in the ``spark`` schema; on SQLite in the default schema.
   index (refusing with :class:`LegacySchemaMismatch` and changing nothing on any
   difference), then a stamp at the baseline.
 * :func:`check_at_head` refuses a database behind head (:class:`MigrationRequired`)
-  or newer than this code (:class:`DatabaseTooNew`).
-* :func:`prepare` is what start-up calls: personal mode migrates automatically,
-  server mode only checks (``spark migrate`` runs the migrations there).
+  or newer than this code (:class:`DatabaseTooNew`), for SPARK's chain and then
+  every registered chain that has a check.
+* :func:`prepare` is what start-up calls: personal mode migrates automatically
+  (every chain), server mode only checks (``spark migrate`` runs the migrations there).
 * :func:`migrate_all` is ``spark migrate``: SPARK's chain, then every chain
-  registered with :func:`register_chain`. Wave 3 registers warden's chain there
-  (warden runs its own Alembic chain in a ``warden`` schema).
+  registered with :func:`register_chain`. :mod:`spark.identity.migrations`
+  registers warden's chain there (warden runs its own Alembic chain in a
+  ``warden`` schema, PostgreSQL only).
 
 Everything here is synchronous (Alembic is); call it with ``asyncio.to_thread``
 from async code.
@@ -91,17 +93,23 @@ class UpgradeReport:
 
 @dataclass(frozen=True)
 class Chain:
-    """A further migration chain run by ``spark migrate`` after SPARK's own."""
+    """A further migration chain run by ``spark migrate`` after SPARK's own.
+
+    ``check``, when given, refuses a database whose chain is not at head (raising
+    :class:`MigrationRequired` or :class:`DatabaseTooNew`); :func:`check_at_head`
+    runs it after SPARK's own check.
+    """
 
     name: str
     upgrade: Callable[[DatabaseSettings], str | None]
+    check: Callable[[DatabaseSettings], None] | None = None
 
 
 _chains: list[Chain] = []
 
 
 def register_chain(chain: Chain) -> None:
-    """Add a chain after SPARK's (wave 3: warden's chain, in its ``warden`` schema)."""
+    """Add a chain after SPARK's (warden's chain, in its ``warden`` schema)."""
     if chain.name == "spark":
         raise ValueError("'spark' is SPARK's own chain")
     if any(c.name == chain.name for c in _chains):
@@ -348,7 +356,7 @@ def downgrade(settings: DatabaseSettings, target: str) -> None:
 
 
 def check_at_head(settings: DatabaseSettings) -> None:
-    """Refuse a database that is not exactly at this code's head revision."""
+    """Refuse a database not exactly at this code's head revision, or a chain not at its head."""
     with _connect(settings) as conn:
         revision = _current(conn, settings)
     _check_known(revision)
@@ -358,12 +366,15 @@ def check_at_head(settings: DatabaseSettings) -> None:
             f"the database is at revision {revision or 'none'} but this SPARK needs "
             f"{wanted}; run `spark migrate`"
         )
+    for chain in _chains:
+        if chain.check is not None:
+            chain.check(settings)
 
 
 def prepare(settings: DatabaseSettings, *, auto_migrate: bool) -> None:
     """Start-up: migrate automatically (personal mode) or only check (server mode)."""
     if auto_migrate:
-        upgrade(settings)
+        migrate_all(settings)
     check_at_head(settings)
 
 

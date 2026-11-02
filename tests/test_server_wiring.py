@@ -27,10 +27,12 @@ from konfig.settings.settings import Settings
 
 import spark.web.server as server
 from spark import mode
+from spark.identity.permissions import ADMINISTRATOR
 from spark.instance_settings import FileSettings, ServerSettings, access, accessor, audit
 from spark.instance_settings.listener import APPLICATION_NAME, SettingsListener
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from spark.web.server import attach_database, create_app
+from tests.identity_helpers import AsIdentity, Holder, identity_for
 from tests.web_helpers import sign_in
 
 BOUND_SECONDS = 5.0
@@ -85,6 +87,10 @@ def _client_options() -> dict[str, Any]:
 @contextmanager
 def _server_app(tmp_path: Path, name: str, db: DatabaseSettings) -> Iterator[TestClient]:
     app = create_app(Ctx(tmp_path / f"{name}.yaml"))  # type: ignore[arg-type]
+    # The server's requests come from a signed-in administrator (the sign-in
+    # layer sets request.state.identity; this stands in for it).
+    admin = identity_for(ADMINISTRATOR, user_guid=str(app.state.user_guid))
+    app.add_middleware(AsIdentity, holder=Holder(admin))
     attach_database(app, db, True)
     with TestClient(app, backend_options=_client_options()) as client:
         sign_in(client)

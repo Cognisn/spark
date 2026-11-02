@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,14 @@ router = APIRouter(prefix="", tags=["panel"])
 def _orchestrator(request: Request, status_callback: Any = None):
     """Build a PanelOrchestrator wired to the app's shared services."""
     from spark.core.panel.orchestrator import PanelOrchestrator
+    from spark.identity.access import tools_config_for
 
     conv_mgr = request.app.state.conversation_manager
     return PanelOrchestrator(
         conv_mgr._db,
         conv_mgr._get_llm_service_for_model,
-        getattr(conv_mgr, "_embedded_tools_config", {}) or {},
+        # Participants' tools follow the signed-in user's roles (server mode).
+        tools_config_for(request, getattr(conv_mgr, "_embedded_tools_config", {}) or {}),
         mcp_manager=getattr(conv_mgr, "_mcp_manager", None),
         mcp_loop=getattr(request.app.state, "_mcp_loop", None),
         status_callback=status_callback,
@@ -38,18 +41,15 @@ def _orchestrator(request: Request, status_callback: Any = None):
     )
 
 
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
-
-
 async def _panel_config(request: Request, conversation_id: int) -> dict | None:
     """The panel config, or None when the conversation is not a panel."""
     from spark.database import conversations, debates
 
     db = database(request)
-    if await conversations.get_conversation_type(db, conversation_id) != "panel":
+    user_guid = current_user_guid(request)
+    if await conversations.get_conversation_type(db, user_guid, conversation_id) != "panel":
         return None
-    return await debates.get_debate(db, conversation_id)
+    return await debates.get_debate(db, user_guid, conversation_id)
 
 
 @router.get("/panel/{conversation_id}")
@@ -68,10 +68,13 @@ async def panel_state(request: Request, conversation_id: int) -> JSONResponse:
     if not cfg:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
     db = database(request)
-    turns = await debates.get_turns(db, conversation_id)
-    exhibits = await debates.get_exhibits(db, conversation_id)
+    user_guid = current_user_guid(request)
+    turns = await debates.get_turns(db, user_guid, conversation_id)
+    exhibits = await debates.get_exhibits(db, user_guid, conversation_id)
     orch = _orchestrator(request)
-    awaiting = await asyncio.to_thread(orch.awaiting_human, conversation_id, _user_guid(request))
+    awaiting = await asyncio.to_thread(
+        orch.awaiting_human, conversation_id, current_user_guid(request)
+    )
     return JSONResponse(
         {
             "config": cfg,
@@ -101,7 +104,7 @@ async def panel_prompt(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
 
     orch = _orchestrator(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
 
     pending = await asyncio.to_thread(orch.awaiting_human, cid, user_guid)
     if pending:
@@ -112,7 +115,7 @@ async def panel_prompt(request: Request) -> JSONResponse:
 
     message = await resolve_trigger_for_conversation(database(request), user_guid, cid, message)
 
-    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
             None, orch.answer_qa, cid, user_guid, turn_id
@@ -121,8 +124,10 @@ async def panel_prompt(request: Request) -> JSONResponse:
     return JSONResponse({"queued": True, "turn_id": turn_id})
 
 
-@router.get("/stream/panel")
-async def stream_panel(request: Request, conversation_id: int) -> EventSourceResponse:
+@router.get("/stream/panel", response_model=None)
+async def stream_panel(
+    request: Request, conversation_id: int
+) -> EventSourceResponse | JSONResponse:
     """Drive the panel loop, translating orchestrator events to SSE.
 
     Mirrors stream_debate: a worker thread runs the orchestrator, a queue
@@ -130,6 +135,8 @@ async def stream_panel(request: Request, conversation_id: int) -> EventSourceRes
     with a human_turn event already emitted; the client posts the
     contribution then reconnects to resume.
     """
+    if not await _panel_config(request, conversation_id):
+        return JSONResponse({"error": "Not a panel conversation"}, status_code=404)
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()
     if not hasattr(request.app.state, "turn_cancel_tokens"):
@@ -138,7 +145,7 @@ async def stream_panel(request: Request, conversation_id: int) -> EventSourceRes
 
     events: queue.Queue = queue.Queue()
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     loop = asyncio.get_running_loop()
 
     async def event_generator():

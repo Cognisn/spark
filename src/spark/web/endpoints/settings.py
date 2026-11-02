@@ -37,9 +37,9 @@ _LOCK_SECRET_KEY = "settings_lock_password"
 
 def _offers_local_tools() -> bool:
     """Whether this mode offers the local-only tools (personal mode does, a server does not)."""
-    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+    from spark.tools.registry import ANY_ROLE, LOCAL_ONLY_CATEGORIES, is_category_available
 
-    return all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+    return all(is_category_available(c, permissions=ANY_ROLE) for c in LOCAL_ONLY_CATEGORIES)
 
 
 def _local_tool_refusal() -> JSONResponse | None:
@@ -53,8 +53,12 @@ def _local_tool_refusal() -> JSONResponse | None:
 
 
 def _touches_unavailable_tools(dotted_key: str) -> bool:
-    """Whether saving ``dotted_key`` would write settings for an unavailable tool category."""
-    from spark.tools.registry import is_category_available
+    """Whether saving ``dotted_key`` would write settings for a tool category this mode lacks.
+
+    Instance settings describe the deployment, so this asks what the mode offers
+    (``ANY_ROLE``), not what the administrator's own roles allow.
+    """
+    from spark.tools.registry import ANY_ROLE, is_category_available
 
     parts = dotted_key.split(".")
     if parts[0] != "embedded_tools":
@@ -66,7 +70,7 @@ def _touches_unavailable_tools(dotted_key: str) -> bool:
     if len(parts) == 1:
         # The whole embedded tools tree: it may carry any category.
         return not _offers_local_tools()
-    return not is_category_available(parts[1])
+    return not is_category_available(parts[1], permissions=ANY_ROLE)
 
 
 def _hash_password(password: str) -> str:
@@ -348,6 +352,11 @@ async def save_preferences(request: Request) -> JSONResponse:
     if isinstance(checked, JSONResponse):
         return checked
     plain, _secrets = checked
+    from spark.web.models import is_offered, refusal_message
+
+    model = plain.get("default_model.model_id")
+    if isinstance(model, str) and model and not is_offered(request, model):
+        return _refused(refusal_message(model), ["default_model.model_id"], 409)
     for key, value in plain.items():
         await accessor.set_preference(database(request), user, key, value)
     return JSONResponse({"status": "ok", "saved": sorted(plain)})
@@ -376,7 +385,9 @@ async def clear_secret(request: Request) -> JSONResponse:
 
 @router.post("/api/lock")
 async def set_lock(request: Request) -> JSONResponse:
-    """Set or update the settings lock password."""
+    """Set or update the settings lock password (personal mode; not on a server)."""
+    if _server():
+        return JSONResponse({"error": "Not found"}, status_code=404)
     data = await request.json()
     password = data.get("password", "").strip()
     current_password = data.get("current_password", "")
@@ -403,7 +414,9 @@ async def set_lock(request: Request) -> JSONResponse:
 
 @router.post("/api/unlock")
 async def unlock_settings(request: Request) -> JSONResponse:
-    """Verify the lock password to gain access."""
+    """Verify the lock password to gain access (personal mode; not on a server)."""
+    if _server():
+        return JSONResponse({"error": "Not found"}, status_code=404)
     data = await request.json()
     password = data.get("password", "")
 
@@ -1387,7 +1400,7 @@ def _select(
 
 def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build embedded tool category data for the tools management panel."""
-    from spark.tools.registry import is_category_available
+    from spark.tools.registry import ANY_ROLE, is_category_available
 
     get = settings.get
 
@@ -1660,4 +1673,4 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
         },
     ]
     # A category this mode does not offer has no settings section at all.
-    return [c for c in categories if is_category_available(c["id"])]
+    return [c for c in categories if is_category_available(c["id"], permissions=ANY_ROLE)]

@@ -188,7 +188,7 @@ class MemoryIndex:
         # Update access timestamps
         if results:
             ids = [r["id"] for r in results if "id" in r]
-            self._db.call(memories.update_last_accessed, ids)
+            self._db.call(memories.update_last_accessed, self._user_guid, ids)
 
         return results
 

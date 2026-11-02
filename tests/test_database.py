@@ -97,7 +97,7 @@ class TestConversations:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await messages.add_message(conn, cid, "user", "hello", 10, USER)
         await messages.add_message(conn, cid, "assistant", "hi", 5, USER)
-        total = await conversations.recalculate_total_tokens(conn, cid)
+        total = await conversations.recalculate_total_tokens(conn, USER, cid)
         assert total == 15
 
 
@@ -109,7 +109,7 @@ class TestMessages:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         mid = await messages.add_message(conn, cid, "user", "Hello!", 10, USER)
         assert mid > 0
-        msgs = await messages.get_messages(conn, cid)
+        msgs = await messages.get_messages(conn, USER, cid)
         assert len(msgs) == 1
         assert msgs[0]["content"] == "Hello!"
 
@@ -117,12 +117,12 @@ class TestMessages:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         m1 = await messages.add_message(conn, cid, "user", "msg1", 10, USER)
         m2 = await messages.add_message(conn, cid, "assistant", "msg2", 10, USER)
-        await messages.mark_messages_as_rolled_up(conn, cid, [m1, m2])
+        await messages.mark_messages_as_rolled_up(conn, USER, cid, [m1, m2])
 
-        active = await messages.get_messages(conn, cid)
+        active = await messages.get_messages(conn, USER, cid)
         assert len(active) == 0
 
-        all_msgs = await messages.get_messages(conn, cid, include_rolled_up=True)
+        all_msgs = await messages.get_messages(conn, USER, cid, include_rolled_up=True)
         assert len(all_msgs) == 2
 
     async def test_record_rollup(self, conn: Database) -> None:
@@ -133,8 +133,8 @@ class TestMessages:
     async def test_delete_message(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         mid = await messages.add_message(conn, cid, "user", "to delete", 20, USER)
-        await messages.delete_message(conn, mid, cid)
-        msgs = await messages.get_messages(conn, cid)
+        await messages.delete_message(conn, USER, mid, cid)
+        msgs = await messages.get_messages(conn, USER, cid)
         assert len(msgs) == 0
 
 
@@ -146,22 +146,22 @@ class TestFiles:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         fid = await files.add_file(conn, cid, "test.txt", "text", 100, USER, content_text="hello")
         assert fid > 0
-        result = await files.get_conversation_files(conn, cid)
+        result = await files.get_conversation_files(conn, USER, cid)
         assert len(result) == 1
         assert result[0]["filename"] == "test.txt"
 
     async def test_delete_file(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         fid = await files.add_file(conn, cid, "test.txt", "text", 100, USER)
-        await files.delete_file(conn, fid)
-        assert len(await files.get_conversation_files(conn, cid)) == 0
+        await files.delete_file(conn, USER, fid)
+        assert len(await files.get_conversation_files(conn, USER, cid)) == 0
 
     async def test_delete_conversation_files(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await files.add_file(conn, cid, "a.txt", "text", 50, USER)
         await files.add_file(conn, cid, "b.txt", "text", 50, USER)
-        await files.delete_conversation_files(conn, cid)
-        assert len(await files.get_conversation_files(conn, cid)) == 0
+        await files.delete_conversation_files(conn, USER, cid)
+        assert len(await files.get_conversation_files(conn, USER, cid)) == 0
 
 
 # -- Memories -----------------------------------------------------------------
@@ -222,31 +222,31 @@ class TestMemories:
 class TestToolPermissions:
     async def test_no_permission(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
-        assert await tool_permissions.check_tool_permission(conn, cid, "read_file") is None
-        assert await tool_permissions.is_tool_allowed(conn, cid, "read_file") is None
+        assert await tool_permissions.check_tool_permission(conn, USER, cid, "read_file") is None
+        assert await tool_permissions.is_tool_allowed(conn, USER, cid, "read_file") is None
 
     async def test_set_allowed(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await tool_permissions.set_tool_permission(conn, cid, "read_file", "allowed", USER)
-        assert await tool_permissions.is_tool_allowed(conn, cid, "read_file") is True
+        assert await tool_permissions.is_tool_allowed(conn, USER, cid, "read_file") is True
 
     async def test_set_denied(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await tool_permissions.set_tool_permission(conn, cid, "write_file", "denied", USER)
-        assert await tool_permissions.is_tool_allowed(conn, cid, "write_file") is False
+        assert await tool_permissions.is_tool_allowed(conn, USER, cid, "write_file") is False
 
     async def test_get_all(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await tool_permissions.set_tool_permission(conn, cid, "tool_a", "allowed", USER)
         await tool_permissions.set_tool_permission(conn, cid, "tool_b", "denied", USER)
-        perms = await tool_permissions.get_all_tool_permissions(conn, cid)
+        perms = await tool_permissions.get_all_tool_permissions(conn, USER, cid)
         assert len(perms) == 2
 
     async def test_delete_permission(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await tool_permissions.set_tool_permission(conn, cid, "tool_x", "allowed", USER)
-        await tool_permissions.delete_tool_permission(conn, cid, "tool_x")
-        assert await tool_permissions.check_tool_permission(conn, cid, "tool_x") is None
+        await tool_permissions.delete_tool_permission(conn, USER, cid, "tool_x")
+        assert await tool_permissions.check_tool_permission(conn, USER, cid, "tool_x") is None
 
 
 # -- Usage Tracking -----------------------------------------------------------
@@ -289,7 +289,7 @@ class TestContextIndex:
         assert eid is not None
 
         query = emb + np.random.randn(128).astype(np.float32) * 0.01
-        results = await context_index.search_context(conn, [cid], query, threshold=0.0)
+        results = await context_index.search_context(conn, USER, [cid], query, threshold=0.0)
         assert len(results) >= 1
 
     async def test_duplicate_blocked(self, conn: Database) -> None:
@@ -302,15 +302,15 @@ class TestContextIndex:
     async def test_delete(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await context_index.add_index_element(conn, cid, "user", "test", self._emb(), USER)
-        await context_index.delete_index_elements(conn, cid)
-        stats = await context_index.get_index_stats(conn, cid)
+        await context_index.delete_index_elements(conn, USER, cid)
+        stats = await context_index.get_index_stats(conn, USER, cid)
         assert len(stats) == 0
 
     async def test_stats(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await context_index.add_index_element(conn, cid, "user", "msg1", self._emb(), USER)
         await context_index.add_index_element(conn, cid, "assistant", "msg2", self._emb(), USER)
-        stats = await context_index.get_index_stats(conn, cid)
+        stats = await context_index.get_index_stats(conn, USER, cid)
         assert stats.get("user") == 1
         assert stats.get("assistant") == 1
 
@@ -330,27 +330,27 @@ class TestMCPOps:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await mcp_ops.record_transaction(conn, cid, "tool_a", "{}", "ok", USER)
         await mcp_ops.record_transaction(conn, cid, "tool_b", "{}", "ok", USER)
-        txs = await mcp_ops.get_transactions(conn, cid)
+        txs = await mcp_ops.get_transactions(conn, USER, cid)
         assert len(txs) == 2
 
     async def test_filter_by_tool(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
         await mcp_ops.record_transaction(conn, cid, "read_file", "{}", "ok", USER)
         await mcp_ops.record_transaction(conn, cid, "write_file", "{}", "ok", USER)
-        txs = await mcp_ops.get_transactions(conn, cid, tool_name="read_file")
+        txs = await mcp_ops.get_transactions(conn, USER, cid, tool_name="read_file")
         assert len(txs) == 1
 
     async def test_mcp_server_enabled(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
-        assert await mcp_ops.is_mcp_server_enabled(conn, cid, "my-server") is True
+        assert await mcp_ops.is_mcp_server_enabled(conn, USER, cid, "my-server") is True
         await mcp_ops.set_mcp_server_enabled(conn, cid, "my-server", False, USER)
-        assert await mcp_ops.is_mcp_server_enabled(conn, cid, "my-server") is False
+        assert await mcp_ops.is_mcp_server_enabled(conn, USER, cid, "my-server") is False
 
     async def test_embedded_tool_enabled(self, conn: Database) -> None:
         cid = await conversations.create_conversation(conn, "Chat", "m1", USER)
-        assert await mcp_ops.is_embedded_tool_enabled(conn, cid, "filesystem") is True
+        assert await mcp_ops.is_embedded_tool_enabled(conn, USER, cid, "filesystem") is True
         await mcp_ops.set_embedded_tool_enabled(conn, cid, "filesystem", False, USER)
-        assert await mcp_ops.is_embedded_tool_enabled(conn, cid, "filesystem") is False
+        assert await mcp_ops.is_embedded_tool_enabled(conn, USER, cid, "filesystem") is False
 
 
 # -- Autonomous Actions -------------------------------------------------------
@@ -387,8 +387,8 @@ class TestAutonomousActions:
         aid = await autonomous_actions.create_action(conn, "Runner", "prompt", "m1", USER)
         rid = await autonomous_actions.start_run(conn, aid, USER)
         assert rid > 0
-        await autonomous_actions.complete_run(conn, rid, result_text="Done", input_tokens=100)
-        runs = await autonomous_actions.get_action_runs(conn, aid)
+        await autonomous_actions.complete_run(conn, USER, rid, result_text="Done", input_tokens=100)
+        runs = await autonomous_actions.get_action_runs(conn, USER, aid)
         assert len(runs) == 1
         assert runs[0]["status"] == "completed"
 

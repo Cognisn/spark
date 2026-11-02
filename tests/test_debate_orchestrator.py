@@ -101,16 +101,18 @@ class TestFullDebate:
         orch = make_orchestrator(sync_db, services, events)
         orch.run(cid, "u1")
 
-        d = sync_db.call(debates.get_debate, cid)
+        d = sync_db.call(debates.get_debate, "u1", cid)
         assert d["state"] == "qa"
         assert d["opening_speaker"] == "pro"
-        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, "u1", cid)]
         assert types == ["announcement", "argument", "argument", "ruling"]
         roles = [
-            t["role"] for t in sync_db.call(debates.get_turns, cid) if t["turn_type"] == "argument"
+            t["role"]
+            for t in sync_db.call(debates.get_turns, "u1", cid)
+            if t["turn_type"] == "argument"
         ]
         assert roles == ["pro", "con"]
-        ex = sync_db.call(debates.get_exhibits, cid)
+        ex = sync_db.call(debates.get_exhibits, "u1", cid)
         assert any(items[0]["label"] == "A" for items in ex.values())
         event_types = [t for t, _ in events]
         assert "debate_state" in event_types and "exhibits" in event_types
@@ -138,9 +140,9 @@ class TestFullDebate:
         orch = make_orchestrator(sync_db, services, events)
         orch.run(cid, "u1")  # returns on failure, state still 'round'
 
-        d = sync_db.call(debates.get_debate, cid)
+        d = sync_db.call(debates.get_debate, "u1", cid)
         assert d["state"] == "round"
-        turns = sync_db.call(debates.get_turns, cid)
+        turns = sync_db.call(debates.get_turns, "u1", cid)
         assert turns[-1]["turn_type"] == "argument" and turns[-1]["status"] == "failed"
 
         # Retry: replace the failing service and run again; the failed turn is redone.
@@ -149,7 +151,7 @@ class TestFullDebate:
         )
         orch2 = make_orchestrator(sync_db, services, events)
         orch2.run(cid, "u1")
-        assert sync_db.call(debates.get_debate, cid)["state"] == "qa"
+        assert sync_db.call(debates.get_debate, "u1", cid)["state"] == "qa"
 
     def test_user_prompt_and_qa(self, sync_db) -> None:
         cid = _setup_debate(sync_db)
@@ -170,10 +172,10 @@ class TestFullDebate:
         }
         orch = make_orchestrator(sync_db, services, [])
         orch.run(cid, "u1")
-        qid = orch.submit_user_prompt(cid, "Why did pro win?")
+        qid = orch.submit_user_prompt(cid, "u1", "Why did pro win?")
         answer = orch.answer_qa(cid, "u1", qid)
         assert "exhibits were stronger" in answer
-        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, cid)]
+        types = [t["turn_type"] for t in sync_db.call(debates.get_turns, "u1", cid)]
         assert types[-2:] == ["qa_question", "qa_answer"]
 
 

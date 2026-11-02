@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.responses import Response
 
+from spark.identity.access import current_user_guid
+
 router = APIRouter()
 
 
@@ -94,9 +96,14 @@ async def set_theme(request: Request) -> JSONResponse:
 
 @router.post("/api/open-folder")
 async def open_folder(request: Request) -> JSONResponse:
-    """Open a system folder in the file browser."""
+    """Open a system folder in the file browser (personal mode: never on a server)."""
     import asyncio
     import sys
+
+    from spark.web.scope import server_refusal
+
+    if refused := server_refusal():
+        return refused
 
     folder_type = request.query_params.get("type", "logs")
 
@@ -125,11 +132,16 @@ async def open_folder(request: Request) -> JSONResponse:
 
 @router.post("/api/quit")
 async def quit_app(request: Request) -> JSONResponse:
-    """Shut down the Spark application."""
+    """Shut down the Spark application (personal mode: never on a server)."""
     import asyncio
     import logging
     import os
     import signal
+
+    from spark.web.scope import server_refusal
+
+    if refused := server_refusal():
+        return refused
 
     logger = logging.getLogger(__name__)
     logger.info("Quit requested via web UI — shutting down")
@@ -240,10 +252,11 @@ async def list_embedded_tools(request: Request) -> JSONResponse:
     if not ctx:
         return JSONResponse({"tools": []})
 
+    from spark.identity.access import tools_config_for
     from spark.tools.registry import get_builtin_tools
 
     config = {"embedded_tools": ctx.settings.get("embedded_tools") or {}}
-    tools = get_builtin_tools(config)
+    tools = get_builtin_tools(tools_config_for(request, config))
 
     result = [{"name": t.get("name", ""), "description": t.get("description", "")} for t in tools]
     return JSONResponse({"tools": result})
@@ -344,7 +357,7 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
     # Get actual tool counts from the registry
     from spark.tools.registry import get_builtin_tools
 
-    config = {"embedded_tools": {}}
+    config: dict[str, Any] = {"embedded_tools": {}}
     for cat in categories:
         cat_config: dict[str, Any] = {
             "enabled": bool(settings.get(f"embedded_tools.{cat['key']}.enabled", True)),
@@ -359,6 +372,10 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
                 settings.get("embedded_tools.filesystem.allowed_paths", []) or []
             )
         config["embedded_tools"][cat["key"]] = cat_config
+    from spark.tools.registry import ANY_ROLE, PERMISSIONS_KEY
+
+    # A summary of the instance's configuration, whatever the viewer's role.
+    config[PERMISSIONS_KEY] = ANY_ROLE
     all_tools = get_builtin_tools(config)
 
     # Map tool names to categories for counting
@@ -467,7 +484,7 @@ async def _get_recent_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        user_guid = getattr(request.app.state, "user_guid", "default")
+        user_guid = current_user_guid(request)
         all_convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
         non_favs = [c for c in all_convs if not c.get("is_favourite")]
         return non_favs[:5]
@@ -481,7 +498,7 @@ async def _get_favourite_conversations(request: Any) -> list[dict]:
     if not conv_mgr:
         return []
     try:
-        user_guid = getattr(request.app.state, "user_guid", "default")
+        user_guid = current_user_guid(request)
         all_convs = await asyncio.to_thread(conv_mgr.get_conversations, user_guid)
         return [c for c in all_convs if c.get("is_favourite")]
     except Exception:

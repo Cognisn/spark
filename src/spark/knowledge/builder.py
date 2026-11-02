@@ -81,7 +81,7 @@ class KnowledgeGraphBuilder:
             watermark = marks.get(key, 0)
             msgs = [
                 m
-                for m in self._db.call(msg_db.get_messages, cid, include_rolled_up=True)
+                for m in self._db.call(msg_db.get_messages, user_guid, cid, include_rolled_up=True)
                 if m["id"] > watermark and (m.get("content") or "").strip()
             ]
             if msgs:
@@ -138,7 +138,12 @@ class KnowledgeGraphBuilder:
         if not sources:
             return result
 
+        # A service of the build's own for its model (never the shared manager's)
         service = self._factory(model_id)
+        if service is None:
+            result["status"] = "failed"
+            result["error"] = f"No provider offers the model '{model_id}'"
+            return result
         service.set_model(model_id)
 
         for source_key, items in sources:

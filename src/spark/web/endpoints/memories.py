@@ -11,23 +11,29 @@ from typing import Any
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.identity.access import current_user_guid
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/memories")
 
 
 def _get_memory_index(request: Request) -> Any:
-    """Get or create a MemoryIndex from app state."""
-    idx = getattr(request.app.state, "_memory_index", None)
+    """Get or create the request's user's MemoryIndex (one per user, kept in app state)."""
+    user_guid = current_user_guid(request)
+    indexes: dict[str, Any] | None = getattr(request.app.state, "_memory_indexes", None)
+    if indexes is None:
+        indexes = {}
+        request.app.state._memory_indexes = indexes
+    idx = indexes.get(user_guid)
     if idx is None:
         db = getattr(request.app.state, "sync_db", None)
         if not db:
             return None
         from spark.index.memory_index import MemoryIndex
 
-        user_guid = getattr(request.app.state, "user_guid", "default")
         idx = MemoryIndex(db, user_guid)
-        request.app.state._memory_index = idx
+        indexes[user_guid] = idx
     return idx
 
 
@@ -144,6 +150,14 @@ async def export_memories(request: Request):  # type: ignore[no-untyped-def]
         "memories": all_mems,
     }
     content = json.dumps(export, indent=2, default=str)
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.EXPORT_DOWNLOADED,
+        resource_type="memories",
+        details={"kind": "memories", "count": len(all_mems)},
+    )
     now = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(
         iter([content]),

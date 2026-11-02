@@ -1,7 +1,9 @@
-"""Tool permission management."""
+"""Tool permission management: per conversation (scoped by the conversation's user)
+and global per user."""
 
 from __future__ import annotations
 
+from spark.database.scope import OWNED_CONVERSATIONS, owns_conversation
 from spark.db.dialect import upsert
 from spark.db.engine import Executor, Row
 
@@ -29,12 +31,15 @@ _GLOBAL_UPSERT = upsert(
 )
 
 
-async def check_tool_permission(db: Executor, conversation_id: int, tool_name: str) -> str | None:
-    """Check tool permission state. Returns 'allowed', 'denied', or None (no record)."""
+async def check_tool_permission(
+    db: Executor, user_guid: str, conversation_id: int, tool_name: str
+) -> str | None:
+    """A tool's state on one of the user's conversations: 'allowed', 'denied' or None."""
     state = await db.fetch_value(
-        """SELECT permission_state FROM conversation_tool_permissions
-            WHERE conversation_id = ? AND tool_name = ?""",
-        (conversation_id, tool_name),
+        f"""SELECT permission_state FROM conversation_tool_permissions
+            WHERE conversation_id = ? AND tool_name = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, tool_name, user_guid),
     )
     return str(state) if state is not None else None
 
@@ -46,48 +51,54 @@ async def set_tool_permission(
     permission_state: str,
     user_guid: str,
 ) -> None:
-    """Set or update a tool permission."""
-    await db.execute(
-        _CONVERSATION_UPSERT, (conversation_id, tool_name, permission_state, user_guid)
-    )
+    """Set or update a tool permission on one of the user's conversations."""
+    async with db.transaction() as conn:
+        if await owns_conversation(conn, user_guid, conversation_id):
+            await conn.execute(
+                _CONVERSATION_UPSERT, (conversation_id, tool_name, permission_state, user_guid)
+            )
 
 
-async def get_all_tool_permissions(db: Executor, conversation_id: int) -> list[Row]:
-    """Get all tool permissions for a conversation."""
+async def get_all_tool_permissions(db: Executor, user_guid: str, conversation_id: int) -> list[Row]:
+    """All tool permissions on one of the user's conversations."""
     return await db.fetch_all(
-        "SELECT * FROM conversation_tool_permissions WHERE conversation_id = ?",
-        (conversation_id,),
+        f"""SELECT * FROM conversation_tool_permissions WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, user_guid),
     )
 
 
 async def is_tool_allowed(
     db: Executor,
+    user_guid: str,
     conversation_id: int,
     tool_name: str,
-    user_guid: str = "",
 ) -> bool | None:
-    """Returns True if allowed, False if denied, None if no record (prompt user).
+    """True if allowed, False if denied, None if no record (prompt the user).
 
-    Checks conversation-level permissions first, then global permissions.
+    Checks the permission on the user's conversation first, then the user's
+    global permission.
     """
-    state = await check_tool_permission(db, conversation_id, tool_name)
+    state = await check_tool_permission(db, user_guid, conversation_id, tool_name)
     if state is not None:
         return state == "allowed"
 
-    if user_guid:
-        global_state = await check_global_tool_permission(db, user_guid, tool_name)
-        if global_state is not None:
-            return global_state == "allowed"
+    global_state = await check_global_tool_permission(db, user_guid, tool_name)
+    if global_state is not None:
+        return global_state == "allowed"
 
     return None
 
 
-async def delete_tool_permission(db: Executor, conversation_id: int, tool_name: str) -> None:
-    """Delete a tool permission (resets to prompt-on-first-use)."""
+async def delete_tool_permission(
+    db: Executor, user_guid: str, conversation_id: int, tool_name: str
+) -> None:
+    """Delete a tool permission on one of the user's conversations (prompt on next use)."""
     await db.execute(
-        """DELETE FROM conversation_tool_permissions
-            WHERE conversation_id = ? AND tool_name = ?""",
-        (conversation_id, tool_name),
+        f"""DELETE FROM conversation_tool_permissions
+            WHERE conversation_id = ? AND tool_name = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, tool_name, user_guid),
     )
 
 

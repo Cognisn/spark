@@ -1,0 +1,33 @@
+{% extends "auth_layout.html" %}
+{% block title %}Sign In{% endblock %}
+{% block content %}
+<p class="mb-4 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    Sign in with your email address and password.
+</p>
+<form method="POST" action="/auth/sign-in">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <div class="mb-3">
+        <label for="email" class="form-label visually-hidden">Email address</label>
+        <input type="email" id="email" name="email" class="form-control" placeholder="Email address"
+               autocomplete="username" required autofocus>
+    </div>
+    <div class="mb-3">
+        <label for="password" class="form-label visually-hidden">Password</label>
+        <input type="password" id="password" name="password" class="form-control" placeholder="Password"
+               autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn btn-app-primary w-100">
+        <i class="bi bi-box-arrow-in-right me-1"></i> Sign in
+    </button>
+</form>
+{% if sso_enabled %}
+<div class="text-center my-3" style="color: var(--app-text-muted); font-size: 0.8125rem;">or</div>
+<a class="btn btn-app-outline w-100" href="/identity/auth/sso/start">
+    <i class="bi bi-building-lock me-1"></i> Sign in with single sign-on
+</a>
+{% endif %}
+<div class="mt-4 text-center" style="font-size: 0.8125rem;">
+    <a href="/auth/password-reset">Forgotten your password?</a>
+</div>
+{% endblock %}

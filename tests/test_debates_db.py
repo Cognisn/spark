@@ -50,45 +50,48 @@ class TestDebatesCrud:
     async def test_create_and_get(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "Is tea better than coffee", "fixed", 2, "u1", AGENTS)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["topic"] == "Is tea better than coffee"
         assert d["state"] == "setup"
         assert d["agents"]["pro"]["model_id"] == "model-a"
         assert d["agents"]["judge"]["brief"] is None
 
     async def test_get_missing_returns_none(self, db) -> None:
-        assert await debates.get_debate(db, 9999) is None
+        assert await debates.get_debate(db, "u1", 9999) is None
 
     async def test_state_update(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "T", "judge", None, "u1", AGENTS)
-        await debates.update_debate_state(db, cid, "round", current_round=1, opening_speaker="con")
-        d = await debates.get_debate(db, cid)
+        await debates.update_debate_state(
+            db, "u1", cid, "round", current_round=1, opening_speaker="con"
+        )
+        d = await debates.get_debate(db, "u1", cid)
         assert (d["state"], d["current_round"], d["opening_speaker"]) == ("round", 1, "con")
 
     async def test_turns_and_exhibits(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
-        tid = await debates.add_turn(db, cid, 1, "pro", "argument", "My case", token_count=42)
+        tid = await debates.add_turn(db, "u1", cid, 1, "pro", "argument", "My case", token_count=42)
         await debates.add_exhibits(
             db,
+            "u1",
             tid,
             [{"label": "A", "title": "Study", "content": "Data", "source": "https://x"}],
         )
-        turns = await debates.get_turns(db, cid)
+        turns = await debates.get_turns(db, "u1", cid)
         assert turns[0]["turn_type"] == "argument" and turns[0]["round"] == 1
-        ex = await debates.get_exhibits(db, cid)
+        ex = await debates.get_exhibits(db, "u1", cid)
         assert ex[tid][0]["label"] == "A"
 
     async def test_update_turn_and_tokens(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
-        tid = await debates.add_turn(db, cid, 1, "pro", "argument", "x", status="failed")
-        await debates.update_turn(db, tid, status="complete", summary="short")
-        await debates.add_agent_tokens(db, cid, "pro", 100, 50)
-        turns = await debates.get_turns(db, cid)
+        tid = await debates.add_turn(db, "u1", cid, 1, "pro", "argument", "x", status="failed")
+        await debates.update_turn(db, "u1", tid, status="complete", summary="short")
+        await debates.add_agent_tokens(db, "u1", cid, "pro", 100, 50)
+        turns = await debates.get_turns(db, "u1", cid)
         assert turns[0]["status"] == "complete" and turns[0]["summary"] == "short"
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["agents"]["pro"]["tokens_sent"] == 100
 
 
@@ -106,7 +109,7 @@ class TestCapabilityColumns:
             "judge": {"model_id": "c", "brief": None, "allowed_skills": ["skill-creator"]},
         }
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["agents"]["pro"]["allowed_tools"] == ["web_search"]
         assert d["agents"]["pro"]["allowed_skills"] == []
         assert d["agents"]["con"]["allowed_tools"] is None
@@ -120,7 +123,7 @@ class TestCapabilityColumns:
             "WHERE conversation_id = ? AND role = 'pro'",
             (cid,),
         )
-        assert (await debates.get_debate(db, cid))["agents"]["pro"]["allowed_tools"] is None
+        assert (await debates.get_debate(db, "u1", cid))["agents"]["pro"]["allowed_tools"] is None
 
 
 class TestPanelAgentColumns:
@@ -141,7 +144,7 @@ class TestPanelAgentColumns:
             },
         }
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["agents"]["panellist:1"]["display_name"] == "Economist"
         assert d["agents"]["panellist:2"]["is_human"] is True
         assert d["agents"]["moderator"]["is_human"] is False
@@ -149,7 +152,7 @@ class TestPanelAgentColumns:
     async def test_debate_agents_unaffected(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["agents"]["pro"]["display_name"] is None
         assert d["agents"]["pro"]["is_human"] is False
 
@@ -178,7 +181,7 @@ class TestVoiceIdColumn:
             },
         }
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", agents)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
 
         assert d["agents"]["moderator"]["voice_id"] == "voice-mod"
         assert d["agents"]["panellist:1"]["voice_id"] == "voice-econ"
@@ -188,5 +191,5 @@ class TestVoiceIdColumn:
     async def test_absent_voice_id_is_none(self, db) -> None:
         cid = await _conv(db)
         await debates.create_debate(db, cid, "T", "fixed", 1, "u1", AGENTS)
-        d = await debates.get_debate(db, cid)
+        d = await debates.get_debate(db, "u1", cid)
         assert d["agents"]["pro"]["voice_id"] is None

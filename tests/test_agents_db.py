@@ -63,6 +63,7 @@ class TestAgentRuns:
         )
         await complete_agent_run(
             conn,
+            USER,
             "agent-002",
             status="completed",
             result_text="Summary done.",
@@ -70,7 +71,7 @@ class TestAgentRuns:
             output_tokens=200,
             tool_calls_json='[{"name": "read_file"}]',
         )
-        run = await get_agent_run(conn, "agent-002")
+        run = await get_agent_run(conn, USER, "agent-002")
         assert run is not None
         assert run["status"] == "completed"
         assert run["input_tokens"] == 500
@@ -103,7 +104,7 @@ class TestAgentRuns:
             user_guid=USER,
         )
 
-        runs = await get_agent_runs(conn, conv_id)
+        runs = await get_agent_runs(conn, USER, conv_id)
         assert len(runs) == 2
         # Newest first — both have the same timestamp so order by rowid DESC
         # effectively; just verify both are returned.
@@ -121,12 +122,12 @@ class TestAgentRuns:
             model_id="claude-3",
             user_guid=USER,
         )
-        run = await get_agent_run(conn, "agent-lookup")
+        run = await get_agent_run(conn, USER, "agent-lookup")
         assert run is not None
         assert run["agent_id"] == "agent-lookup"
         assert run["agent_name"] == "lookup"
         assert run["status"] == "running"
 
     async def test_get_nonexistent_agent_returns_none(self, conn: Database) -> None:
-        result = await get_agent_run(conn, "does-not-exist")
+        result = await get_agent_run(conn, USER, "does-not-exist")
         assert result is None

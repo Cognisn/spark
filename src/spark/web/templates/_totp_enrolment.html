@@ -1,0 +1,21 @@
+{# The enrolment's QR code, key and URI. Expects secret, uri and qr (a data URI or None). #}
+<div class="text-center mb-3">
+    {% if qr %}
+    <img src="{{ qr }}" alt="QR code for your authenticator app" width="200" height="200"
+         style="background: #fff; padding: 8px; border-radius: 8px;">
+    {% endif %}
+</div>
+<div class="mb-2" style="font-size: 0.8125rem;">
+    <div style="color: var(--app-text-secondary);">Key</div>
+    <div class="d-flex align-items-center gap-2">
+        <code id="totp-secret" style="word-break: break-all;">{{ secret }}</code>
+        <button type="button" class="btn btn-app-ghost btn-sm" data-copy="#totp-secret"><i class="bi bi-clipboard"></i> Copy</button>
+    </div>
+</div>
+<details class="mb-3" style="font-size: 0.8125rem;">
+    <summary style="color: var(--app-text-secondary); cursor: pointer;">Setup link</summary>
+    <div class="d-flex align-items-start gap-2 mt-2">
+        <code id="totp-uri" style="word-break: break-all;">{{ uri }}</code>
+        <button type="button" class="btn btn-app-ghost btn-sm" data-copy="#totp-uri"><i class="bi bi-clipboard"></i> Copy</button>
+    </div>
+</details>

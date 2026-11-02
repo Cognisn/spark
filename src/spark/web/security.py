@@ -17,7 +17,14 @@ to this instance.
 
 The middleware asks two callables, per request, for the policy and for the
 token it should expect, so the authentication behind it can be swapped
-(personal-mode sessions now, warden in server mode) without touching it.
+(personal-mode sessions, or warden in server mode) without touching it.
+
+An optional third callable, ``csrf_exempt``, names requests authenticated by
+a bearer credential (a warden API key) rather than a cookie. Such a request
+carries no ambient credential a forged page could borrow, so it needs no CSRF
+token; if it carries browser provenance (Origin, Referer or fetch metadata),
+that must still name one of the instance's own origins, and the Host check
+always applies.
 """
 
 from __future__ import annotations
@@ -107,6 +114,19 @@ class OriginPolicy:
         origins = {_origin(scheme.lower(), name, port) for name in names}
         return cls(frozenset(origins | {_normalise(o) for o in extra}))
 
+    @classmethod
+    def pinned(cls, base_url: str, extra: Iterable[str] = ()) -> OriginPolicy:
+        """Exactly the origin of ``base_url`` (a public address), plus ``extra``.
+
+        Never falls back to the Host header, whatever the bind address.
+        """
+        parts = urlsplit(base_url.strip())
+        if parts.scheme not in _DEFAULT_PORTS or not parts.hostname:
+            raise ValueError("the public address must be an absolute http or https URL")
+        scheme = parts.scheme.lower()
+        origin = _origin(scheme, parts.hostname, parts.port or _DEFAULT_PORTS[scheme])
+        return cls(frozenset({origin} | {_normalise(o) for o in extra}))
+
     def allows_host(self, host: str) -> bool:
         """Whether a Host header names this instance.
 
@@ -130,6 +150,9 @@ class OriginPolicy:
 
 PolicySource = Callable[[HTTPConnection], OriginPolicy]
 TokenSource = Callable[[HTTPConnection], "str | None"]
+ExemptSource = Callable[[HTTPConnection], bool]
+
+_PROVENANCE_HEADERS = ("origin", "referer", "sec-fetch-site")
 
 
 def provenance_ok(policy: OriginPolicy, headers: Headers, scheme: str) -> bool:
@@ -144,6 +167,11 @@ def provenance_ok(policy: OriginPolicy, headers: Headers, scheme: str) -> bool:
     if referer:
         return policy.allows_origin(origin_of_url(referer), host, scheme)
     return headers.get("sec-fetch-site", "").lower() == "same-origin"
+
+
+def _browser_provenance(headers: Headers) -> bool:
+    """Whether a request carries any of the provenance headers a browser sends."""
+    return any(name in headers for name in _PROVENANCE_HEADERS)
 
 
 def tokens_match(presented: str | None, expected: str | None) -> bool:
@@ -163,11 +191,13 @@ class RequestGuardMiddleware:
         policy: PolicySource,
         csrf_token: TokenSource,
         stream_prefixes: Sequence[str] = ("/stream/",),
+        csrf_exempt: ExemptSource | None = None,
     ) -> None:
         self.app = app
         self._policy = policy
         self._csrf_token = csrf_token
         self._stream_prefixes = tuple(stream_prefixes)
+        self._csrf_exempt = csrf_exempt
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -185,11 +215,19 @@ class RequestGuardMiddleware:
             return
 
         conn = HTTPConnection(scope)
-        if not provenance_ok(self._policy(conn), headers, str(scope.get("scheme", "http"))):
+        exempt = self._csrf_exempt is not None and self._csrf_exempt(conn)
+        policy = self._policy(conn)
+        if exempt and not _browser_provenance(headers):
+            # A bearer request from a program: no browser provenance to check,
+            # but the Host header must still name this instance.
+            provenance = policy.allows_host(headers.get("host", ""))
+        else:
+            provenance = provenance_ok(policy, headers, str(scope.get("scheme", "http")))
+        if not provenance:
             self._log_refusal("Origin", method, path, conn)
             await _refuse(scope, receive, send, ORIGIN_REFUSED, headers)
             return
-        if not unsafe:
+        if not unsafe or exempt:
             await self.app(scope, receive, send)
             return
 

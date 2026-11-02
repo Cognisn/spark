@@ -61,14 +61,14 @@ def test_two_round_judge_decides_debate(sync_db) -> None:
     orch = DebateOrchestrator(sync_db, lambda m: services[m], {}, status_callback=lambda t, d: None)
     orch.run(cid, "u1")
 
-    d = sync_db.call(debates.get_debate, cid)
+    d = sync_db.call(debates.get_debate, "u1", cid)
     assert d["state"] == "qa" and d["opening_speaker"] == "con"
-    args = [t for t in sync_db.call(debates.get_turns, cid) if t["turn_type"] == "argument"]
+    args = [t for t in sync_db.call(debates.get_turns, "u1", cid) if t["turn_type"] == "argument"]
     assert [a["role"] for a in args] == ["con", "pro", "con", "pro"]
 
-    qid = orch.submit_user_prompt(cid, "Why con?")
+    qid = orch.submit_user_prompt(cid, "u1", "Why con?")
     assert "exhibit B" in orch.answer_qa(cid, "u1", qid)
 
-    md = export_debate_markdown(sync_db, cid)
+    md = export_debate_markdown(sync_db, "u1", cid)
     assert "## Round 2" in md and "Con wins" in md
-    assert json.loads(export_debate_json(sync_db, cid))["state"] == "qa"
+    assert json.loads(export_debate_json(sync_db, "u1", cid))["state"] == "qa"

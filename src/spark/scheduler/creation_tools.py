@@ -249,6 +249,12 @@ def _create_action(
     model_id = tool_input.get("model_id", "").strip()
     if not model_id:
         return "Error: model_id is required."
+    offered = config.get("_offered_models") or ()
+    if offered and model_id not in offered:
+        return (
+            f"Error: the model '{model_id}' is not offered on this instance. "
+            f"Use one of: {', '.join(offered)}."
+        )
 
     schedule_type = tool_input.get("schedule_type", "one_off")
     schedule_value = tool_input.get("schedule_value", "")

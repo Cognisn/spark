@@ -55,7 +55,7 @@ class ContextCompactor:
 
     def __init__(
         self,
-        llm_service: LLMService,
+        llm_service: LLMService | None,
         db: SyncDatabase,
         context_limits: ContextLimitResolver,
         *,
@@ -72,6 +72,11 @@ class ContextCompactor:
         self._summary_ratio = summary_ratio
         self._locked_model = locked_model
 
+    @property
+    def locked_model(self) -> str | None:
+        """The model every compaction uses, when one is locked (the caller resolves its service)."""
+        return self._locked_model
+
     def check_and_compact(
         self,
         conversation_id: int,
@@ -80,8 +85,17 @@ class ContextCompactor:
         *,
         in_tool_use_loop: bool = False,
         status_callback: Any | None = None,
+        service: LLMService | None = None,
     ) -> bool:
-        """Check if compaction is needed and perform it. Returns True if compacted."""
+        """Check if compaction is needed and perform it. Returns True if compacted.
+
+        ``service`` is the one to summarise with and count tokens through (a turn's
+        own); without it the compactor's own applies. One compactor serves every
+        turn, so the service is passed down each call, never kept on the instance.
+        """
+        service = service or self._llm
+        if service is None:
+            return False
         from spark.database import conversations
 
         conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
@@ -134,15 +148,18 @@ class ContextCompactor:
             )
 
         try:
-            return self._perform_compaction(conversation_id, model_id, user_guid, status_callback)
+            return self._perform_compaction(
+                service, conversation_id, model_id, user_guid, status_callback
+            )
         except Exception as e:
             logger.error("Compaction failed: %s", e)
             if total_tokens >= emergency:
-                return self._emergency_truncation(conversation_id, model_id, user_guid)
+                return self._emergency_truncation(service, conversation_id, model_id, user_guid)
             return False
 
     def _perform_compaction(
         self,
+        service: LLMService,
         conversation_id: int,
         model_id: str,
         user_guid: str,
@@ -151,7 +168,9 @@ class ContextCompactor:
         """Execute LLM-driven context compaction."""
         from spark.database import conversations, messages
 
-        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=False
+        )
         if len(all_msgs) < 4:
             return False
 
@@ -168,9 +187,9 @@ class ContextCompactor:
         if status_callback:
             status_callback("compaction_progress", {"stage": "invoking_model"})
 
-        # Invoke with low temperature for focused output
-        effective_model = self._locked_model or model_id
-        result = self._llm.invoke_model(
+        # Invoke with low temperature for focused output (the caller resolves a
+        # service for a locked compaction model)
+        result = service.invoke_model(
             [{"role": "user", "content": prompt}],
             max_tokens=max_output,
             temperature=0.2,
@@ -183,6 +202,7 @@ class ContextCompactor:
 
         # Store compacted content
         return self._store_compaction(
+            service,
             conversation_id,
             all_msgs,
             content,
@@ -193,8 +213,9 @@ class ContextCompactor:
 
     def _store_compaction(
         self,
+        service: LLMService,
         conversation_id: int,
-        original_messages: list[dict],
+        original_messages: list[dict[str, Any]],
         compacted_content: str,
         original_tokens: int,
         user_guid: str,
@@ -216,7 +237,7 @@ class ContextCompactor:
             return False
 
         # Marker, roll-up, history and new total in one transaction
-        compacted_tokens = self._llm.count_tokens(compacted_content)
+        compacted_tokens = service.count_tokens(compacted_content)
         new_total = self._db.call(
             messages.apply_compaction,
             conversation_id,
@@ -247,14 +268,18 @@ class ContextCompactor:
 
         return True
 
-    def _emergency_truncation(self, conversation_id: int, model_id: str, user_guid: str) -> bool:
+    def _emergency_truncation(
+        self, service: LLMService, conversation_id: int, model_id: str, user_guid: str
+    ) -> bool:
         """Last resort: keep only recent messages."""
         from spark.database import conversations, messages
 
         context_window = self._context_limits.get_context_window(model_id)
         target = int(context_window * 0.2)
 
-        all_msgs = self._db.call(messages.get_messages, conversation_id, include_rolled_up=False)
+        all_msgs = self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=False
+        )
         if not all_msgs:
             return False
 
@@ -279,7 +304,7 @@ class ContextCompactor:
             messages.apply_compaction,
             conversation_id,
             truncation_notice,
-            self._llm.count_tokens(truncation_notice),
+            service.count_tokens(truncation_notice),
             rollup_ids,
             user_guid,
             summary=None,
@@ -290,7 +315,7 @@ class ContextCompactor:
         return True
 
 
-def _format_messages(msgs: list[dict]) -> str:
+def _format_messages(msgs: list[dict[str, Any]]) -> str:
     """Format messages into readable text for compaction prompt."""
     lines: list[str] = []
     for msg in msgs:
@@ -321,7 +346,7 @@ def _format_messages(msgs: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def _find_in_flight_tool_messages(msgs: list[dict]) -> set[int]:
+def _find_in_flight_tool_messages(msgs: list[dict[str, Any]]) -> set[int]:
     """Find message IDs containing tool_use blocks without matching tool_results."""
     # Collect all completed tool_use_ids
     completed: set[str] = set()

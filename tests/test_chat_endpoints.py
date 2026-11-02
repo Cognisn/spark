@@ -41,6 +41,21 @@ def client(mock_ctx: MagicMock) -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def every_conversation_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These apps have a mock manager and no database: every id is the local user's.
+
+    Ownership itself is tested against a real database (test_user_scoping_web).
+    """
+    from spark.web.endpoints import chat, conversations
+
+    async def owned(request: object, conversation_id: int) -> dict:
+        return {"id": conversation_id}
+
+    monkeypatch.setattr(chat, "owned_conversation", owned)
+    monkeypatch.setattr(conversations, "owned_conversation", owned)
+
+
 def _auth(client: TestClient) -> dict:
     """Authenticate and return cookies dict."""
     return sign_in(client)

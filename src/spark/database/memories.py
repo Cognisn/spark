@@ -142,15 +142,16 @@ async def memory_exists(db: Executor, user_guid: str, content: str) -> bool:
     return found is not None
 
 
-async def update_last_accessed(db: Executor, memory_ids: list[int]) -> None:
-    """Update last_accessed timestamp for retrieved memories."""
+async def update_last_accessed(db: Executor, user_guid: str, memory_ids: list[int]) -> None:
+    """Update the last_accessed timestamp of the user's retrieved memories."""
     if not memory_ids:
         return
     now = datetime.now(timezone.utc).isoformat()
     placeholders = ", ".join("?" for _ in memory_ids)
     await db.execute(
-        f"UPDATE user_memories SET last_accessed = ? WHERE id IN ({placeholders})",
-        (now, *memory_ids),
+        f"UPDATE user_memories SET last_accessed = ? "
+        f"WHERE user_guid = ? AND id IN ({placeholders})",
+        (now, user_guid, *memory_ids),
     )
 
 
@@ -191,7 +192,12 @@ async def update_memory(
 
 
 async def reassign_user(db: Executor, from_user_guid: str, to_user_guid: str) -> int:
-    """Move every memory of one user to another. Returns how many moved."""
+    """Move every memory of one user to another. Returns how many moved.
+
+    Deliberately across users: personal mode's start-up moves memories stored
+    under the 0.1 placeholder guid ``default`` to the local user. Never reached
+    from a user's request.
+    """
     return await db.execute(
         "UPDATE user_memories SET user_guid = ? WHERE user_guid = ?",
         (to_user_guid, from_user_guid),

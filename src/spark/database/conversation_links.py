@@ -8,9 +8,10 @@ __all__ = ["add_link", "get_linkable_conversations", "get_links", "remove_link"]
 
 
 async def add_link(db: Executor, source_id: int, target_id: int, user_guid: str) -> bool:
-    """Link source conversation to target (one-directional). Returns True on success.
+    """Link one of the user's conversations to another of theirs (one-directional).
 
-    A duplicate link, or a link to a conversation that does not exist, is refused.
+    Returns True on success. A duplicate link, or a link from or to a conversation
+    that does not exist or is another user's, is refused.
     """
     if source_id == target_id:
         return False
@@ -19,10 +20,12 @@ async def add_link(db: Executor, source_id: int, target_id: int, user_guid: str)
             new_id = await conn.fetch_value(
                 """INSERT INTO conversation_links
                     (source_conversation_id, target_conversation_id, user_guid)
-                    VALUES (?, ?, ?)
+                    SELECT s.id, t.id, s.user_guid
+                    FROM conversations s, conversations t
+                    WHERE s.id = ? AND t.id = ? AND s.user_guid = ? AND t.user_guid = ?
                     ON CONFLICT (source_conversation_id, target_conversation_id) DO NOTHING
                     RETURNING id""",
-                (source_id, target_id, user_guid),
+                (source_id, target_id, user_guid, user_guid),
             )
     except Exception:  # foreign key: the conversation does not exist
         return False
@@ -41,15 +44,15 @@ async def remove_link(db: Executor, source_id: int, target_id: int, user_guid: s
 
 
 async def get_links(db: Executor, source_id: int, user_guid: str) -> list[Row]:
-    """Get all conversations linked from the source."""
+    """The user's conversations linked from the source (never another user's)."""
     return await db.fetch_all(
         """SELECT c.id, c.name, c.model_id, c.created_at
             FROM conversation_links l
             JOIN conversations c ON c.id = l.target_conversation_id
             WHERE l.source_conversation_id = ? AND l.user_guid = ?
-            AND c.is_active = 1
+            AND c.user_guid = ? AND c.is_active = 1
             ORDER BY c.name""",
-        (source_id, user_guid),
+        (source_id, user_guid, user_guid),
     )
 
 

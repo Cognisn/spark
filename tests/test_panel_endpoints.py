@@ -172,6 +172,7 @@ class TestPanelPrompt:
         db = client.app.state.conversation_manager._db
         db.call(
             debates.update_debate_state,
+            "test-user",
             cid,
             "round",
             current_round=1,
@@ -189,7 +190,7 @@ class TestPanelPrompt:
         _auth(client)
         cid = client.post("/conversations/api/create", json=PANEL_PAYLOAD).json()["id"]
         db = client.app.state.conversation_manager._db
-        db.call(debates.update_debate_state, cid, "qa")
+        db.call(debates.update_debate_state, "test-user", cid, "qa")
         stub = ScriptedService([text_response("Because they agreed.")])
         client.app.state.conversation_manager._get_llm_service_for_model = lambda m: stub
         r = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "Why?"})

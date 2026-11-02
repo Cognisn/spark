@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Spark - My Account{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 800px;">
+    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">My account</h4>
+    {% include "_page_messages.html" %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-person me-2"></i> Profile</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <div class="d-flex justify-content-between mb-2">
+                <span style="color: var(--app-text-secondary);">Email address</span><span>{{ email }}</span>
+            </div>
+            {% if display_name %}
+            <div class="d-flex justify-content-between mb-2">
+                <span style="color: var(--app-text-secondary);">Name</span><span>{{ display_name }}</span>
+            </div>
+            {% endif %}
+            <div class="d-flex justify-content-between mb-2">
+                <span style="color: var(--app-text-secondary);">Roles</span>
+                <span>{% for role in roles %}<span class="badge-app badge-app-primary ms-1">{{ role }}</span>{% else %}none{% endfor %}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+                <span style="color: var(--app-text-secondary);">Sign-in</span>
+                <span>{% if sso_only %}Single sign-on only{% else %}Password or single sign-on{% endif %}</span>
+            </div>
+        </div>
+    </div>
+
+    {% if not sso_only %}
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-key me-2"></i> Change password</div>
+        <div class="card-body">
+            <form method="POST" action="/account/password">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="mb-3">
+                    <label for="current" class="form-label">Current password</label>
+                    <input type="password" id="current" name="current" class="form-control" autocomplete="current-password" required>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="password" class="form-label">New password</label>
+                        <input type="password" id="password" name="password" class="form-control" autocomplete="new-password" minlength="{{ min_length }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="confirm" class="form-label">New password again</label>
+                        <input type="password" id="confirm" name="confirm" class="form-control" autocomplete="new-password" minlength="{{ min_length }}" required>
+                    </div>
+                </div>
+                <p style="font-size: 0.8125rem; color: var(--app-text-muted);">At least {{ min_length }} characters. Your other sessions are signed out.</p>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-check-lg me-1"></i> Change password</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-shield-lock me-2"></i> Two-step verification</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if mfa_enrolled %}
+            <p class="mb-0"><i class="bi bi-check-circle-fill me-1" style="color: var(--app-success);"></i>
+                An authenticator app is set up. To replace it or your recovery codes, ask an administrator to reset it; you will set it up again at your next sign-in.</p>
+            {% else %}
+            <p>No authenticator app is set up for your account.</p>
+            <form method="POST" action="/account/mfa">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-qr-code me-1"></i> Set up an authenticator app</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if may_use_keys %}
+    <a class="btn btn-app-outline btn-sm" href="/account/api-keys"><i class="bi bi-key me-1"></i> My API keys</a>
+    {% endif %}
+</div>
+{% endblock %}

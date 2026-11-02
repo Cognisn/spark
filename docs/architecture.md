@@ -114,9 +114,97 @@ graph TB
 - **FastAPI** application with Jinja2 templates
 - **Uvicorn** ASGI server (random port per startup)
 - **SSE streaming** for real-time chat responses via `sse-starlette`
-- **Auth middleware** protecting all routes except login/static, through `app.state.authenticator` (a `WebAuthenticator`: personal mode's single-use, expiring, rate-limited sign-in codes and one session; server mode swaps in warden)
+- **Auth middleware** protecting all routes except login/static, through `app.state.authenticator` (a `WebAuthenticator`: personal mode's single-use, expiring, rate-limited sign-in codes and one session; server mode's warden sessions, below)
 - **Request guard** (`spark.web.security`) refusing state-changing requests and event streams that do not come from the instance's own origin, and state-changing requests without the session's CSRF token; pages send the token through `static/js/csrf.js`
+- **Origin pin**: personal mode accepts its own bind address (or, bound to every address, the request's own Host); a server accepts exactly the origin of `server.public_base_url` (plus `interface.allowed_origins`) and refuses any other Host header, event streams included
+
+### Warden sessions (server mode)
+
+`spark.identity.runtime.IdentityRuntime` starts warden inside the web process once the
+database is open: warden's configuration is derived from `server.public_base_url`
+(required in server mode, https unless loopback) and the `warden` section of konfig;
+the audit recorder is installed first; a missing signing key is rotated in and the
+TOTP and CSRF keys are generated into konfig's secrets store, under an advisory lock
+so replicas agree. `spark.identity.web.WardenAuthenticator` then answers the auth
+middleware on every request:
+
+| Cookie | Attributes | Holds |
+|---|---|---|
+| `__Host-spark-access` | HttpOnly, Secure, SameSite=Strict, path `/` | warden's access token (kept as long as the refresh token, so an expired one still reaches the server) |
+| `__Secure-spark-refresh` | HttpOnly, Secure, SameSite=Strict, path `/auth/session/refresh` only | the rotating refresh token |
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant M as Auth middleware
+    participant R as /auth/session/refresh
+    B->>M: GET /chat (access token expired)
+    M-->>B: 303 /auth/session/refresh?next=/chat
+    B->>R: GET (refresh cookie sent only here)
+    R-->>B: 303 /chat, both cookies rotated
+    B->>M: fetch /conversations/api/list (expired)
+    M-->>B: 401 X-Spark-Session: refresh
+    B->>R: POST (Origin and CSRF checked), csrf.js, one at a time
+    R-->>B: 204, both cookies rotated; csrf.js retries the fetch
+```
+
+- A request with no usable session is sent to `/auth/sign-in?next=...` (page loads) or answered 401 with `X-Spark-Session: sign-in`. `next` is only ever a same-origin path.
+- The signed-in user is `request.state.identity` (a `SparkIdentity`, permissions from warden) and `request.state.user_guid`, the guid mapped to the warden user (`user_identities`). Endpoints ask `spark.identity.access.current_user_guid(request)`, which in server mode never falls back to the process's own guid.
+- CSRF: a session's token is an HMAC-SHA256 of its warden session id under a per-instance key in konfig's secrets store (`spark.csrf-key`), so it survives refreshes and never matches another session; the sign-in form has its own cookie-bound token.
+- API keys: `Authorization: Bearer wdn_...` authenticates through warden (the key's scopes intersected with its user's permissions) and needs no CSRF token, having no ambient credential; Origin and Referer are still checked when present, and a bearer together with a session cookie is refused.
+- Event streams cannot read a 401, so the chat, debate and panel pages call `SparkSession.ensure()` (in `csrf.js`) before opening one.
+- `/auth/sign-out` (and the menu's `/logout`) revokes the warden session and clears both cookies.
+- `spark identity create-admin --email EMAIL [--link-user-guid GUID]` creates the first administrator (idempotent) and can bind the interim single-user guid to them.
 - **Static files** served from `web/static/` (CSS, JS, fonts)
+
+### Identity screens (server mode)
+
+SPARK renders every identity screen (Jinja and Bootstrap) and calls warden's Python API
+on the server; warden's JSON routers are not mounted. Every route answers 404 in
+personal mode, whose sign-in is unchanged.
+
+| Screens | Module | Needs |
+|---|---|---|
+| `/auth/sign-in`, `/auth/challenge` (TOTP or recovery code; the enrolment warden requires, with the recovery codes shown once) | `endpoints/identity.py` | nothing (public) |
+| `/auth/invitation`, `/auth/password-reset`, `/auth/reset`, `/identity/auth/sso/start` and `/callback`, `/auth/sso/complete` | `endpoints/lifecycle.py` | nothing (public) |
+| `/account` (profile, password, authenticator), `/account/api-keys` | `endpoints/account.py` | a session; `spark.api_keys` for keys |
+| `/admin/users`, `/admin/invitations`, `/admin/api-keys` | `endpoints/administration.py` | `spark.users.admin` |
+| `/audit`, `/audit/export` (CSV or NDJSON) | `endpoints/audit.py` | `spark.audit.read`; `spark.audit.export` to export |
+
+- **Before a session**: the screens extend the standalone `auth_layout.html`. Each form used before a session exists keeps its CSRF token in a cookie scoped to its own path (`__Secure-spark-sign-in` for sign-in, `__Secure-spark-form` for the invitation and reset screens); the challenge's token lives only in `__Secure-spark-challenge` (path `/auth/challenge`) and its forms' CSRF token is bound to it. Screens carrying a token or a secret are `no-store` and `no-referrer`, and the page takes a link's token out of the address bar. Every refused code, link or handoff gets one fixed message.
+- **TOTP**: the enrolment's `otpauth://` URI is drawn as a QR code on the server (`spark.web.qr`, reportlab's QR widget, an SVG data URI), beside the key and URI as text. warden 0.1.0 cannot replace a confirmed enrolment for its own user, so replacing one is an administrator's TOTP reset.
+- **Single sign-on**: the provider's redirect URI is `server.public_base_url` + `/identity/auth/sso/callback` (warden's auth prefix). The login binding cookie (`__Secure-warden-sso`, SameSite=Lax) is scoped to `/identity/auth/sso`; the callback hands the same binding to `/auth/sso/complete` alone (`__Secure-spark-sso`), which exchanges the handoff code on the server and sets the session cookies.
+- **Mail**: SPARK has no mail service in server mode, so warden's `MailSender` is `spark.identity.mail.LinkCapture`. Inside an administrator's invitation or reset request it keeps the message so the screen shows the link once; anywhere else (a signed-out reset request, warden's enrolment notice) the message is dropped. `IdentityRuntime.start(mail_sender=...)` takes a real sender.
+- **API keys**: a user's own key may not carry scopes beyond the permissions of the request creating it, so a key cannot mint a wider one (warden also caps scopes at the user's permissions).
+- **Menu**: `spark.web.menu.identity_menu`, a template global, lists the entries the user's permissions allow in an Account menu with sign-out; it is empty in personal mode.
+- **Audit**: warden records every identity and administration change itself, and its export records the export; the screens add no audit events of their own.
+
+### Audit (server mode)
+
+warden records its own identity and administration actions (sign-in, roles,
+invitations, API keys) in its hash-chained audit trail (`warden.audit_events`).
+SPARK records its own actions there too, through `spark.identity.audit`. Its action
+catalogue (`ACTIONS`) is registered on warden's recorder when the identity runtime
+starts, under `spark.`:
+
+| Action | Severity | Resource | Recorded when |
+|---|---|---|---|
+| `spark.settings.instance.changed` | notice | `setting`, the key | an instance setting is set or cleared (in the write's transaction) |
+| `spark.settings.secret.changed` | notice | `setting`, the key | a secret is set or cleared in konfig's secrets store |
+| `spark.settings.preference.changed` | info | `setting`, the key | a user changes a preference |
+| `spark.tool_result.flagged` | warning | `tool`, the tool | a tool result matches injection or jailbreak patterns (A16) |
+| `spark.tool_result.policy_changed` | notice | `setting`, the key | an administrator changes a tool result action |
+| `spark.tool.refused` | notice | `tool`, the tool | a tool is refused at dispatch, by role or by mode (outcome failure) |
+| `spark.file.downloaded` | info | `file`, the file id | a user downloads a file from their file area |
+| `spark.export.downloaded` | info | `conversation`, `memories` or `skill` | a conversation export, memories export or skill download |
+| `spark.action.refused` | warning | `action`, the action id | a scheduled action is refused for its owner (outcome failure) |
+
+- **Actor**: the warden user id, as in warden's own events, so one actor filter shows a person's whole trail; the SPARK guid is kept in the details as `user_guid`. A guid with no warden user (or `operator`, a change made outside the web) is recorded as given.
+- **Details** never carry a value or content: keys naming a value, secret, password, token, content, text, snippet, body, message or prompt are dropped at any depth (`scrub`).
+- **Where events come from**: the hooks wave 2 left (`spark.instance_settings.audit` and `spark.safety.untrusted`), the tool registry's refusal hook (`spark.tools.registry.set_refusal_hook`, reported where every dispatch route asks `unavailable_reason`), the executor's refusal, and the download and export endpoints. The web lifespan installs the hooks while warden runs, and the active worker installs them while it holds the worker lock; personal mode installs none.
+- **Transactions**: an instance setting's audit row is written in the setting's own transaction (warden's recorder joins it through the raw psycopg connection), so both commit or roll back together, and a failed audit fails the change. Secrets live in konfig's store, not the database, and preferences, downloads, exports, flagged results and refusals are recorded on their own, after the action.
+- **Never in the way**: apart from that joined write, a failed audit is logged and never breaks the request or the turn. Hooks called on a worker thread schedule the write on the database's event loop without waiting.
+- New code records an event with `await audit.emit_request(request, ...)` or `await audit.emit(...)` (async), `audit.submit(...)` (synchronous code on any thread) or `await audit.record_in(conn, ...)` inside a SPARK transaction; a new action is a new `ACTIONS` entry.
 
 ### Core
 
@@ -127,7 +215,39 @@ graph TB
 
 ### LLM Layer
 
-- **LLMManager** -- Routes requests across multiple registered providers
+- **LLMManager** -- Routes requests across multiple registered providers. On a server it
+  follows `models.offered` (empty offers every model): `list_all_models()` lists only the
+  models offered and `is_offered()` answers, by the same rule, whether a model may be
+  chosen. `set_model()` never asks, so a conversation pinned to a model that has left
+  the list keeps working. Sub-agents may be given only an offered model (the
+  conversation's own model, used when none is named, keeps working), the models listed
+  to the LLM for them are only those offered, and the action creation assistant may
+  create an action only with an offered model. One manager serves every user of a
+  server, so creating a conversation there never sets its model
+- **A model service for each turn** -- `LLMManager.service_for(model_id)` returns a copy of
+  the provider that lists the model with the model set on the copy: it shares the
+  provider's client and caches, but its model is its own, and the manager's active
+  provider and model never move. Like `set_model()` it does not ask whether the model is
+  offered. Each chat turn resolves one for its conversation's model and uses it for every
+  call it makes (invoking, token counting, the tool loop, prompt caching and compaction,
+  which uses a service of its own when a compaction model is locked), so turns on
+  different models at once never answer with each other's. Sub-agents, debates, panels
+  and knowledge graph builds get a service of their own the same way. The only remaining
+  caller of the shared `LLMManager.set_model()` is personal mode's conversation creation,
+  for its single local user; a settings change replaces the providers and keeps the active
+  one. A knowledge graph build's model is `knowledge_graph.build_model`, else the user's
+  default model (`spark.web.models.default_model()`: the user's preference on a server,
+  else the instance's, offered only; `config.yaml`'s in personal mode), else the first
+  model listed
+- **Models offered at every choice** (`spark.web.models`) -- Every endpoint where a user
+  chooses a model asks `not_offered()` first and answers 409, naming the model, for one
+  not offered: creating a conversation (its debate and panel agents included), changing
+  a conversation's model, creating and editing an action, AI-creating an action,
+  approving a sub-agent's model and the default model preference. The chat info
+  (`model_offered`, `model_notice`) and page tell the user when their conversation's
+  model is no longer offered. AI-creating an action answers through a service of its
+  own for the chosen model, so no user's choice changes the shared manager's model.
+  There is no per-role model permission: every signed-in user is offered the same models
 - **LLMService** -- Abstract base class that all providers implement
 - **ContextLimitResolver** -- Resolves context window and max output for any model ID
 
@@ -148,7 +268,7 @@ Each provider normalises responses to a common format:
 
 ### Tool System
 
-- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable
+- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable whatever the role, and every other category needs `spark.tools.<category>` among the signed-in user's permissions. The permissions travel with the embedded tools configuration (`_permissions`, beside `_user_guid`) to the conversation manager, sub-agents, debates, panels and scheduled actions; without them a server refuses every built-in tool. Settings pages ask with `ANY_ROLE`, which is what the deployment offers. Personal mode has one local operator and ignores permissions
 - **Command policy** (`spark.tools.command_policy`) -- Splits a system command line in the dialect of the shell that runs it (POSIX shells, cmd.exe, PowerShell), follows nested shells, and checks every command name against the blocklist; a line it cannot split with confidence is refused
 - **ToolSelector** -- Intelligently selects relevant tools based on message content
 - Each tool module exports `get_tools()` (definitions) and `execute()` (handler)
@@ -174,7 +294,30 @@ Each provider normalises responses to a common format:
 ### Scheduler
 
 - **ActionRunner** -- APScheduler-based background scheduler for autonomous actions
-- **ActionExecutor** -- Runs a single action with its own LLM instance and tool access
+- **ActionExecutor** -- Runs a single action with its own LLM instance and tool access, as one user (its owner, or the signed-in user for run now)
+- **Owners** (`spark.scheduler.owners`) -- On a server, resolves an action owner's standing in warden at run time
+- In personal mode the tray daemon runs the single local user's actions as that user. On a
+  server `spark worker` runs every user's enabled actions
+  (`autonomous_actions.get_enabled_actions_for_worker`, deliberately unscoped and called only
+  by the worker), each as its owner. The worker has no user of its own and never reads the
+  process's user guid (`spark.core.user_guid`, personal mode and the tray only): it builds a
+  warden runtime over its own pool, as the web does but without the HTTP parts, and before
+  each run reads the owner's warden user (`user_identities`), status and current
+  permissions. An owner with no warden user, or one suspended or deactivated, is refused;
+  the executor then refuses an owner without `spark.actions` (run now included). A refusal
+  is recorded as a run with status `refused` and its reason, and the action stays enabled.
+  An allowed run uses the owner's guid for its run records, memory index and file area
+  (`_user_guid`, `_files_db`), and the owner's permissions for its tools. A refusal is
+  also audited (`spark.action.refused`).
+- **warden's housekeeping** (`spark.identity.pruning`) -- The active worker builds one warden
+  runtime for all its duties and prunes warden's data: `identity.pruning(every_seconds=...)`
+  (expired refresh and single-use tokens, MFA challenges, sign-in throttle windows) and
+  `identity.sso.prune()` every `worker.identity_prune_seconds` (default 3600), and, when
+  `warden.audit.retention_days` is set, warden's audit retention purge every
+  `worker.audit_purge_seconds` (default 86400). The purge needs `DELETE` on the audit
+  table; a refused purge is logged and tried again.
+- Action names are unique per user (`UNIQUE(user_guid, name)`); a clash answers 409 and
+  names only the caller's own action.
 - **CreationTools** -- AI-assisted action creation with validation and scheduling
 
 ### Daemon
@@ -269,7 +412,9 @@ sequenceDiagram
 ```
 
 `application.run()` validates the mode first (`spark.mode.configure`): server mode
-refuses to start without a PostgreSQL `database.url`.
+refuses to start without a PostgreSQL `database.url` or a valid `server.public_base_url`,
+or with an invalid `warden` section. A server generates no sign-in code and opens no
+browser; its lifespan also starts warden's runtime (above).
 
 ## Modes
 
@@ -281,7 +426,7 @@ the raw settings.
 |---|---|---|
 | Database | SQLite in the platform data directory | PostgreSQL from `database.url` (`SPARK__DATABASE__URL`) |
 | Schema changes | applied automatically at start-up | `spark migrate` first; start-up refuses a database behind head |
-| Users | one local user | multi-user (identity through warden from a later release) |
+| Users | one local user, terminal sign-in code | multi-user, signed in through warden (email and password, second factor, API keys) |
 | Local tools | system command, filesystem and email tools available | not registered, refused by name, settings hidden |
 
 ## Data Layer
@@ -311,6 +456,51 @@ flowchart LR
 - PostgreSQL sessions run in UTC in the `spark` schema; timestamps are returned as
   ISO 8601 text in both engines. Pool connections register pgvector, so numpy arrays
   are sent as `vector` values and `vector` columns come back as numpy arrays.
+
+### User scoping
+
+- Every repository read and write a user's request can reach takes the caller's user
+  guid (after the executor) and is scoped by it. Rows with their own `user_guid` filter
+  on it; rows reached through a parent id (a conversation's messages, files, tool
+  states, index elements, agent runs and debate turns; an action's runs and tool
+  permissions; a turn's exhibits) are scoped through the parent's owner, with the
+  subqueries in `spark.database.scope` (`OWNED_CONVERSATIONS`, `OWNED_ACTIONS`). A
+  caller holding another user's id gets nothing back and changes nothing; a write
+  under another user's parent raises `NotOwned` or returns without writing.
+- Endpoints answer such an id with 404, exactly as for an id that does not exist, so
+  one user never learns that another user's data exists (`spark.web.scope`).
+- Deliberately unscoped, and never reached from a user's request: the scheduler
+  worker's listing of every user's enabled actions (`get_enabled_actions_for_worker`,
+  each row carrying its owner) and its action locks (`try_lock_action`,
+  `unlock_action`, `clear_stale_locks`), usage retention (`usage.cleanup_old_usage`)
+  and personal mode's start-up move of memories from the 0.1 placeholder guid
+  (`memories.reassign_user`).
+- One conversation manager serves every user of a server. A turn's user guid and its
+  interactive callbacks (tool approval, agent model approval, agent cancellation,
+  `TurnCallbacks`) are passed down each call to memory tools, the knowledge graph
+  tools, file tools and sub-agents, never kept on the shared instance. Personal mode's
+  single local user is used only when a call names no user, and never on a server.
+- On a server, the routes that act on the host process (`/api/quit`,
+  `/api/open-folder`, `/settings/api/lock`, `/settings/api/unlock`) answer 404, and
+  the MCP server settings (`/settings/mcp/*`, which write `config.yaml`) need
+  `spark.settings.instance`.
+- A chat stream's pending interactions are addressed by id through app-wide
+  registries: tool permission prompts (`/chat/permission/respond`), agent model
+  approvals (`/chat/agent/model-approve`), agent cancel tokens (`/chat/agent/cancel`)
+  and the stream itself (`/stream/cancel`). `spark.web.interactions` binds each id to
+  the user whose turn raised it and releases it when it ends; on a server an id that
+  is not the caller's live one answers 404 and changes nothing. Personal mode answers
+  every id, unknown ones with 200, as before.
+- Role gates (server mode; personal mode's local operator holds every permission):
+  creating, editing, toggling, running now and AI-creating actions need
+  `spark.actions` (`require_permission`), while listing, reading and deleting one's own
+  actions stay open; importing, deleting and reloading skills, which every user of
+  the instance shares, need `spark.settings.instance`, while turning a skill on or off
+  for oneself stays open. Spawning a sub-agent needs `spark.agents` at the one point
+  every sub-agent starts (`ConversationManager._execute_agent_spawn`, for chat turns,
+  actions and agents alike); `spark.tools.agents` only offers the tool. Knowledge graph
+  builds are per user (each user's own global and conversation graphs), so
+  `spark.knowledge.instance` gates nothing yet.
 
 ## Vectors
 
@@ -356,9 +546,37 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
   index for 384-dimension vectors, copying existing embeddings in.
 - Revision `vector_store_2` merges duplicate knowledge graph nodes and edges, skill
   states and conversation skill states, then makes their natural keys unique.
+- Revision `user_identities` creates `user_identities` (`user_guid` primary key,
+  `warden_user_id` unique), mapping each SPARK user guid onto one warden user. Every
+  existing `user_guid` column is untouched: a guid made before warden (the single
+  local user's) is linked to a warden user, and a new warden user's guid is created on
+  first use (`spark.database.user_identities`).
+- Revision `action_names_per_user` replaces the global `UNIQUE(name)` of
+  `autonomous_actions` with `UNIQUE(user_guid, name)` (SQLite rebuilds the table).
+  Its downgrade refuses, changing nothing, while two users share an action name.
 - `spark migrate` runs SPARK's chain, then every chain registered with
-  `spark.db.migrate.register_chain` (warden's, in its own `warden` schema, from the
-  identity release).
+  `spark.db.migrate.register_chain`, and prints each chain's revision.
+  `spark.identity.migrations` registers warden's chain, which keeps its tables and
+  `warden.alembic_version` in its own `warden` schema. It is PostgreSQL only: on
+  SQLite it is skipped. `spark migrate`, the web lifespan and the worker all register
+  it, so in server mode start-up also refuses a database whose warden chain is behind.
+- warden shares SPARK's psycopg pool (`spark.identity.db.warden_database`); an audit
+  write given the driver connection of a SPARK transaction commits or rolls back with it.
+- Roles and permissions are data in `spark.identity.permissions`: `PERMISSIONS` (one
+  `spark.tools.<category>` per tool category, plus `spark.actions`, `spark.agents`,
+  `spark.knowledge.instance`, `spark.settings.instance`, `spark.users.admin`,
+  `spark.audit.read`, `spark.audit.export` and `spark.api_keys`) and `ROLES`
+  (`administrator` with every permission and warden's last-administrator protection,
+  `auditor` with the audit trail only, `user` with the tools a server offers bar
+  sub-agents, and `power_user` adding actions, sub-agents and instance-wide knowledge
+  graphs). `build_registry()` declares them to warden, which stores only assignments; a
+  new role is a new `ROLES` entry.
+- The signed-in user is a `SparkIdentity` on `request.state.identity`
+  (`spark.identity.access`), built from warden's `Principal` and the user's guid. Checks
+  fail closed: without an identity a request holds no permission. In server mode the web
+  start-up installs `WardenAccess` as the instance settings access check, so only a
+  holder of `spark.settings.instance` changes instance settings and secrets; personal
+  mode keeps its single operator, who holds every permission.
 
 ## Database Schema
 

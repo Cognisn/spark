@@ -4,15 +4,24 @@ Every built-in tool belongs to one category. A category is the unit of
 availability: :func:`is_category_available` is the single place that decides
 whether a category may be offered or run, and every route that registers or
 dispatches a tool by name asks it (through :func:`is_tool_available` or
-:func:`unavailable_reason`). Each category also names a permission,
-``spark.tools.<category>``, for role checks to attach to.
+:func:`unavailable_reason`).
+
+Each category names a permission, ``spark.tools.<category>``. In server mode a
+category is available only when the mode allows it (never the local-only
+categories, A6) and the user's roles grant its permission. The user's
+permissions travel with the embedded tools configuration under
+:data:`PERMISSIONS_KEY`, as the user's guid does under ``_user_guid``; a
+configuration without them refuses every category in server mode (fail closed).
+Personal mode has one local operator, who may use every category.
 """
 
 from __future__ import annotations
 
+import enum
 import logging
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Callable, Mapping, Set
+from dataclasses import dataclass
+from typing import Any, Final, Literal, TypeAlias
 
 from spark.database.files import QuotaExceeded
 from spark.files import FileAreaNotConfigured, PathRefused
@@ -22,15 +31,22 @@ from spark.mode import Mode
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ANY_ROLE",
     "FILE_TOOL_REFUSALS",
     "LOCAL_ONLY_CATEGORIES",
+    "PERMISSIONS_KEY",
     "TOOL_CATEGORIES",
+    "Permissions",
+    "RefusalHook",
+    "ToolRefusal",
     "execute_builtin_tool",
     "get_builtin_tools",
     "is_category_available",
     "is_tool_available",
     "permission_name",
+    "set_refusal_hook",
     "tool_category",
+    "tool_permissions",
     "unavailable_reason",
 ]
 
@@ -105,31 +121,115 @@ def _current_mode() -> Mode:
         return Mode.PERSONAL
 
 
-def is_category_available(category: str, *, mode: Mode | None = None) -> bool:
+class _AnyRole(enum.Enum):
+    ANY_ROLE = "any role"
+
+
+# Asks whether the deployment offers a category at all, whatever role a user
+# holds: for describing the instance (its settings pages and keys), never for
+# letting a user run a tool.
+ANY_ROLE: Final = _AnyRole.ANY_ROLE
+
+# The permissions a role check sees: a user's permission names, ANY_ROLE, or
+# None for no signed-in user (refused in server mode).
+Permissions: TypeAlias = Set[str] | Literal[_AnyRole.ANY_ROLE] | None
+
+# The embedded tools configuration key holding the user's permissions.
+PERMISSIONS_KEY: Final = "_permissions"
+
+
+def tool_permissions(config: Mapping[str, Any]) -> Permissions:
+    """The permissions a tools configuration carries (None, so refused on a server, if any other value)."""
+    value = config.get(PERMISSIONS_KEY)
+    if value is ANY_ROLE or isinstance(value, Set):
+        return value
+    return None
+
+
+def is_category_available(
+    category: str, *, mode: Mode | None = None, permissions: Permissions = None
+) -> bool:
     """Whether tools in ``category`` may be offered and run.
 
     This is the one decision point for tool availability. ``mode`` defaults
-    to the configured deployment mode.
+    to the configured deployment mode. In server mode the local-only
+    categories are never available, and any other category needs its
+    permission (:func:`permission_name`) in ``permissions``: ``None`` (no
+    signed-in user) refuses every category, and :data:`ANY_ROLE` asks only
+    what the deployment offers. Personal mode ignores ``permissions``.
     """
     selected = mode if mode is not None else _current_mode()
-    if selected is Mode.SERVER and category in LOCAL_ONLY_CATEGORIES:
+    if selected is not Mode.SERVER:
+        return True
+    if category in LOCAL_ONLY_CATEGORIES:
         return False
-    return True
+    if permissions is ANY_ROLE:
+        return True
+    if permissions is None:
+        return False
+    return permission_name(category) in permissions
 
 
-def is_tool_available(tool_name: str, *, mode: Mode | None = None) -> bool:
+def is_tool_available(
+    tool_name: str, *, mode: Mode | None = None, permissions: Permissions = None
+) -> bool:
     """Whether a tool may be offered and run; tools outside Spark's categories are not judged here."""
     category = tool_category(tool_name)
-    return category is None or is_category_available(category, mode=mode)
+    return category is None or is_category_available(category, mode=mode, permissions=permissions)
 
 
-def unavailable_reason(tool_name: str, *, mode: Mode | None = None) -> str | None:
-    """The refusal message for a tool that may not run, or ``None`` when it may."""
+@dataclass(frozen=True, slots=True)
+class ToolRefusal:
+    """A tool refused at dispatch: by the mode (local-only categories) or by the user's roles."""
+
+    tool_name: str
+    category: str
+    reason: Literal["mode", "role"]
+    user_guid: str | None
+
+
+RefusalHook: TypeAlias = Callable[[ToolRefusal], None]
+
+_refusal_hook: RefusalHook | None = None
+
+
+def set_refusal_hook(hook: RefusalHook | None) -> None:
+    """Install the hook every dispatch refusal is reported to (server mode: warden's audit)."""
+    global _refusal_hook
+    _refusal_hook = hook
+
+
+def _report(refusal: ToolRefusal) -> None:
+    hook = _refusal_hook
+    if hook is None:
+        return
+    try:
+        hook(refusal)
+    except Exception:  # noqa: BLE001 - reporting never changes the refusal
+        logger.exception("The tool refusal hook failed for %s", refusal.tool_name)
+
+
+def unavailable_reason(
+    tool_name: str,
+    *,
+    mode: Mode | None = None,
+    permissions: Permissions = None,
+    user_guid: str | None = None,
+) -> str | None:
+    """The refusal message for a tool that may not run, or ``None`` when it may.
+
+    Every dispatch route asks this before running a tool by name, so a refusal
+    is reported here, once, to the refusal hook, for ``user_guid``.
+    """
     category = tool_category(tool_name)
-    if category is None or is_category_available(category, mode=mode):
+    if category is None or is_category_available(category, mode=mode, permissions=permissions):
         return None
-    label = _CATEGORY_LABELS.get(category, f"{category} tools")
-    return f"Tool '{tool_name}' is not available: {label} are not available in server mode."
+    label = _CATEGORY_LABELS.get(category, f"{category.replace('_', ' ')} tools")
+    local_only = category in LOCAL_ONLY_CATEGORIES
+    _report(ToolRefusal(tool_name, category, "mode" if local_only else "role", user_guid))
+    if local_only:
+        return f"Tool '{tool_name}' is not available: {label} are not available in server mode."
+    return f"Tool '{tool_name}' is not available: your role does not allow {label}."
 
 
 # Refusals from the file tools, reported to the model as they are.
@@ -202,7 +302,8 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     Tools that require a filesystem path are excluded when no
     ``allowed_paths`` are configured, and tools in a category that is not
-    available (see :func:`is_category_available`) are never registered.
+    available to the permissions ``config`` carries (see
+    :func:`is_category_available`) are never registered.
     """
     tools: list[dict[str, Any]] = []
     embedded = config.get("embedded_tools", {})
@@ -299,7 +400,8 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     tools.extend(mem_tools)
 
-    return [t for t in tools if is_tool_available(t["name"])]
+    permissions = tool_permissions(config)
+    return [t for t in tools if is_tool_available(t["name"], permissions=permissions)]
 
 
 def execute_builtin_tool(
@@ -307,8 +409,13 @@ def execute_builtin_tool(
     tool_input: dict[str, Any],
     config: dict[str, Any],
 ) -> tuple[str, bool]:
-    """Execute a built-in tool. Returns (result_text, is_error)."""
-    refusal = unavailable_reason(tool_name)
+    """Execute a built-in tool. Returns (result_text, is_error).
+
+    The user's permissions come from ``config`` (:data:`PERMISSIONS_KEY`).
+    """
+    refusal = unavailable_reason(
+        tool_name, permissions=tool_permissions(config), user_guid=config.get("_user_guid")
+    )
     if refusal is not None:
         return refusal, True
 

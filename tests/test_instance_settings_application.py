@@ -67,6 +67,7 @@ class TestValidateStartup:
                 "mode": "server",
                 "database": {"url": "secret://url"},
                 "secrets": {"backend": "encrypted_file"},
+                "server": {"public_base_url": "https://spark.example.com"},
             },
             {"url": DB_URL},
         )
@@ -104,6 +105,7 @@ class TestValidateStartup:
                 "mode": "server",
                 "database": {"url": DB_URL},
                 "secrets": {"backend": "encrypted_file"},
+                "server": {"public_base_url": "https://spark.example.com"},
                 "files": {"root": str(root)},
             },
             {},

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -20,6 +22,7 @@ from spark.safety.untrusted import (
     new_turn_id,
 )
 from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
+from spark.tools.registry import Permissions
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +30,27 @@ logger = logging.getLogger(__name__)
 _TOOL_RESULTS_MARKER = "[TOOL_RESULTS]"
 
 
+@dataclass(frozen=True)
+class TurnCallbacks:
+    """One turn's interactive callbacks: tool approval, agent model approval and
+    agent cancellation tokens. A stream passes its own with its turn, so concurrent
+    turns never answer each other's prompts."""
+
+    tool_permission: Callable | None = None
+    agent_model: Callable | None = None
+    agent_cancel_register: Callable[[str], CancellationToken] | None = None
+
+
 class ConversationManager:
     """Orchestrates conversation lifecycle, message handling, and tool integration.
 
     This is the central component tying together the database, LLM providers,
     tools, MCP servers, memory, and context compaction.
+
+    One manager serves every user of a server. A turn's user guid is passed down
+    each call (memory tools, memory retrieval, sub-agents, the knowledge graph),
+    never kept on the instance; ``user_guid`` given here is personal mode's single
+    local user, used only when a call names no user outside server mode.
     """
 
     def __init__(
@@ -76,33 +95,29 @@ class ConversationManager:
         self._prompt_caching_enabled = prompt_caching
         self._in_tool_use_loop = False
 
-        # Per-request state for agent tool execution
-        self._current_conversation_id: int | None = None
-        self._current_user_guid: str | None = None
-        self._current_status_callback: Callable | None = None
+        # Memory indexes for tool use, one per user
+        self._memory_indexes: dict[str, Any] = {}
+        self._memory_indexes_lock = threading.Lock()
 
         # Cache embedded tool definitions
         self._builtin_tools: list[dict[str, Any]] | None = None
         # Set of builtin tool names for fast lookup
         self._builtin_tool_names: set[str] | None = None
 
-        # Per-conversation vector index cache
-        self._vector_indices: dict[int, Any] = {}
+        # Per-conversation vector index cache, keyed by (user guid, conversation)
+        self._vector_indices: dict[tuple[str, int], Any] = {}
 
-        # Context compactor — uses active LLM service
-        service = llm_manager.active_service
-        if service:
-            self._compactor = ContextCompactor(
-                service,
-                db,
-                context_limits,
-                threshold=rollup_threshold,
-                emergency_threshold=emergency_rollup_threshold,
-                summary_ratio=rollup_summary_ratio,
-                locked_model=compaction_model,
-            )
-        else:
-            self._compactor = None
+        # Context compactor: each turn passes the service it compacts with (its own,
+        # or one for the locked compaction model); the active one is only a default.
+        self._compactor: ContextCompactor | None = ContextCompactor(
+            llm_manager.active_service,
+            db,
+            context_limits,
+            threshold=rollup_threshold,
+            emergency_threshold=emergency_rollup_threshold,
+            summary_ratio=rollup_summary_ratio,
+            locked_model=compaction_model,
+        )
 
     def update_embedded_tools_config(self, config: dict[str, Any]) -> None:
         """Use a new embedded tools configuration from the next turn on (a settings change).
@@ -139,12 +154,13 @@ class ConversationManager:
             self._max_tool_result_tokens = max_tool_result_tokens
 
     def _get_vector_index(self, conversation_id: int, user_guid: str) -> Any:
-        """Get or create the vector index for a conversation."""
-        if conversation_id not in self._vector_indices:
+        """Get or create the vector index for one of the user's conversations."""
+        key = (user_guid, conversation_id)
+        if key not in self._vector_indices:
             try:
                 from spark.index.vector_index import ConversationVectorIndex
 
-                self._vector_indices[conversation_id] = ConversationVectorIndex(
+                self._vector_indices[key] = ConversationVectorIndex(
                     self._db,
                     conversation_id,
                     user_guid,
@@ -153,7 +169,7 @@ class ConversationManager:
             except Exception as e:
                 logger.debug("Vector index not available: %s", e)
                 return None
-        return self._vector_indices.get(conversation_id)
+        return self._vector_indices.get(key)
 
     def _index_message(
         self, conversation_id: int, user_guid: str, msg_id: int, role: str, content: str
@@ -227,7 +243,7 @@ class ConversationManager:
             # Get the content of active (non-rolled-up) messages to filter them out
             from spark.database import messages as msg_db
 
-            active_msgs = self._db.call(msg_db.get_messages, conversation_id)
+            active_msgs = self._db.call(msg_db.get_messages, user_guid, conversation_id)
             active_content_hashes = set()
             for m in active_msgs:
                 content = m.get("content", "")
@@ -316,11 +332,16 @@ class ConversationManager:
             return None
 
     def _get_builtin_tools(self) -> list[dict[str, Any]]:
-        """Get built-in tool definitions (cached)."""
-        if self._builtin_tools is None:
-            from spark.tools.registry import get_builtin_tools
+        """Built-in tool definitions this deployment offers, whatever the user's role (cached).
 
-            self._builtin_tools = get_builtin_tools(self._embedded_tools_config)
+        A turn offers the user only those their permissions allow (:meth:`_get_all_tools`).
+        """
+        if self._builtin_tools is None:
+            from spark.tools.registry import ANY_ROLE, PERMISSIONS_KEY, get_builtin_tools
+
+            self._builtin_tools = get_builtin_tools(
+                {**self._embedded_tools_config, PERMISSIONS_KEY: ANY_ROLE}
+            )
             self._builtin_tool_names = {t["name"] for t in self._builtin_tools}
         return self._builtin_tools
 
@@ -392,9 +413,15 @@ class ConversationManager:
             },
         ]
 
-    def _get_all_tools(self) -> list[dict[str, Any]]:
-        """Get all tools: built-in + MCP server tools."""
-        tools = list(self._get_builtin_tools())
+    def _get_all_tools(self, permissions: Permissions = None) -> list[dict[str, Any]]:
+        """Get all tools: built-in + MCP server tools, as ``permissions`` allow."""
+        from spark.tools.registry import is_tool_available
+
+        tools = [
+            t
+            for t in self._get_builtin_tools()
+            if is_tool_available(t["name"], permissions=permissions)
+        ]
 
         if self._mcp_manager:
             try:
@@ -440,7 +467,11 @@ class ConversationManager:
                 logger.warning("Failed to load MCP tools: %s", e)
 
         # Agent tools (spawn_agent, list_provider_models)
-        tools.extend(self._get_agent_tools())
+        tools.extend(
+            t
+            for t in self._get_agent_tools()
+            if is_tool_available(t["name"], permissions=permissions)
+        )
 
         return tools
 
@@ -466,11 +497,13 @@ class ConversationManager:
             instructions=instructions,
             web_search_enabled=web_search_enabled,
         )
-        # Set the model on the LLM manager
-        try:
-            self._llm.set_model(model_id)
-        except ValueError:
-            logger.warning("Model %s not found in any provider", model_id)
+        # Personal mode sets the model on the LLM manager. A server never does on a
+        # user's choice: the manager is shared, and each turn sets its own model.
+        if not self._server():
+            try:
+                self._llm.set_model(model_id)
+            except ValueError:
+                logger.warning("Model %s not found in any provider", model_id)
 
         return cid
 
@@ -494,8 +527,8 @@ class ConversationManager:
 
     # -- Message handling -----------------------------------------------------
 
-    def get_messages(self, conversation_id: int) -> list[dict]:
-        """Get messages for a conversation, for UI display.
+    def get_messages(self, conversation_id: int, user_guid: str) -> list[dict]:
+        """Messages of one of the user's conversations, for UI display (none for another's).
 
         Includes rolled-up messages so the user sees the full chat history
         when reloading a compacted conversation. The LLM-context loader
@@ -504,7 +537,9 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        return self._db.call(messages.get_messages, conversation_id, include_rolled_up=True)
+        return self._db.call(
+            messages.get_messages, user_guid, conversation_id, include_rolled_up=True
+        )
 
     def send_message(
         self,
@@ -516,27 +551,37 @@ class ConversationManager:
         stream_callback: Callable | None = None,
         status_callback: Callable | None = None,
         cancel_token: CancellationToken | None = None,
+        permissions: Permissions = None,
+        callbacks: TurnCallbacks | None = None,
     ) -> dict[str, Any]:
         """Send a user message and get the assistant response.
 
         If tools is None, automatically loads embedded built-in tools.
+        ``permissions`` are the signed-in user's (server mode): the turn offers
+        and runs only the tool categories they grant, and without them a server
+        refuses every built-in tool. Personal mode ignores them. ``callbacks`` are this
+        turn's interactive callbacks (a stream's); without them the manager's own apply.
         """
         from spark.database import conversations
         from spark.database import messages as msg_db
+
+        callbacks = callbacks or self._default_callbacks()
 
         conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
 
+        # This turn's own service for the conversation's model. The shared manager's
+        # provider and model are never changed: one manager serves every user.
         model_id = conv.get("model_id", "")
-        try:
-            self._llm.set_model(model_id)
-        except ValueError:
-            pass
+        service = self._turn_service(model_id)
+
+        def count_tokens(text: str) -> int:
+            return service.count_tokens(text) if service is not None else len(text) // 4
 
         # Auto-load embedded tools + MCP tools if none provided
         if tools is None:
-            tools = self._get_all_tools()
+            tools = self._get_all_tools(permissions)
 
         # Prompt inspection (if enabled)
         try:
@@ -574,7 +619,7 @@ class ConversationManager:
             logger.debug("Prompt inspection error (non-fatal): %s", e)
 
         # Add user message
-        token_count = self._llm.count_tokens(user_message)
+        token_count = count_tokens(user_message)
         user_msg_id = self._db.call(
             msg_db.add_message, conversation_id, "user", user_message, token_count, user_guid
         )
@@ -640,7 +685,7 @@ class ConversationManager:
         logger.debug(
             "System prompt: %d chars, %d messages in history",
             len(system),
-            len(self._get_messages_for_model(conversation_id, conv)),
+            len(self._get_messages_for_model(conversation_id, user_guid, conv)),
         )
 
         # One unguessable delimiter for this turn's untrusted-content blocks,
@@ -665,8 +710,8 @@ class ConversationManager:
             )
             token_count = 0
             try:
-                if self._llm.active_service is not None:
-                    token_count = self._llm.active_service.count_tokens(marker)
+                if service is not None:
+                    token_count = service.count_tokens(marker)
             except Exception:
                 token_count = 0
             self._db.call(
@@ -695,7 +740,7 @@ class ConversationManager:
                     }
 
                 # Get messages for model (respects conv settings)
-                history = self._get_messages_for_model(conversation_id, conv)
+                history = self._get_messages_for_model(conversation_id, user_guid, conv)
 
                 # Invoke model (with error recovery)
                 try:
@@ -704,7 +749,9 @@ class ConversationManager:
                     if conv and conv.get("prompt_caching") is not None:
                         use_caching = bool(conv.get("prompt_caching", True))
 
-                    response = self._llm.invoke_model(
+                    if service is None:
+                        raise RuntimeError("No active LLM provider")
+                    response = service.invoke_model(
                         history,
                         max_tokens=self._context_limits.get_max_output(model_id),
                         temperature=0.7,
@@ -729,7 +776,7 @@ class ConversationManager:
                         conversation_id,
                         "assistant",
                         error_content,
-                        self._llm.count_tokens(error_content),
+                        count_tokens(error_content),
                         user_guid,
                     )
                     return {
@@ -780,13 +827,15 @@ class ConversationManager:
                         status_callback=status_callback,
                         turn_id=turn_id,
                         result_policy=result_policy,
+                        permissions=permissions,
+                        callbacks=callbacks,
                     )
                     all_tool_calls.extend(response["tool_use"])
 
                     # Store assistant message with tool calls
                     assistant_content = response.get("content_blocks", [])
                     assistant_text = json.dumps(assistant_content) if assistant_content else ""
-                    assistant_tokens = self._llm.count_tokens(assistant_text)
+                    assistant_tokens = count_tokens(assistant_text)
                     asst_msg_id = self._db.call(
                         msg_db.add_message,
                         conversation_id,
@@ -818,7 +867,7 @@ class ConversationManager:
 
                     # Store tool results as user message
                     results_text = json.dumps(tool_results)
-                    results_tokens = self._llm.count_tokens(results_text)
+                    results_tokens = count_tokens(results_text)
                     self._db.call(
                         msg_db.add_message,
                         conversation_id,
@@ -857,7 +906,7 @@ class ConversationManager:
 
                 # Final text response
                 final_content = response.get("content", "")
-                final_tokens = self._llm.count_tokens(final_content)
+                final_tokens = count_tokens(final_content)
                 final_msg_id = self._db.call(
                     msg_db.add_message,
                     conversation_id,
@@ -886,7 +935,7 @@ class ConversationManager:
             self._in_tool_use_loop = False
 
         # Check for deferred compaction
-        self._check_compaction(conversation_id, model_id, user_guid, status_callback)
+        self._check_compaction(conversation_id, model_id, user_guid, status_callback, service)
 
         return {
             "content": final_content,
@@ -898,8 +947,8 @@ class ConversationManager:
 
     # -- System instructions --------------------------------------------------
 
-    def _build_conversation_tool_context(self) -> str:
-        """Build additional system prompt context for enabled tools."""
+    def _build_conversation_tool_context(self, model_id: str = "") -> str:
+        """Build additional system prompt context for enabled tools (``model_id``: the turn's)."""
         from spark.tools.registry import is_category_available
 
         embedded = self._embedded_tools_config.get("embedded_tools", {})
@@ -993,9 +1042,9 @@ class ConversationManager:
                 )
                 # List models for quick reference
                 try:
-                    provider_name = self._llm.active_provider
+                    provider_name = self._provider_for(model_id)
                     if provider_name and provider_name in self._llm.providers:
-                        models = self._llm.providers[provider_name].list_available_models()
+                        models = self._offered_provider_models(provider_name)
                         if models:
                             model_lines = []
                             for m in models[:10]:
@@ -1044,7 +1093,7 @@ class ConversationManager:
             f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
             f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
-            + self._build_conversation_tool_context()
+            + self._build_conversation_tool_context(conv.get("model_id") or "")
             + "**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
             "parameter references, examples, and best practices for any tool before using it. "
             "Pass `_index` as the tool name to see all available documentation.\n\n"
@@ -1079,9 +1128,9 @@ class ConversationManager:
     # -- Message formatting ---------------------------------------------------
 
     def _get_messages_for_model(
-        self, conversation_id: int, conv: dict | None = None
+        self, conversation_id: int, user_guid: str, conv: dict | None = None
     ) -> list[dict[str, Any]]:
-        """Format stored messages for the LLM API.
+        """Format the stored messages of one of the user's conversations for the LLM API.
 
         Respects per-conversation settings:
         - max_history_messages: limit to last N messages (None = all)
@@ -1089,7 +1138,7 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        raw = self._db.call(messages.get_messages, conversation_id)
+        raw = self._db.call(messages.get_messages, user_guid, conversation_id)
         include_tools = True
         max_msgs = None
 
@@ -1143,6 +1192,8 @@ class ConversationManager:
         status_callback: Callable | None = None,
         turn_id: str | None = None,
         result_policy: ResultPolicy | None = None,
+        permissions: Permissions = None,
+        callbacks: TurnCallbacks | None = None,
     ) -> dict:
         """Execute a single tool call and return the tool_result dict.
 
@@ -1151,6 +1202,8 @@ class ConversationManager:
         """
         from spark.database import mcp_ops, tool_permissions
 
+        callbacks = callbacks or self._default_callbacks()
+        ask = callbacks.tool_permission
         tool_name = tool_call.get("name", "")
         tool_id = tool_call.get("id", "")
         tool_input = tool_call.get("input", {})
@@ -1167,14 +1220,14 @@ class ConversationManager:
 
         # Check permissions (conversation-level, then global)
         permission = self._db.call(
-            tool_permissions.is_tool_allowed, conversation_id, tool_name, user_guid=user_guid
+            tool_permissions.is_tool_allowed, user_guid, conversation_id, tool_name
         )
 
         # System commands: always prompt when require_approval is on,
         # unless running without a callback (autonomous actions).
         if (
             tool_name == "run_command"
-            and self._tool_permission_callback
+            and ask
             and self._embedded_tools_config.get("embedded_tools", {})
             .get("system_commands", {})
             .get("require_approval", True)
@@ -1185,7 +1238,7 @@ class ConversationManager:
         # unless running without a callback (autonomous actions).
         if (
             tool_name == "send_email"
-            and self._tool_permission_callback
+            and ask
             and self._embedded_tools_config.get("embedded_tools", {})
             .get("email", {})
             .get("require_approval", True)
@@ -1194,7 +1247,7 @@ class ConversationManager:
 
         # Skill authoring: always prompt, even when previously always-allowed,
         # unless running without a callback (autonomous actions).
-        if tool_name in ("create_skill", "update_skill") and self._tool_permission_callback:
+        if tool_name in ("create_skill", "update_skill") and ask:
             permission = None  # Force re-prompt
 
         # Skill loading is transparent: use_skill / read_skill_resource never
@@ -1207,8 +1260,8 @@ class ConversationManager:
 
         if permission is None:
             # First use — prompt user
-            if self._tool_permission_callback:
-                decision = self._tool_permission_callback(tool_name, tool_input)
+            if ask:
+                decision = ask(tool_name, tool_input)
                 if decision in ("allowed", "allowed_global", "once"):
                     if decision == "allowed":
                         # Approve this tool and category siblings for this conversation
@@ -1263,7 +1316,15 @@ class ConversationManager:
         )
         start_time = time.monotonic()
         try:
-            result_text, is_error = self._call_tool(tool_name, tool_input)
+            result_text, is_error = self._call_tool(
+                tool_name,
+                tool_input,
+                permissions=permissions,
+                conversation_id=conversation_id,
+                user_guid=user_guid,
+                status_callback=status_callback,
+                callbacks=callbacks,
+            )
         except Exception as e:
             result_text = f"Tool execution error: {e}"
             is_error = True
@@ -1333,6 +1394,8 @@ class ConversationManager:
         status_callback: Callable | None = None,
         turn_id: str | None = None,
         result_policy: ResultPolicy | None = None,
+        permissions: Permissions = None,
+        callbacks: TurnCallbacks | None = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results.
 
@@ -1341,11 +1404,6 @@ class ConversationManager:
         parallel via a thread pool so that independent agents can run
         concurrently.
         """
-        # Store per-request context so _call_tool can access it for agent tools
-        self._current_conversation_id = conversation_id
-        self._current_user_guid = user_guid
-        self._current_status_callback = status_callback
-
         # Separate agent calls from other tool calls, preserving order.
         non_agent_calls: list[tuple[int, dict]] = []
         agent_calls: list[tuple[int, dict]] = []
@@ -1362,6 +1420,8 @@ class ConversationManager:
         guard: dict[str, Any] = {
             "turn_id": turn_id or new_turn_id(),
             "result_policy": result_policy,
+            "permissions": permissions,
+            "callbacks": callbacks,
         }
 
         # 1. Execute non-agent tools sequentially.
@@ -1418,16 +1478,70 @@ class ConversationManager:
         # 3. Reassemble results in the original tool_calls order.
         return [result_map[i] for i in range(len(tool_calls))]
 
-    def _get_memory_index_for_tools(self) -> Any:
-        """Get or create a MemoryIndex for tool use."""
-        if not hasattr(self, "_memory_index_instance"):
-            try:
-                from spark.index.memory_index import MemoryIndex
+    def _get_memory_index_for_tools(self, user_guid: str) -> Any:
+        """The user's MemoryIndex for tool use (created once per user), or None."""
+        with self._memory_indexes_lock:
+            if user_guid not in self._memory_indexes:
+                try:
+                    from spark.index.memory_index import MemoryIndex
 
-                self._memory_index_instance = MemoryIndex(self._db, self._user_guid)
-            except Exception:
-                self._memory_index_instance = None
-        return self._memory_index_instance
+                    self._memory_indexes[user_guid] = MemoryIndex(self._db, user_guid)
+                except Exception:
+                    return None
+            return self._memory_indexes[user_guid]
+
+    def _default_callbacks(self) -> TurnCallbacks:
+        """The callbacks given to the manager (an action or a test without a stream)."""
+        return TurnCallbacks(
+            tool_permission=self._tool_permission_callback,
+            agent_model=self._agent_model_callback,
+            agent_cancel_register=self._agent_cancel_register,
+        )
+
+    def _turn_user(self, user_guid: str | None) -> str | None:
+        """The user a tool call acts for.
+
+        A turn always names its user. Without one, personal mode acts for its single
+        local user; a server acts for no one (never the process's own guid).
+        """
+        if user_guid:
+            return user_guid
+        from spark import mode
+
+        try:
+            server = mode.is_server()
+        except RuntimeError:
+            server = False
+        return None if server else self._user_guid
+
+    def _turn_service(self, model_id: str) -> Any:
+        """A service of the turn's own for its conversation's ``model_id``.
+
+        A model no provider lists falls back to the active service, unchanged, as
+        before; None when there is no provider at all.
+        """
+        service = self._llm.service_for(model_id) if model_id else None
+        if service is None:
+            logger.warning("Model %r not found in any provider; using the active one", model_id)
+            service = self._llm.active_service
+        return service
+
+    def _provider_for(self, model_id: str | None) -> str | None:
+        """The provider of a conversation's model (the active one when no provider lists it)."""
+        name = self._llm.provider_name_for(model_id) if model_id else None
+        return name or self._llm.active_provider
+
+    def _conversation_model(self, conversation_id: int | None, user_guid: str | None) -> str:
+        """The model of one of the user's conversations ("" when it cannot be read)."""
+        if conversation_id is None or not user_guid:
+            return ""
+        try:
+            from spark.database import conversations
+
+            conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
+        except Exception:  # noqa: BLE001 - listing models must never break a turn
+            return ""
+        return str((conv or {}).get("model_id") or "")
 
     def _get_llm_service_for_model(self, model_id: str) -> Any:
         """Get a dedicated LLM service instance for a specific model.
@@ -1445,9 +1559,9 @@ class ConversationManager:
                     if fresh:
                         fresh.set_model(model_id)
                         return fresh
-                    # Fallback: use the shared instance (less safe but functional)
-                    provider.set_model(model_id)
-                    return provider
+                    # Fallback: a copy of the shared instance with its own model; the
+                    # shared instance itself is never changed.
+                    return self._llm.service_for(model_id)
             except Exception:
                 continue
         return None
@@ -1485,13 +1599,13 @@ class ConversationManager:
             logger.debug("Could not clone provider %s: %s", name, e)
         return None
 
-    def _list_provider_models(self) -> tuple[str, bool]:
-        """List models from the conversation's current LLM provider."""
+    def _list_provider_models(self, model_id: str = "") -> tuple[str, bool]:
+        """List models from the provider of the conversation's model (``model_id``)."""
         try:
-            provider_name = self._llm.active_provider
+            provider_name = self._provider_for(model_id)
             if not provider_name or provider_name not in self._llm.providers:
                 return "No active provider.", True
-            models = self._llm.providers[provider_name].list_available_models()
+            models = self._offered_provider_models(provider_name)
             if not models:
                 return f"No models available from {provider_name}.", False
             lines = [f"Available models from {provider_name}:\n"]
@@ -1505,10 +1619,51 @@ class ConversationManager:
         except Exception as e:
             return f"Error listing models: {e}", True
 
+    @staticmethod
+    def _server() -> bool:
+        from spark import mode
+
+        try:
+            return mode.is_server()
+        except RuntimeError:
+            return False
+
+    def _offered_provider_models(self, provider_name: str) -> list[dict]:
+        """A provider's models that users may choose (``models.offered``, when set)."""
+        models = self._llm.providers[provider_name].list_available_models()
+        return [m for m in models if self._llm.is_offered(m.get("id", ""))]
+
+    @staticmethod
+    def _may_spawn_agents(permissions: Permissions) -> bool:
+        """Whether the turn's user may spawn sub-agents: ``spark.agents`` on a server.
+
+        Every sub-agent starts here, from a chat turn, an action or another agent,
+        so this is the one gate. ``spark.tools.agents`` only offers the tool.
+        Personal mode's local operator may always spawn.
+        """
+        from spark import mode
+
+        try:
+            server = mode.is_server()
+        except RuntimeError:
+            server = False
+        if not server:
+            return True
+        from spark.identity.permissions import AGENTS
+        from spark.tools.registry import ANY_ROLE
+
+        return permissions is not None and permissions is not ANY_ROLE and AGENTS in permissions
+
     def _execute_agent_spawn(
-        self, tool_input: dict, conversation_id: int, user_guid: str
+        self,
+        tool_input: dict,
+        conversation_id: int,
+        user_guid: str,
+        permissions: Permissions = None,
+        status_callback: Callable | None = None,
+        callbacks: TurnCallbacks | None = None,
     ) -> tuple[str, bool]:
-        """Spawn a sub-agent to execute a task."""
+        """Spawn a sub-agent to execute a task for ``user_guid``."""
         import uuid
 
         from spark.core.agent_executor import AgentExecutor
@@ -1520,6 +1675,19 @@ class ConversationManager:
 
         if not task:
             return "Error: task description is required.", True
+        if model_id and not self._llm.is_offered(model_id):
+            # The conversation's own (pinned) model, used when none is named, keeps working.
+            return (
+                f"Error: the model '{model_id}' is not offered on this instance. "
+                "Use list_provider_models to see the models offered, or omit model_id.",
+                True,
+            )
+        if not self._may_spawn_agents(permissions):
+            return (
+                "Error: spawning sub-agents needs the spark.agents permission, "
+                "which your role does not grant.",
+                True,
+            )
 
         # Determine model — fall back to the current conversation's model
         if not model_id:
@@ -1553,14 +1721,15 @@ class ConversationManager:
         # When auto_select is enabled and the LLM chose a model, request user
         # approval before execution.  The callback blocks this thread until the
         # user responds (mirroring the permission_request pattern).
-        if model_selection == "auto_select" and model_id and self._agent_model_callback:
-            provider_name = self._llm.active_provider
+        callbacks = callbacks or self._default_callbacks()
+        if model_selection == "auto_select" and model_id and callbacks.agent_model:
+            provider_name = self._provider_for(self._conversation_model(conversation_id, user_guid))
             available_models: list[dict] = []
             if provider_name and provider_name in self._llm.providers:
-                available_models = self._llm.providers[provider_name].list_available_models()
+                available_models = self._offered_provider_models(provider_name)
 
             model_justification = tool_input.get("model_justification", "")
-            approved_model = self._agent_model_callback(
+            approved_model = callbacks.agent_model(
                 agent_name,
                 task,
                 model_id,
@@ -1579,9 +1748,9 @@ class ConversationManager:
 
         agent_id = str(uuid.uuid4())[:12]
         agent_token: CancellationToken | None = None
-        if self._agent_cancel_register is not None:
+        if callbacks.agent_cancel_register is not None:
             try:
-                agent_token = self._agent_cancel_register(agent_id)
+                agent_token = callbacks.agent_cancel_register(agent_id)
             except Exception:
                 agent_token = None
 
@@ -1600,7 +1769,7 @@ class ConversationManager:
         # Get parent messages if chain mode
         parent_messages = None
         if mode == "chain":
-            parent_messages = self._get_messages_for_model(conversation_id)
+            parent_messages = self._get_messages_for_model(conversation_id, user_guid)
 
         # Create and run agent — get a dedicated LLM service for the model
         # to avoid conflicts with concurrent conversations using different providers.
@@ -1609,21 +1778,25 @@ class ConversationManager:
             if not agent_llm:
                 self._db.call(
                     agent_db.complete_agent_run,
+                    user_guid,
                     agent_id,
                     status="failed",
                     result_text=f"Could not find provider for model '{model_id}'",
                 )
                 return f"Agent failed: no provider found for model '{model_id}'.", True
 
+            from spark.tools.registry import PERMISSIONS_KEY
+
             executor = AgentExecutor(
                 agent_llm,
                 self._db,
-                self._embedded_tools_config,
+                # The sub-agent acts for the same user, with the same permissions.
+                {**self._embedded_tools_config, PERMISSIONS_KEY: permissions},
                 mcp_manager=self._mcp_manager,
                 mcp_loop=getattr(self, "_mcp_loop", None),
                 user_guid=user_guid,
-                tool_permission_callback=self._tool_permission_callback,
-                status_callback=self._current_status_callback,
+                tool_permission_callback=callbacks.tool_permission,
+                status_callback=status_callback,
             )
 
             result = executor.execute(
@@ -1641,6 +1814,7 @@ class ConversationManager:
                 try:
                     self._db.call(
                         agent_db.complete_agent_run,
+                        user_guid,
                         agent_id,
                         status="cancelled",
                         result_text=result.get("content", "[CANCELLED]"),
@@ -1663,6 +1837,7 @@ class ConversationManager:
             # Record completion
             self._db.call(
                 agent_db.complete_agent_run,
+                user_guid,
                 agent_id,
                 status="completed",
                 result_text=result.get("content", ""),
@@ -1677,43 +1852,59 @@ class ConversationManager:
             logger.error("Agent '%s' failed: %s", agent_name, e, exc_info=True)
             self._db.call(
                 agent_db.complete_agent_run,
+                user_guid,
                 agent_id,
                 status="failed",
                 result_text=str(e),
             )
             return f"Agent '{agent_name}' failed: {e}", True
 
-    def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
-        """Execute a single tool. Returns (result_text, is_error)."""
-        from spark.tools.registry import unavailable_reason
+    def _call_tool(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        *,
+        permissions: Permissions = None,
+        conversation_id: int | None = None,
+        user_guid: str | None = None,
+        status_callback: Callable | None = None,
+        callbacks: TurnCallbacks | None = None,
+    ) -> tuple[str, bool]:
+        """Execute a single tool for ``user_guid`` holding ``permissions``, in a turn of
+        ``conversation_id``. Returns (result_text, is_error)."""
+        from spark.tools.registry import PERMISSIONS_KEY, unavailable_reason
 
-        # A tool whose category is not available is refused by name, wherever
-        # the request came from, before any built-in or MCP dispatch.
-        refusal = unavailable_reason(tool_name)
+        # A tool whose category is not available (to this mode, or to the
+        # user's roles) is refused by name, wherever the request came from,
+        # before any built-in or MCP dispatch.
+        refusal = unavailable_reason(tool_name, permissions=permissions, user_guid=user_guid)
         if refusal is not None:
             return refusal, True
 
-        # Agent tools — these need conversation context stored on the instance
+        uid = self._turn_user(user_guid)
+
+        # Agent tools act in this turn's conversation, for this turn's user
         if tool_name == "spawn_agent":
-            cid = self._current_conversation_id
-            uid = self._current_user_guid
-            if cid is None or uid is None:
+            if conversation_id is None or uid is None:
                 return "Error: no active conversation context for agent spawn.", True
-            return self._execute_agent_spawn(tool_input, cid, uid)
+            return self._execute_agent_spawn(
+                tool_input, conversation_id, uid, permissions, status_callback, callbacks
+            )
         if tool_name == "list_provider_models":
-            return self._list_provider_models()
+            return self._list_provider_models(self._conversation_model(conversation_id, uid))
 
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):
             from spark.tools.registry import execute_builtin_tool
 
-            # Inject memory index for memory tools
+            # Memory, file and knowledge graph tools act for this turn's user only
             config = dict(self._embedded_tools_config)
-            config["_memory_index"] = self._get_memory_index_for_tools()
-            # Knowledge graph context for query_knowledge_graph
+            config["_memory_index"] = self._get_memory_index_for_tools(uid) if uid else None
+            config["_user_guid"] = uid
             config["_kg_db"] = self._db
-            config["_kg_conversation_id"] = self._current_conversation_id
-            config["_kg_user_guid"] = self._current_user_guid or self._user_guid
+            config["_kg_conversation_id"] = conversation_id
+            config["_kg_user_guid"] = uid
+            config[PERMISSIONS_KEY] = permissions
             return execute_builtin_tool(tool_name, tool_input, config)
 
         # Try MCP manager (async — dispatch on the persistent MCP event loop)
@@ -1759,15 +1950,21 @@ class ConversationManager:
         model_id: str,
         user_guid: str,
         status_callback: Callable | None = None,
+        service: Any = None,
     ) -> None:
-        """Check and perform context compaction if needed."""
+        """Check and perform context compaction if needed, with the turn's ``service``
+        or, when a compaction model is locked, a service of its own for that model."""
         if self._compactor:
+            locked = self._compactor.locked_model
+            if locked:
+                service = self._llm.service_for(locked) or service
             self._compactor.check_and_compact(
                 conversation_id,
                 model_id,
                 user_guid,
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
+                service=service,
             )
 
 

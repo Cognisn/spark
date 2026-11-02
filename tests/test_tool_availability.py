@@ -18,6 +18,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from spark import mode
+from spark.identity.permissions import ADMINISTRATOR, role_permissions
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from spark.tools import registry
 from tests.web_helpers import sign_in
@@ -43,6 +44,13 @@ FULL_CONFIG: dict[str, Any] = {
         "email": {"enabled": True, "host": "smtp.example.com", "sender": "spark@example.com"},
         "web": {"enabled": True},
     }
+}
+
+# The same configuration for a signed-in administrator, who holds every permission:
+# a server still refuses the local-only tools whatever the role.
+ADMIN_CONFIG: dict[str, Any] = {
+    **FULL_CONFIG,
+    registry.PERMISSIONS_KEY: role_permissions(ADMINISTRATOR),
 }
 
 
@@ -124,11 +132,18 @@ class TestAvailability:
 
     @pytest.mark.parametrize("category", ["web", "documents", "archives", "memory", "core"])
     def test_other_categories_available_in_server_mode(self, category: str) -> None:
-        assert registry.is_category_available(category, mode=Mode.SERVER) is True
+        """The mode refuses only the local-only categories; the rest follow the role."""
+        assert (
+            registry.is_category_available(
+                category, mode=Mode.SERVER, permissions=registry.ANY_ROLE
+            )
+            is True
+        )
 
     def test_reads_the_configured_mode(self, server_mode: None) -> None:
-        assert registry.is_tool_available("run_command") is False
-        assert registry.is_tool_available("web_search") is True
+        admin = role_permissions(ADMINISTRATOR)
+        assert registry.is_tool_available("run_command", permissions=admin) is False
+        assert registry.is_tool_available("web_search", permissions=admin) is True
 
     def test_unconfigured_mode_is_personal(self) -> None:
         mode.reset()
@@ -150,7 +165,7 @@ class TestAvailability:
 
 class TestRegistration:
     def test_server_mode_registers_no_local_tools(self, server_mode: None) -> None:
-        names = {t["name"] for t in registry.get_builtin_tools(FULL_CONFIG)}
+        names = {t["name"] for t in registry.get_builtin_tools(ADMIN_CONFIG)}
         assert names.isdisjoint(LOCAL_TOOLS)
         assert "web_search" in names
 
@@ -168,7 +183,7 @@ class TestRefusedByName:
         self, server_mode: None, tools_never_run: None, tool_name: str
     ) -> None:
         text, is_error = registry.execute_builtin_tool(
-            tool_name, {"command": "hostname"}, FULL_CONFIG
+            tool_name, {"command": "hostname"}, ADMIN_CONFIG
         )
         assert is_error is True
         assert "not available in server mode" in text
@@ -187,7 +202,9 @@ class TestRefusedByName:
             embedded_tools_config=FULL_CONFIG,
             mcp_manager=mcp,
         )
-        text, is_error = mgr._call_tool(tool_name, {"command": "hostname"})
+        text, is_error = mgr._call_tool(
+            tool_name, {"command": "hostname"}, permissions=role_permissions(ADMINISTRATOR)
+        )
         assert is_error is True
         assert "not available in server mode" in text
         mcp.call_tool.assert_not_called()
@@ -200,7 +217,7 @@ class TestRefusedByName:
 
         mcp = MagicMock()
         agent = AgentExecutor(
-            MagicMock(), MagicMock(), FULL_CONFIG, mcp_manager=mcp, mcp_loop=MagicMock()
+            MagicMock(), MagicMock(), ADMIN_CONFIG, mcp_manager=mcp, mcp_loop=MagicMock()
         )
         text = agent._execute_tool(tool_name, {"command": "hostname"})
         assert "not available in server mode" in text
@@ -219,6 +236,7 @@ class TestRefusedByName:
         )
         executor._db = MagicMock()
         executor._user_guid = "user-1"
+        executor._permissions = role_permissions(ADMINISTRATOR)
         executor._mcp_manager = MagicMock()
         executor._mcp_loop = MagicMock()
         text = executor._execute_tool(tool_name, {"command": "hostname"})

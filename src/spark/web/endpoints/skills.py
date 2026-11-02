@@ -11,9 +11,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.identity.access import current_user_guid, require_permission
+from spark.identity.permissions import SETTINGS_INSTANCE
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/skills")
 
 _IMPORT_ZIP_MAX = 10 * 1024 * 1024
+
+# Imported skills live in one directory every user of the instance shares, so
+# importing, deleting and reloading them need spark.settings.instance (an
+# administrator's; the interim default of question 20). Turning a skill on or
+# off is each user's own. Personal mode's local operator holds every permission.
+_INSTANCE_SKILLS = [Depends(require_permission(SETTINGS_INSTANCE))]
 
 
 def _manager(request: Request) -> Any:
@@ -30,10 +38,6 @@ def _manager(request: Request) -> Any:
     from spark.skills.manager import get_skills_manager
 
     return get_skills_manager()
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -48,7 +52,7 @@ async def list_skills(request: Request) -> JSONResponse:
     from spark.database import skills as skills_db
 
     manager = _manager(request)
-    states = await skills_db.get_skill_states(database(request), _user_guid(request))
+    states = await skills_db.get_skill_states(database(request), current_user_guid(request))
     out = []
     for skill in manager.list_skills(include_invalid=True):
         out.append(
@@ -73,7 +77,7 @@ async def toggle_skill(request: Request) -> JSONResponse:
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
     await skills_db.set_skill_enabled(
-        database(request), name, bool(data.get("enabled", True)), _user_guid(request)
+        database(request), name, bool(data.get("enabled", True)), current_user_guid(request)
     )
     return JSONResponse({"status": "ok"})
 
@@ -116,7 +120,7 @@ def _validate_zip(zf: zipfile.ZipFile) -> tuple[str | None, str | None]:
     return folder, None
 
 
-@router.post("/api/import")
+@router.post("/api/import", dependencies=_INSTANCE_SKILLS)
 async def import_skill(request: Request, file: UploadFile = File(...)) -> JSONResponse:
     from spark.skills.manager import SkillsManager, _parse_skill_dir
 
@@ -162,6 +166,15 @@ async def download_skill(request: Request, name: str) -> Any:
             if path.is_file():
                 zf.write(path, f"{name}/{path.relative_to(root).as_posix()}")
     buf.seek(0)
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.EXPORT_DOWNLOADED,
+        resource_type="skill",
+        resource_id=name,
+        details={"kind": "skill", "source": skill.get("source")},
+    )
     return StreamingResponse(
         buf,
         media_type="application/zip",
@@ -169,7 +182,7 @@ async def download_skill(request: Request, name: str) -> Any:
     )
 
 
-@router.post("/api/delete")
+@router.post("/api/delete", dependencies=_INSTANCE_SKILLS)
 async def delete_skill(request: Request) -> JSONResponse:
     manager = _manager(request)
     data = await request.json()
@@ -184,7 +197,7 @@ async def delete_skill(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@router.post("/api/reload")
+@router.post("/api/reload", dependencies=_INSTANCE_SKILLS)
 async def reload_skills(request: Request) -> JSONResponse:
     _manager(request).reload()
     return JSONResponse({"status": "ok"})

@@ -62,6 +62,15 @@ Configuration comes through konfig, as on the desktop:
 - **Environment**: any setting as `SPARK__<SECTION>__<KEY>`, for example
   `SPARK__MODE=server`, `SPARK__DATABASE__URL=postgresql://...`,
   `SPARK__LOGGING__LEVEL=DEBUG`.
+- **Public address**: server mode refuses to start without
+  `SPARK__SERVER__PUBLIC_BASE_URL`, the https address users reach Spark on (the
+  TLS reverse proxy's host name, no path). Sign-in cookies are Secure and the
+  Origin check accepts only this address, so users must reach Spark through it.
+- **warden**: identity settings are the `warden` section, for example
+  `SPARK__WARDEN__IDENTITY__REQUIRE_MFA=true` (the default) or
+  `SPARK__WARDEN__AUDIT__TRUSTED_PROXIES=10.0.0.0/8` so warden believes the
+  proxy's `X-Forwarded-For`. The web role creates warden's signing key and its
+  TOTP and CSRF keys in the secrets file on first start.
 - **File**: `config.yaml` in the data volume at
   `/var/lib/spark/config/spark/config.yaml` (created from the template on first
   start). Environment values override the file.
@@ -82,20 +91,72 @@ Configuration comes through konfig, as on the desktop:
 
 ### Web
 
-`spark web` serves the interface on port 8000. Until warden sign-in arrives in a
-later 0.3.0 build, the web role signs in with the one-time code it logs at start
-(`docker compose logs web`), and sessions are held in the process: each replica
-has its own code and its own sessions. Several replicas can serve one database
-(instance settings reach all of them), but behind a reverse proxy they need
-sticky sessions until sessions move to warden.
+`spark web` serves the interface on port 8000. Users sign in through warden with
+their email address and password at `/auth/sign-in`; sessions live in warden's
+tables, so any number of web replicas can serve one database without sticky
+sessions. Create the first administrator once the stack is up:
+
+```bash
+docker compose -p spark -f deploy/compose.yaml run --rm -T web \
+    identity create-admin --email admin@example.com < password.txt
+```
+
+(or without `-T` and the redirect, to be asked for the password twice). It is
+safe to run again. `--link-user-guid GUID` gives the administrator the data made
+by the interim single user before warden. A server no longer uses that interim
+guid for anyone: every request acts for its signed-in user and every scheduled
+action for its owner, so data made under it (scheduled actions included) belongs
+to nobody until it is linked this way.
 
 In server mode the web role does not start the tray daemon; scheduled actions run
 in `spark worker`.
+
+#### Users, two-step verification and single sign-on
+
+- **First administrator**: run `identity create-admin` as above, then sign in at
+  `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
+  sign-in asks the administrator to set up an authenticator app (a QR code, or the
+  key typed in) and shows ten recovery codes once: keep them somewhere safe.
+- **Inviting users**: an administrator invites from **Account > Invitations**
+  (`/admin/invitations`), choosing the roles granted on acceptance. Spark has no
+  mail service in server mode, so the invitation link is shown to the
+  administrator once, to pass on privately; it works once and expires after
+  `warden.identity.invitation_ttl_seconds` (7 days by default). The same applies to
+  a password reset link sent from a user's page. A user who asks for a reset at
+  `/auth/password-reset` gets a neutral answer and no link, so they ask an
+  administrator instead.
+- **Two-step verification**: `SPARK__WARDEN__IDENTITY__REQUIRE_MFA` (default
+  `true`) makes every password sign-in use an authenticator app. A user who has
+  lost both their authenticator and their recovery codes needs an administrator
+  to reset it from their user page (confirm who they are some other way first);
+  they set it up again at their next sign-in.
+- **Single sign-on** (OIDC, one provider): register
+  `https://<public address>/identity/auth/sso/callback` as the redirect URI with
+  the provider, then set the `warden.sso` section, for example
+  `SPARK__WARDEN__SSO__ENABLED=true`, `SPARK__WARDEN__SSO__ISSUER_URL` and
+  `SPARK__WARDEN__SSO__CLIENT_ID`, with the client secret in the secrets store
+  under the name `warden.sso.client-secret`.
+  Users must already exist (created or invited); the sign-in page then offers
+  single sign-on, and an invitation can be accepted through it. A provider behind
+  a private CA needs `SSL_CERT_FILE` naming a bundle that holds it and the public
+  CAs.
+- **Roles**: `administrator` (everything), `auditor` (the audit trail at `/audit`
+  and its export, nothing else), `power_user` and `user`. Users create their own
+  API keys at `/account/api-keys`, limited to their own permissions.
 
 ### Worker
 
 `spark worker` runs scheduled actions. It refuses to start in personal mode, on
 SQLite, or on a database behind the current schema.
+
+The worker runs every user's enabled actions, each as its owner: the run, its
+memories and the files it writes are the owner's, and its tools follow the
+owner's roles at the time it runs. It starts warden over the same database and
+secrets file as the web role, so it needs the same `server.public_base_url` and
+`KONFIG_MASTER_KEY`. An action whose owner does not hold `spark.actions` (the
+Power user and Administrator roles), is suspended or deactivated, or has no
+warden user is not run: the refusal and its reason appear in the action's run
+history, and the action runs again once its owner may run it.
 
 Any number of workers may run against one database. One is **active**: it holds a
 PostgreSQL advisory lock on a connection of its own. The others **stand by** and
@@ -107,6 +168,14 @@ just lost its connection has time to notice and stop first. Each scheduled actio
 also takes a lock in the database before it runs.
 
 The worker logs `standing by` or `is active` when its state changes.
+
+The active worker also prunes warden's expired data (refresh and single-use
+tokens, second-factor challenges, sign-in throttle windows and single sign-on
+records) every hour (`worker.identity_prune_seconds`). When
+`warden.audit.retention_days` is set (365 or more), it also purges audit rows
+older than that once a day (`worker.audit_purge_seconds`), behind a signed
+checkpoint; the purge needs `DELETE` on `warden.audit_events`, so grant it to the
+worker's database role or leave the retention unset to keep the trail for ever.
 
 ### Tray daemon
 
@@ -134,7 +203,7 @@ Credentials come only from an env file you write:
 cp deploy/spark.env.example deploy/spark.env
 # edit deploy/spark.env: replace every value ending in -dev-only
 docker compose -p spark -f deploy/compose.yaml up -d
-docker compose -p spark -f deploy/compose.yaml logs web    # the sign-in code
+docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admin --email admin@example.com
 ```
 
 `deploy/spark.env` is ignored by git. Compose variables:

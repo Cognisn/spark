@@ -29,13 +29,17 @@ UNSAFE = ("POST", "PUT", "PATCH", "DELETE")
 
 # Every router module that registers a state-changing endpoint today.
 ROUTERS_WITH_STATE_CHANGES = {
+    "account",
     "actions",
+    "administration",
     "auth",
     "chat",
     "conversations",
     "debate",
     "files",
+    "identity",
     "knowledge",
+    "lifecycle",
     "main_menu",
     "mcp_servers",
     "memories",

@@ -72,5 +72,9 @@ async def get_usage_summary(db: Executor, user_guid: str, since: str) -> list[Ro
 
 
 async def cleanup_old_usage(db: Executor, before: str) -> int:
-    """Delete usage records before a cutoff timestamp. Returns count deleted."""
+    """Delete usage records before a cutoff timestamp. Returns count deleted.
+
+    Deliberately not scoped by user: retention maintenance over every user's
+    records, for an operator or the worker. Never reached from a user's request.
+    """
     return await db.execute("DELETE FROM usage_tracking WHERE timestamp < ?", (before,))

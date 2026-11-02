@@ -6,18 +6,23 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from spark.identity.access import current_user_guid, require_permission
+from spark.identity.permissions import ACTIONS
 from spark.web.db import database, sync_database
+from spark.web.models import not_offered, offered_models
+from spark.web.scope import not_found, owned_action
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/actions")
 
-
-def _user(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
+# Creating, changing and running actions needs spark.actions (a power user's);
+# listing, reading and deleting one's own actions stay open to every user.
+# Personal mode's local operator holds every permission.
+_MAY_RUN_ACTIONS = [Depends(require_permission(ACTIONS))]
 
 
 def _actions_enabled(request: Request) -> bool:
@@ -52,12 +57,12 @@ async def list_actions(request: Request) -> JSONResponse:
         return JSONResponse([])
     from spark.database import autonomous_actions
 
-    # Enabled and disabled ones
-    all_actions = await autonomous_actions.get_all_actions(db)
+    # The user's enabled and disabled ones
+    all_actions = await autonomous_actions.get_all_actions(db, current_user_guid(request))
     return JSONResponse(all_actions)
 
 
-@router.post("/api/create")
+@router.post("/api/create", dependencies=_MAY_RUN_ACTIONS)
 async def create_action(request: Request) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -66,6 +71,8 @@ async def create_action(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
     data = await request.json()
+    if refused := not_offered(request, data.get("model_id")):
+        return refused
     from spark.database import autonomous_actions
 
     try:
@@ -74,7 +81,7 @@ async def create_action(request: Request) -> JSONResponse:
             name=data["name"],
             action_prompt=data["prompt"],
             model_id=data["model_id"],
-            user_guid=_user(request),
+            user_guid=current_user_guid(request),
             description=data.get("description"),
             schedule_type=data.get("schedule_type", "one_off"),
             schedule_config=data.get("schedule_config"),
@@ -83,11 +90,14 @@ async def create_action(request: Request) -> JSONResponse:
             max_tokens=int(data.get("max_tokens", 8192)),
         )
         return JSONResponse({"status": "ok", "id": aid})
+    except autonomous_actions.DuplicateActionName as e:
+        # Names are unique per user: the clash is always the caller's own action.
+        return JSONResponse({"error": str(e)}, status_code=409)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
-@router.put("/api/{action_id}")
+@router.put("/api/{action_id}", dependencies=_MAY_RUN_ACTIONS)
 async def update_action(request: Request, action_id: int) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -95,7 +105,11 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     data = await request.json()
+    if refused := not_offered(request, data.get("model_id")):
+        return refused
     from spark.database import autonomous_actions
 
     allowed = {
@@ -113,8 +127,10 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     updates = {k: v for k, v in data.items() if k in allowed}
 
     try:
-        await autonomous_actions.update_action(db, action_id, _user(request), **updates)
+        await autonomous_actions.update_action(db, action_id, current_user_guid(request), **updates)
         return JSONResponse({"status": "ok"})
+    except autonomous_actions.DuplicateActionName as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -129,11 +145,13 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    await autonomous_actions.delete_action(db, action_id, _user(request))
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
+    await autonomous_actions.delete_action(db, action_id, current_user_guid(request))
     return JSONResponse({"status": "ok"})
 
 
-@router.post("/api/{action_id}/toggle")
+@router.post("/api/{action_id}/toggle", dependencies=_MAY_RUN_ACTIONS)
 async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -141,11 +159,13 @@ async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     if not db:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
     data = await request.json()
     from spark.database import autonomous_actions
 
     await autonomous_actions.update_action(
-        db, action_id, _user(request), is_enabled=int(bool(data.get("enabled", True)))
+        db, action_id, current_user_guid(request), is_enabled=int(bool(data.get("enabled", True)))
     )
     return JSONResponse({"status": "ok"})
 
@@ -158,14 +178,17 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
     db = getattr(request.app.state, "database", None)
     if not db:
         return JSONResponse({"tools": []})
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
 
     # Get all available tools
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     config = conv_mgr._embedded_tools_config if conv_mgr else {}
 
+    from spark.identity.access import tools_config_for
     from spark.tools.registry import get_builtin_tools
 
-    all_tools = get_builtin_tools(config)
+    all_tools = get_builtin_tools(tools_config_for(request, config))
 
     # Add MCP tools
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
@@ -180,7 +203,11 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
             )
 
     # Get action's tool permissions
-    permissions = await autonomous_actions.get_tool_permissions(db, action_id)
+    from spark.database import autonomous_actions
+
+    permissions = await autonomous_actions.get_tool_permissions(
+        db, current_user_guid(request), action_id
+    )
 
     tools = []
     for t in all_tools:
@@ -215,9 +242,10 @@ async def update_action_tool(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    await autonomous_actions.set_tool_permission(
-        db, action_id, tool_name, permission_state, _user(request)
-    )
+    if not await autonomous_actions.set_tool_permission(
+        db, action_id, tool_name, permission_state, current_user_guid(request)
+    ):
+        return not_found("Action not found")
 
     return JSONResponse({"status": "ok"})
 
@@ -232,11 +260,15 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    runs = await autonomous_actions.get_action_runs(db, action_id, limit=20)
+    if await owned_action(request, action_id) is None:
+        return not_found("Action not found")
+    runs = await autonomous_actions.get_action_runs(
+        db, current_user_guid(request), action_id, limit=20
+    )
     return JSONResponse(runs)
 
 
-@router.post("/api/{action_id}/run-now")
+@router.post("/api/{action_id}/run-now", dependencies=_MAY_RUN_ACTIONS)
 async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     """Trigger an immediate action execution.
 
@@ -252,18 +284,25 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
 
     from spark.database import autonomous_actions
 
-    action = await autonomous_actions.get_action(db, action_id, _user(request))
+    action = await autonomous_actions.get_action(db, action_id, current_user_guid(request))
     if not action:
         return JSONResponse({"error": "Action not found"}, status_code=404)
 
     import threading
 
     sync_db = sync_database(request)
+    from spark.identity.access import request_permissions
+
+    # Run now acts for the signed-in user, with their permissions.
+    permissions = request_permissions(request)
+    user_guid = current_user_guid(request)
 
     def _run() -> None:
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(ctx, "web-run-now", sync_db)
+        executor = ActionExecutor(
+            ctx, "web-run-now", sync_db, permissions=permissions, user_guid=user_guid
+        )
         executor.execute(action_id)
 
     thread = threading.Thread(target=_run, daemon=True)
@@ -272,7 +311,7 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse({"status": "running", "message": f"Action '{action['name']}' started."})
 
 
-@router.post("/api/ai-create")
+@router.post("/api/ai-create", dependencies=_MAY_RUN_ACTIONS)
 async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
     if r := _guard(request):
@@ -291,6 +330,8 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     if not message:
         return JSONResponse({"error": "Empty message"}, status_code=400)
+    if refused := not_offered(request, model_id):
+        return refused
 
     from spark.scheduler.creation_tools import (
         ACTION_CREATION_SYSTEM_PROMPT,
@@ -298,19 +339,24 @@ async def ai_create_message(request: Request) -> JSONResponse:
         execute_creation_tool,
     )
 
-    # Set the model for this creation session
-    if model_id:
-        try:
-            llm_manager.set_model(model_id)
-        except ValueError:
-            pass
-
     messages = list(history)
     messages.append({"role": "user", "content": message})
 
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
-    config = conv_mgr._embedded_tools_config if conv_mgr else {}
-    config["_user_guid"] = _user(request)
+    # This session's model answers through a service of its own, so one user's
+    # choice never changes the shared manager's model for anyone else.
+    service = llm_manager
+    if model_id and conv_mgr is not None:
+        service = (
+            await asyncio.to_thread(conv_mgr._get_llm_service_for_model, model_id) or llm_manager
+        )
+    from spark.identity.access import tools_config_for
+
+    # A copy: the shared configuration never carries one user's guid or permissions.
+    config = tools_config_for(request, conv_mgr._embedded_tools_config if conv_mgr else {})
+    config["_user_guid"] = current_user_guid(request)
+    # The action the assistant creates may use only an offered model.
+    config["_offered_models"] = sorted(offered_models(request))
 
     # Augment system prompt with pre-selected name and model
     system_prompt = ACTION_CREATION_SYSTEM_PROMPT
@@ -320,7 +366,9 @@ async def ai_create_message(request: Request) -> JSONResponse:
     # Inject conversation context if creating from a conversation
     if conversation_id and conv_mgr and not history:
         try:
-            conv_messages = await asyncio.to_thread(conv_mgr.get_messages, int(conversation_id))
+            conv_messages = await asyncio.to_thread(
+                conv_mgr.get_messages, int(conversation_id), current_user_guid(request)
+            )
             if conv_messages:
                 # Build a summary of the conversation for the AI to analyse
                 conv_lines = []
@@ -354,7 +402,7 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     all_tool_calls: list[dict] = []
     for _ in range(10):
-        response = llm_manager.invoke_model(
+        response = service.invoke_model(
             messages,
             max_tokens=4096,
             temperature=0.7,

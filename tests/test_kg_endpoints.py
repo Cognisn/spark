@@ -25,8 +25,14 @@ def fake_embedder(monkeypatch):
     monkeypatch.setattr(kg_tools, "_get_embedder", lambda: DirectionalEmbedder())
 
 
+_SETTINGS: dict[str, object] = {
+    "interface.session_timeout_minutes": 60,
+    "default_model.model_id": "model-a",
+}
+
+
 def _mock_settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
-    return {"interface.session_timeout_minutes": 60}.get(key, default)
+    return _SETTINGS.get(key, default)
 
 
 @pytest.fixture()
@@ -103,17 +109,18 @@ class TestBuildLifecycle:
     def test_conflict_while_building(self, client) -> None:
         _auth(client)
         from spark.knowledge import builder
+        from spark.web.endpoints.knowledge import build_key
 
-        assert builder.try_acquire("global")
+        key = build_key(str(client.app.state.user_guid), "global")
+        assert builder.try_acquire(key)
         try:
             assert client.post("/knowledge/api/build", json={"scope": "global"}).status_code == 409
         finally:
-            builder.release("global")
+            builder.release(key)
 
-    def test_unknown_scope_graph_is_empty(self, client) -> None:
+    def test_unknown_conversation_scope_is_not_found(self, client) -> None:
         _auth(client)
-        g = client.get("/knowledge/api/graph?scope=conv:999").json()
-        assert g["total_nodes"] == 0
+        assert client.get("/knowledge/api/graph?scope=conv:999").status_code == 404
 
 
 class TestSearchAndClear:
@@ -138,3 +145,60 @@ class TestSearchAndClear:
         assert client.post("/knowledge/api/clear", json={"scope": "global"}).status_code == 200
         assert db.call(store.count_nodes, "global", "test-user") == 0
         assert "knowledge" in client.get("/knowledge").text.lower()
+
+
+class TestBuildModel:
+    """A build resolves its model explicitly, never from the shared manager's current one."""
+
+    @pytest.fixture()
+    def shared_on_model_b(self, client):
+        from spark.llm.manager import LLMManager
+        from tests.test_turn_model_service import RecordingProvider
+
+        llm = LLMManager()
+        llm.register_provider(RecordingProvider("Shared", ("model-a", "model-b"), []))
+        llm.set_model("model-b")  # what a previous turn or setting left behind
+        client.app.state.llm_manager = llm
+        client.app.state.conversation_manager._llm = llm
+        return client.app.state.conversation_manager._get_llm_service_for_model
+
+    def _build(self, client, db) -> None:
+        _auth(client)
+        _seed_conversation(db)
+        assert client.post("/knowledge/api/build", json={"scope": "global"}).status_code == 200
+        for _ in range(50):
+            if not client.get("/knowledge/api/status").json()["scopes"]["global"]["building"]:
+                break
+            time.sleep(0.1)
+
+    def test_uses_the_default_model(self, client, db, shared_on_model_b) -> None:
+        self._build(client, db)
+        assert [c.args for c in shared_on_model_b.call_args_list] == [("model-a",)]
+
+    def test_the_build_model_setting_comes_first(
+        self, client, db, shared_on_model_b, monkeypatch
+    ) -> None:
+        monkeypatch.setitem(_SETTINGS, "knowledge_graph.build_model", "model-c")
+        self._build(client, db)
+        assert [c.args for c in shared_on_model_b.call_args_list] == [("model-c",)]
+
+    def test_without_a_default_the_first_model_listed(
+        self, client, db, shared_on_model_b, monkeypatch
+    ) -> None:
+        monkeypatch.delitem(_SETTINGS, "default_model.model_id")
+        self._build(client, db)
+        assert [c.args for c in shared_on_model_b.call_args_list] == [("model-a",)]
+
+    def test_without_any_model_the_build_is_refused(self, client, db, monkeypatch) -> None:
+        from spark.llm.manager import LLMManager
+
+        monkeypatch.delitem(_SETTINGS, "default_model.model_id")
+        client.app.state.llm_manager = LLMManager()
+        _auth(client)
+        _seed_conversation(db)
+        refused = client.post("/knowledge/api/build", json={"scope": "global"})
+        assert refused.status_code == 409
+        assert "model" in refused.json()["error"]
+        # Nothing was started, and the scope is free to build later.
+        assert client.app.state.conversation_manager._get_llm_service_for_model.call_count == 0
+        assert not client.get("/knowledge/api/status").json()["scopes"]["global"]["building"]

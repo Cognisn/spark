@@ -1,4 +1,15 @@
-"""Action runner — schedules and executes autonomous actions."""
+"""Action runner — schedules and executes autonomous actions.
+
+Personal mode (the tray daemon): the single local user's enabled actions, run as
+that user.
+
+Server mode (the worker): every user's enabled actions, each run as its owner.
+Before each run the owner's standing is read from warden at run time (an
+:class:`~spark.scheduler.owners.OwnerResolver`); an owner who may not run
+actions is refused and the refusal recorded, and an allowed run gets the
+owner's guid (memory, file area, run records) and current permissions (its
+tools). A server never uses the process's own user guid.
+"""
 
 from __future__ import annotations
 
@@ -14,20 +25,40 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 
 if TYPE_CHECKING:
-    from konfig import AppContext
+    from spark.scheduler.owners import OwnerAccess, OwnerResolver
 
 from spark.db.bridge import SyncDatabase
 
 logger = logging.getLogger(__name__)
 
 
+def _server() -> bool:
+    """Whether this process serves many users (a process with no mode is personal)."""
+    from spark import mode
+
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
 class ActionRunner:
     """Loads enabled actions from the database and schedules them via APScheduler."""
 
-    def __init__(self, ctx: Any, daemon_id: str, db: SyncDatabase) -> None:
+    def __init__(
+        self,
+        ctx: Any,
+        daemon_id: str,
+        db: SyncDatabase,
+        *,
+        owners: OwnerResolver | None = None,
+    ) -> None:
+        """``owners`` resolves each action owner's standing in server mode; without
+        it a server refuses every run (fail closed). Personal mode ignores it."""
         self._ctx = ctx
         self._daemon_id = daemon_id
         self._db = db
+        self._owners = owners
         import tzlocal
 
         # Enable APScheduler logging to capture trigger/misfire events
@@ -55,12 +86,13 @@ class ActionRunner:
 
     def start(self) -> None:
         """Start the scheduler and begin polling for action changes."""
-        from spark.core.user_guid import get_user_guid
-
-        uid = get_user_guid(self._ctx)
-        logger.info(
-            "Action runner starting (user_guid=%s)", uid[:8] + "..." if len(uid) > 8 else uid
-        )
+        if _server():
+            logger.info("Action runner starting (every user's actions, each as its owner)")
+        else:
+            uid = self._local_user()
+            logger.info(
+                "Action runner starting (user_guid=%s)", uid[:8] + "..." if len(uid) > 8 else uid
+            )
 
         self._scheduler.start()
         self._running = True
@@ -98,21 +130,33 @@ class ActionRunner:
                 logger.error("Poll error: %s", e)
             time.sleep(self._poll_interval)
 
-    def _reload_all(self) -> None:
-        """Reload all enabled actions from the database."""
+    def _local_user(self) -> str:
+        """Personal mode's single local user (never asked for on a server)."""
+        from spark.core.user_guid import get_user_guid
+
+        return get_user_guid(self._ctx)
+
+    def _enabled_actions(self, db: SyncDatabase) -> list[dict[str, Any]]:
+        """The enabled actions to schedule, each with its owner in ``user_guid``."""
         from spark.database import autonomous_actions
 
+        if _server():
+            return db.call(autonomous_actions.get_enabled_actions_for_worker)
+        user_guid = self._local_user()
+        return [
+            {**action, "user_guid": user_guid}
+            for action in db.call(autonomous_actions.get_enabled_actions, user_guid)
+        ]
+
+    def _reload_all(self) -> None:
+        """Reload all enabled actions from the database."""
         db = self._get_db()
 
         try:
-            from spark.core.user_guid import get_user_guid
-
-            user_guid = get_user_guid(self._ctx)
-
             # Clear stale locks (locked for more than 30 minutes)
             self._clear_stale_locks(db)
 
-            actions = db.call(autonomous_actions.get_enabled_actions, user_guid)
+            actions = self._enabled_actions(db)
             scheduled_ids = {job.id for job in self._scheduler.get_jobs()}
             current_action_ids = set()
 
@@ -131,6 +175,7 @@ class ActionRunner:
 
             for action in actions:
                 action_id = action["id"]
+                user_guid = action["user_guid"]
                 current_action_ids.add(action_id)
                 job_id = f"action_{action_id}"
 
@@ -174,8 +219,8 @@ class ActionRunner:
         except Exception as e:
             logger.error("Failed to reload actions: %s", e)
 
-    def _schedule_action(self, action: dict, job_id: str, user_guid: str = "default") -> None:
-        """Schedule a single action."""
+    def _schedule_action(self, action: dict, job_id: str, user_guid: str) -> None:
+        """Schedule a single action, to run as ``user_guid`` (its owner)."""
         schedule_type = action.get("schedule_type", "one_off")
         schedule_config_raw = action.get("schedule_config")
 
@@ -227,7 +272,7 @@ class ActionRunner:
                     self._execute_action,
                     trigger=trigger,
                     id=job_id,
-                    args=[action["id"]],
+                    args=[action["id"], user_guid],
                     replace_existing=True,
                 )
 
@@ -266,7 +311,7 @@ class ActionRunner:
                     self._execute_action,
                     trigger=trigger,
                     id=job_id,
-                    args=[action["id"]],
+                    args=[action["id"], user_guid],
                     replace_existing=True,
                 )
 
@@ -301,20 +346,49 @@ class ActionRunner:
         except Exception as e:
             logger.debug("Stale lock check: %s", e)
 
-    def _execute_action(self, action_id: int) -> None:
-        """Execute an action."""
+    def _owner_access(self, user_guid: str) -> OwnerAccess:
+        """The owner's standing now, from warden (server mode); refused when unknown."""
+        from spark.scheduler.owners import OwnerAccess
+
+        if self._owners is None:
+            return OwnerAccess.refused(
+                user_guid, "the worker cannot reach warden to check the action's owner"
+            )
+        try:
+            return self._db.run(self._owners.resolve(user_guid))
+        except Exception as e:  # noqa: BLE001 - an unknown standing is a refusal
+            logger.error("Could not resolve the owner of an action (%s)", type(e).__name__)
+            return OwnerAccess.refused(user_guid, "the action owner's standing could not be read")
+
+    def _execute_action(self, action_id: int, user_guid: str | None = None) -> None:
+        """Execute an action as ``user_guid``, its owner (the local user in personal mode)."""
         logger.info("Executing action %d", action_id)
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(self._ctx, self._daemon_id, self._db)
-        executor.execute(action_id)
+        if _server():
+            if not user_guid:
+                logger.error("Action %d has no owner; not run", action_id)
+                return
+            access = self._owner_access(user_guid)
+            executor = ActionExecutor(
+                self._ctx,
+                self._daemon_id,
+                self._db,
+                permissions=access.permissions,
+                user_guid=user_guid,
+            )
+            if access.refusal is not None:
+                executor.refuse(action_id, access.refusal)
+            else:
+                executor.execute(action_id)
+        else:
+            user_guid = self._local_user()
+            ActionExecutor(self._ctx, self._daemon_id, self._db).execute(action_id)
 
         # Update next_run_at and last_run_at after execution
         try:
-            from spark.core.user_guid import get_user_guid
             from spark.database import autonomous_actions as aa
 
-            user_guid = get_user_guid(self._ctx)
             job = self._scheduler.get_job(f"action_{action_id}")
             if job and job.next_run_time:
                 # Store as UTC for consistent DB storage

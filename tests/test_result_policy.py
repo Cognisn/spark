@@ -22,11 +22,13 @@ from fastapi.testclient import TestClient
 from konfig.settings.settings import Settings
 
 from spark import mode
+from spark.identity.permissions import ADMINISTRATOR
 from spark.instance_settings import access, accessor, audit, registry
 from spark.instance_settings.registry import Scope
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from spark.safety import untrusted
 from spark.web.server import attach_database, create_app
+from tests.identity_helpers import AsIdentity, Holder, identity_for
 from tests.web_helpers import sign_in
 
 SOURCES = ("web", "mcp", "documents", "agents")
@@ -108,6 +110,10 @@ def server(tmp_path: Path, pg_url: str, monkeypatch: pytest.MonkeyPatch) -> Iter
     ctx = Ctx(tmp_path / "config.yaml")
     monkeypatch.setattr(app_mod, "_get_config_path", lambda: tmp_path / "config.yaml")
     app = create_app(ctx)  # type: ignore[arg-type]
+    # The server's requests come from a signed-in administrator (the sign-in
+    # layer sets request.state.identity; this stands in for it).
+    admin = identity_for(ADMINISTRATOR, user_guid=str(app.state.user_guid))
+    app.add_middleware(AsIdentity, holder=Holder(admin))
     attach_database(app, db, True)
     options = {"loop_factory": asyncio.SelectorEventLoop} if sys.platform == "win32" else {}
     with TestClient(app, backend_options=options) as client:

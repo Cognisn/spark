@@ -247,7 +247,7 @@ class ConversationVectorIndex:
         """Clear all index elements for this conversation."""
         from spark.database import context_index
 
-        self._db.call(context_index.delete_index_elements, self._conversation_id)
+        self._db.call(context_index.delete_index_elements, self._user_guid, self._conversation_id)
         self._cache_dirty = True
         self._cache = None
 
@@ -255,7 +255,7 @@ class ConversationVectorIndex:
         """Get element counts by type."""
         from spark.database import context_index
 
-        return self._db.call(context_index.get_index_stats, self._conversation_id)
+        return self._db.call(context_index.get_index_stats, self._user_guid, self._conversation_id)
 
     def rebuild(self) -> int:
         """Re-embed every context element of this user (all conversations); returns how many.

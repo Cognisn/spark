@@ -1,4 +1,8 @@
-"""Debate persistence: config, agents, turns, and exhibits."""
+"""Debate persistence: config, agents, turns, and exhibits.
+
+Every function takes the caller's user guid and reaches only debates on that
+user's conversations; the debate tables are scoped through their conversation.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ import json
 import logging
 from typing import Any
 
+from spark.database.scope import OWNED_CONVERSATIONS, NotOwned, require_conversation
 from spark.db.engine import Executor
 
 __all__ = [
@@ -61,8 +66,12 @@ async def create_debate(
     user_guid: str,
     agents: dict[str, dict[str, Any]],
 ) -> int:
-    """Create the debate config and its agent rows, in one transaction. Returns config ID."""
+    """Create the debate config and its agent rows, in one transaction. Returns config ID.
+
+    Raises :class:`NotOwned` when the conversation is not the user's.
+    """
     async with db.transaction() as conn:
+        await require_conversation(conn, user_guid, conversation_id)
         config_id = await conn.fetch_value(
             """INSERT INTO debate_config
                 (conversation_id, topic, rounds_mode, max_rounds, state, user_guid)
@@ -90,13 +99,14 @@ async def create_debate(
     return int(config_id)
 
 
-async def get_debate(db: Executor, conversation_id: int) -> dict[str, Any] | None:
-    """Return the debate config with its agents, or None."""
+async def get_debate(db: Executor, user_guid: str, conversation_id: int) -> dict[str, Any] | None:
+    """The debate config with its agents, or None (including another user's debate)."""
     row = await db.fetch_one(
-        """SELECT id, conversation_id, topic, rounds_mode, max_rounds, state,
+        f"""SELECT id, conversation_id, topic, rounds_mode, max_rounds, state,
                   current_round, opening_speaker, user_guid
-           FROM debate_config WHERE conversation_id = ?""",
-        (conversation_id,),
+           FROM debate_config WHERE conversation_id = ?
+           AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, user_guid),
     )
     if row is None:
         return None
@@ -124,6 +134,7 @@ async def get_debate(db: Executor, conversation_id: int) -> dict[str, Any] | Non
 
 async def update_debate_state(
     db: Executor,
+    user_guid: str,
     conversation_id: int,
     state: str,
     *,
@@ -140,15 +151,17 @@ async def update_debate_state(
         sets.append("opening_speaker = ?")
         params.append(opening_speaker)
     sets.append("updated_at = CURRENT_TIMESTAMP")
-    params.append(conversation_id)
+    params += [conversation_id, user_guid]
     await db.execute(
-        f"UPDATE debate_config SET {', '.join(sets)} WHERE conversation_id = ?",
+        f"UPDATE debate_config SET {', '.join(sets)} WHERE conversation_id = ? "
+        f"AND conversation_id IN ({OWNED_CONVERSATIONS})",
         tuple(params),
     )
 
 
 async def add_turn(
     db: Executor,
+    user_guid: str,
     conversation_id: int,
     round_no: int,
     role: str,
@@ -158,18 +171,25 @@ async def add_turn(
     status: str = "complete",
     token_count: int = 0,
 ) -> int:
-    """Record a debate turn. Returns the turn ID."""
+    """Record a turn of a debate on one of the user's conversations. Returns the turn ID.
+
+    Raises :class:`NotOwned` when the conversation is not the user's.
+    """
     new_id = await db.fetch_value(
         """INSERT INTO debate_turns
             (conversation_id, round, role, turn_type, content, status, token_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
-        (conversation_id, round_no, role, turn_type, content, status, token_count),
+            SELECT id, ?, ?, ?, ?, ?, ? FROM conversations WHERE id = ? AND user_guid = ?
+            RETURNING id""",
+        (round_no, role, turn_type, content, status, token_count, conversation_id, user_guid),
     )
+    if new_id is None:
+        raise NotOwned(f"conversation {conversation_id} not found")
     return int(new_id)
 
 
 async def update_turn(
     db: Executor,
+    user_guid: str,
     turn_id: int,
     *,
     content: str | None = None,
@@ -185,40 +205,58 @@ async def update_turn(
             params.append(val)
     if not sets:
         return
-    params.append(turn_id)
-    await db.execute(f"UPDATE debate_turns SET {', '.join(sets)} WHERE id = ?", tuple(params))
+    params += [turn_id, user_guid]
+    await db.execute(
+        f"UPDATE debate_turns SET {', '.join(sets)} WHERE id = ? "
+        f"AND conversation_id IN ({OWNED_CONVERSATIONS})",
+        tuple(params),
+    )
 
 
-async def get_turns(db: Executor, conversation_id: int) -> list[dict[str, Any]]:
-    """All turns for a conversation, oldest first."""
+async def get_turns(db: Executor, user_guid: str, conversation_id: int) -> list[dict[str, Any]]:
+    """All turns of one of the user's conversations, oldest first."""
     rows = await db.fetch_all(
         f"""SELECT {', '.join(_TURN_COLUMNS)}
-            FROM debate_turns WHERE conversation_id = ? ORDER BY id""",
-        (conversation_id,),
+            FROM debate_turns WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS}) ORDER BY id""",
+        (conversation_id, user_guid),
     )
     return [{c: row[c] for c in _TURN_COLUMNS} for row in rows]
 
 
-async def add_exhibits(db: Executor, turn_id: int, exhibits: list[dict[str, Any]]) -> None:
-    """Attach exhibits to a turn."""
+async def add_exhibits(
+    db: Executor, user_guid: str, turn_id: int, exhibits: list[dict[str, Any]]
+) -> None:
+    """Attach exhibits to a turn of one of the user's debates (nothing otherwise)."""
     await db.execute_many(
-        """INSERT INTO debate_exhibits (turn_id, label, title, content, source)
-            VALUES (?, ?, ?, ?, ?)""",
+        f"""INSERT INTO debate_exhibits (turn_id, label, title, content, source)
+            SELECT id, ?, ?, ?, ? FROM debate_turns
+            WHERE id = ? AND conversation_id IN ({OWNED_CONVERSATIONS})""",
         [
-            (turn_id, ex.get("label", ""), ex.get("title"), ex.get("content"), ex.get("source"))
+            (
+                ex.get("label", ""),
+                ex.get("title"),
+                ex.get("content"),
+                ex.get("source"),
+                turn_id,
+                user_guid,
+            )
             for ex in exhibits
         ],
     )
 
 
-async def get_exhibits(db: Executor, conversation_id: int) -> dict[int, list[dict[str, Any]]]:
-    """Exhibits for all turns of a conversation, keyed by turn ID."""
+async def get_exhibits(
+    db: Executor, user_guid: str, conversation_id: int
+) -> dict[int, list[dict[str, Any]]]:
+    """Exhibits for all turns of one of the user's conversations, keyed by turn ID."""
     rows = await db.fetch_all(
-        """SELECT e.turn_id, e.label, e.title, e.content, e.source
+        f"""SELECT e.turn_id, e.label, e.title, e.content, e.source
             FROM debate_exhibits e
             JOIN debate_turns t ON t.id = e.turn_id
-            WHERE t.conversation_id = ? ORDER BY e.id""",
-        (conversation_id,),
+            WHERE t.conversation_id = ? AND t.conversation_id IN ({OWNED_CONVERSATIONS})
+            ORDER BY e.id""",
+        (conversation_id, user_guid),
     )
     out: dict[int, list[dict[str, Any]]] = {}
     for r in rows:
@@ -234,12 +272,13 @@ async def get_exhibits(db: Executor, conversation_id: int) -> dict[int, list[dic
 
 
 async def add_agent_tokens(
-    db: Executor, conversation_id: int, role: str, sent: int, received: int
+    db: Executor, user_guid: str, conversation_id: int, role: str, sent: int, received: int
 ) -> None:
-    """Accumulate token usage on a debate agent."""
+    """Accumulate token usage on an agent of one of the user's debates."""
     await db.execute(
-        """UPDATE debate_agents
+        f"""UPDATE debate_agents
             SET tokens_sent = tokens_sent + ?, tokens_received = tokens_received + ?
-            WHERE conversation_id = ? AND role = ?""",
-        (sent, received, conversation_id, role),
+            WHERE conversation_id = ? AND role = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (sent, received, conversation_id, role, user_guid),
     )

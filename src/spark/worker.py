@@ -1,7 +1,8 @@
 """The worker role: ``spark worker``, server mode only.
 
 The worker runs Spark's background duties away from the web processes: scheduled
-actions today, and whatever later releases register (warden's pruning in 0.3.0).
+actions, warden's pruning (:mod:`spark.identity.pruning`), and whatever later
+releases register.
 Any number of workers may run against one database, but only one is active at a
 time. The active worker holds a PostgreSQL session-level advisory lock on a
 connection of its own; the others stand by, retrying every ``standby_seconds``,
@@ -24,8 +25,18 @@ starts (for example from a module imported at start-up):
 
 Each duty receives a :class:`WorkerContext` with the worker's async
 :class:`~spark.db.Database` (its ``pool`` is the psycopg pool for warden), the
-:class:`~spark.db.SyncDatabase` bridge for synchronous code on other threads, and
-the konfig application context.
+:class:`~spark.db.SyncDatabase` bridge for synchronous code on other threads,
+the konfig application context, and warden's runtime. While active, the worker
+builds that runtime once for every duty and installs SPARK's audit hooks
+(:mod:`spark.identity.audit`), so its refusals and tool results are audited as
+the web's are; it removes them when it stops or steps down.
+
+Scheduled actions run for every user, each as its owner (D22). The worker has
+no user of its own and never reads the process's user guid: before each run it
+asks warden, through an identity runtime built the way the web builds one over
+the same pool (without the HTTP parts), for the owner's status and current
+permissions. An owner who may not run actions is refused and the refusal is
+recorded as a run.
 """
 
 from __future__ import annotations
@@ -38,7 +49,7 @@ import socket
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
@@ -47,6 +58,7 @@ if TYPE_CHECKING:
     from psycopg import AsyncConnection
 
     from spark.db import Database, SyncDatabase
+    from spark.identity.runtime import IdentityRuntime
 
 __all__ = [
     "WORKER_LOCK_KEY",
@@ -111,6 +123,8 @@ class WorkerContext:
     database: Database
     sync_db: SyncDatabase
     app: Any = None
+    # warden's runtime, when something already built one for this worker.
+    identity: IdentityRuntime | None = None
 
 
 PeriodicFn = Callable[[WorkerContext], Awaitable[None]]
@@ -172,16 +186,57 @@ _SCHEDULED_ACTIONS: Final = "scheduled-actions"
 
 
 @asynccontextmanager
-async def _scheduled_actions(ctx: WorkerContext) -> AsyncIterator[None]:
-    """Run the action scheduler (APScheduler threads) while active."""
-    from spark.scheduler.runner import ActionRunner
+async def _identity(ctx: WorkerContext) -> AsyncIterator[IdentityRuntime]:
+    """warden's runtime for the worker: the context's own, or one built for this block.
 
-    runner = ActionRunner(ctx.app, ctx.worker_id, ctx.sync_db)
-    await asyncio.to_thread(runner.start)
+    Built as the web builds it (warden's configuration from SPARK's settings,
+    the key store over konfig's secrets) over the worker's pool; nothing of
+    warden's HTTP side is used.
+    """
+    if ctx.identity is not None:
+        yield ctx.identity
+        return
+    from spark.identity.runtime import IdentityRuntime
+
+    if ctx.app is None:
+        raise WorkerRefused("the worker needs its application context to start warden")
+    runtime = await IdentityRuntime.start(ctx.database, ctx.app.settings, ctx.app.secrets)
     try:
-        yield
+        yield runtime
     finally:
-        await asyncio.to_thread(runner.stop)
+        runtime.close()
+
+
+@asynccontextmanager
+async def _warden(ctx: WorkerContext) -> AsyncIterator[WorkerContext]:
+    """While active: warden's runtime for every duty, and SPARK's audit hooks installed.
+
+    A worker without an application context (and no runtime given) runs its
+    duties without warden.
+    """
+    if ctx.identity is None and ctx.app is None:
+        yield ctx
+        return
+    from spark.identity import audit
+
+    async with _identity(ctx) as runtime, audit.installed(ctx.database):
+        yield replace(ctx, identity=runtime)
+
+
+@asynccontextmanager
+async def _scheduled_actions(ctx: WorkerContext) -> AsyncIterator[None]:
+    """Run the action scheduler (APScheduler threads) while active, every action as its owner."""
+    from spark.scheduler import runner as runner_module
+    from spark.scheduler.owners import WardenOwners
+
+    async with _identity(ctx) as identity:
+        owners = WardenOwners(identity.identity, ctx.database)
+        runner = runner_module.ActionRunner(ctx.app, ctx.worker_id, ctx.sync_db, owners=owners)
+        await asyncio.to_thread(runner.start)
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(runner.stop)
 
 
 def default_duties() -> tuple[list[Service], list[PeriodicJob]]:
@@ -366,6 +421,7 @@ class Worker:
 
     async def _active(self, ctx: WorkerContext, stop: asyncio.Event) -> None:
         async with AsyncExitStack() as stack:
+            ctx = await stack.enter_async_context(_warden(ctx))
             for service in self._services:
                 logger.info("Worker %s: starting %s", ctx.worker_id, service.name)
                 await stack.enter_async_context(service.factory(ctx))
@@ -423,7 +479,9 @@ def _with_app(body: Callable[[Any], Any]) -> tuple[RuntimeSettings, Any]:
             defaults=application._default_settings(),
             env_prefix="SPARK",
         ) as app:
-            runtime = application.configure_runtime(app.settings)
+            # First, before any database or tool work, with the secrets so a
+            # ``secret://`` database.url resolves (D13).
+            runtime = application.configure_runtime(app.settings, app.secrets)
             return runtime, await _maybe_await(body(app))
 
     return asyncio.run(_run())
@@ -436,9 +494,11 @@ async def _maybe_await(value: Any) -> Any:
 
 
 def _check_schema(settings: DatabaseSettings) -> None:
-    """Refuse a database that is not at the current schema (``spark migrate`` first)."""
+    """Refuse a database not at the current schema, warden's included (``spark migrate`` first)."""
     from spark.db import migrate
+    from spark.identity import migrations as identity_migrations
 
+    identity_migrations.register()
     migrate.check_at_head(settings)
 
 
@@ -455,8 +515,12 @@ def _serve(runtime: RuntimeSettings) -> None:
         if sys.platform != "win32":
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.add_signal_handler(sig, stop.set)
-        services, periodic = default_duties()
         settings = app.settings if app is not None else None
+        if settings is not None:
+            from spark.identity import pruning
+
+            pruning.register(settings)
+        services, periodic = default_duties()
         worker = Worker(
             runtime.database,
             worker_id=_worker_id(),

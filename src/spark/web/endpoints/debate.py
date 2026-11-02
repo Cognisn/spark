@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -24,22 +25,20 @@ router = APIRouter(prefix="", tags=["debate"])
 def _orchestrator(request: Request, status_callback: Any = None):
     """Build a DebateOrchestrator wired to the app's shared services."""
     from spark.core.debate.orchestrator import DebateOrchestrator
+    from spark.identity.access import tools_config_for
 
     conv_mgr = request.app.state.conversation_manager
     return DebateOrchestrator(
         conv_mgr._db,
         conv_mgr._get_llm_service_for_model,
-        getattr(conv_mgr, "_embedded_tools_config", {}) or {},
+        # Participants' tools follow the signed-in user's roles (server mode).
+        tools_config_for(request, getattr(conv_mgr, "_embedded_tools_config", {}) or {}),
         mcp_manager=getattr(conv_mgr, "_mcp_manager", None),
         mcp_loop=getattr(request.app.state, "_mcp_loop", None),
         status_callback=status_callback,
         tool_permission_callback=getattr(conv_mgr, "_tool_permission_callback", None),
         prompt_caching=getattr(conv_mgr, "_prompt_caching_enabled", True),
     )
-
-
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
 
 
 @router.get("/debate/{conversation_id}")
@@ -55,11 +54,13 @@ async def debate_capabilities(request: Request) -> JSONResponse:
     tools_out: list[dict] = []
     try:
         from spark.core.conversation_manager import _TOOL_CATEGORIES
+        from spark.identity.access import tools_config_for
         from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES
         from spark.tools.registry import get_builtin_tools
 
         conv_mgr = request.app.state.conversation_manager
         config = getattr(conv_mgr, "_embedded_tools_config", {}) or {"embedded_tools": {}}
+        config = tools_config_for(request, config)
         offered = {t["name"]: t.get("description", "") for t in get_builtin_tools(config)}
 
         never = {"spawn_agent", "list_provider_models"}
@@ -104,7 +105,7 @@ async def debate_capabilities(request: Request) -> JSONResponse:
         # Only globally-enabled skills are offered; a skill disabled in the global
         # settings never reaches the wizard, matching how tools are gated by their
         # category config. Absent state defaults to enabled.
-        states = await skills_db.get_skill_states(database(request), _user_guid(request))
+        states = await skills_db.get_skill_states(database(request), current_user_guid(request))
         skills_out = [
             {"name": s["name"], "description": s["description"][:80]}
             for s in manager.list_skills()
@@ -122,11 +123,12 @@ async def debate_state(request: Request, conversation_id: int) -> JSONResponse:
     from spark.database import debates
 
     db = database(request)
-    cfg = await debates.get_debate(db, conversation_id)
+    user_guid = current_user_guid(request)
+    cfg = await debates.get_debate(db, user_guid, conversation_id)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
-    turns = await debates.get_turns(db, conversation_id)
-    exhibits = await debates.get_exhibits(db, conversation_id)
+    turns = await debates.get_turns(db, user_guid, conversation_id)
+    exhibits = await debates.get_exhibits(db, user_guid, conversation_id)
     return JSONResponse(
         {
             "config": cfg,
@@ -148,31 +150,39 @@ async def debate_prompt(request: Request) -> JSONResponse:
         return JSONResponse({"error": "conversation_id and message required"}, status_code=400)
 
     db = database(request)
-    cfg = await debates.get_debate(db, cid)
+    user_guid = current_user_guid(request)
+    cfg = await debates.get_debate(db, user_guid, cid)
     if not cfg:
         return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
 
     from spark.skills.trigger import resolve_trigger_for_conversation
 
-    message = await resolve_trigger_for_conversation(db, _user_guid(request), cid, message)
+    message = await resolve_trigger_for_conversation(db, user_guid, cid, message)
 
     orch = _orchestrator(request)
-    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, message)
+    turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)
     if cfg["state"] == "qa":
         answer = await asyncio.get_running_loop().run_in_executor(
-            None, orch.answer_qa, cid, _user_guid(request), turn_id
+            None, orch.answer_qa, cid, user_guid, turn_id
         )
         return JSONResponse({"queued": False, "answer": answer})
     return JSONResponse({"queued": True, "turn_id": turn_id})
 
 
-@router.get("/stream/debate")
-async def stream_debate(request: Request, conversation_id: int) -> EventSourceResponse:
+@router.get("/stream/debate", response_model=None)
+async def stream_debate(
+    request: Request, conversation_id: int
+) -> EventSourceResponse | JSONResponse:
     """Drive the debate loop, translating orchestrator events to SSE.
 
     Mirrors the structure of stream_chat in streaming.py: a worker thread
     runs the orchestrator, a queue carries events, and the poller emits them.
     """
+    from spark.database import debates
+
+    user_guid = current_user_guid(request)
+    if not await debates.get_debate(database(request), user_guid, conversation_id):
+        return JSONResponse({"error": "Not a debate conversation"}, status_code=404)
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()
     if not hasattr(request.app.state, "turn_cancel_tokens"):
@@ -181,7 +191,6 @@ async def stream_debate(request: Request, conversation_id: int) -> EventSourceRe
 
     events: queue.Queue = queue.Queue()
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
-    user_guid = _user_guid(request)
     loop = asyncio.get_running_loop()
 
     async def event_generator():

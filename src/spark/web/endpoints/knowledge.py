@@ -11,7 +11,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
 from spark.web.db import database, sync_database
+from spark.web.scope import not_found, owned_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +22,21 @@ router = APIRouter(prefix="/knowledge")
 _GRAPH_NODE_CAP = 500
 
 
-def _user_guid(request: Request) -> str:
-    return getattr(request.app.state, "user_guid", "default")
+def build_key(user_guid: str, scope: str) -> str:
+    """One user's build of one scope: its lock, cancel token and last result."""
+    return f"{user_guid}|{scope}"
+
+
+async def _scope_refusal(request: Request, scope: str) -> JSONResponse | None:
+    """400 for a malformed scope, 404 for another user's (or a missing) conversation."""
+    if scope == "global":
+        return None
+    kind, _, raw = scope.partition(":")
+    if kind != "conv" or not raw.isdigit():
+        return JSONResponse({"error": "Invalid scope"}, status_code=400)
+    if await owned_conversation(request, int(raw)) is None:
+        return not_found()
+    return None
 
 
 def _state_dicts(request: Request) -> tuple[dict, dict]:
@@ -47,7 +62,7 @@ async def kg_status(request: Request) -> JSONResponse:
     from spark.knowledge.builder import KnowledgeGraphBuilder
 
     db = database(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     _, results = _state_dicts(request)
     plan_builder = KnowledgeGraphBuilder(sync_database(request), lambda m: None, None)
 
@@ -55,9 +70,9 @@ async def kg_status(request: Request) -> JSONResponse:
         return {
             "nodes": await store.count_nodes(db, scope, user_guid),
             "edges": await store.count_edges(db, scope, user_guid),
-            "building": builder.is_building(scope),
+            "building": builder.is_building(build_key(user_guid, scope)),
             "builds": await store.get_build_state(db, scope, user_guid),
-            "last_result": results.get(scope),
+            "last_result": results.get(build_key(user_guid, scope)),
             "plan": await asyncio.to_thread(plan_builder.plan_scope, scope, user_guid),
         }
 
@@ -86,52 +101,70 @@ async def kg_build(request: Request) -> JSONResponse:
 
     data = await request.json()
     scope = str(data.get("scope", "")).strip()
-    if not (scope == "global" or scope.startswith("conv:")):
-        return JSONResponse({"error": "Invalid scope"}, status_code=400)
+    if refused := await _scope_refusal(request, scope):
+        return refused
 
-    if not builder.try_acquire(scope):
+    user_guid = current_user_guid(request)
+    model_id = await _build_model(request, user_guid)
+    if not model_id:
+        return JSONResponse(
+            {"error": "No model to build with: set a default model or knowledge_graph.build_model"},
+            status_code=409,
+        )
+    key = build_key(user_guid, scope)
+    if not builder.try_acquire(key):
         return JSONResponse({"error": "A build is already running for this scope"}, status_code=409)
 
     conv_mgr = request.app.state.conversation_manager
     db = sync_database(request)
-    user_guid = _user_guid(request)
     tokens, results = _state_dicts(request)
     token = CancellationToken()
-    tokens[scope] = token
-
-    ctx = getattr(request.app.state, "ctx", None)
-    model_id = None
-    if ctx is not None:
-        try:
-            model_id = ctx.settings.get("knowledge_graph.build_model")
-        except Exception:  # noqa: BLE001
-            model_id = None
-    if not model_id:
-        active = getattr(conv_mgr, "_llm", None)
-        service = getattr(active, "active_service", None) if active else None
-        model_id = getattr(service, "current_model", None) or "default"
+    tokens[key] = token
 
     def run() -> None:
         try:
             engine = KnowledgeGraphBuilder(db, conv_mgr._get_llm_service_for_model, _get_embedder())
-            results[scope] = engine.build_scope(scope, user_guid, model_id, cancel_token=token)
+            results[key] = engine.build_scope(scope, user_guid, model_id, cancel_token=token)
         except Exception as e:  # noqa: BLE001 - record, never crash the thread
             logger.error("Knowledge graph build failed: %s", e, exc_info=True)
-            results[scope] = {"status": "failed", "error": str(e)}
+            results[key] = {"status": "failed", "error": str(e)}
         finally:
-            builder.release(scope)
-            tokens.pop(scope, None)
+            builder.release(key)
+            tokens.pop(key, None)
 
     threading.Thread(target=run, daemon=True, name=f"kg-build-{scope}").start()
     return JSONResponse({"status": "started", "scope": scope})
+
+
+async def _build_model(request: Request, user_guid: str) -> str:
+    """The model a build extracts with, resolved explicitly (never the shared manager's).
+
+    ``knowledge_graph.build_model`` first, then the user's default model (their
+    preference on a server, ``config.yaml``'s in personal mode), then the first
+    model listed; "" when there is none. The build gets a service of its own for it.
+    """
+    from spark.web.models import default_model
+
+    ctx = getattr(request.app.state, "ctx", None)
+    configured = ctx.settings.get("knowledge_graph.build_model") if ctx is not None else None
+    if isinstance(configured, str) and configured:
+        return configured
+    preferred = await default_model(request, user_guid)
+    if preferred:
+        return preferred
+    llm_manager = getattr(request.app.state, "llm_manager", None)
+    listed = llm_manager.list_all_models() if llm_manager is not None else []
+    return str(listed[0].get("id", "")) if listed else ""
 
 
 @router.post("/api/cancel")
 async def kg_cancel(request: Request) -> JSONResponse:
     data = await request.json()
     scope = str(data.get("scope", "")).strip()
+    if refused := await _scope_refusal(request, scope):
+        return refused
     tokens, _ = _state_dicts(request)
-    token = tokens.get(scope)
+    token = tokens.get(build_key(current_user_guid(request), scope))
     if token:
         token.cancel("user")
         return JSONResponse({"status": "cancelling"})
@@ -143,8 +176,11 @@ async def kg_graph(request: Request, scope: str) -> JSONResponse:
     """Nodes and edges for the visualisation, capped, without embeddings."""
     from spark.knowledge import store
 
+    if refused := await _scope_refusal(request, scope):
+        return refused
+
     db = database(request)
-    user_guid = _user_guid(request)
+    user_guid = current_user_guid(request)
     total_nodes = await store.count_nodes(db, scope, user_guid)
     total_edges = await store.count_edges(db, scope, user_guid)
     nodes = await store.get_nodes(db, scope, user_guid, limit=_GRAPH_NODE_CAP)
@@ -170,8 +206,16 @@ async def kg_search(request: Request, q: str, scope: str = "global") -> JSONResp
     from spark.knowledge.query import find_entities
     from spark.knowledge.tools import _get_embedder
 
+    if refused := await _scope_refusal(request, scope):
+        return refused
+
     results = await asyncio.to_thread(
-        find_entities, sync_database(request), _get_embedder(), [scope], q, _user_guid(request)
+        find_entities,
+        sync_database(request),
+        _get_embedder(),
+        [scope],
+        q,
+        current_user_guid(request),
     )
     return JSONResponse(
         {
@@ -195,7 +239,9 @@ async def kg_clear(request: Request) -> JSONResponse:
 
     data = await request.json()
     scope = str(data.get("scope", "")).strip()
-    if builder.is_building(scope):
+    if refused := await _scope_refusal(request, scope):
+        return refused
+    if builder.is_building(build_key(current_user_guid(request), scope)):
         return JSONResponse({"error": "Cannot clear while building"}, status_code=409)
-    await store.clear_scope(database(request), scope, _user_guid(request))
+    await store.clear_scope(database(request), scope, current_user_guid(request))
     return JSONResponse({"status": "ok"})

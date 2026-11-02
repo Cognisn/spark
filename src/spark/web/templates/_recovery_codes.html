@@ -1,0 +1,9 @@
+{# Recovery codes, shown once. Expects recovery_codes. #}
+<div class="alert-app alert-app-warning mb-3" role="status">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    Save these recovery codes somewhere safe now. Each works once, in place of a code from your
+    authenticator app. They will not be shown again.
+</div>
+<pre id="recovery-codes" class="p-3 mb-2" style="background: var(--app-bg-tertiary); border-radius: 8px; font-size: 0.9375rem; columns: 2;">{% for code in recovery_codes %}{{ code }}
+{% endfor %}</pre>
+<button type="button" class="btn btn-app-ghost btn-sm mb-3" data-copy="#recovery-codes"><i class="bi bi-clipboard"></i> Copy codes</button>

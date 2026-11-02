@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.identity.access import current_user_guid
+from spark.web import interactions
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,11 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
         return EventSourceResponse(error_gen())
 
-    user_guid = getattr(request.app.state, "user_guid", "default")
+    user_guid = current_user_guid(request)
+    from spark.web.scope import not_found, owned_conversation
+
+    if await owned_conversation(request, conversation_id) is None:
+        return not_found()  # type: ignore[return-value]
 
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation
@@ -67,6 +73,8 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
     request.app.state.turn_cancel_tokens[stream_id] = turn_token
     request.app.state.stream_agent_sets[stream_id] = agent_tokens_for_stream
+    # Every pending id of this stream belongs to its user (server mode: 404 for others).
+    interactions.bind(request.app, interactions.STREAM, stream_id, user_guid)
 
     # Shared state for permission requests
     pending_permissions: dict[str, threading.Event] = {}
@@ -125,6 +133,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
             # Create a threading event to wait on
             wait_event = threading.Event()
+            interactions.bind(request.app, interactions.PERMISSION, request_id, user_guid)
             request.app.state.permission_events[request_id] = wait_event
             request.app.state.permission_responses[request_id] = None
 
@@ -144,6 +153,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # Cleanup
             request.app.state.permission_events.pop(request_id, None)
             request.app.state.permission_responses.pop(request_id, None)
+            interactions.release(request.app, interactions.PERMISSION, request_id)
 
             logger.info("Permission for %s: %s", tool_name, decision)
             return decision
@@ -177,6 +187,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             )
 
             wait_event = threading.Event()
+            interactions.bind(request.app, interactions.AGENT_MODEL, request_id, user_guid)
             request.app.state.agent_model_events[request_id] = wait_event
             request.app.state.agent_model_responses[request_id] = None
 
@@ -201,6 +212,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # Cleanup
             request.app.state.agent_model_events.pop(request_id, None)
             request.app.state.agent_model_responses.pop(request_id, None)
+            interactions.release(request.app, interactions.AGENT_MODEL, request_id)
 
             logger.info("Agent model approved: %s", approved)
             return approved
@@ -213,19 +225,25 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             stream finishes).
             """
             tok = CancellationToken()
+            interactions.bind(request.app, interactions.AGENT, agent_id, user_guid)
             request.app.state.agent_cancel_tokens[agent_id] = tok
             agent_tokens_for_stream[agent_id] = tok
             return tok
 
-        # Inject the permission, model approval, and agent cancel callbacks into
-        # the conversation manager for the duration of this request.
-        original_callback = conv_mgr._tool_permission_callback
-        original_model_callback = conv_mgr._agent_model_callback
-        original_agent_register = getattr(conv_mgr, "_agent_cancel_register", None)
-        conv_mgr._tool_permission_callback = permission_callback
-        conv_mgr._agent_model_callback = agent_model_callback
-        conv_mgr._agent_cancel_register = register_agent_cancel
+        # This turn's permission, model approval and agent cancel callbacks travel
+        # with the turn: the shared manager is never changed, so concurrent streams
+        # never answer each other's prompts.
+        from spark.core.conversation_manager import TurnCallbacks
+        from spark.identity.access import request_permissions
 
+        callbacks = TurnCallbacks(
+            tool_permission=permission_callback,
+            agent_model=agent_model_callback,
+            agent_cancel_register=register_agent_cancel,
+        )
+
+        # The turn's tools follow the signed-in user's roles (server mode).
+        permissions = request_permissions(request)
         try:
             loop = asyncio.get_event_loop()
             result_future = loop.run_in_executor(
@@ -237,6 +255,8 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     status_callback=status_callback,
                     stream_callback=stream_callback,
                     cancel_token=turn_token,
+                    permissions=permissions,
+                    callbacks=callbacks,
                 ),
             )
 
@@ -398,16 +418,14 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
         finally:
-            # Restore original callbacks
-            conv_mgr._tool_permission_callback = original_callback
-            conv_mgr._agent_model_callback = original_model_callback
-            conv_mgr._agent_cancel_register = original_agent_register
             # Drop registries for this stream so cancel endpoints can't address
             # stale tokens after the turn finishes.
             request.app.state.turn_cancel_tokens.pop(stream_id, None)
             request.app.state.stream_agent_sets.pop(stream_id, None)
+            interactions.release(request.app, interactions.STREAM, stream_id)
             for aid in list(agent_tokens_for_stream):
                 request.app.state.agent_cancel_tokens.pop(aid, None)
+                interactions.release(request.app, interactions.AGENT, aid)
 
     return EventSourceResponse(event_generator())
 
@@ -417,6 +435,10 @@ async def cancel_stream(request: Request) -> JSONResponse:
     """API: cancel an active stream's turn and all of its child agents."""
     data = await request.json()
     stream_id = data.get("stream_id", "")
+    from spark.web.scope import not_found
+
+    if not interactions.belongs_to_caller(request, interactions.STREAM, stream_id):
+        return not_found()
     turn_tokens = getattr(request.app.state, "turn_cancel_tokens", {})
     stream_agents = getattr(request.app.state, "stream_agent_sets", {})
 

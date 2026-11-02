@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeAlias
 
 from spark.db.dialect import upsert
-from spark.db.engine import Executor
+from spark.db.engine import Connection, Executor
 from spark.instance_settings import registry
 from spark.instance_settings.registry import Scope, SettingsError
 from spark.mode import Dialect
@@ -23,6 +24,7 @@ from spark.mode import Dialect
 __all__ = [
     "CHANNEL",
     "REVISION",
+    "Within",
     "delete_instance",
     "delete_preference",
     "load_instance",
@@ -35,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 CHANNEL = "spark_instance_settings"
 REVISION = "instance_settings_0001"
+
+# Run inside a write's transaction, after the write.
+Within: TypeAlias = Callable[[Connection], Awaitable[None]]
 
 _INSTANCE_UPSERT = upsert(
     "instance_settings", ["key", "value", "updated_at", "updated_by"], ["key"]
@@ -86,22 +91,37 @@ async def load_instance(db: Executor) -> dict[str, Any]:
     return loaded
 
 
-async def save_instance(db: Executor, key: str, value: Any, *, actor: str) -> Any:
-    """Store one instance setting and notify the other replicas; return the stored value."""
+async def save_instance(
+    db: Executor, key: str, value: Any, *, actor: str, within: Within | None = None
+) -> Any:
+    """Store one instance setting and notify the other replicas; return the stored value.
+
+    ``within`` runs in the same transaction after the write (the audit row that
+    records it); if it raises, nothing is stored.
+    """
     stored = _checked(key, value, Scope.INSTANCE)
     async with db.transaction() as conn:
         await conn.execute(_INSTANCE_UPSERT, (key, json.dumps(stored), _now(), actor))
         await _notify(conn, key)
+        if within is not None:
+            await within(conn)
     return stored
 
 
-async def delete_instance(db: Executor, key: str, *, actor: str) -> None:
-    """Remove a stored instance setting (it reverts to its default) and notify."""
+async def delete_instance(
+    db: Executor, key: str, *, actor: str, within: Within | None = None
+) -> None:
+    """Remove a stored instance setting (it reverts to its default) and notify.
+
+    ``within`` runs in the same transaction after the delete, as for :func:`save_instance`.
+    """
     _checked(key, registry.spec(key).default, Scope.INSTANCE)
     del actor  # recorded by the audit hook; the row is gone
     async with db.transaction() as conn:
         await conn.execute("DELETE FROM instance_settings WHERE key = ?", (key,))
         await _notify(conn, key)
+        if within is not None:
+            await within(conn)
 
 
 # -- User preferences ---------------------------------------------------------------

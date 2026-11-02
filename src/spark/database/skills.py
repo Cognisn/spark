@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from spark.database.scope import OWNED_CONVERSATIONS, owns_conversation
 from spark.db.dialect import upsert
 from spark.db.engine import Executor
 
@@ -45,20 +46,27 @@ async def set_skill_enabled(db: Executor, name: str, enabled: bool, user_guid: s
     await db.execute(_SET_SKILL, (name, 1 if enabled else 0, user_guid))
 
 
-async def get_conversation_skill_states(db: Executor, conversation_id: int) -> dict[str, bool]:
-    """Per-conversation overrides keyed by skill name (absent means inherit)."""
+async def get_conversation_skill_states(
+    db: Executor, user_guid: str, conversation_id: int
+) -> dict[str, bool]:
+    """Overrides on one of the user's conversations keyed by skill name (absent: inherit)."""
     rows = await db.fetch_all(
-        "SELECT skill_name, enabled FROM conversation_skills WHERE conversation_id = ?",
-        (conversation_id,),
+        f"""SELECT skill_name, enabled FROM conversation_skills WHERE conversation_id = ?
+            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+        (conversation_id, user_guid),
     )
     return {r["skill_name"]: bool(r["enabled"]) for r in rows}
 
 
 async def set_conversation_skill_enabled(
-    db: Executor, conversation_id: int, skill_name: str, enabled: bool
+    db: Executor, user_guid: str, conversation_id: int, skill_name: str, enabled: bool
 ) -> None:
-    """Set a per-conversation skill override."""
-    await db.execute(_SET_CONVERSATION_SKILL, (conversation_id, skill_name, 1 if enabled else 0))
+    """Set a skill override on one of the user's conversations (nothing otherwise)."""
+    async with db.transaction() as conn:
+        if await owns_conversation(conn, user_guid, conversation_id):
+            await conn.execute(
+                _SET_CONVERSATION_SKILL, (conversation_id, skill_name, 1 if enabled else 0)
+            )
 
 
 async def resolve_enabled(
@@ -70,7 +78,7 @@ async def resolve_enabled(
     """Valid skills that are enabled globally and for the conversation."""
     global_states = await get_skill_states(db, user_guid)
     conv_states = (
-        await get_conversation_skill_states(db, conversation_id)
+        await get_conversation_skill_states(db, user_guid, conversation_id)
         if conversation_id is not None
         else {}
     )

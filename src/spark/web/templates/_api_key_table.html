@@ -1,0 +1,38 @@
+{# API keys as a table with revoke buttons. Expects keys, revoke_base and, optionally, owners (user id to email). #}
+{% if keys %}
+<div class="app-table-responsive">
+<table class="app-table" style="font-size: 0.8125rem;">
+    <thead>
+        <tr>
+            {% if owners is defined %}<th>User</th>{% endif %}
+            <th>Name</th><th>Key</th><th>Scopes</th><th>Created</th><th>Expires</th><th>Last used</th><th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for key in keys %}
+    <tr>
+        {% if owners is defined %}<td>{{ owners.get(key.user_id|string, key.user_id) }}</td>{% endif %}
+        <td>{{ key.name }}</td>
+        <td><code>{{ key.hint }}&hellip;</code></td>
+        <td>{% for scope in key.scopes|sort %}<span class="badge-app badge-app-info me-1">{{ scope }}</span>{% endfor %}</td>
+        <td>{{ key.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ key.expires_at.strftime("%Y-%m-%d") if key.expires_at else "never" }}</td>
+        <td>{{ key.last_used_at.strftime("%Y-%m-%d %H:%M") if key.last_used_at else "never" }}</td>
+        <td class="text-end">
+            {% if key.revoked_at %}
+            <span class="badge-app badge-app-danger">revoked</span>
+            {% else %}
+            <form method="POST" action="{{ revoke_base }}/{{ key.id }}/revoke" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);"><i class="bi bi-x-circle me-1"></i>Revoke</button>
+            </form>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">There are no API keys.</p>
+{% endif %}

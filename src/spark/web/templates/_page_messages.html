@@ -1,0 +1,7 @@
+{# A page's fixed notice and error. Expects notice and error (either may be None). #}
+{% if notice %}
+<div class="alert-app alert-app-success mb-3" role="status"><i class="bi bi-check-circle-fill me-1"></i> {{ notice }}</div>
+{% endif %}
+{% if error %}
+<div class="alert-app alert-app-danger mb-3" role="alert"><i class="bi bi-exclamation-triangle-fill me-1"></i> {{ error }}</div>
+{% endif %}

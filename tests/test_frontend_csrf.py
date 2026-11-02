@@ -25,7 +25,11 @@ CSRF_JS = STATIC_JS / "csrf.js"
 META = '<meta name="csrf-token" content="{{ csrf_token(request) }}">'
 SCRIPT = '<script src="/static/js/csrf.js"></script>'
 # Pages rendered without base.html, and why each is safe.
-STANDALONE = {"base.html", "login.html", "loading.html"}
+STANDALONE = {"base.html", "login.html", "loading.html", "auth_layout.html"}
+# Server mode's screens used before a session exists (sign-in, second factor,
+# invitations, password reset, single sign-on) extend this standalone layout:
+# they make no scripted state changes, and each form carries its own token.
+AUTH_LAYOUT = '{% extends "auth_layout.html" %}'
 
 UNSAFE_METHOD = re.compile(r"""method\s*:\s*['"`](POST|PUT|PATCH|DELETE)['"`]""", re.I)
 
@@ -54,13 +58,30 @@ class TestPagesLoadTheWrapper:
 
     @pytest.mark.parametrize("path", _templates(), ids=lambda p: p.name)
     def test_every_other_page_extends_base(self, path: Path) -> None:
-        if path.name in STANDALONE:
-            return
-        assert path.read_text(encoding="utf-8").lstrip().startswith('{% extends "base.html" %}')
+        if path.name in STANDALONE or path.name.startswith("_"):
+            return  # standalone, or a partial included by a page
+        text = path.read_text(encoding="utf-8").lstrip()
+        assert text.startswith(('{% extends "base.html" %}', AUTH_LAYOUT))
 
     def test_login_page_makes_no_scripted_state_changes(self) -> None:
         text = (TEMPLATES / "login.html").read_text(encoding="utf-8")
         assert not UNSAFE_METHOD.search(text)
+
+    def test_the_sign_in_screens_make_no_scripted_state_changes(self) -> None:
+        screens = [
+            p
+            for p in _templates()
+            if p.name == "auth_layout.html"
+            or p.read_text(encoding="utf-8").lstrip().startswith(AUTH_LAYOUT)
+        ]
+        assert len(screens) > 3
+        for path in screens:
+            assert not UNSAFE_METHOD.search(path.read_text(encoding="utf-8")), path.name
+
+    @pytest.mark.parametrize("path", sorted(TEMPLATES.glob("_*.html")), ids=lambda p: p.name)
+    def test_partials_make_no_requests(self, path: Path) -> None:
+        text = path.read_text(encoding="utf-8")
+        assert "<script" not in text and not UNSAFE_METHOD.search(text)
 
 
 class TestNothingBypassesFetch:

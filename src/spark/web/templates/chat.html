@@ -43,6 +43,14 @@
         </div>
     </div>
 
+    {% if model_notice %}
+    <!-- The conversation's model has left the models offered: it keeps working -->
+    <div id="model-notice" class="alert-app alert-app-warning mb-0" role="status"
+         style="border-radius: 0; font-size: 0.8125rem; padding: 0.375rem 1rem;">
+        <i class="bi bi-exclamation-triangle me-1"></i>{{ model_notice }}
+    </div>
+    {% endif %}
+
     <!-- Voice mode indicator -->
     <div id="voice-mode-bar" style="display: none; padding: 0.375rem 1rem; font-size: 0.75rem;
          background: var(--app-bg-tertiary); border-bottom: 1px solid var(--app-border);
@@ -912,8 +920,12 @@ async function selectModel(modelId) {
         if (r.ok) {
             window._currentModelId = modelId;
             document.getElementById('conv-display-model').textContent = modelId;
+            document.getElementById('model-notice')?.remove();
             AppToast.success('Model changed', `Now using ${modelId}`);
             bootstrap.Modal.getInstance(document.getElementById('modelSelectorModal'))?.hide();
+        } else {
+            const body = await r.json().catch(() => ({}));
+            AppToast.danger('Model not changed', body.error || 'The model could not be changed.');
         }
     } catch (err) { AppToast.danger('Error', 'Failed to change model.'); }
 }

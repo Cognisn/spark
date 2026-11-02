@@ -206,7 +206,7 @@ class TestConversationTurn:
         [result] = _tool_result_texts(model.calls[1]["messages"])
         assert "attacker@example.com" not in result
         assert "withheld" in result
-        stored = json.dumps(mgr.get_messages(cid))
+        stored = json.dumps(mgr.get_messages(cid, USER))
         assert "attacker@example.com" not in stored
 
     def test_hit_is_recorded_shown_and_audited(
@@ -330,7 +330,7 @@ class TestLocalSources:
         model.script_tool_call("run_command", {"command": "type notes.txt"})
         mgr.send_message(cid, "Run it", USER)
         [result] = _tool_result_texts(model.calls[1]["messages"])
-        return result, json.dumps(mgr.get_messages(cid))
+        return result, json.dumps(mgr.get_messages(cid, USER))
 
     def test_file_read_reaches_the_model_wrapped(
         self, sync_db: Any, model: StubModel, tmp_path: Any
@@ -482,6 +482,7 @@ class TestScheduledAction:
         executor._ctx.settings.get = lambda key, default=None: values.get(key, default)
         executor._db = sync_db
         executor._user_guid = USER
+        executor._permissions = None  # personal mode: the local operator
         executor._mcp_manager = None
         executor._mcp_loop = None
         monkeypatch.setattr(executor, "_init_llm", lambda model_id: model)
@@ -534,12 +535,13 @@ class TestScheduledAction:
 
 
 class TestSidecarStream:
-    def test_inspection_reaches_the_sidecar_events(self) -> None:
+    def test_inspection_reaches_the_sidecar_events(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import time
         from unittest.mock import MagicMock
 
         from fastapi.testclient import TestClient
 
+        from spark.web import scope
         from spark.web.server import create_app
 
         def _settings_get(key: str, default: object = None, *, cast: type | None = None) -> object:
@@ -596,6 +598,11 @@ class TestSidecarStream:
         mgr = MagicMock()
         mgr.send_message.side_effect = _send
         app.state.conversation_manager = mgr
+
+        async def owned(request: object, conversation_id: int) -> dict:
+            return {"id": conversation_id}  # no database here: the id is the local user's
+
+        monkeypatch.setattr(scope, "owned_conversation", owned)
 
         body = client.get("/stream/chat?message=hello&conversation_id=1", cookies=cookies).text
         payloads = {}
