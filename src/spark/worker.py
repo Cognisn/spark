@@ -479,7 +479,9 @@ def _with_app(body: Callable[[Any], Any]) -> tuple[RuntimeSettings, Any]:
             defaults=application._default_settings(),
             env_prefix="SPARK",
         ) as app:
-            runtime = application.configure_runtime(app.settings)
+            # First, before any database or tool work, with the secrets so a
+            # ``secret://`` database.url resolves (D13).
+            runtime = application.configure_runtime(app.settings, app.secrets)
             return runtime, await _maybe_await(body(app))
 
     return asyncio.run(_run())

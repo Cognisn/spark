@@ -133,3 +133,24 @@ def test_personal_keeps_its_login_and_bind_address_policy(
     assert isinstance(app.state.authenticator, PersonalAuthenticator)
     assert app.state.origin_policy == OriginPolicy.same_host([])
     assert not getattr(app.state, "identity_attached", False)
+
+
+def test_a_started_server_never_serves_on_the_stub_or_a_same_host_policy(
+    served: list[FastAPI],
+) -> None:
+    """D32 and D18 through create_and_serve's own path: warden's access check, the pinned origin."""
+    from spark.identity.access import WardenAccess
+    from spark.instance_settings import access as settings_access
+
+    mode.configure(
+        RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y"))
+    )
+    ctx = Ctx(_values(**{"server.public_base_url": "https://spark.example.com"}))
+    asyncio.run(server.create_and_serve(ctx))  # type: ignore[arg-type]
+    app = served[0]
+    check = settings_access.access_check()
+    assert isinstance(check, WardenAccess)
+    assert not isinstance(check, settings_access.SingleOperatorAccess)
+    assert app.state.origin_policy != OriginPolicy.same_host([])
+    assert app.state.origin_policy != OriginPolicy.same_host(["https://spark.example.com"])
+    assert not app.state.origin_policy.match_host
