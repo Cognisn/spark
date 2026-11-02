@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a10] - 2026-11-03
+
 ### Added
 - **warden's migration chain** (server mode): `spark migrate` runs warden's own migration chain, in its `warden` schema, after SPARK's and prints both revisions. The web process and `spark worker` refuse a database whose warden chain is behind, as they do for SPARK's own (`spark migrate` first). Personal mode is unchanged: SQLite has no warden schema, so the chain is skipped
 - **User identities** (`user_identities`, both engines): each SPARK user guid is mapped onto one warden user. Existing data keeps its guid and stays attributable once that guid is linked to a warden user; a new warden user's guid is created on first use, and neither side of a mapping is ever rebound
