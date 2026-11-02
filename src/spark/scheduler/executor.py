@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from collections.abc import Set as AbstractSet
+from typing import Any
 
 from spark.db.bridge import SyncDatabase
 from spark.safety.untrusted import (
@@ -19,6 +17,16 @@ from spark.safety.untrusted import (
 from spark.tools.registry import PERMISSIONS_KEY, Permissions, tool_category
 
 logger = logging.getLogger(__name__)
+
+
+def _server() -> bool:
+    """Whether this process serves many users (a process with no mode is personal)."""
+    from spark import mode
+
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
 
 
 class ActionExecutor:
@@ -34,11 +42,13 @@ class ActionExecutor:
         user_guid: str | None = None,
     ) -> None:
         """``permissions`` are those of the user the action runs as, ``user_guid`` that
-        user (the signed-in user for run now; the local user when omitted).
+        user: the action's owner (the worker), or the signed-in user (run now).
 
-        In server mode an action's tools follow its owner's roles, and without
-        permissions every built-in tool is refused (fail closed). Personal mode
-        ignores them.
+        In server mode ``user_guid`` is required: an action runs only as its
+        owner, never as the process. Its run needs ``spark.actions`` in
+        ``permissions``, and its tools follow the same permissions; without
+        permissions it is refused (fail closed). Personal mode ignores them and
+        runs as the single local user when ``user_guid`` is omitted.
         """
         self._ctx = ctx
         self._permissions = permissions
@@ -47,9 +57,36 @@ class ActionExecutor:
         self._mcp_manager: Any | None = None
         self._mcp_loop: Any | None = None
         self._mcp_thread: Any | None = None
-        from spark.core.user_guid import get_user_guid
+        if user_guid:
+            self._user_guid = user_guid
+        elif _server():
+            raise ValueError("on a server an action runs only as its owner; give its user_guid")
+        else:
+            from spark.core.user_guid import get_user_guid
 
-        self._user_guid = user_guid or get_user_guid(ctx)
+            self._user_guid = get_user_guid(ctx)
+
+    def _refusal(self) -> str | None:
+        """Why this executor's user may not run actions now (server mode), or None (A5)."""
+        if not _server():
+            return None
+        from spark.identity.permissions import ACTIONS
+
+        permissions = self._permissions
+        if not isinstance(permissions, AbstractSet) or ACTIONS not in permissions:
+            return f"the action's owner does not hold {ACTIONS} (scheduled actions)"
+        return None
+
+    def refuse(self, action_id: int, reason: str) -> None:
+        """Record a refused run of the action under its owner, without running anything."""
+        from spark.database import autonomous_actions
+        from spark.database.scope import NotOwned
+
+        logger.warning("Action %d refused: %s", action_id, reason)
+        try:
+            self._db.call(autonomous_actions.record_refused_run, action_id, self._user_guid, reason)
+        except NotOwned:
+            logger.error("Action %d not found for its owner; refusal not recorded", action_id)
 
     def _init_mcp(self) -> None:
         """Initialise independent MCP connections for this executor."""
@@ -159,10 +196,18 @@ class ActionExecutor:
         self._mcp_manager = None
 
     def execute(self, action_id: int) -> None:
-        """Execute an action by ID."""
+        """Execute an action by ID, as this executor's user.
+
+        On a server a user without ``spark.actions`` is refused before anything
+        runs, and the refusal is recorded as a run.
+        """
         from spark.database import autonomous_actions
 
         db = self._db
+        refusal = self._refusal()
+        if refusal is not None:
+            self.refuse(action_id, refusal)
+            return
 
         # Initialise MCP connections for this execution
         logger.info("Executor: initialising MCP connections for action %d", action_id)

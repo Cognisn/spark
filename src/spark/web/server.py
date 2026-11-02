@@ -244,6 +244,22 @@ def _wait_for_database(app: FastAPI) -> SyncDatabase:
     return sync_db
 
 
+def _local_user_guid(ctx: AppContext) -> str | None:
+    """The single local user's guid in personal mode; None on a server (never asked for)."""
+    from spark import mode
+
+    try:
+        server = mode.is_server()
+    except RuntimeError:
+        # A process that never configured its mode (a test, a script) is personal.
+        server = False
+    if server:
+        return None
+    from spark.core.user_guid import get_user_guid
+
+    return get_user_guid(ctx)
+
+
 def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -264,8 +280,6 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     auth_manager = AuthManager(_login_policy(ctx))
     session_manager = SessionManager(timeout_minutes=timeout, max_age_hours=max_age)
 
-    from spark.core.user_guid import get_user_guid
-
     app.state.ctx = ctx
     app.state.auth = auth_manager
     app.state.session = session_manager
@@ -279,7 +293,9 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     app.state.origin_policy = _initial_origin_policy(ctx)
     app.state.first_run = first_run
     app.state.init_status = {"ready": True, "error": False, "stage": "Ready"}
-    app.state.user_guid = get_user_guid(ctx)
+    # Personal mode's single local user. A server has no user of its own: every
+    # request acts for its signed-in user, and the worker for each action's owner.
+    app.state.user_guid = _local_user_guid(ctx)
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     templates.env.globals["version"] = spark.__version__
     templates.env.globals["csrf_token"] = _template_csrf_token
@@ -744,7 +760,8 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 ),
                 embedded_tools_config=embedded_tools_config,
                 mcp_manager=mcp_manager,
-                user_guid=app.state.user_guid,
+                # Personal mode's local user; a server's turns always name their user.
+                user_guid=app.state.user_guid or "default",
                 mcp_loop=getattr(app.state, "_mcp_loop", None),
                 prompt_caching=bool(
                     instance.view.get("conversation.prompt_caching", True)
@@ -758,7 +775,8 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 )
 
             # Migrate any orphaned memories stored under "default" user_guid
-            if app.state.user_guid != "default":
+            # (personal mode only: a server has no process user to give them to)
+            if app.state.user_guid and app.state.user_guid != "default":
                 try:
                     from spark.database import memories as memories_db
 

@@ -332,7 +332,9 @@ class TestRefused:
         ctx.settings.get = lambda key, default=None: (
             CONFIG["embedded_tools"] if key == "embedded_tools" else default
         )
-        executor = ActionExecutor(ctx, "daemon-1", MagicMock(), permissions=permissions)
+        executor = ActionExecutor(
+            ctx, "daemon-1", MagicMock(), permissions=permissions, user_guid="owner-guid"
+        )
         executor._mcp_manager = MagicMock()
         executor._mcp_loop = MagicMock()
         return executor

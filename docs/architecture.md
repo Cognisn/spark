@@ -213,7 +213,22 @@ Each provider normalises responses to a common format:
 ### Scheduler
 
 - **ActionRunner** -- APScheduler-based background scheduler for autonomous actions
-- **ActionExecutor** -- Runs a single action with its own LLM instance and tool access
+- **ActionExecutor** -- Runs a single action with its own LLM instance and tool access, as one user (its owner, or the signed-in user for run now)
+- **Owners** (`spark.scheduler.owners`) -- On a server, resolves an action owner's standing in warden at run time
+- In personal mode the tray daemon runs the single local user's actions as that user. On a
+  server `spark worker` runs every user's enabled actions
+  (`autonomous_actions.get_enabled_actions_for_worker`, deliberately unscoped and called only
+  by the worker), each as its owner. The worker has no user of its own and never reads the
+  process's user guid (`spark.core.user_guid`, personal mode and the tray only): it builds a
+  warden runtime over its own pool, as the web does but without the HTTP parts, and before
+  each run reads the owner's warden user (`user_identities`), status and current
+  permissions. An owner with no warden user, or one suspended or deactivated, is refused;
+  the executor then refuses an owner without `spark.actions` (run now included). A refusal
+  is recorded as a run with status `refused` and its reason, and the action stays enabled.
+  An allowed run uses the owner's guid for its run records, memory index and file area
+  (`_user_guid`, `_files_db`), and the owner's permissions for its tools.
+- Action names are unique per user (`UNIQUE(user_guid, name)`); a clash answers 409 and
+  names only the caller's own action.
 - **CreationTools** -- AI-assisted action creation with validation and scheduling
 
 ### Daemon
@@ -366,9 +381,11 @@ flowchart LR
 - Endpoints answer such an id with 404, exactly as for an id that does not exist, so
   one user never learns that another user's data exists (`spark.web.scope`).
 - Deliberately unscoped, and never reached from a user's request: the scheduler
-  worker's action locks (`try_lock_action`, `unlock_action`, `clear_stale_locks`),
-  usage retention (`usage.cleanup_old_usage`) and personal mode's start-up move of
-  memories from the 0.1 placeholder guid (`memories.reassign_user`).
+  worker's listing of every user's enabled actions (`get_enabled_actions_for_worker`,
+  each row carrying its owner) and its action locks (`try_lock_action`,
+  `unlock_action`, `clear_stale_locks`), usage retention (`usage.cleanup_old_usage`)
+  and personal mode's start-up move of memories from the 0.1 placeholder guid
+  (`memories.reassign_user`).
 - One conversation manager serves every user of a server. A turn's user guid and its
   interactive callbacks (tool approval, agent model approval, agent cancellation,
   `TurnCallbacks`) are passed down each call to memory tools, the knowledge graph

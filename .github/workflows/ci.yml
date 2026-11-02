@@ -209,7 +209,7 @@ jobs:
           src/spark/tools/filesystem.py src/spark/core/processes.py
           src/spark/web/db.py scripts/check_no_nvidia.py
           src/spark/identity src/spark/web/endpoints/identity.py
-          src/spark/web/scope.py
+          src/spark/web/scope.py src/spark/scheduler/owners.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true

@@ -26,6 +26,13 @@ Each duty receives a :class:`WorkerContext` with the worker's async
 :class:`~spark.db.Database` (its ``pool`` is the psycopg pool for warden), the
 :class:`~spark.db.SyncDatabase` bridge for synchronous code on other threads, and
 the konfig application context.
+
+Scheduled actions run for every user, each as its owner (D22). The worker has
+no user of its own and never reads the process's user guid: before each run it
+asks warden, through an identity runtime built the way the web builds one over
+the same pool (without the HTTP parts), for the owner's status and current
+permissions. An owner who may not run actions is refused and the refusal is
+recorded as a run.
 """
 
 from __future__ import annotations
@@ -47,6 +54,7 @@ if TYPE_CHECKING:
     from psycopg import AsyncConnection
 
     from spark.db import Database, SyncDatabase
+    from spark.identity.runtime import IdentityRuntime
 
 __all__ = [
     "WORKER_LOCK_KEY",
@@ -111,6 +119,8 @@ class WorkerContext:
     database: Database
     sync_db: SyncDatabase
     app: Any = None
+    # warden's runtime, when something already built one for this worker.
+    identity: IdentityRuntime | None = None
 
 
 PeriodicFn = Callable[[WorkerContext], Awaitable[None]]
@@ -172,16 +182,41 @@ _SCHEDULED_ACTIONS: Final = "scheduled-actions"
 
 
 @asynccontextmanager
-async def _scheduled_actions(ctx: WorkerContext) -> AsyncIterator[None]:
-    """Run the action scheduler (APScheduler threads) while active."""
-    from spark.scheduler.runner import ActionRunner
+async def _identity(ctx: WorkerContext) -> AsyncIterator[IdentityRuntime]:
+    """warden's runtime for the worker: the context's own, or one built for this block.
 
-    runner = ActionRunner(ctx.app, ctx.worker_id, ctx.sync_db)
-    await asyncio.to_thread(runner.start)
+    Built as the web builds it (warden's configuration from SPARK's settings,
+    the key store over konfig's secrets) over the worker's pool; nothing of
+    warden's HTTP side is used.
+    """
+    if ctx.identity is not None:
+        yield ctx.identity
+        return
+    from spark.identity.runtime import IdentityRuntime
+
+    if ctx.app is None:
+        raise WorkerRefused("the worker needs its application context to start warden")
+    runtime = await IdentityRuntime.start(ctx.database, ctx.app.settings, ctx.app.secrets)
     try:
-        yield
+        yield runtime
     finally:
-        await asyncio.to_thread(runner.stop)
+        runtime.close()
+
+
+@asynccontextmanager
+async def _scheduled_actions(ctx: WorkerContext) -> AsyncIterator[None]:
+    """Run the action scheduler (APScheduler threads) while active, every action as its owner."""
+    from spark.scheduler import runner as runner_module
+    from spark.scheduler.owners import WardenOwners
+
+    async with _identity(ctx) as identity:
+        owners = WardenOwners(identity.identity, ctx.database)
+        runner = runner_module.ActionRunner(ctx.app, ctx.worker_id, ctx.sync_db, owners=owners)
+        await asyncio.to_thread(runner.start)
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(runner.stop)
 
 
 def default_duties() -> tuple[list[Service], list[PeriodicJob]]:

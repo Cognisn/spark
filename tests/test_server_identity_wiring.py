@@ -82,6 +82,37 @@ def test_server_signs_in_through_warden_and_pins_the_public_origin(
     assert app.state.database_auto_migrate is False
 
 
+def test_server_never_asks_for_the_shared_secrets_user_guid(
+    served: list[FastAPI], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server's users come from warden; the process has no user of its own."""
+    import spark.core.user_guid as user_guid
+
+    def _refuse(ctx: object | None = None) -> str:
+        raise AssertionError("get_user_guid called in server mode")
+
+    monkeypatch.setattr(user_guid, "get_user_guid", _refuse)
+    mode.configure(
+        RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y"))
+    )
+    ctx = Ctx(_values(**{"server.public_base_url": "https://spark.example.com"}))
+    asyncio.run(server.create_and_serve(ctx))  # type: ignore[arg-type]
+    assert served[0].state.user_guid is None
+
+
+def test_personal_keeps_its_single_local_user(
+    served: list[FastAPI], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import spark.core.user_guid as user_guid
+
+    monkeypatch.setattr(user_guid, "get_user_guid", lambda ctx=None: "local-guid")
+    mode.configure(
+        RuntimeSettings(Mode.PERSONAL, DatabaseSettings(Dialect.SQLITE, sqlite_path=tmp_path / "s"))
+    )
+    asyncio.run(server.create_and_serve(Ctx(_values(**{"interface.open_browser": False}))))  # type: ignore[arg-type]
+    assert served[0].state.user_guid == "local-guid"
+
+
 def test_server_without_a_public_address_refuses_to_start(served: list[FastAPI]) -> None:
     mode.configure(
         RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y"))

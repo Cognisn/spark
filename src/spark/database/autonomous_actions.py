@@ -22,6 +22,8 @@ __all__ = [
     "get_action",
     "get_action_runs",
     "get_enabled_actions",
+    "get_enabled_actions_for_worker",
+    "record_refused_run",
     "start_run",
     "try_lock_action",
     "unlock_action",
@@ -113,6 +115,19 @@ async def get_enabled_actions(db: Executor, user_guid: str) -> list[Row]:
     )
 
 
+async def get_enabled_actions_for_worker(db: Executor) -> list[Row]:
+    """Every user's enabled actions, each row carrying its owner in ``user_guid``.
+
+    Deliberately not scoped by user: only the server's worker calls this, to
+    schedule every action and then run each one as its owner (with the owner's
+    guid and current permissions). Never reached from a user's request; anything
+    serving a user lists with :func:`get_enabled_actions` or :func:`get_all_actions`.
+    """
+    return await db.fetch_all(
+        "SELECT * FROM autonomous_actions WHERE is_enabled = 1 ORDER BY user_guid, name"
+    )
+
+
 _UPDATABLE = frozenset(
     {
         "name",
@@ -186,6 +201,26 @@ async def start_run(db: Executor, action_id: int, user_guid: str) -> int:
         await conn.execute(
             "UPDATE autonomous_actions SET last_run_at = ? WHERE id = ? AND user_guid = ?",
             (now, action_id, user_guid),
+        )
+    return int(run_id)
+
+
+async def record_refused_run(db: Executor, action_id: int, user_guid: str, reason: str) -> int:
+    """Record that a run of one of the user's actions was refused, and why. Returns the run ID.
+
+    The run is complete at once with status ``refused``; the action keeps its
+    last run time and stays enabled, so it runs again once its owner may run it.
+    Raises :class:`NotOwned` when the action is not the user's.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    async with db.transaction() as conn:
+        if not await owns_action(conn, user_guid, action_id):
+            raise NotOwned(f"action {action_id} not found")
+        run_id = await conn.fetch_value(
+            """INSERT INTO action_runs
+                (action_id, started_at, completed_at, status, error_message, user_guid)
+                VALUES (?, ?, ?, 'refused', ?, ?) RETURNING id""",
+            (action_id, now, now, reason, user_guid),
         )
     return int(run_id)
 

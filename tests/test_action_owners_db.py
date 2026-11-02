@@ -1,4 +1,4 @@
-"""Action names are unique per user, not across users.
+"""Actions across users: the worker's unscoped listing, refused runs and per-user names.
 
 Each test runs on SQLite and (marked postgres) PostgreSQL through ``spark_db``.
 """
@@ -9,10 +9,53 @@ import pytest
 
 from spark.database import autonomous_actions
 from spark.database.autonomous_actions import DuplicateActionName
+from spark.database.scope import NotOwned
 from spark.db import Database
 
 ADA = "user-ada-example"
 GRACE = "user-grace-example"
+
+
+class TestWorkerListing:
+    async def test_lists_every_users_enabled_actions_with_their_owner(
+        self, spark_db: Database
+    ) -> None:
+        ada = await autonomous_actions.create_action(spark_db, "ada-nightly", "p", "m", ADA)
+        grace = await autonomous_actions.create_action(spark_db, "grace-daily", "p", "m", GRACE)
+        off = await autonomous_actions.create_action(spark_db, "grace-off", "p", "m", GRACE)
+        await autonomous_actions.update_action(spark_db, off, GRACE, is_enabled=0)
+        rows = await autonomous_actions.get_enabled_actions_for_worker(spark_db)
+        assert {(r["id"], r["user_guid"]) for r in rows} == {(ada, ADA), (grace, GRACE)}
+
+    async def test_the_per_user_listing_is_unchanged(self, spark_db: Database) -> None:
+        await autonomous_actions.create_action(spark_db, "ada-nightly", "p", "m", ADA)
+        mine = await autonomous_actions.create_action(spark_db, "grace-daily", "p", "m", GRACE)
+        rows = await autonomous_actions.get_enabled_actions(spark_db, GRACE)
+        assert [r["id"] for r in rows] == [mine]
+
+
+class TestRefusedRun:
+    async def test_records_a_refused_run_for_the_owner(self, spark_db: Database) -> None:
+        aid = await autonomous_actions.create_action(spark_db, "ada-nightly", "p", "m", ADA)
+        run_id = await autonomous_actions.record_refused_run(
+            spark_db, aid, ADA, "the owner does not hold spark.actions"
+        )
+        runs = await autonomous_actions.get_action_runs(spark_db, ADA, aid)
+        assert [(r["id"], r["status"], r["error_message"]) for r in runs] == [
+            (run_id, "refused", "the owner does not hold spark.actions")
+        ]
+        assert runs[0]["completed_at"] is not None
+        assert runs[0]["user_guid"] == ADA
+        action = await autonomous_actions.get_action(spark_db, aid, ADA)
+        assert action is not None
+        assert action["last_run_at"] is None  # a refusal is not a run
+        assert action["is_enabled"] == 1
+
+    async def test_never_under_another_users_action(self, spark_db: Database) -> None:
+        aid = await autonomous_actions.create_action(spark_db, "ada-nightly", "p", "m", ADA)
+        with pytest.raises(NotOwned):
+            await autonomous_actions.record_refused_run(spark_db, aid, GRACE, "no")
+        assert await autonomous_actions.get_action_runs(spark_db, ADA, aid) == []
 
 
 class TestNamesPerUser:

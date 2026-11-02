@@ -103,7 +103,10 @@ docker compose -p spark -f deploy/compose.yaml run --rm -T web \
 
 (or without `-T` and the redirect, to be asked for the password twice). It is
 safe to run again. `--link-user-guid GUID` gives the administrator the data made
-by the interim single user before warden.
+by the interim single user before warden. A server no longer uses that interim
+guid for anyone: every request acts for its signed-in user and every scheduled
+action for its owner, so data made under it (scheduled actions included) belongs
+to nobody until it is linked this way.
 
 In server mode the web role does not start the tray daemon; scheduled actions run
 in `spark worker`.
@@ -112,6 +115,15 @@ in `spark worker`.
 
 `spark worker` runs scheduled actions. It refuses to start in personal mode, on
 SQLite, or on a database behind the current schema.
+
+The worker runs every user's enabled actions, each as its owner: the run, its
+memories and the files it writes are the owner's, and its tools follow the
+owner's roles at the time it runs. It starts warden over the same database and
+secrets file as the web role, so it needs the same `server.public_base_url` and
+`KONFIG_MASTER_KEY`. An action whose owner does not hold `spark.actions` (the
+Power user and Administrator roles), is suspended or deactivated, or has no
+warden user is not run: the refusal and its reason appear in the action's run
+history, and the action runs again once its owner may run it.
 
 Any number of workers may run against one database. One is **active**: it holds a
 PostgreSQL advisory lock on a connection of its own. The others **stand by** and
