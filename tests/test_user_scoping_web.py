@@ -300,6 +300,27 @@ class TestActions:
         perms = _call(client, autonomous_actions.get_tool_permissions, users["ada_guid"], aid)
         assert perms == {"web_search": "denied"}
 
+    def test_action_names_are_per_user(
+        self, client: TestClient, users: dict[str, Any], adas: dict[str, Any]
+    ) -> None:
+        """Another user's action name is free, and a clash names only the caller's own action."""
+        grace = users["grace"]
+        body = {"name": "ada-nightly", "prompt": "p", "model_id": "m"}
+        created = grace.post("/actions/api/create", json=body)
+        assert created.status_code == 200, created.text
+        again = grace.post("/actions/api/create", json=body)
+        assert again.status_code == 409
+        assert again.json() == {"error": "You already have an action named 'ada-nightly'."}
+        other = grace.post("/actions/api/create", json={**body, "name": "grace-daily"}).json()
+        renamed = grace.put(f"/actions/api/{other['id']}", json={"name": "ada-nightly"})
+        assert renamed.status_code == 409
+        assert renamed.json() == {"error": "You already have an action named 'ada-nightly'."}
+        assert users["ada_guid"] not in renamed.text
+        names = sorted(a["name"] for a in grace.get("/actions/api/list").json())
+        assert names == ["ada-nightly", "grace-daily"]
+        ada = [a["name"] for a in users["ada"].get("/actions/api/list").json()]
+        assert ada == ["ada-nightly"]
+
 
 class TestMemoriesFilesKnowledge:
     def test_memories_are_404_for_another_user(

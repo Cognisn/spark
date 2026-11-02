@@ -10,6 +10,7 @@ from spark.db.dialect import upsert
 from spark.db.engine import Executor, Row
 
 __all__ = [
+    "DuplicateActionName",
     "action_stats",
     "clear_stale_locks",
     "get_all_actions",
@@ -28,6 +29,30 @@ __all__ = [
 ]
 
 
+class DuplicateActionName(ValueError):
+    """The user already has an action with this name (names are unique per user)."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"You already have an action named {name!r}.")
+        self.name = name
+
+
+async def _check_name_free(
+    db: Executor, user_guid: str, name: str, *, except_id: int | None = None
+) -> None:
+    """Raise :class:`DuplicateActionName` if ``user_guid`` already has an action ``name``.
+
+    Only the user's own actions are looked at: another user's names are free,
+    and a clash never says anything about another user.
+    """
+    clash = await db.fetch_value(
+        "SELECT id FROM autonomous_actions WHERE user_guid = ? AND name = ? AND id <> ?",
+        (user_guid, name, -1 if except_id is None else except_id),
+    )
+    if clash is not None:
+        raise DuplicateActionName(name)
+
+
 async def create_action(
     db: Executor,
     name: str,
@@ -42,8 +67,13 @@ async def create_action(
     max_failures: int = 3,
     max_tokens: int = 8192,
 ) -> int:
-    """Create an autonomous action. Returns action ID."""
+    """Create one of the user's actions. Returns action ID.
+
+    Raises :class:`DuplicateActionName` when the user already has an action of
+    that name (another user's names do not count).
+    """
     now = datetime.now(timezone.utc).isoformat()
+    await _check_name_free(db, user_guid, name)
     new_id = await db.fetch_value(
         """INSERT INTO autonomous_actions
             (name, description, action_prompt, model_id, schedule_type,
@@ -105,12 +135,18 @@ _UPDATABLE = frozenset(
 
 
 async def update_action(db: Executor, action_id: int, user_guid: str, **kwargs: Any) -> None:
-    """Update action fields (column names are checked against the schema)."""
+    """Update action fields (column names are checked against the schema).
+
+    A new name must not be one of the user's other actions' names
+    (:class:`DuplicateActionName`).
+    """
     if not kwargs:
         return
     unknown = set(kwargs) - _UPDATABLE
     if unknown:
         raise ValueError(f"unknown action fields: {', '.join(sorted(unknown))}")
+    if "name" in kwargs:
+        await _check_name_free(db, user_guid, str(kwargs["name"]), except_id=action_id)
     sets = ", ".join(f"{k} = ?" for k in kwargs)
     params = list(kwargs.values()) + [action_id, user_guid]
     await db.execute(

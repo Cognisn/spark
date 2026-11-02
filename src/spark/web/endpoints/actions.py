@@ -81,6 +81,9 @@ async def create_action(request: Request) -> JSONResponse:
             max_tokens=int(data.get("max_tokens", 8192)),
         )
         return JSONResponse({"status": "ok", "id": aid})
+    except autonomous_actions.DuplicateActionName as e:
+        # Names are unique per user: the clash is always the caller's own action.
+        return JSONResponse({"error": str(e)}, status_code=409)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -115,6 +118,8 @@ async def update_action(request: Request, action_id: int) -> JSONResponse:
     try:
         await autonomous_actions.update_action(db, action_id, current_user_guid(request), **updates)
         return JSONResponse({"status": "ok"})
+    except autonomous_actions.DuplicateActionName as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 

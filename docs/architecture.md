@@ -428,6 +428,9 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
   existing `user_guid` column is untouched: a guid made before warden (the single
   local user's) is linked to a warden user, and a new warden user's guid is created on
   first use (`spark.database.user_identities`).
+- Revision `action_names_per_user` replaces the global `UNIQUE(name)` of
+  `autonomous_actions` with `UNIQUE(user_guid, name)` (SQLite rebuilds the table).
+  Its downgrade refuses, changing nothing, while two users share an action name.
 - `spark migrate` runs SPARK's chain, then every chain registered with
   `spark.db.migrate.register_chain`, and prints each chain's revision.
   `spark.identity.migrations` registers warden's chain, which keeps its tables and
