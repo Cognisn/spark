@@ -1,0 +1,11 @@
+{% extends "auth_layout.html" %}
+{% block title %}Recovery Codes{% endblock %}
+{% block content %}
+<p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    Two-step verification is set up and you are signed in.
+</p>
+{% include "_recovery_codes.html" %}
+<a class="btn btn-app-primary w-100" href="{{ next_path }}">
+    <i class="bi bi-arrow-right me-1"></i> I have saved my codes, continue
+</a>
+{% endblock %}

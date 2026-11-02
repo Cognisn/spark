@@ -26,8 +26,11 @@ sign-in page (navigation) or answered 401 with ``X-Spark-Session: sign-in``.
 CSRF: a session's token is an HMAC-SHA256, under a per-instance key kept in
 konfig's secrets store, of its warden session id, so it survives refreshes and
 a token from any other session never matches. The sign-in form has its own
-token in a cookie scoped to the sign-in path; a second-factor challenge's
-token is bound to the challenge.
+token in a cookie scoped to the sign-in path, and so does each of the other
+forms used before a session exists (:data:`FORM_PATHS`: accepting an
+invitation, asking for and completing a password reset), in
+:data:`FORM_CSRF_COOKIE` scoped to that form's own path; a second-factor
+challenge's token is bound to the challenge.
 
 API keys: ``Authorization: Bearer wdn_...`` authenticates through warden's API
 keys (the key's scopes intersected with its user's permissions). Such a request
@@ -71,17 +74,27 @@ __all__ = [
     "ACCESS_COOKIE",
     "CHALLENGE_COOKIE",
     "CHALLENGE_PATH",
+    "FORM_CSRF_COOKIE",
+    "FORM_PATHS",
+    "INVITATION_PATH",
     "LOGOUT_PATH",
     "PUBLIC_PATHS",
     "PUBLIC_PREFIXES",
     "REFRESH_COOKIE",
     "REFRESH_PATH",
+    "RESET_PATH",
+    "RESET_REQUEST_PATH",
     "SESSION_HEADER",
     "SESSION_PATH",
     "SIGN_IN_CSRF_COOKIE",
     "SIGN_IN_PATH",
     "SIGN_OUT_PATH",
+    "SSO_BINDING_COOKIE",
+    "SSO_COMPLETE_PATH",
+    "SSO_HANDOFF_COOKIE",
+    "SSO_PREFIX",
     "SignedClaims",
+    "form_csrf_cookie",
     "WardenAuthenticator",
     "clear_session_cookies",
     "csrf_token_for",
@@ -98,12 +111,27 @@ ACCESS_COOKIE = "__Host-spark-access"
 REFRESH_COOKIE = "__Secure-spark-refresh"
 SIGN_IN_CSRF_COOKIE = "__Secure-spark-sign-in"
 CHALLENGE_COOKIE = "__Secure-spark-challenge"
+# The form token of a page used before a session exists, scoped to that page's path.
+FORM_CSRF_COOKIE = "__Secure-spark-form"
+# Single sign-on's login binding (warden's cookie name), scoped to SSO_PREFIX,
+# and the same binding handed to the completion screen, scoped to it alone.
+SSO_BINDING_COOKIE = "__Secure-warden-sso"
+SSO_HANDOFF_COOKIE = "__Secure-spark-sso"
 
 SIGN_IN_PATH = "/auth/sign-in"
 SIGN_OUT_PATH = "/auth/sign-out"
 REFRESH_PATH = "/auth/session/refresh"
 SESSION_PATH = "/auth/session"
 CHALLENGE_PATH = "/auth/challenge"
+# The screens warden's mails and single sign-on link to (spark.identity.runtime).
+INVITATION_PATH = "/auth/invitation"
+RESET_PATH = "/auth/reset"
+RESET_REQUEST_PATH = "/auth/password-reset"
+SSO_COMPLETE_PATH = "/auth/sso/complete"
+# warden's single sign-on leg: start and the provider's callback (its auth prefix + /sso).
+SSO_PREFIX = "/identity/auth/sso"
+# Forms used before a session exists, each with its own token cookie.
+FORM_PATHS = frozenset({INVITATION_PATH, RESET_PATH, RESET_REQUEST_PATH})
 # The menu's sign-out form (shared with personal mode).
 LOGOUT_PATH = "/logout"
 
@@ -113,8 +141,8 @@ SESSION_HEADER = "X-Spark-Session"
 # Reachable without a live session. Sign-out and refresh check what they need
 # themselves (their CSRF token is bound to the session the cookie names).
 # The start-up status is the container health check's (it reveals only the
-# start-up stage). Step 5 adds its screens (invitation, password reset, SSO
-# completion) here.
+# start-up stage). The invitation, password reset and single sign-on screens
+# are how a user without a session gets one.
 STATUS_PATH = "/loading/api/status"
 PUBLIC_PATHS = frozenset(
     {
@@ -124,10 +152,12 @@ PUBLIC_PATHS = frozenset(
         REFRESH_PATH,
         CHALLENGE_PATH,
         STATUS_PATH,
+        SSO_COMPLETE_PATH,
         "/favicon.ico",
     }
+    | FORM_PATHS
 )
-PUBLIC_PREFIXES = ("/static/", CHALLENGE_PATH + "/")
+PUBLIC_PREFIXES = ("/static/", CHALLENGE_PATH + "/", SSO_PREFIX + "/")
 
 # A page load whose access token expires within this many seconds is refreshed first.
 REFRESH_MARGIN_SECONDS = 30
@@ -145,6 +175,13 @@ def csrf_token_for(key: bytes, kind: str, value: str) -> str:
     """The CSRF token bound to ``value`` (a warden session id, or a challenge)."""
     mac = hmac.new(key, f"spark-csrf-v1\x00{kind}\x00{value}".encode(), hashlib.sha256)
     return base64.urlsafe_b64encode(mac.digest()).rstrip(b"=").decode("ascii")
+
+
+def form_csrf_cookie(path: str) -> str | None:
+    """The cookie holding the form token of a page used before a session exists, or None."""
+    if path == SIGN_IN_PATH:
+        return SIGN_IN_CSRF_COOKIE
+    return FORM_CSRF_COOKIE if path in FORM_PATHS else None
 
 
 def safe_next(value: object) -> str:
@@ -336,8 +373,9 @@ class WardenAuthenticator:
 
     def csrf_token(self, conn: HTTPConnection) -> str | None:
         path = conn.url.path
-        if path == SIGN_IN_PATH:
-            return conn.cookies.get(SIGN_IN_CSRF_COOKIE) or None
+        form_cookie = form_csrf_cookie(path)
+        if form_cookie is not None:
+            return conn.cookies.get(form_cookie) or None
         runtime = self._runtime
         if runtime is None:
             return None

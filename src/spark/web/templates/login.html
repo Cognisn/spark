@@ -47,23 +47,9 @@
                     <i class="bi bi-lightning-charge-fill" style="font-size: 1rem; color: var(--app-text-secondary);"></i>
                     Spark
                 </h4>
-                {% if variant == "server" %}
-                <p class="mb-4" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                    Sign in with your email address and password.
-                </p>
-                {% elif variant == "challenge" %}
-                <p class="mb-4" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                    {% if purpose == "enrol" %}
-                    Your account needs a second factor before you can sign in.
-                    {% else %}
-                    Enter the code from your authenticator app to finish signing in.
-                    {% endif %}
-                </p>
-                {% else %}
                 <p class="mb-4" style="color: var(--app-text-secondary); font-size: 0.875rem;">
                     Enter the authentication code shown in your terminal.
                 </p>
-                {% endif %}
 
                 {% if error %}
                 <div class="alert-app alert-app-danger mb-3" role="alert">
@@ -71,28 +57,6 @@
                 </div>
                 {% endif %}
 
-                {% if variant == "server" %}
-                <form method="POST" action="{{ form_action }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="hidden" name="next" value="{{ next_path }}">
-                    <div class="mb-3">
-                        <input type="email" name="email" class="form-control" placeholder="Email address"
-                               autocomplete="username" required autofocus>
-                    </div>
-                    <div class="mb-3">
-                        <input type="password" name="password" class="form-control" placeholder="Password"
-                               autocomplete="current-password" required>
-                    </div>
-                    <button type="submit" class="btn btn-app-primary w-100">
-                        <i class="bi bi-box-arrow-in-right me-1"></i> Sign in
-                    </button>
-                </form>
-                {% elif variant == "challenge" %}
-                <div class="alert-app mb-3" role="status">
-                    <i class="bi bi-shield-lock me-1"></i> A second factor is required. This screen is not available yet.
-                </div>
-                <a class="btn btn-app-primary w-100" href="/auth/sign-in">Back to sign-in</a>
-                {% else %}
                 <form method="POST" action="/api/auth">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
@@ -111,14 +75,10 @@
                     </button>
                 </form>
 
-                {% endif %}
-
-                {% if not variant %}
                 <div class="mt-4" style="font-size: 0.8125rem; color: var(--app-text-muted);">
                     <i class="bi bi-shield-lock me-1"></i>
                     Local access only &middot; Single session
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
