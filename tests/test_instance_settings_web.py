@@ -436,7 +436,6 @@ class TestServerInstanceSave:
             {"embedded_tools.filesystem.allowed_paths": "/srv"},
             {"embedded_tools.email.password": OTHER, "voice.engine": "elevenlabs"},
             {"embedded_tools": {"system_commands": {"enabled": True}}},
-            {"embedded_tools.tool_results.web": "mark"},
         ],
     )
     def test_local_tool_settings_refused_and_nothing_written(

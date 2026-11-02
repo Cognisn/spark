@@ -6,15 +6,24 @@ import os
 import subprocess
 import sys
 import types
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from spark import mode
 from spark.daemon import guard
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 
 PG_URL = "postgresql://spark:spark-dev-only@db.example.com:5432/spark"
 SERVER = RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url=PG_URL))
+
+
+@pytest.fixture(autouse=True)
+def _reset_mode() -> Iterator[None]:
+    """The daemon entry points configure the process mode; leave none behind for later tests."""
+    yield
+    mode.reset()
 
 
 def _personal(tmp_path: Path) -> RuntimeSettings:

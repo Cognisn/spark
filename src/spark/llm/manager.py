@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from spark.llm.base import LLMService
@@ -16,6 +17,20 @@ class LLMManager:
     def __init__(self) -> None:
         self._providers: dict[str, LLMService] = {}
         self._active_provider: str | None = None
+        self._offered: Callable[[], Sequence[str]] | None = None
+
+    def replace_providers(self, providers: Iterable[LLMService]) -> None:
+        """Swap in a new set of providers (a settings change); keep the active one if still present."""
+        replaced = {p.get_provider_name(): p for p in providers}
+        active = self._active_provider
+        if active not in replaced:
+            active = next(iter(replaced), None)
+        self._providers, self._active_provider = replaced, active
+        logger.info("LLM providers now: %s", ", ".join(replaced) or "none")
+
+    def set_offered(self, offered: Callable[[], Sequence[str]] | None) -> None:
+        """Limit the models listed to those ``offered()`` names (empty offers every model)."""
+        self._offered = offered
 
     def register_provider(self, provider: LLMService) -> None:
         """Register an LLM provider."""
@@ -67,10 +82,13 @@ class LLMManager:
         raise ValueError(f"Model {model_id} not found in any provider")
 
     def list_all_models(self) -> list[dict[str, Any]]:
-        """List all models across all registered providers."""
+        """List all models across all registered providers (only those offered, when limited)."""
         models = []
         for provider in self._providers.values():
             models.extend(provider.list_available_models())
+        offered = set(self._offered()) if self._offered is not None else set()
+        if offered:
+            models = [m for m in models if m.get("id") in offered]
         return models
 
     def invoke_model(

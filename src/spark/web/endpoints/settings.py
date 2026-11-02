@@ -60,8 +60,8 @@ def _touches_unavailable_tools(dotted_key: str) -> bool:
     if parts[0] != "embedded_tools":
         return False
     if len(parts) > 1 and parts[1] == "tool_results":
-        # Result actions are an administrator's policy on a server.
-        return not _offers_local_tools()
+        # Result actions belong to no tool category: an administrator's policy on a server.
+        return False
     if len(parts) == 1:
         # The whole embedded tools tree: it may carry any category.
         return not _offers_local_tools()
@@ -101,6 +101,33 @@ def _server() -> bool:
 def _writer(request: Request) -> SecretsWriter:
     ctx = request.app.state.ctx
     return SecretsWriter(ctx.secrets, ctx.settings, server=_server())
+
+
+def _secret_status(request: Request) -> dict[str, bool]:
+    """Every secret this mode offers as set or not set (a server has no local-only tool secrets)."""
+    return _writer(request).status([k for k in registry.secret_keys() if registry.is_offered(k)])
+
+
+_RESULT_ACTION_PREFIX = "embedded_tools.tool_results."
+
+
+def _audit_policy_changes(previous: dict[str, Any], saved: dict[str, Any], actor: str) -> None:
+    """Report each changed result action to the audit hook (the identity wave connects warden)."""
+    from spark.safety import untrusted
+
+    for key in sorted(saved):
+        if not key.startswith(_RESULT_ACTION_PREFIX) or saved[key] == previous.get(key):
+            continue
+        untrusted.audit(
+            "tool_result.policy_changed",
+            {
+                "key": key,
+                "source": key[len(_RESULT_ACTION_PREFIX) :],
+                "action": saved[key],
+                "previous": previous.get(key),
+                "actor": actor,
+            },
+        )
 
 
 def _actor(request: Request) -> str:
@@ -188,7 +215,7 @@ def _render(
 async def settings_page(request: Request) -> Response:
     """Personal mode: the one settings page. Server mode: the administrator's instance settings."""
     ctx = request.app.state.ctx
-    status = _writer(request).status()
+    status = _secret_status(request)
     if not _server():
         view = _View(lambda key, default: ctx.settings.get(key, default), status)
         return _render(
@@ -298,8 +325,13 @@ async def save_instance_settings(request: Request) -> JSONResponse:
     source = await instance_settings.server_settings(
         request.app, database(request), request.app.state.ctx.settings
     )
-    for key, value in plain.items():
-        await source.set(key, value, actor=actor)
+    previous = {key: source.get(key) for key in plain}
+    saved = {key: await source.set(key, value, actor=actor) for key, value in plain.items()}
+    _audit_policy_changes(previous, saved, actor)
+    follower = getattr(request.app.state, "settings_follower", None)
+    if secrets and follower is not None:
+        # A secret changes no database row: refresh this replica's consumers directly.
+        follower.changed()
     return JSONResponse({"status": "ok", "saved": sorted([*plain, *secrets])})
 
 
@@ -325,7 +357,7 @@ async def secret_status(request: Request) -> JSONResponse:
     """Every secret as set or not set (never a value); administrators only in server mode."""
     if _server() and not _is_admin(request):
         return _refused("only an administrator can see secrets", [], 403)
-    return JSONResponse(_writer(request).status())
+    return JSONResponse(_secret_status(request))
 
 
 @router.post("/api/secrets/clear")
@@ -699,7 +731,7 @@ def _resolve_embedded_secrets(embedded: dict[str, Any], ctx: Any) -> None:
 
 def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build settings sections for the template."""
-    sections = [
+    sections: list[dict[str, Any]] = [
         {
             "id": "providers",
             "title": "LLM Providers",
@@ -1177,12 +1209,11 @@ def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
             ],
         },
     ]
-    # Personal mode sets the action for flagged tool results here; a server
-    # reads them from its settings keys (administrators edit them centrally).
-    if _offers_local_tools():
-        for section in sections:
-            if section["id"] == "security":
-                section["groups"].append(_tool_result_group(settings))
+    # The action for flagged tool results: the user's own setting in personal mode,
+    # the administrator's instance policy on a server.
+    for section in sections:
+        if section["id"] == "security":
+            section["groups"].append(_tool_result_group(settings))
     return sections
 
 
@@ -1194,7 +1225,7 @@ _RESULT_SOURCES = (
 )
 
 
-def _tool_result_group(settings: object) -> dict:
+def _tool_result_group(settings: _SettingsGetter) -> dict[str, Any]:
     """Per-source action for tool results that match prompt injection patterns."""
     return {
         "id": "tool_results",

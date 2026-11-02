@@ -104,6 +104,40 @@ class ConversationManager:
         else:
             self._compactor = None
 
+    def update_embedded_tools_config(self, config: dict[str, Any]) -> None:
+        """Use a new embedded tools configuration from the next turn on (a settings change).
+
+        Keys set at run time (``_``-prefixed, such as the memory index and prompt
+        inspection) are kept unless ``config`` carries them; tool definitions are
+        rebuilt on next use.
+        """
+        updated = dict(config)
+        for key, value in self._embedded_tools_config.items():
+            if (
+                key.startswith("_")
+                and key not in updated
+                and not key.startswith("_prompt_inspection")
+            ):
+                updated[key] = value
+        self._embedded_tools_config = updated
+        self._builtin_tools = None
+        self._builtin_tool_names = None
+
+    def update_tool_limits(
+        self,
+        *,
+        max_tool_iterations: int | None = None,
+        max_tool_selections: int | None = None,
+        max_tool_result_tokens: int | None = None,
+    ) -> None:
+        """Apply new tool execution limits from the next turn on (a settings change)."""
+        if max_tool_iterations is not None:
+            self._max_tool_iterations = max_tool_iterations
+        if max_tool_selections is not None:
+            self._max_tool_selections = max_tool_selections
+        if max_tool_result_tokens is not None:
+            self._max_tool_result_tokens = max_tool_result_tokens
+
     def _get_vector_index(self, conversation_id: int, user_guid: str) -> Any:
         """Get or create the vector index for a conversation."""
         if conversation_id not in self._vector_indices:

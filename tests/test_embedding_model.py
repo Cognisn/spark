@@ -52,11 +52,30 @@ def test_local_model_satisfies_the_protocol() -> None:
     assert isinstance(SentenceTransformerEmbedding("fake-model"), EmbeddingModel)
 
 
-def test_package_exports_the_protocol_and_keeps_the_old_name() -> None:
+def test_package_exports_the_protocol_and_the_local_model() -> None:
     assert spark.index.EmbeddingModel is EmbeddingModel
     assert spark.index.SentenceTransformerEmbedding is SentenceTransformerEmbedding
-    # 0.2.0 callers construct spark.index.embeddings.EmbeddingModel(); it stays the local model.
-    assert embeddings.EmbeddingModel is SentenceTransformerEmbedding
+    # The 0.2.0 class name is retired: EmbeddingModel is the protocol only.
+    assert not hasattr(embeddings, "EmbeddingModel")
+    assert "EmbeddingModel" not in embeddings.__all__
+
+
+def test_knowledge_tools_use_the_local_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from spark.knowledge import tools
+
+    monkeypatch.setattr(tools, "_embedder", None)
+    assert isinstance(tools._get_embedder(), SentenceTransformerEmbedding)
+
+
+def test_web_start_up_warms_the_local_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from spark.web import server
+
+    warmed: list[str] = []
+    monkeypatch.setattr(
+        SentenceTransformerEmbedding, "encode", lambda self, text: warmed.append(self.name)
+    )
+    server._warm_up_embeddings()
+    assert warmed == ["all-MiniLM-L6-v2"]
 
 
 def test_name_and_dimension() -> None:

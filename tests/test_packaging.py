@@ -21,3 +21,10 @@ def test_cognisn_spark_alias_exists() -> None:
 
 def test_primary_spark_command_preserved() -> None:
     assert _scripts().get("spark") == "spark.launch:main"
+
+
+def test_konfig_declared_with_its_aws_extra() -> None:
+    """Server mode's AWS Secrets Manager backends need konfig 0.4.0 and its ``aws`` extra (Q6)."""
+    root = Path(__file__).resolve().parent.parent
+    deps = tomllib.loads((root / "pyproject.toml").read_text())["project"]["dependencies"]
+    assert [d for d in deps if d.startswith("cognisn-konfig")] == ["cognisn-konfig[aws]>=0.4.0"]

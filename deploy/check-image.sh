@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check a built Spark image: it runs as a non-root user, carries no compiler or
-# installer, has a healthcheck, holds no tests, and its worker role refuses
-# personal mode. Exits non-zero on the first failure.
+# installer, has a healthcheck, holds no tests, its worker role refuses personal
+# mode, and no NVIDIA package is installed. Exits non-zero on the first failure.
 #
 #   deploy/check-image.sh spark:dev
 set -euo pipefail
@@ -58,5 +58,15 @@ status=$?
 set -e
 [ "$status" -eq 2 ] || fail "spark worker in personal mode exited ${status}, expected 2"
 pass "spark worker refuses personal mode"
+
+# 6. No NVIDIA (CUDA) package: the image carries the CPU-only PyTorch wheel.
+nvidia="$(docker run --rm --entrypoint python "$image" -c '
+import re
+from importlib import metadata
+names = {re.sub(r"[-_.]+", "-", d.metadata["Name"] or "").lower() for d in metadata.distributions()}
+print(" ".join(sorted(n for n in names if n.startswith("nvidia-"))))
+')"
+[ -z "$nvidia" ] || fail "NVIDIA packages are installed: ${nvidia}"
+pass "no NVIDIA packages (CPU-only torch)"
 
 echo "check-image: all checks passed for ${image}"

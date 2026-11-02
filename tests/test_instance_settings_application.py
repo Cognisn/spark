@@ -89,3 +89,37 @@ class TestValidateStartup:
         ctx, path = _ctx(tmp_path, {"mode": "personal"}, {})
         runtime = application.validate_startup(ctx, path)  # type: ignore[arg-type]
         assert runtime.mode is mode.Mode.PERSONAL
+
+    def test_start_up_configures_the_file_area_in_server_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``spark web`` starts through validate_startup: the files API needs files.root from it."""
+        from spark import files
+
+        monkeypatch.setenv("KONFIG_MASTER_KEY", "mk-app-dev-only")
+        root = tmp_path / "areas"
+        ctx, path = _ctx(
+            tmp_path,
+            {
+                "mode": "server",
+                "database": {"url": DB_URL},
+                "secrets": {"backend": "encrypted_file"},
+                "files": {"root": str(root)},
+            },
+            {},
+        )
+        try:
+            application.validate_startup(ctx, path)  # type: ignore[arg-type]
+            assert files.file_store().root == root
+        finally:
+            files.reset()
+
+    def test_start_up_configures_the_file_area_in_personal_mode(self, tmp_path: Path) -> None:
+        from spark import files
+
+        ctx, path = _ctx(tmp_path, {"mode": "personal"}, {})
+        try:
+            application.validate_startup(ctx, path)  # type: ignore[arg-type]
+            assert files.file_store().root == application._get_data_path() / "files"
+        finally:
+            files.reset()

@@ -41,9 +41,9 @@ def _get_embedder() -> Any:
     """Module-cached embedding model (shared with the builder)."""
     global _embedder
     if _embedder is None:
-        from spark.index.embeddings import EmbeddingModel
+        from spark.index.embeddings import SentenceTransformerEmbedding
 
-        _embedder = EmbeddingModel()
+        _embedder = SentenceTransformerEmbedding()
     return _embedder
 
 

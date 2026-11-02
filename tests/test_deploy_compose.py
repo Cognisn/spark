@@ -97,4 +97,53 @@ def test_dockerignore_admits_only_what_the_image_needs() -> None:
         "LICENSE",
         "src/",
         "scripts/licence_audit.py",
+        "scripts/check_no_nvidia.py",
     }
+
+
+FILES_ROOT = "/var/lib/spark-files"
+SECRETS_FILE = "/var/lib/spark/data/spark/secrets.enc"
+DOCKERFILE = ROOT / "Dockerfile"
+
+
+def test_file_areas_live_on_a_named_volume_shared_by_web_and_worker(
+    compose: dict[str, Any],
+) -> None:
+    services = _services(compose)
+    assert "spark-files" in compose["volumes"]
+    for role in ("web", "worker"):
+        assert services[role]["environment"]["SPARK__FILES__ROOT"] == FILES_ROOT, role
+        assert f"spark-files:{FILES_ROOT}" in services[role]["volumes"], role
+
+
+def test_the_shared_secrets_file_is_named_on_the_data_volume(compose: dict[str, Any]) -> None:
+    services = _services(compose)
+    for role in ("migrate", "web", "worker"):
+        env = services[role]["environment"]
+        assert env["SPARK__SECRETS__BACKEND"] == "encrypted_file", role
+        assert env["SPARK__SECRETS__FILE_PATH"] == SECRETS_FILE, role
+        assert "spark-data:/var/lib/spark" in services[role]["volumes"], role
+    assert SECRETS_FILE.startswith("/var/lib/spark/")
+
+
+def test_image_installs_cpu_only_torch_before_spark_and_refuses_nvidia() -> None:
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    torch = text.index('pip install torch --index-url "${TORCH_INDEX_URL}"')
+    spark = text.index("RUN pip install .")
+    check = text.index("RUN python scripts/check_no_nvidia.py")
+    assert torch < spark < check
+    assert "ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu" in text
+    assert "COPY scripts/check_no_nvidia.py ./scripts/check_no_nvidia.py" in text
+
+
+def test_image_prepares_the_files_volume_for_the_unprivileged_user() -> None:
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert FILES_ROOT in text.split("chown -R 10001:10001", 1)[1].splitlines()[0]
+    assert f'"{FILES_ROOT}"' in text.split("VOLUME", 1)[1].splitlines()[0]
+
+
+def test_container_docs_name_the_pgvector_minimum_and_the_volumes() -> None:
+    text = (ROOT / "docs" / "container.md").read_text(encoding="utf-8")
+    assert "pgvector 0.8 or later" in text
+    assert "spark-files" in text and "SPARK__FILES__ROOT" in text
+    assert "SPARK__SECRETS__FILE_PATH" in text

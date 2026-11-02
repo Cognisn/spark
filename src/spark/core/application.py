@@ -117,6 +117,13 @@ def validate_startup(ctx: AppContext, config_path: Path) -> mode.RuntimeSettings
     for warning in config.warnings:
         logger.warning("%s", warning)
     mode.configure(config.runtime)
+    from spark import files
+
+    files.configure(
+        ctx.settings,  # type: ignore[arg-type]
+        data_dir=_get_data_path(),
+        runtime_mode=config.runtime.mode,
+    )
     return config.runtime
 
 
