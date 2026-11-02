@@ -136,6 +136,14 @@ also takes a lock in the database before it runs.
 
 The worker logs `standing by` or `is active` when its state changes.
 
+The active worker also prunes warden's expired data (refresh and single-use
+tokens, second-factor challenges, sign-in throttle windows and single sign-on
+records) every hour (`worker.identity_prune_seconds`). When
+`warden.audit.retention_days` is set (365 or more), it also purges audit rows
+older than that once a day (`worker.audit_purge_seconds`), behind a signed
+checkpoint; the purge needs `DELETE` on `warden.audit_events`, so grant it to the
+worker's database role or leave the retention unset to keep the trail for ever.
+
 ### Tray daemon
 
 The system tray daemon is for personal mode only. In server mode it refuses to

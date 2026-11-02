@@ -255,6 +255,13 @@ Each provider normalises responses to a common format:
   An allowed run uses the owner's guid for its run records, memory index and file area
   (`_user_guid`, `_files_db`), and the owner's permissions for its tools. A refusal is
   also audited (`spark.action.refused`).
+- **warden's housekeeping** (`spark.identity.pruning`) -- The active worker builds one warden
+  runtime for all its duties and prunes warden's data: `identity.pruning(every_seconds=...)`
+  (expired refresh and single-use tokens, MFA challenges, sign-in throttle windows) and
+  `identity.sso.prune()` every `worker.identity_prune_seconds` (default 3600), and, when
+  `warden.audit.retention_days` is set, warden's audit retention purge every
+  `worker.audit_purge_seconds` (default 86400). The purge needs `DELETE` on the audit
+  table; a refused purge is logged and tried again.
 - Action names are unique per user (`UNIQUE(user_guid, name)`); a clash answers 409 and
   names only the caller's own action.
 - **CreationTools** -- AI-assisted action creation with validation and scheduling

@@ -1,7 +1,8 @@
 """The worker role: ``spark worker``, server mode only.
 
 The worker runs Spark's background duties away from the web processes: scheduled
-actions, and whatever later releases register.
+actions, warden's pruning (:mod:`spark.identity.pruning`), and whatever later
+releases register.
 Any number of workers may run against one database, but only one is active at a
 time. The active worker holds a PostgreSQL session-level advisory lock on a
 connection of its own; the others stand by, retrying every ``standby_seconds``,
@@ -512,8 +513,12 @@ def _serve(runtime: RuntimeSettings) -> None:
         if sys.platform != "win32":
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.add_signal_handler(sig, stop.set)
-        services, periodic = default_duties()
         settings = app.settings if app is not None else None
+        if settings is not None:
+            from spark.identity import pruning
+
+            pruning.register(settings)
+        services, periodic = default_duties()
         worker = Worker(
             runtime.database,
             worker_id=_worker_id(),
