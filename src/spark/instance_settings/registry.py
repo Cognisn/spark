@@ -449,14 +449,15 @@ def is_offered(key: str) -> bool:
     """
     if not key.startswith(_EMBEDDED_PREFIX):
         return True
-    from spark.tools.registry import is_category_available
+    # Settings describe the deployment: what the mode offers, whatever a user's role.
+    from spark.tools.registry import ANY_ROLE, is_category_available
 
     category, _, rest = key[len(_EMBEDDED_PREFIX) :].partition(".")
     if category == "tool_results":
         tool_category = RESULT_SOURCE_CATEGORIES.get(rest.split(".", 1)[0])
-        return tool_category is None or is_category_available(tool_category)
+        return tool_category is None or is_category_available(tool_category, permissions=ANY_ROLE)
 
-    return is_category_available(category)
+    return is_category_available(category, permissions=ANY_ROLE)
 
 
 def offered_keys(scope: Scope | None = None) -> list[str]:

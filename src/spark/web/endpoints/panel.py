@@ -24,12 +24,14 @@ router = APIRouter(prefix="", tags=["panel"])
 def _orchestrator(request: Request, status_callback: Any = None):
     """Build a PanelOrchestrator wired to the app's shared services."""
     from spark.core.panel.orchestrator import PanelOrchestrator
+    from spark.identity.access import tools_config_for
 
     conv_mgr = request.app.state.conversation_manager
     return PanelOrchestrator(
         conv_mgr._db,
         conv_mgr._get_llm_service_for_model,
-        getattr(conv_mgr, "_embedded_tools_config", {}) or {},
+        # Participants' tools follow the signed-in user's roles (server mode).
+        tools_config_for(request, getattr(conv_mgr, "_embedded_tools_config", {}) or {}),
         mcp_manager=getattr(conv_mgr, "_mcp_manager", None),
         mcp_loop=getattr(request.app.state, "_mcp_loop", None),
         status_callback=status_callback,

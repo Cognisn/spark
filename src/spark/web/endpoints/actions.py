@@ -163,9 +163,10 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     config = conv_mgr._embedded_tools_config if conv_mgr else {}
 
+    from spark.identity.access import tools_config_for
     from spark.tools.registry import get_builtin_tools
 
-    all_tools = get_builtin_tools(config)
+    all_tools = get_builtin_tools(tools_config_for(request, config))
 
     # Add MCP tools
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
@@ -259,11 +260,15 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     import threading
 
     sync_db = sync_database(request)
+    from spark.identity.access import request_permissions
+
+    # Run now acts for the signed-in user, with their permissions.
+    permissions = request_permissions(request)
 
     def _run() -> None:
         from spark.scheduler.executor import ActionExecutor
 
-        executor = ActionExecutor(ctx, "web-run-now", sync_db)
+        executor = ActionExecutor(ctx, "web-run-now", sync_db, permissions=permissions)
         executor.execute(action_id)
 
     thread = threading.Thread(target=_run, daemon=True)
@@ -309,7 +314,10 @@ async def ai_create_message(request: Request) -> JSONResponse:
     messages.append({"role": "user", "content": message})
 
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
-    config = conv_mgr._embedded_tools_config if conv_mgr else {}
+    from spark.identity.access import tools_config_for
+
+    # A copy: the shared configuration never carries one user's guid or permissions.
+    config = tools_config_for(request, conv_mgr._embedded_tools_config if conv_mgr else {})
     config["_user_guid"] = _user(request)
 
     # Augment system prompt with pre-selected name and model

@@ -19,10 +19,13 @@ from fastapi.testclient import TestClient
 from konfig.settings.settings import Settings
 
 from spark import mode
+from spark.identity.access import WardenAccess
+from spark.identity.permissions import ADMINISTRATOR, AUDITOR, POWER_USER, USER
 from spark.instance_settings import access, accessor, audit, registry
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from spark.web.server import attach_database, create_app
 from tests.db_helpers import app_client
+from tests.identity_helpers import AsIdentity, Holder, identity_for
 from tests.web_helpers import sign_in
 
 KEY = "sk-ant-web-test-dev-only"
@@ -315,9 +318,19 @@ def server_db(pg_url: str) -> DatabaseSettings:
 
 
 @pytest.fixture
-def server(config_file: Path, store: MemorySecrets, server_db: DatabaseSettings) -> Iterator[Any]:
+def signed_in_as() -> Holder:
+    """Who the server's requests come from: an administrator unless a test changes it."""
+    return Holder(identity_for(ADMINISTRATOR, user_guid="admin-guid"))
+
+
+@pytest.fixture
+def server(
+    config_file: Path, store: MemorySecrets, server_db: DatabaseSettings, signed_in_as: Holder
+) -> Iterator[Any]:
     mode.configure(RuntimeSettings(Mode.SERVER, server_db))
     app = create_app(Ctx(config_file, store))  # type: ignore[arg-type]
+    # Stands in for the sign-in layer, which sets request.state.identity.
+    app.add_middleware(AsIdentity, holder=signed_in_as)
     attach_database(app, server_db, True)
     # psycopg's async driver needs the Selector loop on Windows; the portal's loop too.
     options = {"loop_factory": asyncio.SelectorEventLoop} if sys.platform == "win32" else {}
@@ -503,3 +516,103 @@ class TestServerPreferences:
             assert resp.status_code == 400
             _no_secret(resp)
         assert _rows(server) == []
+
+
+# -- Server mode: warden roles (A5, D32) -------------------------------------------------
+
+ROLES = [ADMINISTRATOR, AUDITOR, POWER_USER, USER]
+
+
+@pytest.mark.postgres
+class TestServerRoles:
+    """With warden's access check installed, only spark.settings.instance administers the instance."""
+
+    def test_a_server_runs_on_warden_access(self, server: TestClient) -> None:
+        assert isinstance(access.access_check(), WardenAccess)
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_instance_settings(
+        self, server: TestClient, signed_in_as: Holder, store: MemorySecrets, role: str
+    ) -> None:
+        signed_in_as.identity = identity_for(role, user_guid=f"{role}-guid")
+        resp = server.post(
+            "/settings/api/instance",
+            json={"voice.engine": "elevenlabs", "embedded_tools.web.brave_api_key": OTHER},
+        )
+        if role == ADMINISTRATOR:
+            assert resp.status_code == 200
+            assert accessor.get("voice.engine") == "elevenlabs"
+            assert store.data["embedded_tools_web_brave_api_key"] == OTHER
+            rows = server.app.state.sync_db.fetch_all(  # type: ignore[attr-defined]
+                "SELECT updated_by FROM instance_settings"
+            )
+            assert {r["updated_by"] for r in rows} == {"administrator-guid"}
+        else:
+            assert resp.status_code == 403
+            assert _rows(server) == []
+            assert "embedded_tools_web_brave_api_key" not in store.data
+        _no_secret(resp)
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_secret_status(self, server: TestClient, signed_in_as: Holder, role: str) -> None:
+        signed_in_as.identity = identity_for(role)
+        resp = server.get("/settings/api/secrets")
+        assert resp.status_code == (200 if role == ADMINISTRATOR else 403)
+        _no_secret(resp)
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_clear_secret(
+        self, server: TestClient, signed_in_as: Holder, store: MemorySecrets, role: str
+    ) -> None:
+        signed_in_as.identity = identity_for(role)
+        resp = server.post(
+            "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
+        )
+        if role == ADMINISTRATOR:
+            assert resp.status_code == 200
+            assert "providers_anthropic_api_key" not in store.data
+        else:
+            assert resp.status_code == 403
+            assert store.data["providers_anthropic_api_key"] == KEY
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_settings_page(self, server: TestClient, signed_in_as: Holder, role: str) -> None:
+        signed_in_as.identity = identity_for(role)
+        resp = server.get("/settings", follow_redirects=False)
+        if role == ADMINISTRATOR:
+            assert resp.status_code == 200
+            assert "Instance settings" in resp.text
+        else:
+            assert resp.status_code == 303
+            assert resp.headers["location"] == "/settings/preferences"
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_every_role_saves_its_own_preferences(
+        self, server: TestClient, signed_in_as: Holder, role: str
+    ) -> None:
+        signed_in_as.identity = identity_for(role, user_guid=f"{role}-guid")
+        resp = server.post("/settings/api/preferences", json={"interface.theme": "light"})
+        assert resp.status_code == 200
+        rows = server.app.state.sync_db.fetch_all(  # type: ignore[attr-defined]
+            "SELECT user_guid FROM user_preferences"
+        )
+        assert [r["user_guid"] for r in rows] == [f"{role}-guid"]
+
+    def test_no_signed_in_user_is_refused_everything(
+        self, server: TestClient, signed_in_as: Holder, store: MemorySecrets
+    ) -> None:
+        signed_in_as.identity = None
+        assert server.post("/settings/api/instance", json={"voice.engine": "x"}).status_code == 403
+        assert server.get("/settings/api/secrets").status_code == 403
+        assert (
+            server.post(
+                "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
+            ).status_code
+            == 403
+        )
+        assert (
+            server.post("/settings/api/preferences", json={"interface.theme": "light"}).status_code
+            == 403
+        )
+        assert _rows(server) == []
+        assert store.data["providers_anthropic_api_key"] == KEY

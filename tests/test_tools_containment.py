@@ -24,10 +24,14 @@ from spark.files.area import FileArea, FileLimits
 from spark.files.paths import PathRefused
 from spark.files.scope import ToolScope, ToolScopeUnavailable, tool_scope
 from spark.files.store import MountedVolumeStore
+from spark.identity.permissions import USER, role_permissions
 from spark.tools import archives, document_creation, documents
+from spark.tools.registry import PERMISSIONS_KEY
 from tests.test_files_paths import ESCAPES
 
 ALICE = "user-alice-0001"
+# A signed-in user's permissions, as the tools configuration carries them on a server.
+AS_USER: dict[str, Any] = {PERMISSIONS_KEY: role_permissions(USER)}
 BOB = "user-bob-0002"
 ESCAPE_KEYS = [k for _, k in ESCAPES]
 ESCAPE_IDS = [i for i, _ in ESCAPES]
@@ -581,7 +585,7 @@ class TestRegistry:
     ) -> None:
         from spark.tools.registry import get_builtin_tools
 
-        names = {t["name"] for t in get_builtin_tools({"embedded_tools": {}})}
+        names = {t["name"] for t in get_builtin_tools({"embedded_tools": {}, **AS_USER})}
         assert {"read_word", "list_archive"} <= names
 
     def test_server_mode_refuses_an_escape_as_an_error(
@@ -589,7 +593,7 @@ class TestRegistry:
     ) -> None:
         from spark.tools.registry import execute_builtin_tool
 
-        config = {"embedded_tools": {}, "_user_guid": ALICE, "_files_db": bridge}
+        config = {"embedded_tools": {}, "_user_guid": ALICE, "_files_db": bridge, **AS_USER}
         text, is_error = execute_builtin_tool("read_word", {"path": "../x.docx"}, config)
         assert is_error is True
         assert text.startswith("Path refused")
@@ -599,7 +603,7 @@ class TestRegistry:
         from spark.tools.registry import execute_builtin_tool
 
         _docx(files_pkg.file_store().local_path(ALICE, "u/a.docx"), "From the area")
-        config = {"embedded_tools": {}, "_kg_user_guid": ALICE, "_kg_db": bridge}
+        config = {"embedded_tools": {}, "_kg_user_guid": ALICE, "_kg_db": bridge, **AS_USER}
         text, is_error = execute_builtin_tool("read_word", {"path": "u/a.docx"}, config)
         assert (text, is_error) == ("From the area", False)
 
@@ -610,6 +614,7 @@ class TestRegistry:
             "embedded_tools": {"documents": {"mode": "read_write"}},
             "_user_guid": ALICE,
             "_files_db": bridge,
+            **AS_USER,
         }
         text, is_error = execute_builtin_tool(
             "create_pdf", {"path": "out.pdf", **_CREATE_INPUTS["create_pdf"]}, config
@@ -621,7 +626,8 @@ class TestRegistry:
     def test_server_mode_without_a_user_is_an_error(self, server_mode: Path) -> None:
         from spark.tools.registry import execute_builtin_tool
 
-        text, is_error = execute_builtin_tool("list_archive", {"path": "a.zip"}, {})
+        # The role allows archives; the tool scope still needs the user.
+        text, is_error = execute_builtin_tool("list_archive", {"path": "a.zip"}, dict(AS_USER))
         assert is_error is True
         assert "signed-in user" in text
 

@@ -37,9 +37,9 @@ _LOCK_SECRET_KEY = "settings_lock_password"
 
 def _offers_local_tools() -> bool:
     """Whether this mode offers the local-only tools (personal mode does, a server does not)."""
-    from spark.tools.registry import LOCAL_ONLY_CATEGORIES, is_category_available
+    from spark.tools.registry import ANY_ROLE, LOCAL_ONLY_CATEGORIES, is_category_available
 
-    return all(is_category_available(c) for c in LOCAL_ONLY_CATEGORIES)
+    return all(is_category_available(c, permissions=ANY_ROLE) for c in LOCAL_ONLY_CATEGORIES)
 
 
 def _local_tool_refusal() -> JSONResponse | None:
@@ -53,8 +53,12 @@ def _local_tool_refusal() -> JSONResponse | None:
 
 
 def _touches_unavailable_tools(dotted_key: str) -> bool:
-    """Whether saving ``dotted_key`` would write settings for an unavailable tool category."""
-    from spark.tools.registry import is_category_available
+    """Whether saving ``dotted_key`` would write settings for a tool category this mode lacks.
+
+    Instance settings describe the deployment, so this asks what the mode offers
+    (``ANY_ROLE``), not what the administrator's own roles allow.
+    """
+    from spark.tools.registry import ANY_ROLE, is_category_available
 
     parts = dotted_key.split(".")
     if parts[0] != "embedded_tools":
@@ -66,7 +70,7 @@ def _touches_unavailable_tools(dotted_key: str) -> bool:
     if len(parts) == 1:
         # The whole embedded tools tree: it may carry any category.
         return not _offers_local_tools()
-    return not is_category_available(parts[1])
+    return not is_category_available(parts[1], permissions=ANY_ROLE)
 
 
 def _hash_password(password: str) -> str:
@@ -1387,7 +1391,7 @@ def _select(
 
 def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build embedded tool category data for the tools management panel."""
-    from spark.tools.registry import is_category_available
+    from spark.tools.registry import ANY_ROLE, is_category_available
 
     get = settings.get
 
@@ -1660,4 +1664,4 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
         },
     ]
     # A category this mode does not offer has no settings section at all.
-    return [c for c in categories if is_category_available(c["id"])]
+    return [c for c in categories if is_category_available(c["id"], permissions=ANY_ROLE)]

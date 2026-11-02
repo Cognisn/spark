@@ -16,7 +16,7 @@ from spark.safety.untrusted import (
     guard_tool_result,
     new_turn_id,
 )
-from spark.tools.registry import tool_category
+from spark.tools.registry import PERMISSIONS_KEY, Permissions, tool_category
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,17 @@ logger = logging.getLogger(__name__)
 class ActionExecutor:
     """Executes a single autonomous action."""
 
-    def __init__(self, ctx: Any, daemon_id: str, db: SyncDatabase) -> None:
+    def __init__(
+        self, ctx: Any, daemon_id: str, db: SyncDatabase, *, permissions: Permissions = None
+    ) -> None:
+        """``permissions`` are those of the user the action runs as.
+
+        In server mode an action's tools follow its owner's roles, and without
+        permissions every built-in tool is refused (fail closed). Personal mode
+        ignores them.
+        """
         self._ctx = ctx
+        self._permissions = permissions
         self._daemon_id = daemon_id
         self._db = db
         self._mcp_manager: Any | None = None
@@ -588,6 +597,7 @@ class ActionExecutor:
             config = {"embedded_tools": self._ctx.settings.get("embedded_tools") or {}}
             # Resolve secret:// URIs in embedded tools config
             self._resolve_embedded_secrets(config.get("embedded_tools", {}))
+            config[PERMISSIONS_KEY] = self._permissions
             tools = get_builtin_tools(config)
 
             # Add MCP server tools if configured
@@ -620,7 +630,7 @@ class ActionExecutor:
         """Execute a tool and return the result text."""
         from spark.tools.registry import unavailable_reason
 
-        refusal = unavailable_reason(tool_name)
+        refusal = unavailable_reason(tool_name, permissions=self._permissions)
         if refusal is not None:
             return refusal
         try:
@@ -632,6 +642,7 @@ class ActionExecutor:
             # File tools work in this user's area (server mode)
             config["_user_guid"] = self._user_guid
             config["_files_db"] = self._db
+            config[PERMISSIONS_KEY] = self._permissions
 
             # Inject memory index for memory tools
             try:

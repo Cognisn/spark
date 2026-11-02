@@ -286,10 +286,11 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     user_guid = _get_user_guid(request)
 
     from spark.database import mcp_ops
+    from spark.identity.access import tools_config_for
     from spark.tools.registry import get_builtin_tools
 
-    # Embedded tools
-    all_builtin = get_builtin_tools(conv_mgr._embedded_tools_config)
+    # Embedded tools: those the signed-in user's roles allow
+    all_builtin = get_builtin_tools(tools_config_for(request, conv_mgr._embedded_tools_config))
     embedded = []
     for t in all_builtin:
         enabled = await mcp_ops.is_embedded_tool_enabled(

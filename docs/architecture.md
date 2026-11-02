@@ -148,7 +148,7 @@ Each provider normalises responses to a common format:
 
 ### Tool System
 
-- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable
+- **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable whatever the role, and every other category needs `spark.tools.<category>` among the signed-in user's permissions. The permissions travel with the embedded tools configuration (`_permissions`, beside `_user_guid`) to the conversation manager, sub-agents, debates, panels and scheduled actions; without them a server refuses every built-in tool. Settings pages ask with `ANY_ROLE`, which is what the deployment offers. Personal mode has one local operator and ignores permissions
 - **Command policy** (`spark.tools.command_policy`) -- Splits a system command line in the dialect of the shell that runs it (POSIX shells, cmd.exe, PowerShell), follows nested shells, and checks every command name against the blocklist; a line it cannot split with confidence is refused
 - **ToolSelector** -- Intelligently selects relevant tools based on message content
 - Each tool module exports `get_tools()` (definitions) and `execute()` (handler)
@@ -369,6 +369,21 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
   it, so in server mode start-up also refuses a database whose warden chain is behind.
 - warden shares SPARK's psycopg pool (`spark.identity.db.warden_database`); an audit
   write given the driver connection of a SPARK transaction commits or rolls back with it.
+- Roles and permissions are data in `spark.identity.permissions`: `PERMISSIONS` (one
+  `spark.tools.<category>` per tool category, plus `spark.actions`, `spark.agents`,
+  `spark.knowledge.instance`, `spark.settings.instance`, `spark.users.admin`,
+  `spark.audit.read`, `spark.audit.export` and `spark.api_keys`) and `ROLES`
+  (`administrator` with every permission and warden's last-administrator protection,
+  `auditor` with the audit trail only, `user` with the tools a server offers bar
+  sub-agents, and `power_user` adding actions, sub-agents and instance-wide knowledge
+  graphs). `build_registry()` declares them to warden, which stores only assignments; a
+  new role is a new `ROLES` entry.
+- The signed-in user is a `SparkIdentity` on `request.state.identity`
+  (`spark.identity.access`), built from warden's `Principal` and the user's guid. Checks
+  fail closed: without an identity a request holds no permission. In server mode the web
+  start-up installs `WardenAccess` as the instance settings access check, so only a
+  holder of `spark.settings.instance` changes instance settings and secrets; personal
+  mode keeps its single operator, who holds every permission.
 
 ## Database Schema
 

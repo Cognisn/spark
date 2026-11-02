@@ -226,6 +226,10 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         conv_mgr._agent_model_callback = agent_model_callback
         conv_mgr._agent_cancel_register = register_agent_cancel
 
+        from spark.identity.access import request_permissions
+
+        # The turn's tools follow the signed-in user's roles (server mode).
+        permissions = request_permissions(request)
         try:
             loop = asyncio.get_event_loop()
             result_future = loop.run_in_executor(
@@ -237,6 +241,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     status_callback=status_callback,
                     stream_callback=stream_callback,
                     cancel_token=turn_token,
+                    permissions=permissions,
                 ),
             )
 

@@ -482,6 +482,7 @@ class TestScheduledAction:
         executor._ctx.settings.get = lambda key, default=None: values.get(key, default)
         executor._db = sync_db
         executor._user_guid = USER
+        executor._permissions = None  # personal mode: the local operator
         executor._mcp_manager = None
         executor._mcp_loop = None
         monkeypatch.setattr(executor, "_init_llm", lambda model_id: model)

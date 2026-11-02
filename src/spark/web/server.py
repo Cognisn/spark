@@ -213,6 +213,11 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     app.state.session = session_manager
     # The web layer's only view of sign-in; server mode swaps in warden here.
     app.state.authenticator = PersonalAuthenticator(session_manager)
+    # A server answers "may this user change instance settings?" from the
+    # signed-in user's warden permissions, never the single-operator stub (D32).
+    from spark.identity import access as identity_access
+
+    identity_access.install()
     app.state.origin_policy = _initial_origin_policy(ctx)
     app.state.first_run = first_run
     app.state.init_status = {"ready": True, "error": False, "stage": "Ready"}

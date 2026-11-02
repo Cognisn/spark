@@ -20,6 +20,7 @@ from spark.safety.untrusted import (
     new_turn_id,
 )
 from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
+from spark.tools.registry import Permissions
 
 logger = logging.getLogger(__name__)
 
@@ -316,11 +317,16 @@ class ConversationManager:
             return None
 
     def _get_builtin_tools(self) -> list[dict[str, Any]]:
-        """Get built-in tool definitions (cached)."""
-        if self._builtin_tools is None:
-            from spark.tools.registry import get_builtin_tools
+        """Built-in tool definitions this deployment offers, whatever the user's role (cached).
 
-            self._builtin_tools = get_builtin_tools(self._embedded_tools_config)
+        A turn offers the user only those their permissions allow (:meth:`_get_all_tools`).
+        """
+        if self._builtin_tools is None:
+            from spark.tools.registry import ANY_ROLE, PERMISSIONS_KEY, get_builtin_tools
+
+            self._builtin_tools = get_builtin_tools(
+                {**self._embedded_tools_config, PERMISSIONS_KEY: ANY_ROLE}
+            )
             self._builtin_tool_names = {t["name"] for t in self._builtin_tools}
         return self._builtin_tools
 
@@ -392,9 +398,15 @@ class ConversationManager:
             },
         ]
 
-    def _get_all_tools(self) -> list[dict[str, Any]]:
-        """Get all tools: built-in + MCP server tools."""
-        tools = list(self._get_builtin_tools())
+    def _get_all_tools(self, permissions: Permissions = None) -> list[dict[str, Any]]:
+        """Get all tools: built-in + MCP server tools, as ``permissions`` allow."""
+        from spark.tools.registry import is_tool_available
+
+        tools = [
+            t
+            for t in self._get_builtin_tools()
+            if is_tool_available(t["name"], permissions=permissions)
+        ]
 
         if self._mcp_manager:
             try:
@@ -440,7 +452,11 @@ class ConversationManager:
                 logger.warning("Failed to load MCP tools: %s", e)
 
         # Agent tools (spawn_agent, list_provider_models)
-        tools.extend(self._get_agent_tools())
+        tools.extend(
+            t
+            for t in self._get_agent_tools()
+            if is_tool_available(t["name"], permissions=permissions)
+        )
 
         return tools
 
@@ -516,10 +532,14 @@ class ConversationManager:
         stream_callback: Callable | None = None,
         status_callback: Callable | None = None,
         cancel_token: CancellationToken | None = None,
+        permissions: Permissions = None,
     ) -> dict[str, Any]:
         """Send a user message and get the assistant response.
 
         If tools is None, automatically loads embedded built-in tools.
+        ``permissions`` are the signed-in user's (server mode): the turn offers
+        and runs only the tool categories they grant, and without them a server
+        refuses every built-in tool. Personal mode ignores them.
         """
         from spark.database import conversations
         from spark.database import messages as msg_db
@@ -536,7 +556,7 @@ class ConversationManager:
 
         # Auto-load embedded tools + MCP tools if none provided
         if tools is None:
-            tools = self._get_all_tools()
+            tools = self._get_all_tools(permissions)
 
         # Prompt inspection (if enabled)
         try:
@@ -780,6 +800,7 @@ class ConversationManager:
                         status_callback=status_callback,
                         turn_id=turn_id,
                         result_policy=result_policy,
+                        permissions=permissions,
                     )
                     all_tool_calls.extend(response["tool_use"])
 
@@ -1143,6 +1164,7 @@ class ConversationManager:
         status_callback: Callable | None = None,
         turn_id: str | None = None,
         result_policy: ResultPolicy | None = None,
+        permissions: Permissions = None,
     ) -> dict:
         """Execute a single tool call and return the tool_result dict.
 
@@ -1263,7 +1285,7 @@ class ConversationManager:
         )
         start_time = time.monotonic()
         try:
-            result_text, is_error = self._call_tool(tool_name, tool_input)
+            result_text, is_error = self._call_tool(tool_name, tool_input, permissions=permissions)
         except Exception as e:
             result_text = f"Tool execution error: {e}"
             is_error = True
@@ -1333,6 +1355,7 @@ class ConversationManager:
         status_callback: Callable | None = None,
         turn_id: str | None = None,
         result_policy: ResultPolicy | None = None,
+        permissions: Permissions = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results.
 
@@ -1362,6 +1385,7 @@ class ConversationManager:
         guard: dict[str, Any] = {
             "turn_id": turn_id or new_turn_id(),
             "result_policy": result_policy,
+            "permissions": permissions,
         }
 
         # 1. Execute non-agent tools sequentially.
@@ -1506,7 +1530,11 @@ class ConversationManager:
             return f"Error listing models: {e}", True
 
     def _execute_agent_spawn(
-        self, tool_input: dict, conversation_id: int, user_guid: str
+        self,
+        tool_input: dict,
+        conversation_id: int,
+        user_guid: str,
+        permissions: Permissions = None,
     ) -> tuple[str, bool]:
         """Spawn a sub-agent to execute a task."""
         import uuid
@@ -1615,10 +1643,13 @@ class ConversationManager:
                 )
                 return f"Agent failed: no provider found for model '{model_id}'.", True
 
+            from spark.tools.registry import PERMISSIONS_KEY
+
             executor = AgentExecutor(
                 agent_llm,
                 self._db,
-                self._embedded_tools_config,
+                # The sub-agent acts for the same user, with the same permissions.
+                {**self._embedded_tools_config, PERMISSIONS_KEY: permissions},
                 mcp_manager=self._mcp_manager,
                 mcp_loop=getattr(self, "_mcp_loop", None),
                 user_guid=user_guid,
@@ -1683,13 +1714,16 @@ class ConversationManager:
             )
             return f"Agent '{agent_name}' failed: {e}", True
 
-    def _call_tool(self, tool_name: str, tool_input: dict) -> tuple[str, bool]:
-        """Execute a single tool. Returns (result_text, is_error)."""
-        from spark.tools.registry import unavailable_reason
+    def _call_tool(
+        self, tool_name: str, tool_input: dict, *, permissions: Permissions = None
+    ) -> tuple[str, bool]:
+        """Execute a single tool for a user holding ``permissions``. Returns (result_text, is_error)."""
+        from spark.tools.registry import PERMISSIONS_KEY, unavailable_reason
 
-        # A tool whose category is not available is refused by name, wherever
-        # the request came from, before any built-in or MCP dispatch.
-        refusal = unavailable_reason(tool_name)
+        # A tool whose category is not available (to this mode, or to the
+        # user's roles) is refused by name, wherever the request came from,
+        # before any built-in or MCP dispatch.
+        refusal = unavailable_reason(tool_name, permissions=permissions)
         if refusal is not None:
             return refusal, True
 
@@ -1699,7 +1733,7 @@ class ConversationManager:
             uid = self._current_user_guid
             if cid is None or uid is None:
                 return "Error: no active conversation context for agent spawn.", True
-            return self._execute_agent_spawn(tool_input, cid, uid)
+            return self._execute_agent_spawn(tool_input, cid, uid, permissions)
         if tool_name == "list_provider_models":
             return self._list_provider_models()
 
@@ -1714,6 +1748,7 @@ class ConversationManager:
             config["_kg_db"] = self._db
             config["_kg_conversation_id"] = self._current_conversation_id
             config["_kg_user_guid"] = self._current_user_guid or self._user_guid
+            config[PERMISSIONS_KEY] = permissions
             return execute_builtin_tool(tool_name, tool_input, config)
 
         # Try MCP manager (async — dispatch on the persistent MCP event loop)

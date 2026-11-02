@@ -39,6 +39,15 @@ def pytest_asyncio_loop_factories(
     return {"loop": _new_loop}
 
 
+@pytest.fixture(autouse=True)
+def _reset_access_check() -> Iterator[None]:
+    """A server-mode app installs warden's access check process-wide: restore the stub."""
+    yield
+    from spark.instance_settings import access
+
+    access.reset()
+
+
 def _postgres_required() -> bool:
     return os.environ.get("SPARK_TEST_POSTGRES", "").lower() == "required"
 

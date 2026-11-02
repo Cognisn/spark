@@ -24,12 +24,14 @@ router = APIRouter(prefix="", tags=["debate"])
 def _orchestrator(request: Request, status_callback: Any = None):
     """Build a DebateOrchestrator wired to the app's shared services."""
     from spark.core.debate.orchestrator import DebateOrchestrator
+    from spark.identity.access import tools_config_for
 
     conv_mgr = request.app.state.conversation_manager
     return DebateOrchestrator(
         conv_mgr._db,
         conv_mgr._get_llm_service_for_model,
-        getattr(conv_mgr, "_embedded_tools_config", {}) or {},
+        # Participants' tools follow the signed-in user's roles (server mode).
+        tools_config_for(request, getattr(conv_mgr, "_embedded_tools_config", {}) or {}),
         mcp_manager=getattr(conv_mgr, "_mcp_manager", None),
         mcp_loop=getattr(request.app.state, "_mcp_loop", None),
         status_callback=status_callback,
@@ -55,11 +57,13 @@ async def debate_capabilities(request: Request) -> JSONResponse:
     tools_out: list[dict] = []
     try:
         from spark.core.conversation_manager import _TOOL_CATEGORIES
+        from spark.identity.access import tools_config_for
         from spark.skills.tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES
         from spark.tools.registry import get_builtin_tools
 
         conv_mgr = request.app.state.conversation_manager
         config = getattr(conv_mgr, "_embedded_tools_config", {}) or {"embedded_tools": {}}
+        config = tools_config_for(request, config)
         offered = {t["name"]: t.get("description", "") for t in get_builtin_tools(config)}
 
         never = {"spawn_agent", "list_provider_models"}
