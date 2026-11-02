@@ -206,6 +206,8 @@ jobs:
           src/spark/tools/documents.py src/spark/tools/archives.py
           src/spark/tools/document_creation.py
           src/spark/safety/untrusted.py src/spark/llm/manager.py
+          src/spark/tools/filesystem.py src/spark/core/processes.py
+          src/spark/web/db.py scripts/check_no_nvidia.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
