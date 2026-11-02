@@ -430,6 +430,19 @@ flowchart LR
   `/api/open-folder`, `/settings/api/lock`, `/settings/api/unlock`) answer 404, and
   the MCP server settings (`/settings/mcp/*`, which write `config.yaml`) need
   `spark.settings.instance`.
+- A chat stream's pending interactions are addressed by id through app-wide
+  registries: tool permission prompts (`/chat/permission/respond`), agent model
+  approvals (`/chat/agent/model-approve`), agent cancel tokens (`/chat/agent/cancel`)
+  and the stream itself (`/stream/cancel`). `spark.web.interactions` binds each id to
+  the user whose turn raised it and releases it when it ends; on a server an id that
+  is not the caller's live one answers 404 and changes nothing. Personal mode answers
+  every id, unknown ones with 200, as before.
+- Role gates (server mode; personal mode's local operator holds every permission):
+  creating, editing, toggling, running now and AI-creating actions need
+  `spark.actions` (`require_permission`), while listing, reading and deleting one's own
+  actions stay open; importing, deleting and reloading skills, which every user of
+  the instance shares, need `spark.settings.instance`, while turning a skill on or off
+  for oneself stays open.
 
 ## Vectors
 

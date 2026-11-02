@@ -11,10 +11,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from spark.identity.access import current_user_guid
+from spark.identity.access import current_user_guid, require_permission
+from spark.identity.permissions import SETTINGS_INSTANCE
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/skills")
 
 _IMPORT_ZIP_MAX = 10 * 1024 * 1024
+
+# Imported skills live in one directory every user of the instance shares, so
+# importing, deleting and reloading them need spark.settings.instance (an
+# administrator's; the interim default of question 20). Turning a skill on or
+# off is each user's own. Personal mode's local operator holds every permission.
+_INSTANCE_SKILLS = [Depends(require_permission(SETTINGS_INSTANCE))]
 
 
 def _manager(request: Request) -> Any:
@@ -113,7 +120,7 @@ def _validate_zip(zf: zipfile.ZipFile) -> tuple[str | None, str | None]:
     return folder, None
 
 
-@router.post("/api/import")
+@router.post("/api/import", dependencies=_INSTANCE_SKILLS)
 async def import_skill(request: Request, file: UploadFile = File(...)) -> JSONResponse:
     from spark.skills.manager import SkillsManager, _parse_skill_dir
 
@@ -175,7 +182,7 @@ async def download_skill(request: Request, name: str) -> Any:
     )
 
 
-@router.post("/api/delete")
+@router.post("/api/delete", dependencies=_INSTANCE_SKILLS)
 async def delete_skill(request: Request) -> JSONResponse:
     manager = _manager(request)
     data = await request.json()
@@ -190,7 +197,7 @@ async def delete_skill(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@router.post("/api/reload")
+@router.post("/api/reload", dependencies=_INSTANCE_SKILLS)
 async def reload_skills(request: Request) -> JSONResponse:
     _manager(request).reload()
     return JSONResponse({"status": "ok"})

@@ -6,16 +6,22 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from spark.identity.access import current_user_guid
+from spark.identity.access import current_user_guid, require_permission
+from spark.identity.permissions import ACTIONS
 from spark.web.db import database, sync_database
 from spark.web.scope import not_found, owned_action
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/actions")
+
+# Creating, changing and running actions needs spark.actions (a power user's);
+# listing, reading and deleting one's own actions stay open to every user.
+# Personal mode's local operator holds every permission.
+_MAY_RUN_ACTIONS = [Depends(require_permission(ACTIONS))]
 
 
 def _actions_enabled(request: Request) -> bool:
@@ -55,7 +61,7 @@ async def list_actions(request: Request) -> JSONResponse:
     return JSONResponse(all_actions)
 
 
-@router.post("/api/create")
+@router.post("/api/create", dependencies=_MAY_RUN_ACTIONS)
 async def create_action(request: Request) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -88,7 +94,7 @@ async def create_action(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
-@router.put("/api/{action_id}")
+@router.put("/api/{action_id}", dependencies=_MAY_RUN_ACTIONS)
 async def update_action(request: Request, action_id: int) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -140,7 +146,7 @@ async def delete_action(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@router.post("/api/{action_id}/toggle")
+@router.post("/api/{action_id}/toggle", dependencies=_MAY_RUN_ACTIONS)
 async def toggle_action(request: Request, action_id: int) -> JSONResponse:
     if r := _guard(request):
         return r
@@ -257,7 +263,7 @@ async def get_runs(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse(runs)
 
 
-@router.post("/api/{action_id}/run-now")
+@router.post("/api/{action_id}/run-now", dependencies=_MAY_RUN_ACTIONS)
 async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     """Trigger an immediate action execution.
 
@@ -300,7 +306,7 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     return JSONResponse({"status": "running", "message": f"Action '{action['name']}' started."})
 
 
-@router.post("/api/ai-create")
+@router.post("/api/ai-create", dependencies=_MAY_RUN_ACTIONS)
 async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
     if r := _guard(request):

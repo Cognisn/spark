@@ -35,7 +35,7 @@ from spark.database import (
     memories,
     messages,
 )
-from spark.identity.permissions import ADMINISTRATOR
+from spark.identity.permissions import ADMINISTRATOR, POWER_USER
 from spark.knowledge import store
 from spark.mode import DatabaseSettings, Dialect, Mode
 from tests.identity_web_helpers import (
@@ -128,8 +128,9 @@ def _signed_in(client: TestClient, email: str, *roles: str) -> tuple[TestClient,
 
 @pytest.fixture
 def users(client: TestClient) -> dict[str, Any]:
-    ada, ada_guid = _signed_in(client, ADA)
-    grace, grace_guid = _signed_in(client, GRACE)
+    # Power users, so action routes reach their ownership check (a user is refused 403).
+    ada, ada_guid = _signed_in(client, ADA, POWER_USER)
+    grace, grace_guid = _signed_in(client, GRACE, POWER_USER)
     return {"ada": ada, "ada_guid": ada_guid, "grace": grace, "grace_guid": grace_guid}
 
 

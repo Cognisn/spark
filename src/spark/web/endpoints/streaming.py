@@ -16,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
 from spark.identity.access import current_user_guid
+from spark.web import interactions
 from spark.web.db import database, sync_database
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,8 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
     request.app.state.turn_cancel_tokens[stream_id] = turn_token
     request.app.state.stream_agent_sets[stream_id] = agent_tokens_for_stream
+    # Every pending id of this stream belongs to its user (server mode: 404 for others).
+    interactions.bind(request.app, interactions.STREAM, stream_id, user_guid)
 
     # Shared state for permission requests
     pending_permissions: dict[str, threading.Event] = {}
@@ -130,6 +133,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
             # Create a threading event to wait on
             wait_event = threading.Event()
+            interactions.bind(request.app, interactions.PERMISSION, request_id, user_guid)
             request.app.state.permission_events[request_id] = wait_event
             request.app.state.permission_responses[request_id] = None
 
@@ -149,6 +153,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # Cleanup
             request.app.state.permission_events.pop(request_id, None)
             request.app.state.permission_responses.pop(request_id, None)
+            interactions.release(request.app, interactions.PERMISSION, request_id)
 
             logger.info("Permission for %s: %s", tool_name, decision)
             return decision
@@ -182,6 +187,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             )
 
             wait_event = threading.Event()
+            interactions.bind(request.app, interactions.AGENT_MODEL, request_id, user_guid)
             request.app.state.agent_model_events[request_id] = wait_event
             request.app.state.agent_model_responses[request_id] = None
 
@@ -206,6 +212,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # Cleanup
             request.app.state.agent_model_events.pop(request_id, None)
             request.app.state.agent_model_responses.pop(request_id, None)
+            interactions.release(request.app, interactions.AGENT_MODEL, request_id)
 
             logger.info("Agent model approved: %s", approved)
             return approved
@@ -218,6 +225,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             stream finishes).
             """
             tok = CancellationToken()
+            interactions.bind(request.app, interactions.AGENT, agent_id, user_guid)
             request.app.state.agent_cancel_tokens[agent_id] = tok
             agent_tokens_for_stream[agent_id] = tok
             return tok
@@ -414,8 +422,10 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # stale tokens after the turn finishes.
             request.app.state.turn_cancel_tokens.pop(stream_id, None)
             request.app.state.stream_agent_sets.pop(stream_id, None)
+            interactions.release(request.app, interactions.STREAM, stream_id)
             for aid in list(agent_tokens_for_stream):
                 request.app.state.agent_cancel_tokens.pop(aid, None)
+                interactions.release(request.app, interactions.AGENT, aid)
 
     return EventSourceResponse(event_generator())
 
@@ -425,6 +435,10 @@ async def cancel_stream(request: Request) -> JSONResponse:
     """API: cancel an active stream's turn and all of its child agents."""
     data = await request.json()
     stream_id = data.get("stream_id", "")
+    from spark.web.scope import not_found
+
+    if not interactions.belongs_to_caller(request, interactions.STREAM, stream_id):
+        return not_found()
     turn_tokens = getattr(request.app.state, "turn_cancel_tokens", {})
     stream_agents = getattr(request.app.state, "stream_agent_sets", {})
 

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.identity.access import current_user_guid
+from spark.web import interactions
 from spark.web.db import database, sync_database
 from spark.web.scope import not_found, owned_conversation
 
@@ -622,6 +623,8 @@ async def approve_agent_model(request: Request) -> JSONResponse:
     data = await request.json()
     request_id = data.get("request_id")
     model_id = data.get("model_id", "")
+    if not interactions.belongs_to_caller(request, interactions.AGENT_MODEL, request_id):
+        return not_found()
 
     events = getattr(request.app.state, "agent_model_events", {})
     responses = getattr(request.app.state, "agent_model_responses", {})
@@ -645,6 +648,8 @@ async def permission_respond(request: Request) -> JSONResponse:
     data = await request.json()
     request_id = data.get("request_id")
     decision = data.get("decision", "denied")  # once | allowed | denied
+    if not interactions.belongs_to_caller(request, interactions.PERMISSION, request_id):
+        return not_found()
 
     # Signal the waiting thread
     events = getattr(request.app.state, "permission_events", {})
@@ -662,9 +667,15 @@ async def permission_respond(request: Request) -> JSONResponse:
 
 @router.post("/agent/cancel")
 async def cancel_agent(request: Request) -> JSONResponse:
-    """API: cancel a running sub-agent. Idempotent — unknown ids return 200."""
+    """API: cancel a running sub-agent.
+
+    Idempotent in personal mode: unknown ids return 200. A server answers 404
+    for an id that is not the signed-in user's live agent.
+    """
     data = await request.json()
     agent_id = data.get("agent_id", "")
+    if not interactions.belongs_to_caller(request, interactions.AGENT, agent_id):
+        return not_found()
     tokens = getattr(request.app.state, "agent_cancel_tokens", {})
     tok = tokens.get(agent_id)
     if tok is not None:
