@@ -1,11 +1,23 @@
-"""Filesystem tools — read, write, search, and inspect files."""
+"""Filesystem tools: read, write, search, and inspect files (personal mode only).
+
+Every path goes through the one resolved-path check shared by every file tool
+(:func:`spark.files.paths.contain_any` over the configured allowed roots, via
+:class:`spark.files.scope.ToolScope`): symlinks are resolved, and ``..``
+components, absolute paths outside the roots, Windows drive, UNC and device
+forms and alternate data streams are refused with
+:class:`~spark.files.paths.PathRefused`. A relative path is taken against the
+first root. The listing and search tools apply the same check to every entry
+they would show, so they never list or descend into anything outside the roots.
+"""
 
 from __future__ import annotations
 
-import fnmatch
-import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+
+from spark.files.paths import PathRefused, contain
+from spark.files.scope import ToolScope
 
 _READ_TOOLS = [
     {
@@ -126,40 +138,53 @@ def execute(
     tool_name: str,
     tool_input: dict[str, Any],
     *,
-    allowed_paths: list[str] | None = None,
+    scope: ToolScope,
     mode: str = "read",
 ) -> str:
-    """Execute a filesystem tool."""
-    # Resolve and validate path
-    path_str = tool_input.get("path", ".")
-    path = Path(path_str).resolve()
-
-    if allowed_paths:
-        if not any(str(path).startswith(str(Path(ap).resolve())) for ap in allowed_paths):
-            return f"Access denied: {path} is outside allowed paths."
-    else:
-        cwd = Path.cwd().resolve()
-        if not str(path).startswith(str(cwd)):
-            return f"Access denied: {path} is outside the working directory."
+    """Execute a filesystem tool inside ``scope``; raises :class:`PathRefused` for an escape."""
+    raw = tool_input.get("path")
+    path = scope.resolve("." if raw is None else str(raw))
 
     if tool_name == "read_file":
         return _read_file(path, tool_input.get("max_lines"))
     elif tool_name == "list_directory":
-        return _list_directory(path, tool_input.get("recursive", False))
+        return _list_directory(scope, path, bool(tool_input.get("recursive", False)))
     elif tool_name == "search_files":
-        return _search_files(path, tool_input.get("pattern", "*"))
+        return _search_files(scope, path, str(tool_input.get("pattern", "*")))
     elif tool_name == "get_file_info":
         return _get_file_info(path)
     elif tool_name == "find_in_file":
         return _find_in_file(path, tool_input["query"], tool_input.get("case_sensitive", False))
     elif tool_name == "get_directory_tree":
-        return _get_directory_tree(path, tool_input.get("max_depth", 3))
+        return _get_directory_tree(scope, path, int(tool_input.get("max_depth", 3)))
     elif tool_name == "write_file":
         if mode != "read_write":
             return "Write access is not enabled."
         return _write_file(path, tool_input["content"])
 
     return f"Unknown filesystem tool: {tool_name}"
+
+
+def _inside(scope: ToolScope, entry: Path) -> bool:
+    """Whether a listed entry passes the same containment check as a path argument."""
+    try:
+        scope.resolve(str(entry))
+    except PathRefused:
+        return False
+    return True
+
+
+def _entries(scope: ToolScope, path: Path) -> list[Path]:
+    """The entries of ``path`` that lie inside the roots, sorted by name."""
+    return [item for item in sorted(path.iterdir()) if _inside(scope, item)]
+
+
+def _walk(scope: ToolScope, path: Path) -> Iterator[Path]:
+    """Every contained entry below ``path``, depth first; symlinked directories are not entered."""
+    for item in _entries(scope, path):
+        yield item
+        if item.is_dir() and not item.is_symlink():
+            yield from _walk(scope, item)
 
 
 def _read_file(path: Path, max_lines: int | None) -> str:
@@ -177,12 +202,12 @@ def _read_file(path: Path, max_lines: int | None) -> str:
         return f"Cannot read {path}: not a text file."
 
 
-def _list_directory(path: Path, recursive: bool) -> str:
+def _list_directory(scope: ToolScope, path: Path, recursive: bool) -> str:
     if not path.is_dir():
         return f"Not a directory: {path}"
     entries = []
     if recursive:
-        for item in sorted(path.rglob("*")):
+        for item in _walk(scope, path):
             rel = item.relative_to(path)
             kind = "d" if item.is_dir() else "f"
             size = item.stat().st_size if item.is_file() else 0
@@ -190,7 +215,7 @@ def _list_directory(path: Path, recursive: bool) -> str:
                 f"[{kind}] {rel} ({size:,} bytes)" if kind == "f" else f"[{kind}] {rel}/"
             )
     else:
-        for item in sorted(path.iterdir()):
+        for item in _entries(scope, path):
             kind = "d" if item.is_dir() else "f"
             size = item.stat().st_size if item.is_file() else 0
             entries.append(
@@ -201,10 +226,12 @@ def _list_directory(path: Path, recursive: bool) -> str:
     return "\n".join(entries) if entries else "(empty directory)"
 
 
-def _search_files(path: Path, pattern: str) -> str:
+def _search_files(scope: ToolScope, path: Path, pattern: str) -> str:
     if not path.is_dir():
-        path = path.parent
-    matches = sorted(path.rglob(pattern))[:100]
+        path = scope.resolve(str(path.parent))
+    # The pattern is checked like a relative path, so it cannot climb out of the directory
+    contain(path, pattern)
+    matches = sorted(m for m in path.rglob(pattern) if _inside(scope, m))[:100]
     if not matches:
         return f"No files matching '{pattern}'"
     return "\n".join(str(m.relative_to(path)) for m in matches)
@@ -245,18 +272,20 @@ def _find_in_file(path: Path, query: str, case_sensitive: bool) -> str:
     return f"Found {len(matches)} match(es) in {path.name}:\n" + "\n".join(matches)
 
 
-def _get_directory_tree(path: Path, max_depth: int) -> str:
+def _get_directory_tree(scope: ToolScope, path: Path, max_depth: int) -> str:
     if not path.is_dir():
         return f"Not a directory: {path}"
     lines = [str(path.name) + "/"]
-    _tree_recurse(path, "", max_depth, 0, lines)
+    _tree_recurse(scope, path, "", max_depth, 0, lines)
     return "\n".join(lines[:500])
 
 
-def _tree_recurse(path: Path, prefix: str, max_depth: int, depth: int, lines: list[str]) -> None:
+def _tree_recurse(
+    scope: ToolScope, path: Path, prefix: str, max_depth: int, depth: int, lines: list[str]
+) -> None:
     if depth >= max_depth:
         return
-    items = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    items = sorted(_entries(scope, path), key=lambda p: (not p.is_dir(), p.name.lower()))
     for i, item in enumerate(items):
         is_last = i == len(items) - 1
         connector = "└── " if is_last else "├── "
@@ -264,7 +293,7 @@ def _tree_recurse(path: Path, prefix: str, max_depth: int, depth: int, lines: li
         lines.append(f"{prefix}{connector}{name}")
         if item.is_dir():
             ext = "    " if is_last else "│   "
-            _tree_recurse(item, prefix + ext, max_depth, depth + 1, lines)
+            _tree_recurse(scope, item, prefix + ext, max_depth, depth + 1, lines)
 
 
 def _write_file(path: Path, content: str) -> str:

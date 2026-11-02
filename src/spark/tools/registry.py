@@ -339,32 +339,15 @@ def execute_builtin_tool(
 
             return dt_execute(tool_input), False
 
-        # Filesystem
-        fs_tools = {
-            "read_file",
-            "write_file",
-            "list_directory",
-            "search_files",
-            "get_file_info",
-            "find_in_file",
-            "get_directory_tree",
-        }
-        if tool_name in fs_tools:
-            fs_config = embedded.get("filesystem", {})
-            allowed = fs_config.get("allowed_paths", [])
-            # Handle legacy string format (comma-separated)
-            if isinstance(allowed, str):
-                allowed = [p.strip() for p in allowed.split(",") if p.strip()]
-            if not allowed:
-                return (
-                    f"Tool '{tool_name}' requires allowed_paths to be configured.",
-                    True,
-                )
-
+        # Filesystem: the allowed roots only. The category is local-only, so a
+        # server has already refused it above and the scope is always personal.
+        if tool_name in TOOL_CATEGORIES["filesystem"]:
+            from spark.files.scope import tool_scope
             from spark.tools.filesystem import execute as fs_execute
 
-            fs_mode = fs_config.get("mode", "read")
-            return fs_execute(tool_name, tool_input, allowed_paths=allowed, mode=fs_mode), False
+            fs_mode = embedded.get("filesystem", {}).get("mode", "read")
+            scope = tool_scope(config, server=False)
+            return fs_execute(tool_name, tool_input, scope=scope, mode=fs_mode), False
 
         # Documents (read)
         doc_read_tools = {"read_word", "read_excel", "read_pdf", "read_powerpoint"}

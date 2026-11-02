@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Filesystem tool containment** (personal mode): the filesystem tools (`read_file`, `write_file`, `list_directory`, `search_files`, `get_file_info`, `find_in_file`, `get_directory_tree`) now use the same resolved-path check as the document and archive tools, so every file tool follows one containment rule over the configured allowed paths. Symlinks are resolved; `..` components, absolute paths outside the allowed paths, Windows drive, UNC and device forms, reserved device names and alternate data streams are refused with a clear message. A relative path is taken against the first allowed path rather than the process's working directory. Listings, trees and searches never show or descend into an entry that lies outside the allowed paths, and a search pattern may not leave the directory being searched
+
 ## [0.3.0a7] - 2026-10-30
 
 ### Added
