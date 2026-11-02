@@ -45,7 +45,6 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         return EventSourceResponse(error_gen())
 
     user_guid = current_user_guid(request)
-
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation
 
@@ -218,16 +217,17 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             agent_tokens_for_stream[agent_id] = tok
             return tok
 
-        # Inject the permission, model approval, and agent cancel callbacks into
-        # the conversation manager for the duration of this request.
-        original_callback = conv_mgr._tool_permission_callback
-        original_model_callback = conv_mgr._agent_model_callback
-        original_agent_register = getattr(conv_mgr, "_agent_cancel_register", None)
-        conv_mgr._tool_permission_callback = permission_callback
-        conv_mgr._agent_model_callback = agent_model_callback
-        conv_mgr._agent_cancel_register = register_agent_cancel
-
+        # This turn's permission, model approval and agent cancel callbacks travel
+        # with the turn: the shared manager is never changed, so concurrent streams
+        # never answer each other's prompts.
+        from spark.core.conversation_manager import TurnCallbacks
         from spark.identity.access import request_permissions
+
+        callbacks = TurnCallbacks(
+            tool_permission=permission_callback,
+            agent_model=agent_model_callback,
+            agent_cancel_register=register_agent_cancel,
+        )
 
         # The turn's tools follow the signed-in user's roles (server mode).
         permissions = request_permissions(request)
@@ -243,6 +243,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     stream_callback=stream_callback,
                     cancel_token=turn_token,
                     permissions=permissions,
+                    callbacks=callbacks,
                 ),
             )
 
@@ -404,10 +405,6 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
         finally:
-            # Restore original callbacks
-            conv_mgr._tool_permission_callback = original_callback
-            conv_mgr._agent_model_callback = original_model_callback
-            conv_mgr._agent_cancel_register = original_agent_register
             # Drop registries for this stream so cancel endpoints can't address
             # stale tokens after the turn finishes.
             request.app.state.turn_cancel_tokens.pop(stream_id, None)
