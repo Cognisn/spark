@@ -138,7 +138,12 @@ class KnowledgeGraphBuilder:
         if not sources:
             return result
 
+        # A service of the build's own for its model (never the shared manager's)
         service = self._factory(model_id)
+        if service is None:
+            result["status"] = "failed"
+            result["error"] = f"No provider offers the model '{model_id}'"
+            return result
         service.set_model(model_id)
 
         for source_key, items in sources:

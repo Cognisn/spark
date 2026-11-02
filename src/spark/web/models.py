@@ -8,6 +8,10 @@ no such limit, offers every model as before.
 
 A conversation pinned to a model that has since left the list keeps working;
 :func:`notice` gives the message its page shows.
+
+:func:`default_model` is the model a user's choices start from: on a server the
+signed-in user's ``default_model.model_id`` preference (else the instance's),
+only when offered; in personal mode ``config.yaml``'s, as before.
 """
 
 from __future__ import annotations
@@ -17,7 +21,15 @@ from typing import Any
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
-__all__ = ["is_offered", "not_offered", "notice", "offered_models", "refusal_message"]
+__all__ = [
+    "default_model",
+    "default_model_mode",
+    "is_offered",
+    "not_offered",
+    "notice",
+    "offered_models",
+    "refusal_message",
+]
 
 
 def _manager(request: Request) -> Any:
@@ -64,3 +76,59 @@ def notice(request: Request, model_id: str | None) -> str | None:
         f"This conversation uses {model_id}, which is no longer offered on this instance. "
         "It keeps working here; choose an offered model to change it."
     )
+
+
+def _server() -> bool:
+    from spark import mode
+
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
+def _config(request: Request, key: str, default: Any) -> Any:
+    """Personal mode: a value from ``config.yaml`` (konfig), as before."""
+    ctx = getattr(request.app.state, "ctx", None)
+    return ctx.settings.get(key, default) if ctx is not None else default
+
+
+async def _instance(request: Request, key: str) -> Any:
+    """Server mode: an instance setting (never ``config.yaml``)."""
+    import spark.instance_settings as instance_settings
+    from spark.web.db import database
+
+    source = await instance_settings.server_settings(
+        request.app, database(request), request.app.state.ctx.settings
+    )
+    return source.get(key)
+
+
+async def default_model(request: Request, user_guid: str | None) -> str:
+    """The model a user's choices start from ("" when there is none).
+
+    A server answers the user's ``default_model.model_id`` preference, else the
+    instance's, each only when it is offered. Personal mode answers
+    ``config.yaml``'s, as before.
+    """
+    if not _server():
+        return str(_config(request, "default_model.model_id", "") or "")
+    from spark.instance_settings import accessor
+    from spark.web.db import database
+
+    candidates: list[Any] = []
+    if user_guid:
+        prefs = await accessor.preferences(database(request), user_guid)
+        candidates.append(prefs.get("default_model.model_id"))
+    candidates.append(await _instance(request, "default_model.model_id"))
+    for model_id in candidates:
+        if isinstance(model_id, str) and model_id and is_offered(request, model_id):
+            return model_id
+    return ""
+
+
+async def default_model_mode(request: Request) -> str:
+    """``default`` or ``mandatory``: the instance setting on a server, ``config.yaml``'s otherwise."""
+    if _server():
+        return str(await _instance(request, "default_model.mode") or "default")
+    return str(_config(request, "default_model.mode", "default") or "default")

@@ -105,6 +105,12 @@ async def kg_build(request: Request) -> JSONResponse:
         return refused
 
     user_guid = current_user_guid(request)
+    model_id = await _build_model(request, user_guid)
+    if not model_id:
+        return JSONResponse(
+            {"error": "No model to build with: set a default model or knowledge_graph.build_model"},
+            status_code=409,
+        )
     key = build_key(user_guid, scope)
     if not builder.try_acquire(key):
         return JSONResponse({"error": "A build is already running for this scope"}, status_code=409)
@@ -114,18 +120,6 @@ async def kg_build(request: Request) -> JSONResponse:
     tokens, results = _state_dicts(request)
     token = CancellationToken()
     tokens[key] = token
-
-    ctx = getattr(request.app.state, "ctx", None)
-    model_id = None
-    if ctx is not None:
-        try:
-            model_id = ctx.settings.get("knowledge_graph.build_model")
-        except Exception:  # noqa: BLE001
-            model_id = None
-    if not model_id:
-        active = getattr(conv_mgr, "_llm", None)
-        service = getattr(active, "active_service", None) if active else None
-        model_id = getattr(service, "current_model", None) or "default"
 
     def run() -> None:
         try:
@@ -140,6 +134,27 @@ async def kg_build(request: Request) -> JSONResponse:
 
     threading.Thread(target=run, daemon=True, name=f"kg-build-{scope}").start()
     return JSONResponse({"status": "started", "scope": scope})
+
+
+async def _build_model(request: Request, user_guid: str) -> str:
+    """The model a build extracts with, resolved explicitly (never the shared manager's).
+
+    ``knowledge_graph.build_model`` first, then the user's default model (their
+    preference on a server, ``config.yaml``'s in personal mode), then the first
+    model listed; "" when there is none. The build gets a service of its own for it.
+    """
+    from spark.web.models import default_model
+
+    ctx = getattr(request.app.state, "ctx", None)
+    configured = ctx.settings.get("knowledge_graph.build_model") if ctx is not None else None
+    if isinstance(configured, str) and configured:
+        return configured
+    preferred = await default_model(request, user_guid)
+    if preferred:
+        return preferred
+    llm_manager = getattr(request.app.state, "llm_manager", None)
+    listed = llm_manager.list_all_models() if llm_manager is not None else []
+    return str(listed[0].get("id", "")) if listed else ""
 
 
 @router.post("/api/cancel")

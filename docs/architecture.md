@@ -202,6 +202,21 @@ starts, under `spark.`:
   to the LLM for them are only those offered, and the action creation assistant may
   create an action only with an offered model. One manager serves every user of a
   server, so creating a conversation there never sets its model
+- **A model service for each turn** -- `LLMManager.service_for(model_id)` returns a copy of
+  the provider that lists the model with the model set on the copy: it shares the
+  provider's client and caches, but its model is its own, and the manager's active
+  provider and model never move. Like `set_model()` it does not ask whether the model is
+  offered. Each chat turn resolves one for its conversation's model and uses it for every
+  call it makes (invoking, token counting, the tool loop, prompt caching and compaction,
+  which uses a service of its own when a compaction model is locked), so turns on
+  different models at once never answer with each other's. Sub-agents, debates, panels
+  and knowledge graph builds get a service of their own the same way. The only remaining
+  caller of the shared `LLMManager.set_model()` is personal mode's conversation creation,
+  for its single local user; a settings change replaces the providers and keeps the active
+  one. A knowledge graph build's model is `knowledge_graph.build_model`, else the user's
+  default model (`spark.web.models.default_model()`: the user's preference on a server,
+  else the instance's, offered only; `config.yaml`'s in personal mode), else the first
+  model listed
 - **Models offered at every choice** (`spark.web.models`) -- Every endpoint where a user
   chooses a model asks `not_offered()` first and answers 409, naming the model, for one
   not offered: creating a conversation (its debate and panel agents included), changing

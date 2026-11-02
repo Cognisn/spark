@@ -23,11 +23,15 @@ USER = "test-user"
 
 
 class StubLLMService:
-    """Stub LLM service for testing."""
+    """Stub LLM service for testing.
+
+    A turn answers through a copy of its provider (LLMManager.service_for), so what
+    the stub records lives in a dict its copies share.
+    """
 
     def __init__(self) -> None:
         self._model_id: str | None = None
-        self.invoke_count = 0
+        self._seen: dict[str, Any] = {"invoke_count": 0, "last_system": None}
         self.responses: list[dict] = []
         self._default_response = {
             "content": "Test response",
@@ -63,9 +67,17 @@ class StubLLMService:
     def count_tokens(self, text: str) -> int:
         return len(text) // 4
 
+    @property
+    def invoke_count(self) -> int:
+        return int(self._seen["invoke_count"])
+
+    @property
+    def last_system(self) -> Any:
+        return self._seen["last_system"]
+
     def invoke_model(self, messages: list[dict], **kwargs: Any) -> dict:
-        self.invoke_count += 1
-        self.last_system = kwargs.get("system")
+        self._seen["invoke_count"] += 1
+        self._seen["last_system"] = kwargs.get("system")
         if self.responses:
             return self.responses.pop(0)
         return dict(self._default_response)

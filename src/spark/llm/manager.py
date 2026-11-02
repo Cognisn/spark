@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -93,6 +94,36 @@ class LLMManager:
                 return
 
         raise ValueError(f"Model {model_id} not found in any provider")
+
+    def provider_name_for(self, model_id: str) -> str | None:
+        """The name of the first provider that lists ``model_id`` (None when none does)."""
+        for name, provider in list(self._providers.items()):
+            try:
+                models = provider.list_available_models()
+            except Exception:  # noqa: BLE001 - a failing provider lists nothing
+                logger.debug("Provider %s could not list its models", name, exc_info=True)
+                continue
+            if any(m.get("id") == model_id for m in models):
+                return name
+        return None
+
+    def service_for(self, model_id: str) -> LLMService | None:
+        """A service of its own for ``model_id``, or None when no provider lists it.
+
+        It is a copy of the provider that lists the model, with the model set on
+        the copy: it shares the provider's client and caches, but its model is its
+        own, so turns on different models at once never change each other's, and
+        the manager's active provider and model never move. Like :meth:`set_model`
+        it does not ask whether the model is offered: a conversation pinned to a
+        model that has left the list keeps working.
+        """
+        name = self.provider_name_for(model_id)
+        provider = self._providers.get(name) if name is not None else None
+        if provider is None:
+            return None
+        service = copy.copy(provider)
+        service.set_model(model_id)
+        return service
 
     def list_all_models(self) -> list[dict[str, Any]]:
         """List all models across all registered providers (only those offered, when limited)."""

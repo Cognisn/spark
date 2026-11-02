@@ -308,11 +308,12 @@ async def list_models(request: Request) -> JSONResponse:
     if not llm_manager:
         return JSONResponse({"models": [], "default_model": None, "mandatory": False})
 
-    all_models = llm_manager.list_all_models()
-    ctx = request.app.state.ctx
+    from spark.web.models import default_model, default_model_mode
 
-    default_model_id = ctx.settings.get("default_model.model_id", "")
-    mode = ctx.settings.get("default_model.mode", "default")
+    all_models = llm_manager.list_all_models()
+    # The signed-in user's default on a server (offered only); config.yaml's otherwise.
+    default_model_id = await default_model(request, current_user_guid(request))
+    mode = await default_model_mode(request)
     mandatory = mode == "mandatory" and bool(default_model_id)
 
     if mandatory:

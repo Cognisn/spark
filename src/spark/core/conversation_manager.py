@@ -107,20 +107,17 @@ class ConversationManager:
         # Per-conversation vector index cache, keyed by (user guid, conversation)
         self._vector_indices: dict[tuple[str, int], Any] = {}
 
-        # Context compactor — uses active LLM service
-        service = llm_manager.active_service
-        if service:
-            self._compactor = ContextCompactor(
-                service,
-                db,
-                context_limits,
-                threshold=rollup_threshold,
-                emergency_threshold=emergency_rollup_threshold,
-                summary_ratio=rollup_summary_ratio,
-                locked_model=compaction_model,
-            )
-        else:
-            self._compactor = None
+        # Context compactor: each turn passes the service it compacts with (its own,
+        # or one for the locked compaction model); the active one is only a default.
+        self._compactor: ContextCompactor | None = ContextCompactor(
+            llm_manager.active_service,
+            db,
+            context_limits,
+            threshold=rollup_threshold,
+            emergency_threshold=emergency_rollup_threshold,
+            summary_ratio=rollup_summary_ratio,
+            locked_model=compaction_model,
+        )
 
     def update_embedded_tools_config(self, config: dict[str, Any]) -> None:
         """Use a new embedded tools configuration from the next turn on (a settings change).
@@ -574,11 +571,13 @@ class ConversationManager:
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
 
+        # This turn's own service for the conversation's model. The shared manager's
+        # provider and model are never changed: one manager serves every user.
         model_id = conv.get("model_id", "")
-        try:
-            self._llm.set_model(model_id)
-        except ValueError:
-            pass
+        service = self._turn_service(model_id)
+
+        def count_tokens(text: str) -> int:
+            return service.count_tokens(text) if service is not None else len(text) // 4
 
         # Auto-load embedded tools + MCP tools if none provided
         if tools is None:
@@ -620,7 +619,7 @@ class ConversationManager:
             logger.debug("Prompt inspection error (non-fatal): %s", e)
 
         # Add user message
-        token_count = self._llm.count_tokens(user_message)
+        token_count = count_tokens(user_message)
         user_msg_id = self._db.call(
             msg_db.add_message, conversation_id, "user", user_message, token_count, user_guid
         )
@@ -711,8 +710,8 @@ class ConversationManager:
             )
             token_count = 0
             try:
-                if self._llm.active_service is not None:
-                    token_count = self._llm.active_service.count_tokens(marker)
+                if service is not None:
+                    token_count = service.count_tokens(marker)
             except Exception:
                 token_count = 0
             self._db.call(
@@ -750,7 +749,9 @@ class ConversationManager:
                     if conv and conv.get("prompt_caching") is not None:
                         use_caching = bool(conv.get("prompt_caching", True))
 
-                    response = self._llm.invoke_model(
+                    if service is None:
+                        raise RuntimeError("No active LLM provider")
+                    response = service.invoke_model(
                         history,
                         max_tokens=self._context_limits.get_max_output(model_id),
                         temperature=0.7,
@@ -775,7 +776,7 @@ class ConversationManager:
                         conversation_id,
                         "assistant",
                         error_content,
-                        self._llm.count_tokens(error_content),
+                        count_tokens(error_content),
                         user_guid,
                     )
                     return {
@@ -834,7 +835,7 @@ class ConversationManager:
                     # Store assistant message with tool calls
                     assistant_content = response.get("content_blocks", [])
                     assistant_text = json.dumps(assistant_content) if assistant_content else ""
-                    assistant_tokens = self._llm.count_tokens(assistant_text)
+                    assistant_tokens = count_tokens(assistant_text)
                     asst_msg_id = self._db.call(
                         msg_db.add_message,
                         conversation_id,
@@ -866,7 +867,7 @@ class ConversationManager:
 
                     # Store tool results as user message
                     results_text = json.dumps(tool_results)
-                    results_tokens = self._llm.count_tokens(results_text)
+                    results_tokens = count_tokens(results_text)
                     self._db.call(
                         msg_db.add_message,
                         conversation_id,
@@ -905,7 +906,7 @@ class ConversationManager:
 
                 # Final text response
                 final_content = response.get("content", "")
-                final_tokens = self._llm.count_tokens(final_content)
+                final_tokens = count_tokens(final_content)
                 final_msg_id = self._db.call(
                     msg_db.add_message,
                     conversation_id,
@@ -934,7 +935,7 @@ class ConversationManager:
             self._in_tool_use_loop = False
 
         # Check for deferred compaction
-        self._check_compaction(conversation_id, model_id, user_guid, status_callback)
+        self._check_compaction(conversation_id, model_id, user_guid, status_callback, service)
 
         return {
             "content": final_content,
@@ -946,8 +947,8 @@ class ConversationManager:
 
     # -- System instructions --------------------------------------------------
 
-    def _build_conversation_tool_context(self) -> str:
-        """Build additional system prompt context for enabled tools."""
+    def _build_conversation_tool_context(self, model_id: str = "") -> str:
+        """Build additional system prompt context for enabled tools (``model_id``: the turn's)."""
         from spark.tools.registry import is_category_available
 
         embedded = self._embedded_tools_config.get("embedded_tools", {})
@@ -1041,7 +1042,7 @@ class ConversationManager:
                 )
                 # List models for quick reference
                 try:
-                    provider_name = self._llm.active_provider
+                    provider_name = self._provider_for(model_id)
                     if provider_name and provider_name in self._llm.providers:
                         models = self._offered_provider_models(provider_name)
                         if models:
@@ -1092,7 +1093,7 @@ class ConversationManager:
             f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
             f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
-            + self._build_conversation_tool_context()
+            + self._build_conversation_tool_context(conv.get("model_id") or "")
             + "**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
             "parameter references, examples, and best practices for any tool before using it. "
             "Pass `_index` as the tool name to see all available documentation.\n\n"
@@ -1513,6 +1514,35 @@ class ConversationManager:
             server = False
         return None if server else self._user_guid
 
+    def _turn_service(self, model_id: str) -> Any:
+        """A service of the turn's own for its conversation's ``model_id``.
+
+        A model no provider lists falls back to the active service, unchanged, as
+        before; None when there is no provider at all.
+        """
+        service = self._llm.service_for(model_id) if model_id else None
+        if service is None:
+            logger.warning("Model %r not found in any provider; using the active one", model_id)
+            service = self._llm.active_service
+        return service
+
+    def _provider_for(self, model_id: str | None) -> str | None:
+        """The provider of a conversation's model (the active one when no provider lists it)."""
+        name = self._llm.provider_name_for(model_id) if model_id else None
+        return name or self._llm.active_provider
+
+    def _conversation_model(self, conversation_id: int | None, user_guid: str | None) -> str:
+        """The model of one of the user's conversations ("" when it cannot be read)."""
+        if conversation_id is None or not user_guid:
+            return ""
+        try:
+            from spark.database import conversations
+
+            conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
+        except Exception:  # noqa: BLE001 - listing models must never break a turn
+            return ""
+        return str((conv or {}).get("model_id") or "")
+
     def _get_llm_service_for_model(self, model_id: str) -> Any:
         """Get a dedicated LLM service instance for a specific model.
 
@@ -1529,9 +1559,9 @@ class ConversationManager:
                     if fresh:
                         fresh.set_model(model_id)
                         return fresh
-                    # Fallback: use the shared instance (less safe but functional)
-                    provider.set_model(model_id)
-                    return provider
+                    # Fallback: a copy of the shared instance with its own model; the
+                    # shared instance itself is never changed.
+                    return self._llm.service_for(model_id)
             except Exception:
                 continue
         return None
@@ -1569,10 +1599,10 @@ class ConversationManager:
             logger.debug("Could not clone provider %s: %s", name, e)
         return None
 
-    def _list_provider_models(self) -> tuple[str, bool]:
-        """List models from the conversation's current LLM provider."""
+    def _list_provider_models(self, model_id: str = "") -> tuple[str, bool]:
+        """List models from the provider of the conversation's model (``model_id``)."""
         try:
-            provider_name = self._llm.active_provider
+            provider_name = self._provider_for(model_id)
             if not provider_name or provider_name not in self._llm.providers:
                 return "No active provider.", True
             models = self._offered_provider_models(provider_name)
@@ -1693,7 +1723,7 @@ class ConversationManager:
         # user responds (mirroring the permission_request pattern).
         callbacks = callbacks or self._default_callbacks()
         if model_selection == "auto_select" and model_id and callbacks.agent_model:
-            provider_name = self._llm.active_provider
+            provider_name = self._provider_for(self._conversation_model(conversation_id, user_guid))
             available_models: list[dict] = []
             if provider_name and provider_name in self._llm.providers:
                 available_models = self._offered_provider_models(provider_name)
@@ -1861,7 +1891,7 @@ class ConversationManager:
                 tool_input, conversation_id, uid, permissions, status_callback, callbacks
             )
         if tool_name == "list_provider_models":
-            return self._list_provider_models()
+            return self._list_provider_models(self._conversation_model(conversation_id, uid))
 
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):
@@ -1920,15 +1950,21 @@ class ConversationManager:
         model_id: str,
         user_guid: str,
         status_callback: Callable | None = None,
+        service: Any = None,
     ) -> None:
-        """Check and perform context compaction if needed."""
+        """Check and perform context compaction if needed, with the turn's ``service``
+        or, when a compaction model is locked, a service of its own for that model."""
         if self._compactor:
+            locked = self._compactor.locked_model
+            if locked:
+                service = self._llm.service_for(locked) or service
             self._compactor.check_and_compact(
                 conversation_id,
                 model_id,
                 user_guid,
                 in_tool_use_loop=self._in_tool_use_loop,
                 status_callback=status_callback,
+                service=service,
             )
 
 
