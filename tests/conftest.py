@@ -24,6 +24,10 @@ PG_IMAGE = "pgvector/pgvector:pg16"
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "postgres: needs a real PostgreSQL (testcontainers)")
+    config.addinivalue_line(
+        "markers",
+        "integration: needs a live external service (run by hand; CI deselects it)",
+    )
 
 
 def _new_loop() -> asyncio.AbstractEventLoop:

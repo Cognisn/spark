@@ -53,11 +53,11 @@ jobs:
 
       - name: Run tests on SQLite (with coverage)
         if: runner.os != 'Windows'
-        run: pytest -m "not postgres" --cov=spark --cov-report=xml -v
+        run: pytest -m "not postgres and not integration" --cov=spark --cov-report=xml -v
 
       - name: Run tests on SQLite (Windows, no coverage)
         if: runner.os == 'Windows'
-        run: pytest -m "not postgres" -v -p no:faulthandler
+        run: pytest -m "not postgres and not integration" -v -p no:faulthandler
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
@@ -112,7 +112,7 @@ jobs:
         env:
           SPARK_TEST_POSTGRES: required
           SPARK_TEST_POSTGRES_URL: postgresql://spark:spark-ci-only@localhost:5432/postgres
-        run: pytest -m postgres -v
+        run: pytest -m "postgres and not integration" -v
 
       - name: spark migrate against PostgreSQL, twice
         env:
@@ -212,6 +212,7 @@ jobs:
           src/spark/web/scope.py src/spark/scheduler/owners.py
           src/spark/web/interactions.py src/spark/web/models.py
           src/spark/core/context_compaction.py
+          src/spark/web/qr.py src/spark/web/endpoints/lifecycle.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true

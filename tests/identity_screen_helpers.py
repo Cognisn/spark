@@ -18,8 +18,9 @@ from typing import Any
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-from warden.identity import totp
+from warden.identity import MailMessage, SignInMethod, StagedGrant, totp
 
+from spark.identity.mail import LinkCapture, captured, link_in
 from spark.mode import DatabaseSettings, Dialect
 from spark.web.security import CSRF_FORM_FIELD, CSRF_HEADER
 from tests.identity_web_helpers import PASSWORD, PUBLIC, server_client, sign_in, write_config
@@ -134,3 +135,50 @@ def plain_client(tmp_path: Path, server_db: DatabaseSettings) -> Iterator[TestCl
     with server_client(write_config(tmp_path / "config.yaml"), server_db) as client:
         yield client
 
+
+class RecordingSender(LinkCapture):
+    """SPARK's mail sender that also keeps every message warden hands it (tests only)."""
+
+    sent: list[MailMessage] = []
+
+    async def send(self, message: MailMessage) -> None:
+        RecordingSender.sent.append(message)
+        await super().send(message)
+
+
+@pytest.fixture
+def outbox(monkeypatch: pytest.MonkeyPatch) -> list[MailMessage]:
+    """Every mail warden sends while the test's app runs (patch before the app starts)."""
+    RecordingSender.sent = []
+    monkeypatch.setattr("spark.identity.runtime.LinkCapture", RecordingSender)
+    return RecordingSender.sent
+
+
+def link_from(messages: list[MailMessage], path: str) -> str:
+    """The path and query of the last mailed link to ``path`` (as a browser would open it)."""
+    link = link_in(messages, PUBLIC, path)
+    assert link, [m.text for m in messages]
+    return link[len(PUBLIC) :]
+
+
+def invite(
+    client: TestClient,
+    email: str,
+    *roles: str,
+    method: SignInMethod = SignInMethod.PASSWORD_AND_SSO,
+) -> tuple[uuid.UUID, str]:
+    """Invite ``email`` through warden, as an administrator would; the link's path and query."""
+    identity = client.app.state.identity_runtime.identity  # type: ignore[attr-defined]
+
+    async def create() -> tuple[uuid.UUID, str]:
+        with captured() as held:
+            invitation = await identity.invitations.create(
+                email,
+                actor="test",
+                sign_in_method=method,
+                grants=[StagedGrant(role) for role in roles],
+            )
+        return invitation.user_id, link_from(held, "/auth/invitation")
+
+    result: tuple[uuid.UUID, str] = client.portal.call(create)  # type: ignore[attr-defined]
+    return result

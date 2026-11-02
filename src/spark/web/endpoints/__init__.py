@@ -13,6 +13,7 @@ from spark.web.endpoints.files import router as files_router
 from spark.web.endpoints.help import router as help_router
 from spark.web.endpoints.identity import router as identity_router
 from spark.web.endpoints.knowledge import router as knowledge_router
+from spark.web.endpoints.lifecycle import router as lifecycle_router
 from spark.web.endpoints.main_menu import router as main_menu_router
 from spark.web.endpoints.mcp_servers import router as mcp_servers_router
 from spark.web.endpoints.memories import router as memories_router
@@ -28,6 +29,7 @@ def register_routes(app: FastAPI) -> None:
     """Register all endpoint routers."""
     app.include_router(auth_router)
     app.include_router(identity_router)
+    app.include_router(lifecycle_router)
     app.include_router(main_menu_router)
     app.include_router(settings_router)
     app.include_router(conversations_router)

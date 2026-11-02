@@ -17,7 +17,8 @@ the database is open, :meth:`IdentityRuntime.start` builds:
   missing CSRF key are generated into the secrets store. Replicas starting
   together take a PostgreSQL advisory lock for this, so they agree;
 * ``Identity`` with SPARK's permissions and roles
-  (:func:`spark.identity.permissions.build_registry`).
+  (:func:`spark.identity.permissions.build_registry`) and its mail sender
+  (:class:`spark.identity.mail.LinkCapture` unless another is given).
 
 The web lifespan runs :meth:`IdentityRuntime.running` for the app's lifetime
 and leaves it before the database closes.
@@ -35,12 +36,13 @@ from typing import Any, Protocol
 
 from warden.audit import ActionRegistry, AuditRecorder, set_recorder
 from warden.config import ConfigError, WardenConfig, parse_config
-from warden.identity import Identity, new_totp_key
+from warden.identity import Identity, MailSender, new_totp_key
 from warden.keys import KeyStore, KeyStoreError
 
 from spark.db.engine import Database
 from spark.identity.audit import register_actions
 from spark.identity.db import warden_database
+from spark.identity.mail import LinkCapture
 from spark.identity.permissions import build_registry
 from spark.instance_settings.startup import StartupConfigError, public_base_url
 
@@ -160,9 +162,19 @@ class IdentityRuntime:
 
     @classmethod
     async def start(
-        cls, database: Database, settings: SettingsLike, secrets: SecretsLike
+        cls,
+        database: Database,
+        settings: SettingsLike,
+        secrets: SecretsLike,
+        *,
+        mail_sender: MailSender | None = None,
     ) -> IdentityRuntime:
-        """Build the runtime over ``database`` (PostgreSQL) and konfig's settings and secrets."""
+        """Build the runtime over ``database`` (PostgreSQL) and konfig's settings and secrets.
+
+        ``mail_sender`` delivers warden's invitation and password reset mails;
+        without one, :class:`~spark.identity.mail.LinkCapture` hands
+        administrators the links instead.
+        """
         base_url = public_base_url(settings.get("server.public_base_url", ""))
         config = warden_config(settings, secrets, base_url)
         wdb = warden_database(database)
@@ -174,7 +186,14 @@ class IdentityRuntime:
         try:
             keys = KeyStore(wdb, secrets, config.keys)
             csrf_key = await _bootstrap(wdb, keys, secrets, config)
-            identity = Identity(config, wdb, keys, build_registry(), secrets=secrets)
+            identity = Identity(
+                config,
+                wdb,
+                keys,
+                build_registry(),
+                secrets=secrets,
+                mail_sender=mail_sender or LinkCapture(),
+            )
         except BaseException:
             set_recorder(previous)
             raise

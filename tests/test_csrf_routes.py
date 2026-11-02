@@ -37,6 +37,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "files",
     "identity",
     "knowledge",
+    "lifecycle",
     "main_menu",
     "mcp_servers",
     "memories",

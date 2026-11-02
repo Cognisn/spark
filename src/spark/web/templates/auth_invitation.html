@@ -1,0 +1,42 @@
+{% extends "auth_layout.html" %}
+{% block title %}Accept Invitation{% endblock %}
+{% block content %}
+{% if token %}
+<p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    You have been invited to Spark. Choose a password of at least {{ min_length }} characters
+    to accept{% if sso_enabled %}, or accept through single sign-on{% endif %}.
+</p>
+<form method="POST" action="/auth/invitation">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="method" value="password">
+    <div class="mb-3">
+        <label for="password" class="form-label">Password</label>
+        <input type="password" id="password" name="password" class="form-control"
+               autocomplete="new-password" minlength="{{ min_length }}" required autofocus>
+    </div>
+    <div class="mb-3">
+        <label for="confirm" class="form-label">Password again</label>
+        <input type="password" id="confirm" name="confirm" class="form-control"
+               autocomplete="new-password" minlength="{{ min_length }}" required>
+    </div>
+    <button type="submit" class="btn btn-app-primary w-100">
+        <i class="bi bi-person-check me-1"></i> Accept and sign in
+    </button>
+</form>
+{% if sso_enabled %}
+<div class="text-center my-3" style="color: var(--app-text-muted); font-size: 0.8125rem;">or</div>
+<form method="POST" action="/auth/invitation">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="method" value="sso">
+    <button type="submit" class="btn btn-app-outline w-100">
+        <i class="bi bi-building-lock me-1"></i> Accept with single sign-on
+    </button>
+</form>
+{% endif %}
+{% endif %}
+<div class="mt-4 text-center" style="font-size: 0.8125rem;">
+    <a href="/auth/sign-in">Back to sign-in</a>
+</div>
+{% endblock %}
