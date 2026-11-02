@@ -60,8 +60,9 @@ def _touches_unavailable_tools(dotted_key: str) -> bool:
     if parts[0] != "embedded_tools":
         return False
     if len(parts) > 1 and parts[1] == "tool_results":
-        # Result actions belong to no tool category: an administrator's policy on a server.
-        return False
+        # Result actions are an administrator's policy on a server, apart from the
+        # sources of local-only tools (files, commands), which follow their tool.
+        return len(parts) > 2 and not registry.is_offered(dotted_key)
     if len(parts) == 1:
         # The whole embedded tools tree: it may carry any category.
         return not _offers_local_tools()
@@ -1222,6 +1223,8 @@ _RESULT_SOURCES = (
     ("mcp", "MCP tools"),
     ("documents", "Documents and archives"),
     ("agents", "Sub-agents"),
+    ("files", "Files read from disk"),
+    ("commands", "System command output"),
 )
 
 
@@ -1239,6 +1242,7 @@ def _tool_result_group(settings: _SettingsGetter) -> dict[str, Any]:
                 "warn",
             )
             for source, label in _RESULT_SOURCES
+            if registry.is_offered(f"embedded_tools.tool_results.{source}")
         ],
     }
 

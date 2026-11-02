@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from spark.files.paths import PathRefused
+from spark.files.scope import ToolScope
 from spark.tools.archives import get_tools as archive_tools
 from spark.tools.datetime_tool import TOOLS as dt_tools
 from spark.tools.datetime_tool import execute as dt_execute
@@ -163,12 +165,12 @@ class TestFilesystem:
     def test_read_file(self, tmp_path: Path) -> None:
         f = tmp_path / "test.txt"
         f.write_text("hello world")
-        result = fs_execute("read_file", {"path": str(f)}, allowed_paths=[str(tmp_path)])
+        result = fs_execute("read_file", {"path": str(f)}, scope=ToolScope.personal([tmp_path]))
         assert "hello world" in result
 
     def test_read_file_not_found(self, tmp_path: Path) -> None:
         result = fs_execute(
-            "read_file", {"path": str(tmp_path / "nope.txt")}, allowed_paths=[str(tmp_path)]
+            "read_file", {"path": str(tmp_path / "nope.txt")}, scope=ToolScope.personal([tmp_path])
         )
         assert "not found" in result.lower()
 
@@ -176,7 +178,7 @@ class TestFilesystem:
         f = tmp_path / "long.txt"
         f.write_text("\n".join(f"line {i}" for i in range(100)))
         result = fs_execute(
-            "read_file", {"path": str(f), "max_lines": 5}, allowed_paths=[str(tmp_path)]
+            "read_file", {"path": str(f), "max_lines": 5}, scope=ToolScope.personal([tmp_path])
         )
         assert "showing first 5" in result.lower()
 
@@ -184,7 +186,7 @@ class TestFilesystem:
         (tmp_path / "a.txt").touch()
         (tmp_path / "subdir").mkdir()
         result = fs_execute(
-            "list_directory", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)]
+            "list_directory", {"path": str(tmp_path)}, scope=ToolScope.personal([tmp_path])
         )
         assert "a.txt" in result
         assert "subdir" in result
@@ -195,7 +197,7 @@ class TestFilesystem:
         result = fs_execute(
             "search_files",
             {"path": str(tmp_path), "pattern": "*.py"},
-            allowed_paths=[str(tmp_path)],
+            scope=ToolScope.personal([tmp_path]),
         )
         assert "test.py" in result
         assert "test.txt" not in result
@@ -203,7 +205,7 @@ class TestFilesystem:
     def test_get_file_info(self, tmp_path: Path) -> None:
         f = tmp_path / "info.txt"
         f.write_text("content")
-        result = fs_execute("get_file_info", {"path": str(f)}, allowed_paths=[str(tmp_path)])
+        result = fs_execute("get_file_info", {"path": str(f)}, scope=ToolScope.personal([tmp_path]))
         assert "file" in result.lower()
         assert "bytes" in result
 
@@ -211,7 +213,7 @@ class TestFilesystem:
         f = tmp_path / "search.txt"
         f.write_text("Hello World\nFoo Bar\nHello Again\n")
         result = fs_execute(
-            "find_in_file", {"path": str(f), "query": "Hello"}, allowed_paths=[str(tmp_path)]
+            "find_in_file", {"path": str(f), "query": "Hello"}, scope=ToolScope.personal([tmp_path])
         )
         assert "2 match" in result
 
@@ -219,7 +221,7 @@ class TestFilesystem:
         (tmp_path / "subdir").mkdir()
         (tmp_path / "subdir" / "file.txt").touch()
         result = fs_execute(
-            "get_directory_tree", {"path": str(tmp_path)}, allowed_paths=[str(tmp_path)]
+            "get_directory_tree", {"path": str(tmp_path)}, scope=ToolScope.personal([tmp_path])
         )
         assert "subdir" in result
         assert "file.txt" in result
@@ -229,7 +231,7 @@ class TestFilesystem:
         result = fs_execute(
             "write_file",
             {"path": str(f), "content": "new content"},
-            allowed_paths=[str(tmp_path)],
+            scope=ToolScope.personal([tmp_path]),
             mode="read_write",
         )
         assert "Written" in result
@@ -240,14 +242,14 @@ class TestFilesystem:
         result = fs_execute(
             "write_file",
             {"path": str(f), "content": "x"},
-            allowed_paths=[str(tmp_path)],
+            scope=ToolScope.personal([tmp_path]),
             mode="read",
         )
         assert "not enabled" in result.lower()
 
     def test_path_outside_allowed(self, tmp_path: Path) -> None:
-        result = fs_execute("read_file", {"path": "/etc/passwd"}, allowed_paths=[str(tmp_path)])
-        assert "denied" in result.lower()
+        with pytest.raises(PathRefused):
+            fs_execute("read_file", {"path": "/etc/passwd"}, scope=ToolScope.personal([tmp_path]))
 
 
 # -- Documents ----------------------------------------------------------------

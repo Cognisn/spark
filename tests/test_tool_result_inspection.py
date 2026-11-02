@@ -282,6 +282,125 @@ class TestConversationTurn:
         assert INJECTION in result
 
 
+class TestLocalSources:
+    """Files read from disk and system command output (personal mode) are untrusted too."""
+
+    @staticmethod
+    def _local_manager(
+        sync_db: Any, model: StubModel, root: Any, actions: dict[str, str]
+    ) -> ConversationManager:
+        mgr = _manager(sync_db, model)
+        mgr._embedded_tools_config["embedded_tools"].update(
+            {
+                "filesystem": {"enabled": True, "mode": "read", "allowed_paths": [str(root)]},
+                "system_commands": {"enabled": True},
+                # Every other source marks, so only the local source's own key can withhold
+                "tool_results": {
+                    **{s: "mark" for s in ("web", "mcp", "documents", "agents")},
+                    **actions,
+                },
+            }
+        )
+        return mgr
+
+    @pytest.fixture
+    def command_returns(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+        import spark.tools.system_command as system_command
+
+        out = {"text": BENIGN}
+        monkeypatch.setattr(system_command, "execute", lambda *a, **k: out["text"])
+        return out
+
+    def _read_file(
+        self, sync_db: Any, model: StubModel, tmp_path: Any, text: str, action: str
+    ) -> str:
+        (tmp_path / "notes.txt").write_text(text, encoding="utf-8")
+        mgr = self._local_manager(sync_db, model, tmp_path, {"files": action})
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        model.script_tool_call("read_file", {"path": "notes.txt"})
+        mgr.send_message(cid, "Read my notes", USER)
+        [result] = _tool_result_texts(model.calls[1]["messages"])
+        return result
+
+    def _run_command(
+        self, sync_db: Any, model: StubModel, tmp_path: Any, action: str
+    ) -> tuple[str, str]:
+        mgr = self._local_manager(sync_db, model, tmp_path, {"commands": action})
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        model.script_tool_call("run_command", {"command": "type notes.txt"})
+        mgr.send_message(cid, "Run it", USER)
+        [result] = _tool_result_texts(model.calls[1]["messages"])
+        return result, json.dumps(mgr.get_messages(cid))
+
+    def test_file_read_reaches_the_model_wrapped(
+        self, sync_db: Any, model: StubModel, tmp_path: Any
+    ) -> None:
+        result = self._read_file(sync_db, model, tmp_path, BENIGN, "warn")
+        match = BLOCK.match(result)
+        assert match is not None
+        assert match.group(2, 3) == ("files", "read_file")
+        assert BENIGN in result
+
+    def test_file_read_withheld_by_the_files_action(
+        self, sync_db: Any, model: StubModel, tmp_path: Any
+    ) -> None:
+        result = self._read_file(sync_db, model, tmp_path, INJECTION, "withhold")
+        assert "attacker@example.com" not in result
+        assert "withheld" in result
+        assert "(files)" in result
+
+    def test_file_read_warned_by_default(
+        self, sync_db: Any, model: StubModel, tmp_path: Any
+    ) -> None:
+        (tmp_path / "notes.txt").write_text(INJECTION, encoding="utf-8")
+        mgr = self._local_manager(sync_db, model, tmp_path, {})
+        del mgr._embedded_tools_config["embedded_tools"]["tool_results"]
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        model.script_tool_call("read_file", {"path": "notes.txt"})
+        mgr.send_message(cid, "Read my notes", USER)
+        [result] = _tool_result_texts(model.calls[1]["messages"])
+        assert result.startswith("[Spark security notice]")
+        assert INJECTION in result
+
+    def test_command_output_reaches_the_model_wrapped(
+        self, sync_db: Any, model: StubModel, tmp_path: Any, command_returns: dict[str, str]
+    ) -> None:
+        result, _ = self._run_command(sync_db, model, tmp_path, "warn")
+        match = BLOCK.match(result)
+        assert match is not None
+        assert match.group(2, 3) == ("commands", "run_command")
+        assert BENIGN in result
+
+    def test_command_output_withheld_by_the_commands_action(
+        self, sync_db: Any, model: StubModel, tmp_path: Any, command_returns: dict[str, str]
+    ) -> None:
+        command_returns["text"] = INJECTION
+        result, stored = self._run_command(sync_db, model, tmp_path, "withhold")
+        assert "attacker@example.com" not in result
+        assert "withheld" in result
+        assert "(commands)" in result
+        assert "attacker@example.com" not in stored
+
+    def test_command_hit_is_recorded_by_source(
+        self, sync_db: Any, model: StubModel, tmp_path: Any, command_returns: dict[str, str]
+    ) -> None:
+        from spark.database import violations
+
+        command_returns["text"] = INJECTION
+        self._run_command(sync_db, model, tmp_path, "warn")
+        [row] = sync_db.call(violations.list_violations, USER)
+        assert (row["detection_method"], row["action_taken"]) == ("tool_result:commands", "warn")
+
+    def test_file_write_is_not_wrapped(self, sync_db: Any, model: StubModel, tmp_path: Any) -> None:
+        mgr = self._local_manager(sync_db, model, tmp_path, {})
+        mgr._embedded_tools_config["embedded_tools"]["filesystem"]["mode"] = "read_write"
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        model.script_tool_call("write_file", {"path": "out.txt", "content": "synthetic"})
+        mgr.send_message(cid, "Write it", USER)
+        [result] = _tool_result_texts(model.calls[1]["messages"])
+        assert "untrusted-content" not in result
+
+
 class TestSubAgent:
     def _agent(self, sync_db: Any, model: StubModel, action: str) -> Any:
         from spark.core.agent_executor import AgentExecutor
@@ -494,7 +613,19 @@ class TestResultActionSettings:
         "embedded_tools.tool_results.mcp",
         "embedded_tools.tool_results.documents",
         "embedded_tools.tool_results.agents",
+        "embedded_tools.tool_results.files",
+        "embedded_tools.tool_results.commands",
     ]
+
+    @pytest.mark.parametrize("source", ["files", "commands"])
+    def test_local_source_keys_are_registered(self, source: str) -> None:
+        from spark.instance_settings import registry
+
+        key = f"embedded_tools.tool_results.{source}"
+        spec = registry.spec(key)
+        assert spec.default == "warn"
+        assert spec.choices == ("mark", "warn", "withhold")
+        assert registry.coerce(key, "withhold") == "withhold"
 
     @staticmethod
     def _security_groups() -> dict[str, Any]:
@@ -538,13 +669,18 @@ class TestResultActionSettings:
         )
         try:
             group = self._security_groups()["tool_results"]
-            assert [f["key"] for f in group["fields"]] == self.KEYS
+            # A server has no filesystem or system command tools, so no actions for them.
+            assert [f["key"] for f in group["fields"]] == self.KEYS[:4]
         finally:
             mode.reset()
 
+    @pytest.mark.parametrize(
+        ("source", "status"), [("web", 409), ("files", 403), ("commands", 403)]
+    )
     def test_server_mode_refuses_saving_the_actions_to_the_config_file(
-        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, source: str, status: int
     ) -> None:
+        """web is administrator policy (the instance endpoint); files and commands are for tools a server lacks."""
         from unittest.mock import MagicMock
 
         from fastapi.testclient import TestClient
@@ -572,11 +708,12 @@ class TestResultActionSettings:
         try:
             resp = client.post(
                 "/settings/api/save",
-                json={"embedded_tools.tool_results.web": "mark"},
+                json={f"embedded_tools.tool_results.{source}": "mark"},
                 cookies=cookies,
             )
         finally:
             mode.reset()
-        # Administrator policy on a server: saved only through /settings/api/instance.
-        assert resp.status_code == 409
+        # Administrator policy on a server is saved only through /settings/api/instance;
+        # the actions of local-only tools are refused outright.
+        assert resp.status_code == status
         assert config_path.read_text(encoding="utf-8") == "embedded_tools: {}\n"

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Untrusted content for files and commands** (personal mode): results of the filesystem read tools (`read_file`, `find_in_file`, `search_files`, `list_directory`, `get_file_info`, `get_directory_tree`) and system command output (`run_command`) now reach the model as marked, untrusted data and are inspected like web, MCP, document and sub-agent results. Each has its own action on a prompt injection or jailbreak match, `embedded_tools.tool_results.files` and `embedded_tools.tool_results.commands` (mark, warn or withhold; default warn), set on the personal settings page with the other result actions. A server never offers these tools, so it hides and refuses both settings
+
+### Changed
+- **Filesystem tool containment** (personal mode): the filesystem tools (`read_file`, `write_file`, `list_directory`, `search_files`, `get_file_info`, `find_in_file`, `get_directory_tree`) now use the same resolved-path check as the document and archive tools, so every file tool follows one containment rule over the configured allowed paths. Symlinks are resolved; `..` components, absolute paths outside the allowed paths, Windows drive, UNC and device forms, reserved device names and alternate data streams are refused with a clear message. A relative path is taken against the first allowed path rather than the process's working directory. Listings, trees and searches never show or descend into an entry that lies outside the allowed paths, and a search pattern may not leave the directory being searched
+
 ## [0.3.0a8] - 2026-11-02
 
 ### Changed

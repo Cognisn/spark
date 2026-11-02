@@ -17,7 +17,7 @@ A key flagged ``secret`` is only ever held by konfig's secrets store, under
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -378,7 +378,7 @@ _SPECS: tuple[SettingSpec, ...] = (
     # An administrator's policy on a server (instance settings, audited on change).
     *(
         _pick(f"embedded_tools.tool_results.{source}", ("mark", "warn", "withhold"), "warn")
-        for source in ("web", "mcp", "documents", "agents")
+        for source in ("web", "mcp", "documents", "agents", "files", "commands")
     ),
     # ElevenLabs integration (administrator)
     _pick("voice.engine", ("browser", "elevenlabs"), "browser"),
@@ -436,18 +436,25 @@ def secret_keys() -> list[str]:
 _EMBEDDED_PREFIX = "embedded_tools."
 
 
+# Result-action sources that belong to a local-only tool category.
+RESULT_SOURCE_CATEGORIES: Mapping[str, str] = {"files": "filesystem", "commands": "system_commands"}
+
+
 def is_offered(key: str) -> bool:
     """Whether this mode offers ``key``: a server has no settings for the local-only tools (A6).
 
-    ``embedded_tools.<category>.*`` belongs to a tool category; the result actions
-    (``embedded_tools.tool_results.*``) belong to none and are offered in both modes.
+    ``embedded_tools.<category>.*`` belongs to a tool category. The result actions
+    (``embedded_tools.tool_results.<source>``) are offered in both modes, except the
+    sources of local-only tools (files, commands), which follow their tool's category.
     """
     if not key.startswith(_EMBEDDED_PREFIX):
         return True
-    category = key[len(_EMBEDDED_PREFIX) :].split(".", 1)[0]
-    if category == "tool_results":
-        return True
     from spark.tools.registry import is_category_available
+
+    category, _, rest = key[len(_EMBEDDED_PREFIX) :].partition(".")
+    if category == "tool_results":
+        tool_category = RESULT_SOURCE_CATEGORIES.get(rest.split(".", 1)[0])
+        return tool_category is None or is_category_available(tool_category)
 
     return is_category_available(category)
 
