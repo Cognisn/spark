@@ -150,6 +150,14 @@ async def export_memories(request: Request):  # type: ignore[no-untyped-def]
         "memories": all_mems,
     }
     content = json.dumps(export, indent=2, default=str)
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.EXPORT_DOWNLOADED,
+        resource_type="memories",
+        details={"kind": "memories", "count": len(all_mems)},
+    )
     now = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(
         iter([content]),

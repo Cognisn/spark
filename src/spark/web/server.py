@@ -176,8 +176,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     usable or opening failed (``app.state.database_error``).
 
     With warden attached (server mode), warden's runtime starts once the
-    database is open, runs for the app's lifetime and stops before the
-    database closes.
+    database is open, runs for the app's lifetime with SPARK's audit hooks
+    installed (:mod:`spark.identity.audit`), and stops before the database
+    closes.
     """
     from spark.db import migrate
     from spark.identity import migrations as identity_migrations
@@ -216,7 +217,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if identity is None:
             yield
         else:
-            async with identity.running():
+            from spark.identity import audit as spark_audit
+
+            assert database is not None
+            # SPARK's audit hooks send its own actions to warden while warden runs.
+            async with identity.running(), spark_audit.installed(database):
                 app.state.authenticator.bind(identity)
                 try:
                     yield

@@ -1797,7 +1797,7 @@ class ConversationManager:
         # A tool whose category is not available (to this mode, or to the
         # user's roles) is refused by name, wherever the request came from,
         # before any built-in or MCP dispatch.
-        refusal = unavailable_reason(tool_name, permissions=permissions)
+        refusal = unavailable_reason(tool_name, permissions=permissions, user_guid=user_guid)
         if refusal is not None:
             return refusal, True
 

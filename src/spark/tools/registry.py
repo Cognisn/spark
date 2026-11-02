@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import enum
 import logging
-from collections.abc import Mapping, Set
+from collections.abc import Callable, Mapping, Set
+from dataclasses import dataclass
 from typing import Any, Final, Literal, TypeAlias
 
 from spark.database.files import QuotaExceeded
@@ -36,11 +37,14 @@ __all__ = [
     "PERMISSIONS_KEY",
     "TOOL_CATEGORIES",
     "Permissions",
+    "RefusalHook",
+    "ToolRefusal",
     "execute_builtin_tool",
     "get_builtin_tools",
     "is_category_available",
     "is_tool_available",
     "permission_name",
+    "set_refusal_hook",
     "tool_category",
     "tool_permissions",
     "unavailable_reason",
@@ -174,15 +178,56 @@ def is_tool_available(
     return category is None or is_category_available(category, mode=mode, permissions=permissions)
 
 
+@dataclass(frozen=True, slots=True)
+class ToolRefusal:
+    """A tool refused at dispatch: by the mode (local-only categories) or by the user's roles."""
+
+    tool_name: str
+    category: str
+    reason: Literal["mode", "role"]
+    user_guid: str | None
+
+
+RefusalHook: TypeAlias = Callable[[ToolRefusal], None]
+
+_refusal_hook: RefusalHook | None = None
+
+
+def set_refusal_hook(hook: RefusalHook | None) -> None:
+    """Install the hook every dispatch refusal is reported to (server mode: warden's audit)."""
+    global _refusal_hook
+    _refusal_hook = hook
+
+
+def _report(refusal: ToolRefusal) -> None:
+    hook = _refusal_hook
+    if hook is None:
+        return
+    try:
+        hook(refusal)
+    except Exception:  # noqa: BLE001 - reporting never changes the refusal
+        logger.exception("The tool refusal hook failed for %s", refusal.tool_name)
+
+
 def unavailable_reason(
-    tool_name: str, *, mode: Mode | None = None, permissions: Permissions = None
+    tool_name: str,
+    *,
+    mode: Mode | None = None,
+    permissions: Permissions = None,
+    user_guid: str | None = None,
 ) -> str | None:
-    """The refusal message for a tool that may not run, or ``None`` when it may."""
+    """The refusal message for a tool that may not run, or ``None`` when it may.
+
+    Every dispatch route asks this before running a tool by name, so a refusal
+    is reported here, once, to the refusal hook, for ``user_guid``.
+    """
     category = tool_category(tool_name)
     if category is None or is_category_available(category, mode=mode, permissions=permissions):
         return None
     label = _CATEGORY_LABELS.get(category, f"{category.replace('_', ' ')} tools")
-    if category in LOCAL_ONLY_CATEGORIES:
+    local_only = category in LOCAL_ONLY_CATEGORIES
+    _report(ToolRefusal(tool_name, category, "mode" if local_only else "role", user_guid))
+    if local_only:
         return f"Tool '{tool_name}' is not available: {label} are not available in server mode."
     return f"Tool '{tool_name}' is not available: your role does not allow {label}."
 
@@ -368,7 +413,9 @@ def execute_builtin_tool(
 
     The user's permissions come from ``config`` (:data:`PERMISSIONS_KEY`).
     """
-    refusal = unavailable_reason(tool_name, permissions=tool_permissions(config))
+    refusal = unavailable_reason(
+        tool_name, permissions=tool_permissions(config), user_guid=config.get("_user_guid")
+    )
     if refusal is not None:
         return refusal, True
 

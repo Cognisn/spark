@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from spark import mode
-from spark.db.engine import Executor
+from spark.db.engine import Connection, Executor
 from spark.instance_settings import audit, registry, repository
 from spark.instance_settings.audit import SettingChange
 from spark.instance_settings.registry import InvalidSettingError, Scope, SettingsError
@@ -117,15 +117,33 @@ class ServerSettings:
         self._changed(await repository.load_instance(self._db))
 
     async def set(self, key: str, value: Any, *, actor: str) -> Any:
-        stored = await repository.save_instance(self._db, key, value, actor=actor)
+        """Store an instance setting; its audit event joins the write's transaction if it can."""
+        change = SettingChange(key, Scope.INSTANCE.value, actor, "set", False)
+        joined = _audit_within(change)
+        stored = await repository.save_instance(self._db, key, value, actor=actor, within=joined)
         self._changed({**self._values, key: stored})
-        audit.record(SettingChange(key, Scope.INSTANCE.value, actor, "set", False))
+        if joined is None:
+            audit.record(change)
         return stored
 
     async def clear(self, key: str, *, actor: str) -> None:
-        await repository.delete_instance(self._db, key, actor=actor)
+        change = SettingChange(key, Scope.INSTANCE.value, actor, "clear", False)
+        joined = _audit_within(change)
+        await repository.delete_instance(self._db, key, actor=actor, within=joined)
         self._changed({k: v for k, v in self._values.items() if k != key})
-        audit.record(SettingChange(key, Scope.INSTANCE.value, actor, "clear", False))
+        if joined is None:
+            audit.record(change)
+
+
+def _audit_within(change: SettingChange) -> repository.Within | None:
+    """The audit call to run inside the write's transaction, when a transaction hook is installed."""
+    if audit.transaction_hook() is None:
+        return None
+
+    async def within(conn: Connection) -> None:
+        await audit.record_in_transaction(conn, change)
+
+    return within
 
 
 # -- The process-wide accessor --------------------------------------------------------

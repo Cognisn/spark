@@ -481,7 +481,9 @@ class AgentExecutor:
         from spark.tools.registry import tool_permissions, unavailable_reason
 
         # The agent's configuration carries its user's permissions (``_permissions``).
-        refusal = unavailable_reason(tool_name, permissions=tool_permissions(self._config))
+        refusal = unavailable_reason(
+            tool_name, permissions=tool_permissions(self._config), user_guid=self._user_guid
+        )
         if refusal is not None:
             return refusal
         try:

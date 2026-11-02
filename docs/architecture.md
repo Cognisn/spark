@@ -157,6 +157,33 @@ sequenceDiagram
 - `spark identity create-admin --email EMAIL [--link-user-guid GUID]` creates the first administrator (idempotent) and can bind the interim single-user guid to them.
 - **Static files** served from `web/static/` (CSS, JS, fonts)
 
+### Audit (server mode)
+
+warden records its own identity and administration actions (sign-in, roles,
+invitations, API keys) in its hash-chained audit trail (`warden.audit_events`).
+SPARK records its own actions there too, through `spark.identity.audit`. Its action
+catalogue (`ACTIONS`) is registered on warden's recorder when the identity runtime
+starts, under `spark.`:
+
+| Action | Severity | Resource | Recorded when |
+|---|---|---|---|
+| `spark.settings.instance.changed` | notice | `setting`, the key | an instance setting is set or cleared (in the write's transaction) |
+| `spark.settings.secret.changed` | notice | `setting`, the key | a secret is set or cleared in konfig's secrets store |
+| `spark.settings.preference.changed` | info | `setting`, the key | a user changes a preference |
+| `spark.tool_result.flagged` | warning | `tool`, the tool | a tool result matches injection or jailbreak patterns (A16) |
+| `spark.tool_result.policy_changed` | notice | `setting`, the key | an administrator changes a tool result action |
+| `spark.tool.refused` | notice | `tool`, the tool | a tool is refused at dispatch, by role or by mode (outcome failure) |
+| `spark.file.downloaded` | info | `file`, the file id | a user downloads a file from their file area |
+| `spark.export.downloaded` | info | `conversation`, `memories` or `skill` | a conversation export, memories export or skill download |
+| `spark.action.refused` | warning | `action`, the action id | a scheduled action is refused for its owner (outcome failure) |
+
+- **Actor**: the warden user id, as in warden's own events, so one actor filter shows a person's whole trail; the SPARK guid is kept in the details as `user_guid`. A guid with no warden user (or `operator`, a change made outside the web) is recorded as given.
+- **Details** never carry a value or content: keys naming a value, secret, password, token, content, text, snippet, body, message or prompt are dropped at any depth (`scrub`).
+- **Where events come from**: the hooks wave 2 left (`spark.instance_settings.audit` and `spark.safety.untrusted`), the tool registry's refusal hook (`spark.tools.registry.set_refusal_hook`, reported where every dispatch route asks `unavailable_reason`), the executor's refusal, and the download and export endpoints. The web lifespan installs the hooks while warden runs, and the active worker installs them while it holds the worker lock; personal mode installs none.
+- **Transactions**: an instance setting's audit row is written in the setting's own transaction (warden's recorder joins it through the raw psycopg connection), so both commit or roll back together, and a failed audit fails the change. Secrets live in konfig's store, not the database, and preferences, downloads, exports, flagged results and refusals are recorded on their own, after the action.
+- **Never in the way**: apart from that joined write, a failed audit is logged and never breaks the request or the turn. Hooks called on a worker thread schedule the write on the database's event loop without waiting.
+- New code records an event with `await audit.emit_request(request, ...)` or `await audit.emit(...)` (async), `audit.submit(...)` (synchronous code on any thread) or `await audit.record_in(conn, ...)` inside a SPARK transaction; a new action is a new `ACTIONS` entry.
+
 ### Core
 
 - **ConversationManager** -- Central orchestrator connecting database, LLM, tools, MCP, memory, and compaction; synchronous, runs on a worker thread per turn and reaches the database through the bridge (see Data Layer)
@@ -226,7 +253,8 @@ Each provider normalises responses to a common format:
   the executor then refuses an owner without `spark.actions` (run now included). A refusal
   is recorded as a run with status `refused` and its reason, and the action stays enabled.
   An allowed run uses the owner's guid for its run records, memory index and file area
-  (`_user_guid`, `_files_db`), and the owner's permissions for its tools.
+  (`_user_guid`, `_files_db`), and the owner's permissions for its tools. A refusal is
+  also audited (`spark.action.refused`).
 - Action names are unique per user (`UNIQUE(user_guid, name)`); a clash answers 409 and
   names only the caller's own action.
 - **CreationTools** -- AI-assisted action creation with validation and scheduling

@@ -159,6 +159,15 @@ async def download_skill(request: Request, name: str) -> Any:
             if path.is_file():
                 zf.write(path, f"{name}/{path.relative_to(root).as_posix()}")
     buf.seek(0)
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.EXPORT_DOWNLOADED,
+        resource_type="skill",
+        resource_id=name,
+        details={"kind": "skill", "source": skill.get("source")},
+    )
     return StreamingResponse(
         buf,
         media_type="application/zip",

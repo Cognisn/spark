@@ -10,7 +10,8 @@ the database is open, :meth:`IdentityRuntime.start` builds:
   ``warden`` section of konfig, with warden's defaults;
 * warden's database handle over SPARK's psycopg pool;
 * the audit recorder, installed process-wide before ``Identity`` (which
-  registers its actions on it);
+  registers its actions on it), carrying SPARK's own action catalogue
+  (:mod:`spark.identity.audit`);
 * the key store over konfig's secrets store (A9: secrets only through konfig).
   A server with no usable signing key rotates one in; a missing TOTP key and a
   missing CSRF key are generated into the secrets store. Replicas starting
@@ -38,6 +39,7 @@ from warden.identity import Identity, new_totp_key
 from warden.keys import KeyStore, KeyStoreError
 
 from spark.db.engine import Database
+from spark.identity.audit import register_actions
 from spark.identity.db import warden_database
 from spark.identity.permissions import build_registry
 from spark.instance_settings.startup import StartupConfigError, public_base_url
@@ -167,6 +169,7 @@ class IdentityRuntime:
         recorder = AuditRecorder(
             wdb, ActionRegistry(), details_max_bytes=config.audit.details_max_bytes
         )
+        register_actions(recorder.registry)
         previous = set_recorder(recorder)
         try:
             keys = KeyStore(wdb, secrets, config.keys)

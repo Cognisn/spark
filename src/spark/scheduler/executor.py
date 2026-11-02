@@ -81,8 +81,17 @@ class ActionExecutor:
         """Record a refused run of the action under its owner, without running anything."""
         from spark.database import autonomous_actions
         from spark.database.scope import NotOwned
+        from spark.identity import audit
 
         logger.warning("Action %d refused: %s", action_id, reason)
+        audit.submit(
+            audit.ACTION_REFUSED,
+            "failure",
+            user_guid=self._user_guid,
+            resource_type="action",
+            resource_id=str(action_id),
+            details={"reason": reason},
+        )
         try:
             self._db.call(autonomous_actions.record_refused_run, action_id, self._user_guid, reason)
         except NotOwned:
@@ -686,7 +695,9 @@ class ActionExecutor:
         """Execute a tool and return the result text."""
         from spark.tools.registry import unavailable_reason
 
-        refusal = unavailable_reason(tool_name, permissions=self._permissions)
+        refusal = unavailable_reason(
+            tool_name, permissions=self._permissions, user_guid=self._user_guid
+        )
         if refusal is not None:
             return refusal
         try:

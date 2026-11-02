@@ -1,7 +1,7 @@
 """The worker role: ``spark worker``, server mode only.
 
 The worker runs Spark's background duties away from the web processes: scheduled
-actions today, and whatever later releases register (warden's pruning in 0.3.0).
+actions, and whatever later releases register.
 Any number of workers may run against one database, but only one is active at a
 time. The active worker holds a PostgreSQL session-level advisory lock on a
 connection of its own; the others stand by, retrying every ``standby_seconds``,
@@ -24,8 +24,11 @@ starts (for example from a module imported at start-up):
 
 Each duty receives a :class:`WorkerContext` with the worker's async
 :class:`~spark.db.Database` (its ``pool`` is the psycopg pool for warden), the
-:class:`~spark.db.SyncDatabase` bridge for synchronous code on other threads, and
-the konfig application context.
+:class:`~spark.db.SyncDatabase` bridge for synchronous code on other threads,
+the konfig application context, and warden's runtime. While active, the worker
+builds that runtime once for every duty and installs SPARK's audit hooks
+(:mod:`spark.identity.audit`), so its refusals and tool results are audited as
+the web's are; it removes them when it stops or steps down.
 
 Scheduled actions run for every user, each as its owner (D22). The worker has
 no user of its own and never reads the process's user guid: before each run it
@@ -45,7 +48,7 @@ import socket
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final
 
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
@@ -201,6 +204,22 @@ async def _identity(ctx: WorkerContext) -> AsyncIterator[IdentityRuntime]:
         yield runtime
     finally:
         runtime.close()
+
+
+@asynccontextmanager
+async def _warden(ctx: WorkerContext) -> AsyncIterator[WorkerContext]:
+    """While active: warden's runtime for every duty, and SPARK's audit hooks installed.
+
+    A worker without an application context (and no runtime given) runs its
+    duties without warden.
+    """
+    if ctx.identity is None and ctx.app is None:
+        yield ctx
+        return
+    from spark.identity import audit
+
+    async with _identity(ctx) as runtime, audit.installed(ctx.database):
+        yield replace(ctx, identity=runtime)
 
 
 @asynccontextmanager
@@ -401,6 +420,7 @@ class Worker:
 
     async def _active(self, ctx: WorkerContext, stop: asyncio.Event) -> None:
         async with AsyncExitStack() as stack:
+            ctx = await stack.enter_async_context(_warden(ctx))
             for service in self._services:
                 logger.info("Worker %s: starting %s", ctx.worker_id, service.name)
                 await stack.enter_async_context(service.factory(ctx))

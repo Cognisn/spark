@@ -3,6 +3,8 @@
 Every route is scoped to the signed-in user: another user's file is a 404,
 never a 403, so its existence is not revealed. Uploads are refused over the
 maximum upload size (413) or the user's quota (507), and nothing is stored.
+In server mode each download is recorded in warden's audit trail
+(``spark.file.downloaded``), never with the file's name or content.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from spark.db.engine import Row
 from spark.files.area import FileArea, FileAreaNotConfigured
 from spark.files.paths import PathRefused
 from spark.files.store import UploadTooLarge
+from spark.identity import audit
 from spark.identity.access import optional_user_guid
 from spark.web.db import database, sync_database
 
@@ -171,6 +174,13 @@ async def download_file(request: Request, file_id: int) -> Response:
         return _error(503, f"File storage is not available: {exc}.")
     except (FileNotFoundError, PathRefused):
         return _error(404, "File not found.")
+    await audit.emit_request(
+        request,
+        audit.FILE_DOWNLOADED,
+        resource_type="file",
+        resource_id=str(file_id),
+        details={"size_bytes": row["size_bytes"], "conversation_id": row["conversation_id"]},
+    )
     return StreamingResponse(
         _iterate(handle),
         media_type="application/octet-stream",

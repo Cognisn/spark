@@ -492,7 +492,25 @@ async def remove_link(request: Request, conversation_id: int, target_id: int) ->
 
 @router.get("/{conversation_id}/api/export")
 async def export_conversation(request: Request, conversation_id: int):  # type: ignore[no-untyped-def]
-    """API: export conversation as a file download."""
+    """API: export conversation as a file download (audited in server mode)."""
+    response = await _export_response(request, conversation_id)
+    if response.status_code == 200:
+        from spark.identity import audit
+
+        await audit.emit_request(
+            request,
+            audit.EXPORT_DOWNLOADED,
+            resource_type="conversation",
+            resource_id=str(conversation_id),
+            details={
+                "kind": "conversation",
+                "format": request.query_params.get("format", "markdown"),
+            },
+        )
+    return response
+
+
+async def _export_response(request: Request, conversation_id: int):  # type: ignore[no-untyped-def]
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
