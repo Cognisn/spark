@@ -7,7 +7,8 @@ Each key has a :class:`Scope`:
 * ``USER``: a per-user preference (A4). ``user_preferences`` in server mode,
   ``config.yaml`` in personal mode.
 * ``STARTUP``: read once from konfig at start-up (database URL, public base URL,
-  warden configuration, logging). Never stored in the database.
+  logging). Never stored in the database. warden's own settings, the ``warden``
+  section of konfig, are validated by warden itself at start-up.
 
 A key flagged ``secret`` is only ever held by konfig's secrets store, under
 :func:`secret_name` (the dotted key with its group, ``database.url`` becomes
@@ -272,9 +273,6 @@ _SPECS: tuple[SettingSpec, ...] = (
     _pick("mode", ("personal", "server"), "personal", _S),
     _secret("database.url", _S),
     SettingSpec("server.public_base_url", Kind.URL, _S, ""),
-    SettingSpec("warden.url", Kind.URL, _S, "", description="Placeholder; wave 3."),
-    _text("warden.client_id", "", _S),
-    _secret("warden.client_secret", _S),
     _toggle("interface.ssl.enabled", _S),
     _int_spec("interface.session_timeout_minutes", 60, 1, None, _S),
     _pick("logging.level", ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"), "INFO", _S),

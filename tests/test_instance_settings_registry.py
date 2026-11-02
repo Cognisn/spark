@@ -53,11 +53,13 @@ class TestLookup:
             "mode",
             "database.url",
             "server.public_base_url",
-            "warden.url",
-            "warden.client_id",
-            "warden.client_secret",
         ):
             assert registry.spec(key).scope is Scope.STARTUP, key
+
+    def test_warden_placeholders_are_retired(self) -> None:
+        # warden runs inside SPARK: its settings are the warden.* section of konfig.
+        for key in ("warden.url", "warden.client_id", "warden.client_secret"):
+            assert not registry.is_known(key), key
 
 
 class TestSecrets:
@@ -69,7 +71,6 @@ class TestSecrets:
             "embedded_tools.email.password",
             "embedded_tools.web.brave_api_key",
             "voice.elevenlabs.api_key",
-            "warden.client_secret",
         ):
             assert registry.spec(key).secret, key
 
