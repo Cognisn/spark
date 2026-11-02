@@ -5,7 +5,9 @@
 * ``spark worker`` runs the background duties in server mode (scheduled actions,
   one active worker per database);
 * ``spark migrate`` brings the database to the current schema (SPARK's
-  migration chain, then any registered chain) and exits.
+  migration chain, then any registered chain) and exits;
+* ``spark identity create-admin --email EMAIL`` creates the first
+  administrator of a server (warden) and exits.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
-_USAGE = "usage: spark [web | worker | migrate]"
+_USAGE = "usage: spark [web | worker | migrate | identity create-admin --email EMAIL]"
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -30,6 +32,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(worker.main())
     if args == ["migrate"]:
         raise SystemExit(application.run_migrate())
+    if args and args[0] == "identity":
+        raise SystemExit(application.run_identity(args[1:]))
     print(f"spark: unknown command {' '.join(args)!r}\n{_USAGE}", file=sys.stderr)
     raise SystemExit(2)
 

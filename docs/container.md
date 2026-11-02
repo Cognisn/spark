@@ -62,6 +62,15 @@ Configuration comes through konfig, as on the desktop:
 - **Environment**: any setting as `SPARK__<SECTION>__<KEY>`, for example
   `SPARK__MODE=server`, `SPARK__DATABASE__URL=postgresql://...`,
   `SPARK__LOGGING__LEVEL=DEBUG`.
+- **Public address**: server mode refuses to start without
+  `SPARK__SERVER__PUBLIC_BASE_URL`, the https address users reach Spark on (the
+  TLS reverse proxy's host name, no path). Sign-in cookies are Secure and the
+  Origin check accepts only this address, so users must reach Spark through it.
+- **warden**: identity settings are the `warden` section, for example
+  `SPARK__WARDEN__IDENTITY__REQUIRE_MFA=true` (the default) or
+  `SPARK__WARDEN__AUDIT__TRUSTED_PROXIES=10.0.0.0/8` so warden believes the
+  proxy's `X-Forwarded-For`. The web role creates warden's signing key and its
+  TOTP and CSRF keys in the secrets file on first start.
 - **File**: `config.yaml` in the data volume at
   `/var/lib/spark/config/spark/config.yaml` (created from the template on first
   start). Environment values override the file.
@@ -82,12 +91,19 @@ Configuration comes through konfig, as on the desktop:
 
 ### Web
 
-`spark web` serves the interface on port 8000. Until warden sign-in arrives in a
-later 0.3.0 build, the web role signs in with the one-time code it logs at start
-(`docker compose logs web`), and sessions are held in the process: each replica
-has its own code and its own sessions. Several replicas can serve one database
-(instance settings reach all of them), but behind a reverse proxy they need
-sticky sessions until sessions move to warden.
+`spark web` serves the interface on port 8000. Users sign in through warden with
+their email address and password at `/auth/sign-in`; sessions live in warden's
+tables, so any number of web replicas can serve one database without sticky
+sessions. Create the first administrator once the stack is up:
+
+```bash
+docker compose -p spark -f deploy/compose.yaml run --rm -T web \
+    identity create-admin --email admin@example.com < password.txt
+```
+
+(or without `-T` and the redirect, to be asked for the password twice). It is
+safe to run again. `--link-user-guid GUID` gives the administrator the data made
+by the interim single user before warden.
 
 In server mode the web role does not start the tray daemon; scheduled actions run
 in `spark worker`.
@@ -134,7 +150,7 @@ Credentials come only from an env file you write:
 cp deploy/spark.env.example deploy/spark.env
 # edit deploy/spark.env: replace every value ending in -dev-only
 docker compose -p spark -f deploy/compose.yaml up -d
-docker compose -p spark -f deploy/compose.yaml logs web    # the sign-in code
+docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admin --email admin@example.com
 ```
 
 `deploy/spark.env` is ignored by git. Compose variables:

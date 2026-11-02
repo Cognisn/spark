@@ -226,6 +226,83 @@ def run_migrate() -> int:
     return 0
 
 
+_IDENTITY_USAGE = "usage: spark identity create-admin --email EMAIL [--link-user-guid GUID]"
+
+
+def run_identity(args: list[str]) -> int:
+    """``spark identity create-admin``: create the first administrator (server mode).
+
+    Reads the configuration as ``spark web`` does, needs the database at the
+    current schema (``spark migrate`` first), starts warden's runtime (which
+    creates a signing key and the TOTP key if they are missing) and returns an
+    exit code.
+    """
+    from warden.identity import RoleError, UserError
+
+    from spark.database.user_identities import IdentityConflict
+    from spark.db.migrate import MigrationError
+    from spark.identity import bootstrap
+
+    if not args or args[0] != "create-admin":
+        print(_IDENTITY_USAGE, file=sys.stderr)
+        return 2
+    options = bootstrap.parse_create_admin(args[1:])
+    config_path = _get_config_path()
+    _ensure_config(config_path)
+
+    async def _create() -> str:
+        from spark.db import Database, migrate
+        from spark.identity import migrations as identity_migrations
+        from spark.identity.runtime import IdentityRuntime
+
+        async with AppContext(
+            name="Spark",
+            version=spark.__version__,
+            config_file=str(config_path),
+            defaults=_default_settings(),
+            env_prefix="SPARK",
+        ) as ctx:
+            runtime = validate_startup(ctx, config_path)
+            if runtime.mode is not mode.Mode.SERVER:
+                raise mode.ModeConfigError(
+                    "spark identity needs server mode: personal mode has one local user"
+                )
+            identity_migrations.register()
+            await asyncio.to_thread(migrate.prepare, runtime.database, auto_migrate=False)
+            database = await Database.open(runtime.database)
+            try:
+                identity = await IdentityRuntime.start(database, ctx.settings, ctx.secrets)
+                try:
+                    result = await bootstrap.create_admin(
+                        identity,
+                        database,
+                        options.email,
+                        bootstrap.read_password,
+                        link_user_guid=options.link_user_guid,
+                    )
+                finally:
+                    identity.close()
+            finally:
+                await database.close()
+            return bootstrap.describe(result)
+
+    try:
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        print(asyncio.run(_create()))
+    except (
+        mode.ModeConfigError,
+        MigrationError,
+        UserError,
+        RoleError,
+        IdentityConflict,
+        ValueError,
+    ) as exc:
+        print(f"spark identity create-admin: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _log_startup_paths(ctx: AppContext, config_path: Path) -> None:
     """Log key file locations at startup."""
     runtime = mode.current()
