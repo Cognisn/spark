@@ -1,0 +1,16 @@
+{# A mailed link shown to an administrator once, when Spark has no mail service. Expects mailed_link. #}
+{% if mailed_link %}
+<div class="app-card mb-4">
+    <div class="card-body">
+        <div class="alert-app alert-app-warning mb-3" role="status">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            Spark has no mail service, so give this link to the user yourself, privately. It works once,
+            for a limited time, and will not be shown again.
+        </div>
+        <div class="d-flex align-items-start gap-2">
+            <code id="mailed-link" style="word-break: break-all;">{{ mailed_link }}</code>
+            <button type="button" class="btn btn-app-ghost btn-sm" data-copy="#mailed-link"><i class="bi bi-clipboard"></i> Copy</button>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -31,6 +31,7 @@ UNSAFE = ("POST", "PUT", "PATCH", "DELETE")
 ROUTERS_WITH_STATE_CHANGES = {
     "account",
     "actions",
+    "administration",
     "auth",
     "chat",
     "conversations",

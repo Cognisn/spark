@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Spark - Invitations{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Invitations</h4>
+    {% include "_page_messages.html" %}
+    {% include "_mailed_link.html" %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-hourglass-split me-2"></i> Pending</div>
+        <div class="card-body">
+            {% if pending %}
+            <div class="app-table-responsive">
+            <table class="app-table" style="font-size: 0.8125rem;">
+                <thead><tr><th>Email address</th><th>Signs in with</th><th>Roles</th><th>Link expires</th><th></th></tr></thead>
+                <tbody>
+                {% for invitation in pending %}
+                <tr>
+                    <td>{{ invitation.user.email }}</td>
+                    <td>{{ "single sign-on" if invitation.user.sign_in_method == "sso_only" else "password or SSO" }}</td>
+                    <td>{% for grant in invitation.grants %}<span class="badge-app badge-app-primary me-1">{{ grant.role }}</span>{% endfor %}</td>
+                    <td>{{ invitation.expires_at.strftime("%Y-%m-%d %H:%M") if invitation.expires_at else "expired" }}</td>
+                    <td class="text-end text-nowrap">
+                        <form method="POST" action="/admin/invitations/{{ invitation.user.id }}/resend" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="btn btn-app-ghost btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Resend</button>
+                        </form>
+                        <form method="POST" action="/admin/invitations/{{ invitation.user.id }}/revoke" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);"><i class="bi bi-x-circle me-1"></i>Revoke</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">No pending invitations.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="app-card">
+        <div class="card-header"><i class="bi bi-envelope-plus me-2"></i> Invite a user</div>
+        <div class="card-body">
+            <form method="POST" action="/admin/invitations">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="email" class="form-label">Email address</label>
+                        <input type="email" id="email" name="email" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="display_name" class="form-label">Name (optional)</label>
+                        <input type="text" id="display_name" name="display_name" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="method" class="form-label">Signs in with</label>
+                        <select id="method" name="method" class="form-select">
+                            <option value="password_and_sso">A password, or single sign-on</option>
+                            <option value="sso_only">Single sign-on only</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-label">Roles, granted on acceptance</div>
+                    {% for role in role_names %}
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="roles" value="{{ role }}" id="invite-role-{{ loop.index }}">
+                        <label class="form-check-label" for="invite-role-{{ loop.index }}">{{ role }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-send me-1"></i> Invite</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}

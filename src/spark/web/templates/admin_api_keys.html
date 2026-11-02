@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Spark - All API Keys{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1100px;">
+    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">All API keys</h4>
+    {% include "_page_messages.html" %}
+    <div class="app-card">
+        <div class="card-body">
+            {% include "_api_key_table.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

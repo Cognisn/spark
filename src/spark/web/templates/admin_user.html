@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Spark - {{ user.email }}{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 900px;">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">{{ user.email }}</h4>
+        <a class="btn btn-app-ghost btn-sm" href="/admin/users"><i class="bi bi-arrow-left me-1"></i> Users</a>
+    </div>
+    {% include "_page_messages.html" %}
+    {% include "_mailed_link.html" %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-person me-2"></i> Account</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Name</span><span>{{ user.display_name or "" }}</span></div>
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Status</span><span>{{ user.status }}</span></div>
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Signs in with</span><span>{{ "single sign-on only" if user.sign_in_method == "sso_only" else "a password, or single sign-on" }}</span></div>
+            <div class="d-flex justify-content-between mb-3"><span style="color: var(--app-text-secondary);">Authenticator app</span><span>{{ "set up" if mfa_enrolled else "not set up" }}</span></div>
+            <div class="d-flex flex-wrap gap-2">
+                {% for value, label, icon in [("active", "Reactivate", "bi-play-circle"), ("suspended", "Suspend", "bi-pause-circle"), ("deactivated", "Deactivate", "bi-x-octagon")] %}
+                {% if user.status != value and user.status != "invited" %}
+                <form method="POST" action="/admin/users/{{ user.id }}/status">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <input type="hidden" name="status" value="{{ value }}">
+                    <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi {{ icon }} me-1"></i>{{ label }}</button>
+                </form>
+                {% endif %}
+                {% endfor %}
+                <form method="POST" action="/admin/users/{{ user.id }}/totp-reset" onsubmit="return confirm('Reset this user\'s two-step verification and end their sessions? Confirm who they are some other way first.')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-shield-x me-1"></i>Reset two-step verification</button>
+                </form>
+                {% if user.sign_in_method != "sso_only" and user.status == "active" %}
+                <form method="POST" action="/admin/users/{{ user.id }}/password-reset">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-envelope me-1"></i>Send a password reset link</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="app-card">
+        <div class="card-header"><i class="bi bi-person-badge me-2"></i> Roles</div>
+        <div class="card-body">
+            {% if assignments %}
+            <table class="app-table mb-3" style="font-size: 0.8125rem;">
+                <thead><tr><th>Role</th><th>Granted</th><th>Expires</th><th></th></tr></thead>
+                <tbody>
+                {% for assignment in assignments %}
+                <tr>
+                    <td>{{ assignment.role }}</td>
+                    <td>{{ assignment.granted_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                    <td>{{ assignment.expires_at.strftime("%Y-%m-%d %H:%M") if assignment.expires_at else "never" }}</td>
+                    <td class="text-end">
+                        <form method="POST" action="/admin/users/{{ user.id }}/roles/{{ assignment.role }}/revoke" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);"><i class="bi bi-x-circle me-1"></i>Revoke</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="font-size: 0.875rem; color: var(--app-text-secondary);">No roles.</p>
+            {% endif %}
+            <form method="POST" action="/admin/users/{{ user.id }}/roles" class="d-flex gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <select name="role" class="form-select form-select-sm" style="width: 200px;" aria-label="Role">
+                    {% for role in role_names %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Assign</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}

@@ -214,6 +214,7 @@ jobs:
           src/spark/core/context_compaction.py
           src/spark/web/qr.py src/spark/web/endpoints/lifecycle.py
           src/spark/web/endpoints/account.py src/spark/web/menu.py
+          src/spark/web/endpoints/administration.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
