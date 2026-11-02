@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Dependencies**: `cognisn-warden>=0.1.0b8` (Apache-2.0) from PyPI, the identity, session, permission and audit library for server mode. pip and uv select its beta from the requirement alone, and its own requirements (alembic, argon2-cffi, cognisn-konfig, cryptography, fastapi, httpx, psycopg, pydantic, pyjwt and sqlalchemy) are MIT, BSD or Apache licensed or already accepted by the licence audit
 - **Strict type checking**: CI also blocks on `mypy --strict` for the rewritten filesystem tool, the process liveness check, the web database accessors and the container's no-nvidia check, so every module added or rewritten in 0.3.0 is checked on Linux, macOS and Windows alike
 
 ## [0.3.0a9] - 2026-11-02
