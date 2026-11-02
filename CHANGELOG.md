@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a9] - 2026-11-02
+
 ### Added
 - **Untrusted content for files and commands** (personal mode): results of the filesystem read tools (`read_file`, `find_in_file`, `search_files`, `list_directory`, `get_file_info`, `get_directory_tree`) and system command output (`run_command`) now reach the model as marked, untrusted data and are inspected like web, MCP, document and sub-agent results. Each has its own action on a prompt injection or jailbreak match, `embedded_tools.tool_results.files` and `embedded_tools.tool_results.commands` (mark, warn or withhold; default warn), set on the personal settings page with the other result actions. A server never offers these tools, so it hides and refuses both settings
 
