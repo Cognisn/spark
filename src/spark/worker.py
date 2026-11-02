@@ -436,9 +436,11 @@ async def _maybe_await(value: Any) -> Any:
 
 
 def _check_schema(settings: DatabaseSettings) -> None:
-    """Refuse a database that is not at the current schema (``spark migrate`` first)."""
+    """Refuse a database not at the current schema, warden's included (``spark migrate`` first)."""
     from spark.db import migrate
+    from spark.identity import migrations as identity_migrations
 
+    identity_migrations.register()
     migrate.check_at_head(settings)
 
 

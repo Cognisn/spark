@@ -104,16 +104,19 @@ def _sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="session")
 def _pg_template(pg_server: str) -> str:
-    """One PostgreSQL database migrated to head per session; tests get a clone."""
+    """One PostgreSQL database at head (warden's chain too) per session; tests get a clone."""
     import psycopg
 
     from spark.db import migrate
+    from spark.identity import migrations as identity_migrations
     from spark.mode import DatabaseSettings, Dialect
 
     name = f"tpl_{uuid.uuid4().hex[:12]}"
     with psycopg.connect(pg_server, autocommit=True) as admin:
         admin.execute(f'CREATE DATABASE "{name}"')
-    migrate.upgrade(DatabaseSettings(Dialect.POSTGRESQL, url=_with_database(pg_server, name)))
+    settings = DatabaseSettings(Dialect.POSTGRESQL, url=_with_database(pg_server, name))
+    migrate.upgrade(settings)
+    identity_migrations.upgrade(settings)
     return name
 
 

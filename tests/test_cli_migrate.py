@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -36,10 +37,22 @@ class TestLaunch:
         assert "frobnicate" in capsys.readouterr().err
 
 
+@pytest.fixture
+def _isolated_chains() -> Iterator[None]:
+    saved = migrate.registered_chains()
+    migrate.clear_chains()
+    yield
+    migrate.clear_chains()
+    for chain in saved:
+        migrate.register_chain(chain)
+
+
+@pytest.mark.usefixtures("_isolated_chains")
 class TestRunMigrations:
     def test_migrates_the_configured_database(self, tmp_path: Path):
         runtime = RuntimeSettings(
             Mode.PERSONAL, DatabaseSettings(Dialect.SQLITE, sqlite_path=tmp_path / "spark.db")
         )
-        assert application.run_migrations(runtime) == {"spark": migrate.head()}
+        # warden's chain is PostgreSQL only: skipped in personal mode.
+        assert application.run_migrations(runtime) == {"spark": migrate.head(), "warden": None}
         migrate.check_at_head(runtime.database)

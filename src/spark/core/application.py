@@ -182,9 +182,14 @@ def run() -> None:
 
 
 def run_migrations(runtime: mode.RuntimeSettings) -> dict[str, str | None]:
-    """Run SPARK's migration chain, then any registered chain, on the configured database."""
-    from spark.db import migrate
+    """Run SPARK's migration chain, then warden's (server mode), on the configured database.
 
+    A chain that does not apply to the database (warden on SQLite) reports None.
+    """
+    from spark.db import migrate
+    from spark.identity import migrations as identity_migrations
+
+    identity_migrations.register()
     return migrate.migrate_all(runtime.database)
 
 
@@ -216,7 +221,8 @@ def run_migrate() -> int:
         print(f"spark migrate: {exc}", file=sys.stderr)
         return 2
     for chain, revision in results.items():
-        print(f"{chain}: {revision}")
+        if revision is not None:  # None: the chain does not apply (warden in personal mode)
+            print(f"{chain}: {revision}")
     return 0
 
 

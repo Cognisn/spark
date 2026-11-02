@@ -134,7 +134,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     usable or opening failed (``app.state.database_error``).
     """
     from spark.db import migrate
+    from spark.identity import migrations as identity_migrations
 
+    # warden's chain is migrated and checked with SPARK's (PostgreSQL only).
+    identity_migrations.register()
     settings: DatabaseSettings | None = getattr(app.state, "database_settings", None)
     ready: threading.Event = app.state.database_ready
     database: Database | None = None

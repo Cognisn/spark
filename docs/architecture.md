@@ -356,9 +356,19 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
   index for 384-dimension vectors, copying existing embeddings in.
 - Revision `vector_store_2` merges duplicate knowledge graph nodes and edges, skill
   states and conversation skill states, then makes their natural keys unique.
+- Revision `user_identities` creates `user_identities` (`user_guid` primary key,
+  `warden_user_id` unique), mapping each SPARK user guid onto one warden user. Every
+  existing `user_guid` column is untouched: a guid made before warden (the single
+  local user's) is linked to a warden user, and a new warden user's guid is created on
+  first use (`spark.database.user_identities`).
 - `spark migrate` runs SPARK's chain, then every chain registered with
-  `spark.db.migrate.register_chain` (warden's, in its own `warden` schema, from the
-  identity release).
+  `spark.db.migrate.register_chain`, and prints each chain's revision.
+  `spark.identity.migrations` registers warden's chain, which keeps its tables and
+  `warden.alembic_version` in its own `warden` schema. It is PostgreSQL only: on
+  SQLite it is skipped. `spark migrate`, the web lifespan and the worker all register
+  it, so in server mode start-up also refuses a database whose warden chain is behind.
+- warden shares SPARK's psycopg pool (`spark.identity.db.warden_database`); an audit
+  write given the driver connection of a SPARK transaction commits or rolls back with it.
 
 ## Database Schema
 
