@@ -242,6 +242,8 @@ embedded_tools:
   #   mcp: warn
   #   documents: warn                # documents and archives
   #   agents: warn                   # sub-agent results
+  #   files: warn                    # files read from disk (filesystem tools)
+  #   commands: warn                 # system command output
 
 # -----------------------------------------------------------------------------
 # Default Model

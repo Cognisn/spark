@@ -92,6 +92,14 @@ class TestSourceCategory:
             ("list_archive", SourceCategory.DOCUMENTS),
             ("extract_archive", SourceCategory.DOCUMENTS),
             ("spawn_agent", SourceCategory.AGENTS),
+            ("read_file", SourceCategory.FILES),
+            ("find_in_file", SourceCategory.FILES),
+            ("search_files", SourceCategory.FILES),
+            ("list_directory", SourceCategory.FILES),
+            ("get_file_info", SourceCategory.FILES),
+            ("get_directory_tree", SourceCategory.FILES),
+            ("run_command", SourceCategory.COMMANDS),
+            ("write_file", None),
             ("get_current_datetime", None),
             ("store_memory", None),
             ("query_knowledge_graph", None),
@@ -105,6 +113,11 @@ class TestSourceCategory:
 
     def test_mcp_tools(self) -> None:
         assert source_category("lookup_ticket", mcp=True) is SourceCategory.MCP
+
+    def test_instructions_name_the_local_sources(self) -> None:
+        text = untrusted.UNTRUSTED_CONTENT_INSTRUCTIONS
+        assert "files read from disk" in text
+        assert "command output" in text
 
 
 # -- Policy ------------------------------------------------------------------------
@@ -127,6 +140,13 @@ class TestPolicy:
         assert policy.action_for(SourceCategory.MCP) is ResultAction.MARK
         assert policy.action_for(SourceCategory.DOCUMENTS) is ResultAction.WARN
         assert policy.action_for(SourceCategory.AGENTS) is ResultAction.WARN
+
+    def test_reads_the_files_and_commands_actions(self) -> None:
+        config = {"embedded_tools": {"tool_results": {"files": "withhold", "commands": "mark"}}}
+        policy = ResultPolicy.from_config(config)
+        assert policy.action_for(SourceCategory.FILES) is ResultAction.WITHHOLD
+        assert policy.action_for(SourceCategory.COMMANDS) is ResultAction.MARK
+        assert policy.action_for(SourceCategory.WEB) is ResultAction.WARN
 
     def test_invalid_action_falls_back_to_warn(self) -> None:
         policy = ResultPolicy.from_config({"embedded_tools": {"tool_results": {"web": "ignore"}}})
@@ -201,6 +221,27 @@ class TestProcessResult:
         assert "withheld" in outcome.text
         assert "prompt injection" in outcome.text
         assert "lookup_ticket" in outcome.text
+
+    @pytest.mark.parametrize(
+        ("tool_name", "source"),
+        [("read_file", SourceCategory.FILES), ("run_command", SourceCategory.COMMANDS)],
+    )
+    def test_local_source_withholds_by_its_own_action(
+        self, tool_name: str, source: SourceCategory
+    ) -> None:
+        """Only the local source's own key withholds; every other category marks."""
+        actions = {category: ResultAction.MARK for category in SourceCategory}
+        actions[source] = ResultAction.WITHHOLD
+        outcome = process_result(
+            INJECTION,
+            tool_name=tool_name,
+            source=source_category(tool_name, mcp=False),  # type: ignore[arg-type]
+            turn_id=new_turn_id(),
+            policy=ResultPolicy(actions),
+        )
+        assert outcome.action is ResultAction.WITHHOLD
+        assert "attacker@example.com" not in outcome.text
+        assert f"`{tool_name}` ({source.value})" in outcome.text
 
     def test_jailbreak_is_flagged(self) -> None:
         outcome = process_result(

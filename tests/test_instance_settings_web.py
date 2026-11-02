@@ -437,6 +437,8 @@ class TestServerInstanceSave:
             {"embedded_tools.email.password": OTHER, "voice.engine": "elevenlabs"},
             {"embedded_tools": {"system_commands": {"enabled": True}}},
             {"embedded_tools.tool_results.web": "mark"},
+            {"embedded_tools.tool_results.files": "mark"},
+            {"embedded_tools.tool_results.commands": "withhold"},
         ],
     )
     def test_local_tool_settings_refused_and_nothing_written(

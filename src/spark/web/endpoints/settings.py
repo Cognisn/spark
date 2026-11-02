@@ -1191,6 +1191,8 @@ _RESULT_SOURCES = (
     ("mcp", "MCP tools"),
     ("documents", "Documents and archives"),
     ("agents", "Sub-agents"),
+    ("files", "Files read from disk"),
+    ("commands", "System command output"),
 )
 
 

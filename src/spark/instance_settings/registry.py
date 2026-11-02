@@ -376,7 +376,7 @@ _SPECS: tuple[SettingSpec, ...] = (
     # A server hides and refuses them until they become administrator policy.
     *(
         _pick(f"embedded_tools.tool_results.{source}", ("mark", "warn", "withhold"), "warn")
-        for source in ("web", "mcp", "documents", "agents")
+        for source in ("web", "mcp", "documents", "agents", "files", "commands")
     ),
     # ElevenLabs integration (administrator)
     _pick("voice.engine", ("browser", "elevenlabs"), "browser"),
