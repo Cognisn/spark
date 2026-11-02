@@ -7,7 +7,7 @@
 - Workstream branches: <kind>/<version>-<aspect>, where <version> is the bare release version with no `v` (for example `feat/0.3.0-file-areas` belongs to `release/v0.3.0`)
 - Merge to main: squash
 - Commit scopes: llm, core, debate, panel, tools, mcp, skills, knowledge, index, scheduler, daemon, safety, voice, db, web, deps, ci, docs, dev, release
-- Shared modules: pyproject.toml, src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, tests/conftest.py (shared fixtures), .github/workflows/
+- Shared modules: pyproject.toml, src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, src/spark/identity/ (permissions, access, audit, runtime, sessions), src/spark/database/scope.py and src/spark/web/scope.py (user scoping), src/spark/tools/registry.py (the tool decision point), tests/conftest.py (shared fixtures), .github/workflows/
 
 # SPARK
 
@@ -62,6 +62,17 @@ Version stamps are unscoped: `chore: stamp <version>`.
 - Schema changes are new Alembic revisions in `src/spark/migrations/versions/` (never edits to `schema_0_2_0.py` or the baseline), each with a tested downgrade, on both SQLite and PostgreSQL. Only the integration session renumbers or re-chains revisions.
 - Tests: `spark_db` (async, SQLite and PostgreSQL), `sync_db` (the bridge, SQLite) and `tests/db_helpers.app_client` (the web app with its lifespan database). PostgreSQL tests are marked `postgres` and run in testcontainers (`pgvector/pgvector:pg16`); CI's server job sets `SPARK_TEST_POSTGRES=required`. A coroutine that is never awaited fails the suite.
 - `python scripts/licence_audit.py` must pass: no strong copyleft runtime dependency; weak copyleft only as a named exception in that script, agreed by Matthew.
+
+## Identity (server mode)
+
+Server mode uses warden (`cognisn-warden` from PyPI) for users, sessions, roles and audit; personal mode keeps its own sign-in and has one local user who holds every permission.
+
+- **Who is asking:** in an endpoint, `spark.identity.access.current_user_guid(request)` is the SPARK user guid for every repository call; `current_identity(request)` gives the `SparkIdentity` (guid, warden user id, email, roles, permissions). Never use `app.state.user_guid` or `get_user_guid` for a user in server mode. A worker or background task takes the owner's guid explicitly and resolves the owner's permissions at run time (`spark.scheduler.owners`).
+- **Checking a permission:** declare it once in `spark.identity.permissions.PERMISSIONS` and grant it in `ROLES` (a new role is a new `ROLES` entry, no code change elsewhere). Guard a route with `Depends(require_permission("spark.<capability>"))` (401 signed out, 403 without it) or test with `has_permission(request, name)`. Tool categories are decided only by `spark.tools.registry.is_category_available` with the user's permissions; pass them with `tools_config_for(request, config)` or `request_permissions(request)`. Server mode fails closed: no permissions means refused. `spark.tools.registry.ANY_ROLE` describes the deployment, never a user.
+- **Scoping:** every repository read and write takes the user guid after the executor and filters by it; another user's id answers 404 (`spark.web.scope.not_found`). A deliberately unscoped function says so in its docstring and is never reachable from a request.
+- **Auditing:** register a new action once in `spark.identity.audit.ACTIONS` (names under `spark.`, never `warden.`). Emit with `await audit.emit_request(request, action, resource_type=..., resource_id=..., details=...)` in an endpoint, `await audit.emit(action, user_guid=...)` in async code, `audit.submit(...)` from a thread, or `await audit.record_in(conn, ...)` inside a SPARK transaction so the row commits or rolls back with the write. Details never carry secrets or content (`scrub` drops them). Every call does nothing in personal mode. warden audits its own sign-in and administration events.
+- **Sessions:** warden tokens live in SPARK's cookies (access `SameSite=Strict` on `/`, refresh scoped to `/auth/session/refresh`), refreshed by `spark.identity.web`; CSRF tokens are bound to the warden session and checked by `spark.web.security`; the Origin policy is pinned to `server.public_base_url`, which server mode requires. API keys are bearer only and never mixed with a session cookie.
+- **Tests:** server-mode identity tests run on PostgreSQL with warden's chain (`tests/identity_web_helpers.py`, `tests/identity_screen_helpers.py`); mutation-check every new guard. Live SSO tests are marked `integration` and run only when Matthew triggers them.
 
 ## Running locally
 
