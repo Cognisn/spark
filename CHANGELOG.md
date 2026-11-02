@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a8] - 2026-11-02
+
 ### Changed
 - **File areas at start-up**: `spark web` now sets up the file area from `files.root` while it validates the start-up configuration, so uploads and the file tools are available in the running app in both modes (they were set up only on the older start-up path)
 - **Container image**: the build fails if any `nvidia-*` package is installed (`scripts/check_no_nvidia.py`, run after Spark is installed on the CPU-only PyTorch wheel), and `deploy/check-image.sh` checks a built image for them too. The image prepares `/var/lib/spark-files` for users' file areas
