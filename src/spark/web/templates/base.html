@@ -96,6 +96,26 @@
                         <a class="nav-link" href="/settings"><i class="bi bi-gear me-1"></i> Settings</a>
                     </li>
                     {% endblock %}
+                    {% set identity_entries = identity_menu(request) %}
+                    {% if identity_entries %}
+                    <li class="nav-item dropdown ms-1">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Account">
+                            <i class="bi bi-person-circle me-1"></i> Account
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            {% for entry in identity_entries %}
+                            <li><a class="dropdown-item" href="{{ entry.href }}"><i class="bi {{ entry.icon }} me-2"></i>{{ entry.label }}</a></li>
+                            {% endfor %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form method="POST" action="/auth/sign-out" class="px-3">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                                    <button type="submit" class="btn btn-app-ghost btn-sm w-100"><i class="bi bi-box-arrow-right me-1"></i> Sign out</button>
+                                </form>
+                            </li>
+                        </ul>
+                    </li>
+                    {% endif %}
                     <li class="nav-item dropdown ms-1">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Help" onkeydown="if(event.key==='Enter')this.click()">
                             <i class="bi bi-question-circle"></i>

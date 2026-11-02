@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Spark - Two-Step Verification{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 520px;">
+    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Two-step verification</h4>
+    {% include "_page_messages.html" %}
+    <div class="app-card">
+        <div class="card-body">
+            {% if recovery_codes %}
+            <p style="font-size: 0.875rem;">Your authenticator app is set up.</p>
+            {% include "_recovery_codes.html" %}
+            <a class="btn btn-app-primary w-100" href="/account">I have saved my codes</a>
+            {% else %}
+            <p style="color: var(--app-text-secondary); font-size: 0.875rem;">
+                Scan the code with an authenticator app, or enter the key by hand, then type the six-digit code it shows.
+            </p>
+            {% include "_totp_enrolment.html" %}
+            <form method="POST" action="/account/mfa/confirm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="secret" value="{{ secret }}">
+                <input type="hidden" name="uri" value="{{ uri }}">
+                <div class="mb-3">
+                    <label for="code" class="form-label">Code from your authenticator app</label>
+                    <input type="text" id="code" name="code" class="form-control text-center" inputmode="numeric"
+                           pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus
+                           style="font-size: 1.25rem; letter-spacing: 0.2em; font-weight: 600;">
+                </div>
+                <button type="submit" class="btn btn-app-primary w-100"><i class="bi bi-shield-check me-1"></i> Confirm</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}

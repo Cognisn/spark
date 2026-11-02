@@ -304,6 +304,10 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     templates.env.globals["version"] = spark.__version__
     templates.env.globals["csrf_token"] = _template_csrf_token
+    # The Account menu's entries for the signed-in user's roles (server mode only).
+    from spark.web.menu import identity_menu
+
+    templates.env.globals["identity_menu"] = identity_menu
     templates.env.globals["actions_enabled"] = lambda: (
         bool(app.state.ctx.settings.get("autonomous_actions.enabled", False))
         if hasattr(app.state, "ctx") and app.state.ctx
