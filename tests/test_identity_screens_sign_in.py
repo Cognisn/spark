@@ -112,6 +112,7 @@ class TestEnrolmentUnderChallenge:
         secret, codes, done = enrol_under_challenge(mfa_client, ADA)
         assert len(codes) == 10 and all(len(c) == 11 for c in codes)
         assert done.headers["cache-control"] == "no-store"
+        assert done.headers["referrer-policy"] == "no-referrer"
         assert _sets(done, ACCESS_COOKIE) and _sets(done, REFRESH_COOKIE)
         assert _clears(done, CHALLENGE_COOKIE)
         # Signed in: pages load.
