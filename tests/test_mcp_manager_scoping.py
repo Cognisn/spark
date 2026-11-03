@@ -290,6 +290,30 @@ class TestAudit:
             await manager.call_tool("search_lookup", {})
         assert [e[0] for e in recorder.events] == [audit.MCP_TOOL_REFUSED]
 
+    async def test_unscoped_call_of_an_unknown_tool_is_refused_and_audited(
+        self, server_mode: None, recorder: FakeAudit
+    ) -> None:
+        manager = await _manager("search")
+        with pytest.raises(MCPToolRefused):
+            await manager.call_tool("nowhere", {})
+        assert recorder.events == [
+            (
+                audit.MCP_TOOL_REFUSED,
+                "failure",
+                {
+                    "user_guid": None,
+                    "resource_type": "mcp_tool",
+                    "resource_id": "nowhere",
+                    "details": {
+                        "server": None,
+                        "tool": "nowhere",
+                        "conversation_id": None,
+                        "result": "refused",
+                    },
+                },
+            )
+        ]
+
     async def test_unknown_tool_is_audited(self, server_mode: None, recorder: FakeAudit) -> None:
         manager = await _manager("search")
         with pytest.raises(ValueError):

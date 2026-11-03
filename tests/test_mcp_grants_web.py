@@ -98,6 +98,24 @@ class TestGrantedServers:
         assert "search" in page.text
         assert "finance" not in page.text and "spare" not in page.text
 
+    def test_the_debate_capabilities_list_only_granted_servers(self, granted: TestClient) -> None:
+        ada, _ = _signed_in(granted, "ada@example.com", USER)
+        resp = ada.get("/debate/api/capabilities", headers={"Accept": "application/json"})
+        assert resp.status_code == 200
+        groups = {g["group"] for g in resp.json()["tools"] if g["group"].startswith("MCP: ")}
+        assert groups == {"MCP: search"}
+
+    def test_the_action_tool_list_has_only_granted_servers(self, granted: TestClient) -> None:
+        from spark.database import autonomous_actions
+
+        grace, guid = _signed_in(granted, "grace@example.com", POWER_USER)
+        action = _call(granted, autonomous_actions.create_action, "nightly", "p", "m", guid)
+        resp = grace.get(f"/actions/api/{action}/tools", headers={"Accept": "application/json"})
+        assert resp.status_code == 200, resp.text
+        names = {t["name"] for t in resp.json()["tools"]}
+        assert "finance_lookup" in names
+        assert "search_lookup" not in names and "spare_lookup" not in names
+
     def test_a_revoked_grant_takes_effect_on_the_next_request(self, granted: TestClient) -> None:
         ada, guid = _signed_in(granted, "ada@example.com", USER)
         assert _tool_panel(ada, granted, guid) == {"search"}
