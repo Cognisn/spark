@@ -133,3 +133,8 @@ class TestPostgres:
         with psycopg.connect(pg_url) as conn:
             row = conn.execute("SELECT period, source FROM spark.usage_tracking").fetchone()
         assert row == ("2026-10", "chat")
+
+
+def test_on_the_chain_to_head() -> None:
+    chain = migrate._scripts().walk_revisions(base="base", head=migrate.head())
+    assert REVISION in {r.revision for r in chain}
