@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **MCP servers in server mode** (A12): a server allows HTTP and SSE MCP servers only. A stdio server runs a command on the host, so `mcp.servers` refuses one with a clear message however it is configured, and a stdio entry already stored is ignored with a warning while the other servers are kept. Server names are lower-case letters, digits, `-` and `_`, because each is part of its permission
+- **MCP grants by role** (server mode): each server in `mcp.servers` lists the roles it is granted to (`roles`), which a user holds as the `spark.mcp.<server>` permission; a server listing no role is granted to no one. The MCP manager lists and calls only the servers a caller's permissions grant, and with no permissions lists nothing and refuses every call
+- **MCP audit trail** (server mode): every MCP tool call is recorded in warden's audit trail with the user, conversation, server, tool and outcome (`spark.mcp.tool.called`), and every refusal as `spark.mcp.tool.refused`; arguments and results are never recorded
+
+### Changed
+- **MCP credentials** (server mode, A9): a server's bearer token, basic password and custom headers are not kept in `mcp.servers`; the setting refuses them, and a credential already stored there is dropped with a warning so it can be entered again into konfig's secrets store
+
+### Fixed
+- **MCP SDK 2.x**: HTTP MCP servers connect again (the SDK renamed its HTTP client), tool input schemas reach the model, a tool's own error is reported as an error, and an image result keeps its type. An unreachable HTTP server now fails to connect instead of cancelling the caller, and each connection is opened and closed in one task, as the SDK's transports require. MCP SDK 1.x still works
+
 ## [0.3.0a10] - 2026-11-03
 
 ### Added

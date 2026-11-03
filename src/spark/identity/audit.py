@@ -109,6 +109,8 @@ TOOL_REFUSED: Final = "spark.tool.refused"
 FILE_DOWNLOADED: Final = "spark.file.downloaded"
 EXPORT_DOWNLOADED: Final = "spark.export.downloaded"
 ACTION_REFUSED: Final = "spark.action.refused"
+MCP_TOOL_CALLED: Final = "spark.mcp.tool.called"
+MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +142,8 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ACTION_REFUSED: ActionDef(
         Severity.WARNING, "scheduled action {resource_id} of {actor} refused"
     ),
+    MCP_TOOL_CALLED: ActionDef(Severity.INFO, "{actor} called MCP tool {resource_id}: {outcome}"),
+    MCP_TOOL_REFUSED: ActionDef(Severity.NOTICE, "MCP tool {resource_id} refused for {actor}"),
 }
 
 
