@@ -143,6 +143,15 @@ in `spark worker`.
 - **Roles**: `administrator` (everything), `auditor` (the audit trail at `/audit`
   and its export, nothing else), `power_user` and `user`. Users create their own
   API keys at `/account/api-keys`, limited to their own permissions.
+- **Usage and token budgets**: an administrator sees usage by month, user and
+  model at **Account > Usage and budgets** (`/admin/usage`), exports it as CSV,
+  and sets an optional monthly token budget per role and an own budget per user
+  (a number, `unlimited`, or empty to let their roles decide). A user's own budget
+  wins; otherwise the most generous budget among their roles applies. Users are
+  warned from 80%; at 100% new chats, debate and panel turns and scheduled action
+  runs are refused, while a request already running finishes. Budgets reset at
+  00:00 UTC on the first of each month. The ElevenLabs character cap is separate
+  and instance-wide.
 
 ### Worker
 
