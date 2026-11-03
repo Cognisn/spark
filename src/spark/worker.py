@@ -518,8 +518,10 @@ def _serve(runtime: RuntimeSettings) -> None:
         settings = app.settings if app is not None else None
         if settings is not None:
             from spark.identity import pruning
+            from spark.knowledge import build_jobs
 
             pruning.register(settings)
+            build_jobs.register(settings)
         services, periodic = default_duties()
         worker = Worker(
             runtime.database,
