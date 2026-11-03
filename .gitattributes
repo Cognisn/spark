@@ -30,3 +30,6 @@ src/spark/web/static/**/*.eot binary
 
 # SQLite databases (test fixtures) are binary.
 *.db binary
+
+# User bundles (zip archives, test fixtures) are binary.
+*.zip binary

@@ -15,3 +15,14 @@ before the files were committed.
 
 They were made by loading the tagged modules with `git show <tag>:<path>`, so the
 current code played no part. Do not regenerate them from the current tree.
+
+## User bundles
+
+- `bundles/synthetic-v1.zip`: a user bundle in format version 1, exported by
+  `spark.bundles.exporter` from the synthetic personal user of `tests/bundle_seed.py`
+  (a garden-planning chat, a tea-or-coffee debate, two memories, a knowledge graph,
+  the `note-taker` skill, one scheduled action, two small files and two preferences;
+  invented names and example.org only, no credential of any kind). It pins the
+  format: `tests/test_bundles_fixture.py` reads and imports it as committed, so a
+  change that stops version 1 bundles importing fails. Regenerate it only for a new
+  format version, under a new name.
