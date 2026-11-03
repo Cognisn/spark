@@ -25,7 +25,7 @@ import spark.instance_settings as instance_settings
 from spark import mode
 from spark.instance_settings import access, accessor, registry
 from spark.instance_settings.registry import Scope, SettingsError
-from spark.instance_settings.secrets import SecretsWriter, reference
+from spark.instance_settings.secrets import SecretsWriter, announce, reference
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -327,6 +327,7 @@ async def save_instance_settings(request: Request) -> JSONResponse:
     writer = _writer(request)
     for key, value in secrets.items():
         writer.set(key, value, actor=actor)
+        await announce(database(request), key)
     source = await instance_settings.server_settings(
         request.app, database(request), request.app.state.ctx.settings
     )
@@ -380,6 +381,8 @@ async def clear_secret(request: Request) -> JSONResponse:
     if not isinstance(key, str) or not registry.is_known(key) or not registry.spec(key).secret:
         return _refused("expected the key of a secret", [str(key)])
     _writer(request).clear(key, actor=_actor(request))
+    if _server():
+        await announce(database(request), key)
     return JSONResponse({"status": "ok", "key": key, "set": False})
 
 

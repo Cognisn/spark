@@ -11,6 +11,12 @@ reloads in full once it is listening again, so a change made while it was away
 is never missed. While idle it checks the connection every ``idle_timeout``
 seconds, so a silently dead connection is noticed within that time.
 
+Secrets live in konfig's store, not the database (A9). A notification whose
+payload names a secret (:func:`spark.instance_settings.secrets.announce`) first
+has ``refresh_secrets`` re-read the store on a worker thread, then reloads, so
+the consumers that hold a secret rebuild with the new value. The store is
+refreshed after every connect too, for a secret changed while away.
+
 Start and stop it with :func:`start_listener` and :func:`stop_listener`; the web
 lifespan does so in server mode.
 """
@@ -26,6 +32,7 @@ from typing import Any
 from spark import mode
 from spark.instance_settings.accessor import ServerSettings
 from spark.instance_settings.repository import CHANNEL
+from spark.instance_settings.secrets import is_secret_key
 from spark.mode import DatabaseSettings
 
 __all__ = [
@@ -54,13 +61,18 @@ async def default_connect(url: str) -> Any:
 
 
 class SettingsListener:
-    """Listens for settings changes and calls ``reload`` after each, and after every connect."""
+    """Listens for settings changes and calls ``reload`` after each, and after every connect.
+
+    ``refresh_secrets`` (blocking; run on a worker thread) runs before the reload
+    after every connect and on every notification that names a secret.
+    """
 
     def __init__(
         self,
         url: str,
         reload: Callable[[], Awaitable[None]],
         *,
+        refresh_secrets: Callable[[], None] | None = None,
         reconnect_delay: float = 1.0,
         max_reconnect_delay: float = 30.0,
         idle_timeout: float = 5.0,
@@ -70,6 +82,7 @@ class SettingsListener:
             raise ValueError("the settings listener needs a PostgreSQL URL")
         self._url = url
         self._reload = reload
+        self._refresh_secrets = refresh_secrets
         self._reconnect_delay = reconnect_delay
         self._max_reconnect_delay = max_reconnect_delay
         self._idle_timeout = idle_timeout
@@ -112,6 +125,7 @@ class SettingsListener:
                     self.reconnects += 1
                     logger.info("Settings listener reconnected; reloading all settings")
                 self._ever_connected = True
+                await self._refresh()
                 await self._reload()
                 self.connected.set()
                 delay = self._reconnect_delay
@@ -130,9 +144,20 @@ class SettingsListener:
 
     async def _listen(self, conn: Any) -> None:
         while not self._stopping:
-            async for _notify in conn.notifies(timeout=self._idle_timeout):
+            async for notify in conn.notifies(timeout=self._idle_timeout):
+                if is_secret_key(str(notify.payload)):
+                    await self._refresh()
                 await self._reload()
             await conn.execute("SELECT 1")  # notice a connection that died while idle
+
+    async def _refresh(self) -> None:
+        """Have the secrets store re-read its data; a failure must not stop the reload."""
+        if self._refresh_secrets is None:
+            return
+        try:
+            await asyncio.to_thread(self._refresh_secrets)
+        except Exception:  # noqa: BLE001 - the settings still reload; the next notice retries
+            logger.exception("Refreshing the secrets store failed")
 
 
 async def start_listener(

@@ -29,6 +29,7 @@ from spark.instance_settings.accessor import (
     set_preference,
 )
 from spark.instance_settings.listener import SettingsListener, start_listener, stop_listener
+from spark.instance_settings.secrets import refresher
 
 __all__ = [
     "FileSettings",
@@ -51,13 +52,15 @@ async def attach(app: Any, database: Any, settings: KonfigLike) -> None:
     """Install the settings source for the mode on ``app.state`` and the accessor.
 
     Server mode: load the instance settings from ``database`` and start the
-    listener. Personal mode: read ``config.yaml`` through konfig.
+    listener, which also refreshes the app's konfig secrets store when another
+    replica saves a secret. Personal mode: read ``config.yaml`` through konfig.
     """
     if mode.is_server():
         source = ServerSettings(database, settings)
         await source.reload()
         app.state.instance_settings = source
-        app.state.settings_listener = await start_listener(source)
+        store = getattr(getattr(app.state, "ctx", None), "secrets", None)
+        app.state.settings_listener = await start_listener(source, refresh_secrets=refresher(store))
     else:
         app.state.instance_settings = FileSettings(settings)
         app.state.settings_listener = None
