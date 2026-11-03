@@ -5,7 +5,7 @@ Spark ships one container image with two roles, plus a migration command:
 | Command | Role |
 |---|---|
 | `spark web` (the image default) | The web interface. Plain `spark` is an alias. |
-| `spark worker` | Background duties in server mode: scheduled actions, and later releases' periodic jobs. |
+| `spark worker` | Background duties in server mode: scheduled actions, knowledge graph builds, and later releases' periodic jobs. |
 | `spark migrate` | Brings the database to the current schema, then exits. |
 
 The image is meant for **server mode** (PostgreSQL). This page covers building
@@ -146,8 +146,8 @@ in `spark worker`.
 
 ### Worker
 
-`spark worker` runs scheduled actions. It refuses to start in personal mode, on
-SQLite, or on a database behind the current schema.
+`spark worker` runs scheduled actions and knowledge graph builds. It refuses to
+start in personal mode, on SQLite, or on a database behind the current schema.
 
 The worker runs every user's enabled actions, each as its owner: the run, its
 memories and the files it writes are the owner's, and its tools follow the
@@ -176,6 +176,16 @@ records) every hour (`worker.identity_prune_seconds`). When
 older than that once a day (`worker.audit_purge_seconds`), behind a signed
 checkpoint; the purge needs `DELETE` on `warden.audit_events`, so grant it to the
 worker's database role or leave the retention unset to keep the trail for ever.
+
+The active worker builds knowledge graphs. A build started on the Knowledge page
+of any web replica is queued, and the worker picks it up within a few seconds
+(`worker.knowledge_graph_poll_seconds`), builds it as the user who asked, with the
+model clients the instance settings describe, and records its progress and outcome
+for every replica's Knowledge page to show. The global graph needs the Power user
+or Administrator role. A failed build can be retried from the page; a build left
+running by a worker that stopped is failed after 30 minutes without progress
+(`worker.knowledge_graph_stale_seconds`) so it can be retried. Without a running
+worker, builds stay queued.
 
 ### Tray daemon
 

@@ -499,8 +499,37 @@ flowchart LR
   for oneself stays open. Spawning a sub-agent needs `spark.agents` at the one point
   every sub-agent starts (`ConversationManager._execute_agent_spawn`, for chat turns,
   actions and agents alike); `spark.tools.agents` only offers the tool. Knowledge graph
-  builds are per user (each user's own global and conversation graphs), so
-  `spark.knowledge.instance` gates nothing yet.
+  builds are per user (each user's own global and conversation graphs). On a server the
+  global graph, built from all of a user's conversations and memories, needs
+  `spark.knowledge.instance` to build, retry or clear: checked by the knowledge endpoint
+  and again by the worker against the owner's permissions when it runs the build.
+  Conversation graphs need no extra permission.
+
+## Knowledge graph builds
+
+- **Personal mode** builds in the web process on a thread, as in 0.2.0: one build per
+  user and scope (`spark.knowledge.builder.try_acquire`), with its cancel token and
+  last result held in the process.
+- **Server mode** never builds in a web process. `POST /knowledge/api/build` queues a
+  job in `kg_build_jobs` (`spark.knowledge.jobs.enqueue`) with the model resolved for
+  the user; a partial unique index allows one queued or running job per user and
+  scope, so a second request on any replica answers 409. Status, progress, cancel
+  (`/knowledge/api/cancel`) and retry (`/knowledge/api/retry`, failed jobs only) read
+  and write the job, so any web replica answers for any build.
+- **The worker's job** (`spark.knowledge.build_jobs`, registered with
+  `spark.worker.register_periodic` as `knowledge-graph-builds`, every
+  `worker.knowledge_graph_poll_seconds`, 5 by default) claims the oldest queued job with
+  `FOR UPDATE SKIP LOCKED`, so two workers claiming at once never take the same job.
+  It resolves the owner through warden at run time (`spark.scheduler.owners`), refusing
+  and auditing (`spark.knowledge.build.refused`) an owner who is not active or a global
+  build without `spark.knowledge.instance`, then runs the in-process engine on a thread
+  as the owner, with every read and write scoped to the owner's guid. Its model client
+  comes from `spark.llm.factory`, which builds providers from the instance settings by
+  the web process's rules without any web app. Progress is written to the job (its
+  heartbeat); before each chunk the build stops if the owner cancelled or the job is no
+  longer this worker's. The outcome (complete, failed or cancelled) is recorded on the
+  job. A job left running with no progress for `worker.knowledge_graph_stale_seconds`
+  (30 minutes by default), by a worker that stopped, is failed so its owner can retry it.
 
 ## Vectors
 
@@ -554,6 +583,10 @@ An Alembic chain in `src/spark/migrations/`, run by `spark.db.migrate`:
 - Revision `action_names_per_user` replaces the global `UNIQUE(name)` of
   `autonomous_actions` with `UNIQUE(user_guid, name)` (SQLite rebuilds the table).
   Its downgrade refuses, changing nothing, while two users share an action name.
+- Revision `kg_build_jobs` creates `kg_build_jobs`, the server's knowledge graph build
+  queue (owner, scope, model, status, attempts, cancel request, worker, progress, result,
+  error and times), with a partial unique index allowing one queued or running job per
+  user and scope. Personal mode leaves it empty. Its downgrade drops the table.
 - `spark migrate` runs SPARK's chain, then every chain registered with
   `spark.db.migrate.register_chain`, and prints each chain's revision.
   `spark.identity.migrations` registers warden's chain, which keeps its tables and
