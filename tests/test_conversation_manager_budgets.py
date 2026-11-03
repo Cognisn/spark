@@ -233,15 +233,23 @@ class TestBudgetAtTurnStart:
         assert result["budget"]["state"] == "warning"
         assert result["budget"]["used"] == 80
 
-    def test_an_in_flight_turn_finishes_past_the_budget(self, sync_db, server_mode) -> None:
+    @pytest.mark.parametrize("budget", ["role", "override"])
+    def test_an_in_flight_turn_finishes_past_the_budget(
+        self, sync_db, server_mode, budget: str
+    ) -> None:
         mgr, stub = _manager(sync_db)
-        sync_db.call(usage.set_role_budget, "user", 100)
-        stub.script = [_tool_call("no_such_tool", {}, 90), _text("finished", 40, 10)]
+        if budget == "role":
+            sync_db.call(usage.set_role_budget, "user", 100)
+        else:
+            sync_db.call(usage.set_user_override, ADA, 100)
+        # The first call alone passes 100%, so the turn's next call is made over budget.
+        stub.script = [_tool_call("no_such_tool", {}, 120), _text("finished", 40, 10)]
         cid = mgr.create_conversation("Ada's", "stub-model", ADA)
         result = mgr.send_message(cid, "hello", ADA, roles={"user"})
         assert result["status"] == "completed"
         assert result["content"] == "finished"
-        assert result["budget"]["state"] == "exceeded"
+        assert stub.calls == 2
+        assert (result["budget"]["state"], result["budget"]["used"]) == ("exceeded", 170)
         with pytest.raises(BudgetExceeded):
             mgr.send_message(cid, "and again", ADA, roles={"user"})
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import time
 from typing import Any
 
 import pytest
@@ -23,7 +24,7 @@ from fastapi.testclient import TestClient
 from warden.audit import AuditQuery, list_events
 from warden.audit.store import AuditRow
 
-from spark.database import usage
+from spark.database import autonomous_actions, usage
 from spark.identity import audit as spark_audit
 from spark.identity.db import warden_database
 from spark.identity.permissions import ADMINISTRATOR, AUDITOR, POWER_USER, USER
@@ -155,6 +156,29 @@ class TestBudgets:
         _call(admin, usage.record_usage, None, "m", 100, 0, _guid(grace))
         assert ada.get("/api/usage/me").json()["state"] == "unlimited"
         assert grace.get("/api/usage/me").json()["state"] == "exceeded"
+
+    def test_run_now_is_budgeted_by_the_users_own_roles(
+        self, admin: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[Any] = []
+
+        class Executor:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                seen.append(kwargs.get("roles"))
+
+            def execute(self, action_id: int) -> None:
+                pass
+
+        monkeypatch.setattr("spark.scheduler.executor.ActionExecutor", Executor)
+        monkeypatch.setattr("spark.web.endpoints.actions._actions_enabled", lambda request: True)
+        ada = _signed_in(admin, ADA, POWER_USER)
+        aid = _call(admin, autonomous_actions.create_action, "ada-run", "p", "m", _guid(ada))
+        resp = ada.post(f"/actions/api/{aid}/run-now")
+        assert resp.status_code == 200, resp.text
+        deadline = time.monotonic() + 10
+        while not seen and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert [set(roles) for roles in seen] == [{POWER_USER}]
 
     def test_an_override_for_an_unknown_user_is_not_found(self, admin: TestClient) -> None:
         resp = admin.post(
