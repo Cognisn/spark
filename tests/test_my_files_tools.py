@@ -174,6 +174,21 @@ class TestRead:
         assert "bravo" not in refused and "bob-secret" not in refused
         assert refused.replace(str(theirs), "N") == absent.replace(str(missing), "N")
 
+    def test_another_users_id_is_not_found_even_when_the_same_key_is_in_my_area(
+        self, bridge: Any, server_files: Path
+    ) -> None:
+        # Created documents are keyed by name, so two users can hold the same key.
+        area = files_pkg.file_area(bridge)
+        area.save(ALICE, "report.txt", io.BytesIO(b"alpha own words"), filename="alice-report.txt")
+        theirs = area.save(
+            BOB, "report.txt", io.BytesIO(b"bravo private words"), filename="bob-report.txt"
+        )
+
+        text, is_error = _run("read_my_file", {"file_id": theirs}, _config(bridge, ALICE))
+
+        assert is_error
+        assert "bob-report" not in text and "bravo" not in text and "alpha" not in text
+
     def test_accepts_a_numeric_string_id(self, bridge: Any, server_files: Path) -> None:
         fid = _save(bridge, ALICE, "notes.txt", b"words")
         text, is_error = _run("read_my_file", {"file_id": str(fid)}, _config(bridge, ALICE))
