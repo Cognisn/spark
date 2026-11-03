@@ -266,10 +266,12 @@ class TestConversationTurn:
         class _Mcp:
             servers: dict[str, Any] = {}
 
-            async def list_all_tools(self) -> list[dict[str, Any]]:
+            async def list_all_tools(self, **scope: Any) -> list[dict[str, Any]]:
                 return [{"name": "lookup_ticket", "description": "", "inputSchema": {}}]
 
-            async def call_tool(self, name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+            async def call_tool(
+                self, name: str, tool_input: dict[str, Any], **scope: Any
+            ) -> dict[str, Any]:
                 return {"content": [{"type": "text", "text": INJECTION}], "isError": False}
 
         mgr = _manager(sync_db, model, action="mark", mcp_manager=_Mcp())

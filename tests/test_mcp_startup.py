@@ -178,12 +178,14 @@ class TestCallers:
             mcp_manager=runtime.manager,
             mcp_loop=runtime.loop,
             user_guid="u-1",
+            conversation_id=9,
         )
         names = {t["name"] for t in agent._get_tools()}
         assert "search_lookup" in names and "finance_lookup" not in names
         assert agent._execute_tool("search_lookup", {}) == "ok"
         assert "not available" in agent._execute_tool("finance_lookup", {})
         assert [k["user_guid"] for _, k in events] == ["u-1", "u-1"]
+        assert [k["details"]["conversation_id"] for _, k in events] == [9, 9]
 
     @pytest.mark.parametrize(
         "module", ["spark.core.debate.orchestrator", "spark.core.panel.orchestrator"]
