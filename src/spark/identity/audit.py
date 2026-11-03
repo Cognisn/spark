@@ -96,6 +96,7 @@ __all__ = [
     "register_actions",
     "scrub",
     "submit",
+    "MAIL_TEST_SENT",
 ]
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ TOOL_REFUSED: Final = "spark.tool.refused"
 FILE_DOWNLOADED: Final = "spark.file.downloaded"
 EXPORT_DOWNLOADED: Final = "spark.export.downloaded"
 ACTION_REFUSED: Final = "spark.action.refused"
+MAIL_TEST_SENT: Final = "spark.mail.test_sent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +141,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     EXPORT_DOWNLOADED: ActionDef(Severity.INFO, "{actor} exported {resource_type} {resource_id}"),
     ACTION_REFUSED: ActionDef(
         Severity.WARNING, "scheduled action {resource_id} of {actor} refused"
+    ),
+    MAIL_TEST_SENT: ActionDef(
+        Severity.NOTICE, "{actor} sent a test message through {resource_id}: {outcome}"
     ),
 }
 

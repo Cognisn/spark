@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Mail for invitations and password resets** (server mode, `mail.smtp`): administrators set an SMTP server on the instance page (host, port, TLS as STARTTLS, implicit TLS or none, sender address and name, username) with its password kept only in the secrets store (`mail_smtp_password`). Once a host is set, warden's invitations, resends, password reset links and second factor notices are mailed on a worker thread within 30 seconds, an administrator's screen says the link was sent instead of showing it, and a signed-out reset request is mailed while keeping its neutral answer. TLS is required and the server's certificate verified, except for plain text to a loopback relay; the instance page refuses plain text to any other host, and a host without a sender address. A message that cannot be delivered is reported without the credential or the server's reply. While the host is empty, links are shown to administrators once as before. Changes apply to the next message on every replica, without a restart. Personal mode has no mail settings
+- **Test message** (server mode): an administrator sends a test message to their own address from the instance page (`POST /settings/api/mail/test`); a failure says why (for example the server refused the username or password) without echoing the credential. Each test is audited as `spark.mail.test_sent`, with its outcome; settings and password changes are audited by key, as other instance settings are
+
 ## [0.3.0a10] - 2026-11-03
 
 ### Added

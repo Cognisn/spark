@@ -35,7 +35,7 @@ from warden.identity import (
 )
 from warden.identity.sso.settings import SsoSettings
 
-from spark.identity.mail import LinkCapture
+from spark.identity.mail import InstanceMail, LinkCapture
 from spark.identity.permissions import POWER_USER
 from spark.identity.web import (
     ACCESS_COOKIE,
@@ -312,7 +312,7 @@ class TestPasswordReset:
     ) -> None:
         make_user(plain_client, ADA)
         sender = runtime(plain_client).identity.mailer._sender
-        assert type(sender) is LinkCapture
+        assert type(sender) is InstanceMail and type(sender.fallback) is LinkCapture
         page = plain_client.get("/auth/password-reset")
         resp = post_form(plain_client, "/auth/password-reset", page, email=ADA)
         assert resp.status_code == 200 and RESET_REQUESTED in resp.text

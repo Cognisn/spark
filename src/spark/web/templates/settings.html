@@ -239,6 +239,14 @@
                         </div>
                         {% endfor %}
                         {% endfor %}
+                        {% if section.id == 'mail' %}
+                        <div class="d-flex align-items-center gap-2 mt-3">
+                            <button class="btn btn-app-outline btn-sm" type="button" id="btn-mail-test" onclick="sendTestMail()">
+                                <i class="bi bi-send me-1"></i>Send test message
+                            </button>
+                            <span id="mail-test-result" style="font-size: 0.8125rem;"></span>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -1325,6 +1333,32 @@ async function testEmailConnection(sendTest) {
         body.innerHTML = html;
     } catch (err) {
         body.innerHTML = '<div class="alert-app alert-app-danger">Network error while testing connection.</div>';
+    }
+}
+
+// -- Mail test message (server mode) --
+
+async function sendTestMail() {
+    const result = document.getElementById('mail-test-result');
+    result.style.color = 'var(--app-text-muted)';
+    result.textContent = 'Sending...';
+    try {
+        const resp = await fetch('/settings/api/mail/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            result.style.color = 'var(--app-success)';
+            result.textContent = `Sent to ${data.to}.`;
+        } else {
+            result.style.color = 'var(--app-danger)';
+            result.textContent = data.reason || data.detail || 'The test message was not sent.';
+        }
+    } catch (err) {
+        result.style.color = 'var(--app-danger)';
+        result.textContent = 'Network error while sending the test message.';
     }
 }
 
