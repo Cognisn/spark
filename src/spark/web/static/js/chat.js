@@ -176,7 +176,23 @@ function appendMessage(msg) {
         return;
     }
 
+    // A user's message with attachments: its text, then the files as chips
+    if (role === 'user' && window.SparkAttachments) {
+        const attached = SparkAttachments.parse(content);
+        if (attached.files.length) {
+            appendTextMessage(role, attached.text, timestamp);
+            SparkAttachments.decorate(_lastBubble(), attached.files);
+            return;
+        }
+    }
+
     appendTextMessage(role, content, timestamp, msg.model_id || null);
+}
+
+function _lastBubble() {
+    const wrappers = document.querySelectorAll('#chat-messages .chat-message-wrapper');
+    const last = wrappers[wrappers.length - 1];
+    return last ? last.querySelector('.chat-message') : null;
 }
 
 
@@ -731,14 +747,21 @@ function handleSubmit(event) {
     event.preventDefault();
     const input = document.getElementById('chat-input');
     const message = input.value.trim();
-    if (!message) return;
+    const attach = window.SparkAttachments;
+    if (attach && attach.busy()) {
+        appendSystemMessage('Wait for the attachments to finish uploading, then send again.');
+        return;
+    }
+    const files = attach ? attach.take() : [];
+    if (!message && !files.length) return;
 
     clearEmptyState();
     appendTextMessage('user', message, null);
+    if (files.length) attach.decorate(_lastBubble(), files);
     input.value = '';
     scrollToBottom();
 
-    sendMessageWithSSE(conversationId, message);
+    sendMessageWithSSE(conversationId, message, files.map(f => f.id));
 }
 
 // showInfoModal() and showSettingsModal() are defined in the chat template
