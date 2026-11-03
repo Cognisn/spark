@@ -18,6 +18,7 @@ import asyncio
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -409,3 +410,57 @@ class TestWorkerService:
         assert isinstance(started[0]._owners, WardenOwners)
         action = await autonomous_actions.get_action(stack.db, aid, stack.guids["power"])
         assert action is not None and action["next_run_at"] is not None
+
+
+class TestBudgets:
+    """The owner's monthly token budget, decided by their warden roles read at run time (A14)."""
+
+    async def test_every_call_is_billed_to_the_owner(self, stack: Stack, seen: Seen) -> None:
+        from spark.database import usage
+
+        aid = await _action(stack, "power")
+        await _execute(stack, aid, "power")
+        rows = await stack.db.fetch_all(
+            "SELECT user_guid, source, action_id, input_tokens, output_tokens"
+            " FROM usage_tracking ORDER BY id"
+        )
+        owner = stack.guids["power"]
+        assert rows == [
+            {"user_guid": owner, "source": "action", "action_id": aid,
+             "input_tokens": 10, "output_tokens": 5},
+            {"user_guid": owner, "source": "action", "action_id": aid,
+             "input_tokens": 3, "output_tokens": 2},
+        ]  # fmt: skip
+        period = usage.period_of(datetime.now(timezone.utc))
+        assert await usage.tokens_in_period(stack.db, owner, period) == 20
+
+    async def test_an_owner_past_their_roles_budget_is_refused(
+        self, stack: Stack, seen: Seen
+    ) -> None:
+        from spark.database import usage
+
+        owner = stack.guids["power"]
+        await usage.set_role_budget(stack.db, POWER_USER, 100)
+        await usage.record_usage(stack.db, None, "model-a", 100, 0, owner)
+        aid = await _action(stack, "power")
+        await _execute(stack, aid, "power")
+        runs = await _runs(stack, "power", aid)
+        assert [r["status"] for r in runs] == ["refused"]
+        assert "monthly token budget" in runs[0]["error_message"]
+        assert seen.llms == []
+
+    async def test_a_budget_on_a_role_the_owner_does_not_hold_does_not_apply(
+        self, stack: Stack, seen: Seen
+    ) -> None:
+        from spark.database import usage
+
+        owner = stack.guids["power"]
+        await usage.set_role_budget(stack.db, USER, 100)
+        await usage.record_usage(stack.db, None, "model-a", 100, 0, owner)
+        aid = await _action(stack, "power")
+        await _execute(stack, aid, "power")
+        assert [r["status"] for r in await _runs(stack, "power", aid)] == ["completed"]
+
+    async def test_owners_resolve_with_their_roles(self, stack: Stack) -> None:
+        access = await stack.owners.resolve(stack.guids["narrow"])
+        assert access.roles == frozenset({NARROW})

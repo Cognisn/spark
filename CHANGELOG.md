@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Chat turns are metered and budgeted**: every model call a chat turn makes, its tool loop, its sub-agents and its context compaction (with a locked compaction model too) is recorded against the turn's user. A turn checks the user's monthly token budget before anything is stored: at 100% it is refused with a clear message, while a turn already running always finishes, even past the budget. The turn's result carries the user's budget standing for the UI's warning. The per-conversation token counters are unchanged
 - **Debates and panels are metered and budgeted**: the judge's, moderator's, debaters' and panellists' model calls are recorded against the debate's or panel's user. A run or a question in QA is refused at 100% of the user's monthly token budget before anything starts; a run that reaches the budget part-way lets the speaker holding the floor finish, then pauses before the next turn with a `budget_exceeded` event, and resumes once the budget allows
+- **Scheduled actions are metered and budgeted**: every model call of an action's run is recorded against its owner with the action. A run is refused at 100% of the owner's monthly token budget and the refusal is recorded in the action's run history, while a run already started finishes. On a server the worker reads the owner's roles from warden at run time with their permissions, and run now uses the signed-in user's roles
 
 ## [0.3.0a10] - 2026-11-03
 

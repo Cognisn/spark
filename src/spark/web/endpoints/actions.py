@@ -291,17 +291,25 @@ async def run_action_now(request: Request, action_id: int) -> JSONResponse:
     import threading
 
     sync_db = sync_database(request)
-    from spark.identity.access import request_permissions
+    from spark.identity.access import current_identity, request_permissions
 
-    # Run now acts for the signed-in user, with their permissions.
+    # Run now acts for the signed-in user, with their permissions; their roles
+    # decide their token budget.
     permissions = request_permissions(request)
     user_guid = current_user_guid(request)
+    identity = current_identity(request)
+    roles = identity.roles if identity is not None else None
 
     def _run() -> None:
         from spark.scheduler.executor import ActionExecutor
 
         executor = ActionExecutor(
-            ctx, "web-run-now", sync_db, permissions=permissions, user_guid=user_guid
+            ctx,
+            "web-run-now",
+            sync_db,
+            permissions=permissions,
+            user_guid=user_guid,
+            roles=roles,
         )
         executor.execute(action_id)
 
