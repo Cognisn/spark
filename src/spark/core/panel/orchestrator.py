@@ -401,7 +401,11 @@ class PanelOrchestrator:
             pass
         try:
             if self._mcp_manager is not None:
-                names |= {t.get("name", "") for t in (self._mcp_manager._tools_cache or [])}
+                from spark.tools.registry import tool_permissions
+
+                # Only the servers granted to this user (server mode, A12).
+                cached = self._mcp_manager.cached_tools(permissions=tool_permissions(self._config))
+                names |= {t.get("name", "") for t in cached}
         except Exception:  # noqa: BLE001
             pass
         names.discard("")

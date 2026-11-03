@@ -336,8 +336,12 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
     mcp_servers: list[dict] = []
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
     if mcp_mgr:
-        tools_cache = mcp_mgr._tools_cache or []
-        for server_name, client in mcp_mgr.servers.items():
+        from spark.identity.access import request_permissions
+
+        # Only the servers granted to this user (server mode, A12).
+        granted = request_permissions(request)
+        tools_cache = mcp_mgr.cached_tools(permissions=granted)
+        for server_name, client in mcp_mgr.servers_for(granted).items():
             if not client.connected:
                 continue
             server_enabled = await mcp_ops.is_mcp_server_enabled(

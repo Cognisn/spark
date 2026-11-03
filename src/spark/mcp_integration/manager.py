@@ -476,7 +476,9 @@ class MCPManager:
         """Whether a caller with ``permissions`` may use server ``name``."""
         if not _server_mode():
             return True
-        if isinstance(permissions, _Unscoped) or permissions is None:
+        # Only a user's own permissions grant a server: no permissions, or a value
+        # describing the deployment (the registry's ANY_ROLE), grant nothing.
+        if not isinstance(permissions, (set, frozenset, list, tuple)):
             return False
         from spark.mcp_integration.servers import is_granted
 
@@ -608,7 +610,7 @@ class MCPManager:
             elif owners:
                 report("refused", owners[0], refused=True)
                 raise MCPToolRefused(f"MCP server '{owners[0]}' is not available to you")
-            elif _server_mode() and (isinstance(permissions, _Unscoped) or permissions is None):
+            elif _server_mode() and not isinstance(permissions, (set, frozenset, list, tuple)):
                 report("refused", None, refused=True)
                 raise MCPToolRefused(f"MCP tool '{tool_name}' is not available to you")
             else:

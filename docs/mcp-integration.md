@@ -59,9 +59,29 @@ mcp:
       url: https://mcp.example.com/sse
 ```
 
+## Server Mode
+
+A multi-user server (`mode: server`) treats MCP servers as administrator configuration:
+
+- **HTTP and SSE only.** A stdio server runs a command on the host, so a server refuses one wherever it is configured: the instance page, the `/settings/mcp/*` API and the `mcp.servers` instance setting itself. A stdio entry already stored is ignored with a warning in the log, and the other servers are kept.
+- **Instance settings, not `config.yaml`.** The servers are the `mcp.servers` instance setting, edited by an administrator (`spark.settings.instance`) in the **MCP Servers** section of the instance settings page. `config.yaml`'s `mcp` section is ignored on a server, with a warning. A change reconnects the servers whose entry or credentials changed, on every web replica, without a restart.
+- **Names.** Each server name is lower-case letters, digits, `-` and `_` (at most 63 characters), because it is part of the server's permission.
+- **Grants by role.** Each server lists the roles it is granted to. A signed-in user holds the `spark.mcp.<server>` permission while one of their roles is listed, sees only those servers (tool panel, main menu, action tool lists) and the model is offered only their tools; calling any other server's tool is refused. A server granted to no role is offered to no one, administrators included. Requests made with an API key are granted no MCP server. Scheduled actions run by `spark worker` do not use MCP servers in this release.
+- **Credentials.** A bearer token or API key, a basic password and custom headers are written to konfig's secrets store (`mcp_server_<name>_<field>`), never to the database. The page shows only whether each is set; leaving a field empty keeps the stored value. A server's credentials are removed with the server.
+- **Audit.** Every tool call is recorded in the audit trail (`spark.mcp.tool.called`) with the user, conversation, server, tool and outcome (`success`, `error`, `failed`, `unavailable`), and every refusal as `spark.mcp.tool.refused`. Arguments and results are never recorded. Results still reach the model as untrusted content (see [Security](security.md)).
+
+```yaml
+# The mcp.servers instance setting (edited on the instance page; shown for reference)
+- name: search
+  transport: http
+  url: https://mcp.example.com/mcp
+  auth_type: bearer          # the token itself is in the secrets store
+  roles: [user, power_user]
+```
+
 ## Adding a Server via the UI
 
-1. Go to **Settings > Tools > MCP Servers**
+1. Go to **Settings > Tools > MCP Servers** (on a server: the instance settings page)
 2. Click **Add Server**
 3. Fill in the configuration:
    - **Name** -- Unique identifier for the server

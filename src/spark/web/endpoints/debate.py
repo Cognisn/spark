@@ -82,8 +82,11 @@ async def debate_capabilities(request: Request) -> JSONResponse:
 
         mcp_mgr = getattr(request.app.state, "mcp_manager", None)
         if mcp_mgr:
+            from spark.identity.access import request_permissions
+
             by_server: dict[str, list[dict]] = {}
-            for tool in mcp_mgr._tools_cache or []:
+            # Only the servers granted to this user (server mode, A12).
+            for tool in mcp_mgr.cached_tools(permissions=request_permissions(request)):
                 server = tool.get("server", "mcp")
                 by_server.setdefault(server, []).append(
                     {

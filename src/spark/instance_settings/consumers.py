@@ -7,13 +7,19 @@
 * :func:`follow` keeps the providers, the models offered, the embedded tools
   configuration and the tool limits current: every reload or change of the
   :class:`~spark.instance_settings.accessor.ServerSettings` (the listener's, or this
-  replica's own) refreshes them on a worker thread, without a restart.
+  replica's own) refreshes them on a worker thread, without a restart. Given an
+  MCP target, it also reconnects the MCP servers whose ``mcp.servers`` entry or
+  credentials changed (A12).
+* :func:`mcp_server_configs` builds the MCP server configurations from
+  ``mcp.servers`` and the secrets store, never from ``config.yaml``.
 
 Personal mode does not use this module: it keeps reading ``config.yaml``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 from collections.abc import Callable, Iterable, Sequence
@@ -22,16 +28,20 @@ from typing import Any, Protocol
 from spark.instance_settings import registry
 from spark.instance_settings.accessor import SettingsSource
 from spark.instance_settings.registry import Scope
+from spark.mcp_integration import servers as mcp_servers
+from spark.mcp_integration.manager import MCPServerConfig
 
 __all__ = [
     "ConversationTarget",
     "InstanceView",
+    "MCPTarget",
     "ObservableSource",
     "ProviderTarget",
     "SecretResolver",
     "SettingsFollower",
     "embedded_tools_config",
     "follow",
+    "mcp_server_configs",
 ]
 
 logger = logging.getLogger(__name__)
@@ -63,6 +73,32 @@ class ConversationTarget(Protocol):
     def update_embedded_tools_config(self, config: dict[str, Any]) -> None: ...
 
     def update_tool_limits(self, **limits: int) -> None: ...
+
+
+class MCPTarget(Protocol):
+    def apply(self, configs: list[MCPServerConfig]) -> object: ...
+
+
+def mcp_server_configs(
+    source: SettingsSource, secrets: mcp_servers.SecretLookup
+) -> list[MCPServerConfig]:
+    """The MCP servers of ``mcp.servers`` (HTTP and SSE), credentials from the secrets store."""
+    value = source.get("mcp.servers")
+    entries = mcp_servers.stored_entries(value if isinstance(value, list) else [], server=True)
+    return [mcp_servers.to_config(entry, secrets) for entry in entries]
+
+
+def _mcp_snapshot(source: SettingsSource, secrets: mcp_servers.SecretLookup) -> str:
+    """A fingerprint of the MCP servers: their entries and a digest of their credentials."""
+    value = source.get("mcp.servers")
+    entries = value if isinstance(value, list) else []
+    digest = hashlib.sha256()
+    for entry in entries:
+        name = str(entry.get("name", "")) if isinstance(entry, dict) else ""
+        for field in mcp_servers.SECRET_FIELDS:
+            secret = secrets(mcp_servers.secret_name(name, field)) or ""
+            digest.update(json.dumps([name, field, secret]).encode())
+    return json.dumps(entries, sort_keys=True, default=str) + digest.hexdigest()
 
 
 class InstanceView:
@@ -130,6 +166,8 @@ class SettingsFollower:
         llm_manager: ProviderTarget,
         conversation_manager: ConversationTarget | None,
         build_providers: Callable[[InstanceView], Iterable[Any]],
+        mcp: MCPTarget | None = None,
+        mcp_secrets: mcp_servers.SecretLookup | None = None,
     ) -> None:
         self._source = source
         self._secrets = secrets
@@ -138,6 +176,9 @@ class SettingsFollower:
         self._conversations = conversation_manager
         self._build_providers = build_providers
         self._providers_seen = _provider_snapshot(self._view)
+        self._mcp = mcp
+        self._mcp_secrets: mcp_servers.SecretLookup = mcp_secrets or (lambda name: None)
+        self._mcp_seen = _mcp_snapshot(source, self._mcp_secrets) if mcp is not None else ""
         self._lock = threading.Lock()
         self._pending = False
         self._running = False
@@ -185,6 +226,12 @@ class SettingsFollower:
             self._conversations.update_tool_limits(
                 **{arg: int(self._source.get(key)) for arg, key in _LIMITS.items()}
             )
+        if self._mcp is not None:
+            mcp_seen = _mcp_snapshot(self._source, self._mcp_secrets)
+            if mcp_seen != self._mcp_seen:
+                self._mcp.apply(mcp_server_configs(self._source, self._mcp_secrets))
+                self._mcp_seen = mcp_seen
+                logger.info("MCP servers reconnected after a settings change")
 
 
 def follow(
@@ -194,8 +241,14 @@ def follow(
     llm_manager: ProviderTarget,
     conversation_manager: ConversationTarget | None,
     build_providers: Callable[[InstanceView], Iterable[Any]],
+    mcp: MCPTarget | None = None,
+    mcp_secrets: mcp_servers.SecretLookup | None = None,
 ) -> SettingsFollower:
-    """Have the consumers follow ``source`` from now on; the models offered are read live."""
+    """Have the consumers follow ``source`` from now on; the models offered are read live.
+
+    With ``mcp`` (and the secrets-store lookup ``mcp_secrets``), a change to the
+    MCP servers or their credentials is applied to ``mcp``.
+    """
 
     def offered() -> Sequence[str]:
         value = source.get("models.offered")
@@ -208,6 +261,8 @@ def follow(
         llm_manager=llm_manager,
         conversation_manager=conversation_manager,
         build_providers=build_providers,
+        mcp=mcp,
+        mcp_secrets=mcp_secrets,
     )
     source.on_change(follower.changed)
     return follower

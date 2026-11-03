@@ -111,6 +111,14 @@ class TestListing:
         assert await manager.list_all_tools() == []
         assert await manager.list_all_tools(permissions=None) == []
 
+    async def test_server_any_role_grants_nothing(self, server_mode: None) -> None:
+        from spark.tools.registry import ANY_ROLE
+
+        manager = await _manager("search")
+        assert await manager.list_all_tools(permissions=ANY_ROLE) == []  # type: ignore[arg-type]
+        with pytest.raises(MCPToolRefused):
+            await manager.call_tool("search_lookup", {}, permissions=ANY_ROLE)  # type: ignore[arg-type]
+
     async def test_server_lists_nothing_without_a_grant(self, server_mode: None) -> None:
         manager = await _manager("search")
         assert await manager.list_all_tools(permissions=frozenset({"spark.tools.web"})) == []

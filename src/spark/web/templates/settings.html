@@ -88,7 +88,7 @@
                             <i class="bi bi-puzzle"></i>
                             Embedded Tools
                         </a>
-                        {% if page == 'personal' %}
+                        {% if page in ('personal', 'instance') %}
                         <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
                            href="#section-mcp-servers"
                            style="font-size: 0.875rem; color: var(--app-text-secondary);">
@@ -419,7 +419,7 @@
 
             {% endif %}
 
-            {% if page == 'personal' %}
+            {% if page in ('personal', 'instance') %}
             <!-- MCP Servers -->
             <div id="section-mcp-servers" class="mb-4">
                 <div class="app-card">
@@ -431,7 +431,11 @@
                     </div>
                     <div class="card-body">
                         <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-3">
+                            {% if page == 'instance' %}
+                            Connect external tool servers via the Model Context Protocol, over HTTP or SSE. A server is offered only to the roles it is granted to. stdio servers run a command on the host and are not available on a server.
+                            {% else %}
                             Connect external tool servers via the Model Context Protocol. Supports stdio, HTTP, and SSE transports.
+                            {% endif %}
                         </p>
                         <div id="mcp-server-list">
                             <div class="text-center py-3" style="color: var(--app-text-muted); font-size: 0.875rem;">
@@ -460,12 +464,20 @@
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Transport</label>
                                     <select class="form-select" id="mcp-transport" onchange="updateMCPTransportFields()">
-                                        <option value="stdio">Stdio</option>
+                                        {% if page != 'instance' %}<option value="stdio">Stdio</option>{% endif %}
                                         <option value="http">HTTP (Streamable)</option>
                                         <option value="sse">SSE</option>
                                     </select>
                                 </div>
                             </div>
+
+                            {% if page == 'instance' %}
+                            <div class="mb-3">
+                                <label class="form-label">Granted to roles</label>
+                                <div id="mcp-roles" class="d-flex flex-wrap gap-3"></div>
+                                <div class="form-text">Users holding one of these roles see and can call this server's tools. A server granted to no role is offered to no one.</div>
+                            </div>
+                            {% endif %}
 
                             <!-- Stdio fields -->
                             <div id="mcp-stdio-fields">
@@ -940,6 +952,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // -- MCP Server Management --
 
+// The instance page (server mode): HTTP and SSE only, role grants, write-only credentials.
+const MCP_SERVER_MODE = {{ 'true' if page == 'instance' else 'false' }};
+let _mcpRoles = null;
+
+async function _renderMCPRoles(selected) {
+    const box = document.getElementById('mcp-roles');
+    if (!box) return;
+    if (_mcpRoles === null) {
+        try { _mcpRoles = await (await fetch('/settings/mcp/api/roles')).json(); } catch (e) { _mcpRoles = []; }
+    }
+    box.innerHTML = _mcpRoles.map(r => `
+        <div class="form-check">
+            <input class="form-check-input mcp-role" type="checkbox" value="${escapeHtml(r)}" id="mcp-role-${escapeHtml(r)}" ${selected.includes(r) ? 'checked' : ''}>
+            <label class="form-check-label" for="mcp-role-${escapeHtml(r)}">${escapeHtml(r.replace('_', ' '))}</label>
+        </div>`).join('');
+}
+
+function _mcpSecretPlaceholders(set) {
+    if (!MCP_SERVER_MODE) return;
+    const label = on => on ? 'Set (type to replace)' : 'Not set';
+    document.getElementById('mcp-auth-token').placeholder = label(set.auth_token);
+    document.getElementById('mcp-basic-pass').placeholder = label(set.basic_password);
+    document.getElementById('mcp-custom-headers').placeholder = set.custom_headers ? 'Set (type to replace)' : '{"X-Custom": "value"}';
+}
+
 async function loadMCPServers() {
     const container = document.getElementById('mcp-server-list');
     try {
@@ -990,7 +1027,7 @@ function showAddMCPServer() {
     document.getElementById('mcpModalTitle').innerHTML = '<i class="bi bi-hdd-network me-2"></i>Add MCP Server';
     document.getElementById('mcp-name').value = '';
     document.getElementById('mcp-name').readOnly = false;
-    document.getElementById('mcp-transport').value = 'stdio';
+    document.getElementById('mcp-transport').value = MCP_SERVER_MODE ? 'http' : 'stdio';
     document.getElementById('mcp-command').value = '';
     document.getElementById('mcp-args').value = '';
     document.getElementById('mcp-env').value = '';
@@ -1003,6 +1040,8 @@ function showAddMCPServer() {
     document.getElementById('mcp-timeout').value = '30';
     document.getElementById('mcp-ssl-verify').checked = true;
     document.getElementById('mcp-test-result').style.display = 'none';
+    _mcpSecretPlaceholders({});
+    _renderMCPRoles([]);
     updateMCPTransportFields();
     updateMCPAuthFields();
     new bootstrap.Modal(document.getElementById('mcpServerModal')).show();
@@ -1033,6 +1072,8 @@ async function editMCPServer(name) {
         document.getElementById('mcp-timeout').value = config.timeout || 30;
         document.getElementById('mcp-ssl-verify').checked = config.ssl_verify !== false;
         document.getElementById('mcp-test-result').style.display = 'none';
+        _mcpSecretPlaceholders(config.secrets_set || {});
+        _renderMCPRoles(config.roles || []);
         updateMCPTransportFields();
         updateMCPAuthFields();
         new bootstrap.Modal(document.getElementById('mcpServerModal')).show();
@@ -1067,6 +1108,9 @@ function _collectMCPConfig() {
         timeout: parseInt(document.getElementById('mcp-timeout').value) || 30,
         ssl_verify: document.getElementById('mcp-ssl-verify').checked,
     };
+    if (MCP_SERVER_MODE) {
+        data.roles = Array.from(document.querySelectorAll('.mcp-role:checked')).map(el => el.value);
+    }
     if (transport === 'stdio') {
         data.command = document.getElementById('mcp-command').value.trim();
         const argsStr = document.getElementById('mcp-args').value.trim();
