@@ -33,6 +33,12 @@ This directory contains comprehensive documentation for all embedded tools avail
 | `read_pdf` | Extract text from PDF documents |
 | `read_powerpoint` | Extract content from PowerPoint presentations (.pptx) |
 
+### Your Files (attachments)
+| Tool | Description |
+|------|-------------|
+| `list_my_files` | List the files in your own file area, with their ids |
+| `read_my_file` | Read one of your own files by id (attachments and created documents) |
+
 ### Office Documents — Creating (when read_write mode enabled)
 | Tool | Description |
 |------|-------------|
