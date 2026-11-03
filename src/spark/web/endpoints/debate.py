@@ -160,11 +160,23 @@ async def debate_prompt(request: Request) -> JSONResponse:
     message = await resolve_trigger_for_conversation(db, user_guid, cid, message)
 
     orch = _orchestrator(request)
+    from spark.usage import budgets
+    from spark.web.endpoints.usage import refused_response, request_roles
+
+    roles = request_roles(request)
+    if cfg["state"] == "qa":
+        # A question in QA is a new request: refused at 100% of the budget, unstored.
+        standing = await budgets.status_for(db, user_guid, roles)
+        if standing.state == "exceeded":
+            return refused_response(budgets.BudgetExceeded(standing))
     turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)
     if cfg["state"] == "qa":
-        answer = await asyncio.get_running_loop().run_in_executor(
-            None, orch.answer_qa, cid, user_guid, turn_id
-        )
+        try:
+            answer = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: orch.answer_qa(cid, user_guid, turn_id, roles=roles)
+            )
+        except budgets.BudgetExceeded as refused:
+            return refused_response(refused)
         return JSONResponse({"queued": False, "answer": answer})
     return JSONResponse({"queued": True, "turn_id": turn_id})
 
@@ -193,11 +205,16 @@ async def stream_debate(
     orch = _orchestrator(request, status_callback=lambda t, d: events.put((t, d)))
     loop = asyncio.get_running_loop()
 
+    from spark.usage.budgets import BudgetExceeded
+    from spark.web.endpoints.usage import refused_event, request_roles
+
+    roles = request_roles(request)
+
     async def event_generator():
         yield {"event": "stream_start", "data": json.dumps({"stream_id": stream_id})}
         run = loop.run_in_executor(
             None,
-            lambda: orch.run(conversation_id, user_guid, cancel_token=turn_token),
+            lambda: orch.run(conversation_id, user_guid, cancel_token=turn_token, roles=roles),
         )
         try:
             while True:
@@ -213,7 +230,9 @@ async def stream_debate(
                 etype, data = events.get_nowait()
                 yield {"event": etype, "data": json.dumps(data)}
             exc = run.exception()
-            if exc:
+            if isinstance(exc, BudgetExceeded):
+                yield refused_event(exc)
+            elif exc:
                 logger.error("Debate stream failed: %s", exc)
                 yield {"event": "error", "data": json.dumps({"error": str(exc)})}
             elif turn_token.is_cancelled():

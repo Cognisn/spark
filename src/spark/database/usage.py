@@ -41,6 +41,7 @@ __all__ = [
     "tokens_in_period",
     "user_override",
     "user_overrides_all_users",
+    "warden_users_all_users",
 ]
 
 # Where a model call came from.
@@ -236,6 +237,17 @@ async def user_overrides_all_users(db: Executor) -> dict[str, int | None]:
         str(r["user_guid"]): None if r["monthly_tokens"] is None else int(r["monthly_tokens"])
         for r in rows
     }
+
+
+async def warden_users_all_users(db: Executor) -> dict[str, str]:
+    """Every SPARK user guid linked to a warden user, with that user's id.
+
+    Deliberately not scoped by user: the administrator's usage view names each
+    user by email address. Read only: unlike
+    :func:`spark.database.user_identities.user_guid_for`, it never creates a guid.
+    """
+    rows = await db.fetch_all("SELECT user_guid, warden_user_id FROM user_identities")
+    return {str(r["user_guid"]): str(r["warden_user_id"]) for r in rows}
 
 
 async def get_token_usage_in_window(db: Executor, user_guid: str, since: str) -> dict[str, Any]:

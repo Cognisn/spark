@@ -172,3 +172,12 @@ class TestUserOverrides:
     async def test_a_number_must_be_positive(self, db) -> None:
         with pytest.raises(ValueError, match="positive"):
             await usage.set_user_override(db, "u1", 0)
+
+
+class TestWardenUsers:
+    async def test_linked_guids_and_nothing_created(self, db) -> None:
+        from spark.database import user_identities
+
+        await user_identities.link(db, "g1", "w1")
+        assert await usage.warden_users_all_users(db) == {"g1": "w1"}
+        assert await usage.warden_users_all_users(db) == {"g1": "w1"}

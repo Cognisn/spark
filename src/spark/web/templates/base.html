@@ -95,6 +95,12 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/settings"><i class="bi bi-gear me-1"></i> Settings</a>
                     </li>
+                    {% if not request.app.state.identity_attached|default(false) %}
+                    {# Personal mode's usage view; a server lists it in the Account menu by role. #}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/usage"><i class="bi bi-bar-chart me-1"></i> Usage</a>
+                    </li>
+                    {% endif %}
                     {% endblock %}
                     {% set identity_entries = identity_menu(request) %}
                     {% if identity_entries %}

@@ -16,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
 from spark.identity.access import current_user_guid
+from spark.usage.budgets import BudgetExceeded
 from spark.web import interactions
 from spark.web.db import database, sync_database
 
@@ -242,8 +243,12 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             agent_cancel_register=register_agent_cancel,
         )
 
-        # The turn's tools follow the signed-in user's roles (server mode).
+        # The turn's tools follow the signed-in user's roles (server mode), and so
+        # does its token budget.
+        from spark.web.endpoints.usage import refused_event, request_roles
+
         permissions = request_permissions(request)
+        roles = request_roles(request)
         try:
             loop = asyncio.get_event_loop()
             result_future = loop.run_in_executor(
@@ -257,6 +262,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     cancel_token=turn_token,
                     permissions=permissions,
                     callbacks=callbacks,
+                    roles=roles,
                 ),
             )
 
@@ -405,6 +411,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                                 "usage": result.get("usage", {}),
                                 "tool_calls": len(result.get("tool_calls", [])),
                                 "iterations": result.get("iterations", 1),
+                                "budget": result.get("budget"),
                             }
                         ),
                     }
@@ -413,6 +420,10 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     "data": json.dumps({"status": result.get("status", "ok")}),
                 }
 
+            except BudgetExceeded as refused:
+                # Refused at turn start: nothing of the turn was stored or sent.
+                yield refused_event(refused)
+                yield {"event": "complete", "data": json.dumps({"status": "refused"})}
             except Exception as e:
                 logger.error("Streaming error: %s", e)
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}

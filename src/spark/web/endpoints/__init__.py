@@ -25,6 +25,7 @@ from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import router as settings_router
 from spark.web.endpoints.skills import router as skills_router
 from spark.web.endpoints.streaming import router as streaming_router
+from spark.web.endpoints.usage import router as usage_router
 from spark.web.endpoints.voice import router as voice_router
 
 
@@ -52,3 +53,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(mcp_servers_router)
     app.include_router(help_router)
     app.include_router(provider_guides_router)
+    app.include_router(usage_router)

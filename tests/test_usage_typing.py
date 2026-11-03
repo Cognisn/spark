@@ -20,6 +20,6 @@ MODULES = [
 
 
 def test_usage_modules_pass_mypy_strict() -> None:
-    paths = [str(ROOT / m) for m in MODULES if (ROOT / m).exists()]
+    paths = [str(ROOT / m) for m in MODULES]
     stdout, stderr, status = api.run(["--strict", "--no-error-summary", *paths])
     assert status == 0, stdout + stderr
