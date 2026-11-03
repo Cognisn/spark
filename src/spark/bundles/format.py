@@ -19,6 +19,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import stat
+import time
 import uuid
 import zipfile
 from collections.abc import Iterable, Mapping
@@ -377,10 +379,18 @@ class BundleWriter:
     def bundle_id(self) -> str:
         return str(self._manifest["bundle_id"])
 
+    def _put(self, name: str, data: bytes) -> None:
+        # The same entry on every platform: a regular Unix file, mode 0644.
+        info = zipfile.ZipInfo(name, date_time=time.localtime()[:6])
+        info.create_system = 3
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        info.compress_type = zipfile.ZIP_DEFLATED
+        self._zip.writestr(info, data)
+
     def _write(self, name: str, data: bytes) -> None:
         if name in self._members:
             raise ValueError(f"{name} is already written")
-        self._zip.writestr(name, data)
+        self._put(name, data)
         self._members[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
     def add_rows(self, table: str, rows: Iterable[Mapping[str, Any]]) -> int:
@@ -425,7 +435,7 @@ class BundleWriter:
             "counts": dict(self._counts),
             "members": dict(sorted(self._members.items())),
         }
-        self._zip.writestr(MANIFEST, json.dumps(manifest, indent=2, sort_keys=True))
+        self._put(MANIFEST, json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"))
         self._zip.close()
         return manifest
 

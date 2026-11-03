@@ -84,9 +84,11 @@ def _valid_name(name: str) -> bool:
 
 def _regular(info: zipfile.ZipInfo) -> bool:
     mode = info.external_attr >> 16
-    if info.create_system != 3 or mode == 0:
-        return not info.is_dir()
-    return stat.S_ISREG(mode)
+    if info.is_dir():
+        return False
+    # A Unix entry may record permissions and no file type (zipfile.writestr on
+    # Linux and macOS does); only a recorded type other than a regular file refuses.
+    return info.create_system != 3 or stat.S_IFMT(mode) in (0, stat.S_IFREG)
 
 
 class Bundle:

@@ -255,6 +255,37 @@ def test_refuses_a_symbolic_link_member() -> None:
         _open(_rebuild(members, extra_infos=[(info, b"/etc/passwd")]))
 
 
+@pytest.mark.parametrize("kind", [stat.S_IFCHR, stat.S_IFIFO, stat.S_IFDIR | 0o755])
+def test_refuses_another_special_member(kind: int) -> None:
+    members = _members(_bundle())
+    info = zipfile.ZipInfo("skills/note-taker/special")
+    info.create_system = 3
+    info.external_attr = (kind | 0o644) << 16
+    with pytest.raises(BundleRefused, match="not a regular file"):
+        _open(_rebuild(members, extra_infos=[(info, b"x")]))
+
+
+def test_a_unix_member_with_no_file_type_is_read_as_a_regular_file() -> None:
+    # zipfile.writestr on Linux and macOS records 0o600 and no file type.
+    members = _members(_bundle())
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, body in members.items():
+            info = zipfile.ZipInfo(name)
+            info.create_system = 3
+            info.external_attr = 0o600 << 16
+            zf.writestr(info, body)
+    with _open(buf.getvalue()) as bundle:
+        assert bundle.preferences() == {"interface.theme": "light"}
+
+
+def test_every_member_is_written_as_a_regular_unix_file() -> None:
+    with zipfile.ZipFile(io.BytesIO(_bundle())) as zf:
+        for info in zf.infolist():
+            assert info.create_system == 3, info.filename
+            assert info.external_attr >> 16 == stat.S_IFREG | 0o644, info.filename
+
+
 def test_refuses_a_duplicate_member() -> None:
     data = _bundle()
     members = _members(data)
