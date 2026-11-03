@@ -168,6 +168,7 @@ class FakeSmtp:
     silent: bool = False
     received: list[Received] = field(default_factory=list)
     sign_ins: list[SignIn] = field(default_factory=list)
+    greetings: list[str] = field(default_factory=list)
     connections: int = 0
 
     def __post_init__(self) -> None:
@@ -284,7 +285,8 @@ class _Session:
             self.server.security == "starttls" and self.server.advertise_starttls and not self.tls
         )
 
-    def do_EHLO(self, _: str) -> None:
+    def do_EHLO(self, name: str) -> None:
+        self.server.greetings.append(name)
         lines = ["smtp.example.com", "8BITMIME", "AUTH PLAIN LOGIN"]
         if self._offers_starttls():
             lines.append("STARTTLS")
@@ -292,7 +294,8 @@ class _Session:
             self.send("250-" + line)
         self.send("250 " + lines[-1])
 
-    def do_HELO(self, _: str) -> None:
+    def do_HELO(self, name: str) -> None:
+        self.server.greetings.append(name)
         self.send("250 smtp.example.com")
 
     def do_STARTTLS(self, _: str) -> None:

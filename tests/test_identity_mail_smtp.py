@@ -215,6 +215,21 @@ class TestDelivery:
         assert body is not None and LINK in body.get_content()
         assert html is not None and LINK in html.get_content()
 
+    async def test_greets_with_the_sender_s_domain_not_this_machine_s_name(
+        self, certificates: Certificates, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # socket.getfqdn() is a reverse lookup that can stall (macOS) and names this host.
+        def no_lookup(*_: object) -> str:
+            raise AssertionError("socket.getfqdn() was called")
+
+        monkeypatch.setattr(socket, "getfqdn", no_lookup)
+        for security in ("starttls", "implicit"):
+            with FakeSmtp(security, certificates) as server:
+                await _send(
+                    SmtpSender(_smtp(server.port, security), context=certificates.client_context())
+                )
+            assert server.greetings and set(server.greetings) == {"example.com"}
+
     async def test_implicit_tls(self, certificates: Certificates) -> None:
         with FakeSmtp("implicit", certificates) as server:
             await _send(

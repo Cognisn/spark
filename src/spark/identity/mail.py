@@ -268,11 +268,14 @@ def _deliver(
     """Send one message (blocking): TLS as configured, sign in if a username is set."""
     if smtp.tls not in ("starttls", "implicit") and not is_loopback(smtp.host):
         raise SmtpRefused(_PLAIN_REFUSED)
+    # EHLO names the sender's domain: smtplib's default, socket.getfqdn(), names this
+    # machine and is a reverse lookup that can stall.
+    greeting = _domain(smtp.sender_address)
     client: smtplib.SMTP
     if smtp.tls == "implicit":
-        client = smtplib.SMTP_SSL(smtp.host, smtp.port, timeout=timeout, context=context)
+        client = smtplib.SMTP_SSL(smtp.host, smtp.port, greeting, timeout=timeout, context=context)
     else:
-        client = smtplib.SMTP(smtp.host, smtp.port, timeout=timeout)
+        client = smtplib.SMTP(smtp.host, smtp.port, greeting, timeout=timeout)
     with client:
         if smtp.tls == "starttls":
             client.starttls(context=context)
