@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Iterable
 from typing import Any, Callable
 
 from spark.core.agent_executor import AgentExecutor
@@ -28,6 +29,9 @@ from spark.core.panel.tools import (
     validate_exhibits,
 )
 from spark.database import debates
+from spark.usage import budgets
+from spark.usage.budgets import BudgetExceeded
+from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,8 @@ class PanelOrchestrator:
         self._permission_cb = tool_permission_callback
         self._limits = context_limit_resolver
         self._prompt_caching = prompt_caching
+        # The user's roles for the run in hand, which decide their token budget.
+        self._roles: frozenset[str] | None = None
 
     # ------------------------------------------------------------------ events
 
@@ -115,6 +121,35 @@ class PanelOrchestrator:
         agent = cfg["agents"].get(role) or {}
         return agent.get("display_name") or role
 
+    # ------------------------------------------------------------------ usage
+
+    def _service(self, model_id: str, cfg: dict) -> Any:
+        """A service for ``model_id`` whose model calls are billed to the panel's user."""
+        return meter(
+            self._factory(model_id),
+            self._db,
+            user_guid=cfg["user_guid"],
+            source="panel",
+            model_id=model_id,
+            conversation_id=cfg["conversation_id"],
+        )
+
+    def _over_budget(self, cfg: dict) -> bool:
+        """Whether the panel's user has used their monthly token budget.
+
+        Checked as each turn starts (A14): the turn holding the floor always
+        finishes, and the panel pauses before the next one, resumable later.
+        """
+        try:
+            budgets.check(self._db, cfg["user_guid"], self._roles)
+        except BudgetExceeded as refused:
+            self._emit(
+                "budget_exceeded",
+                {"role": "system", "message": str(refused), **refused.status.as_dict()},
+            )
+            return True
+        return False
+
     # ------------------------------------------------------------------ public
 
     def run(
@@ -123,11 +158,16 @@ class PanelOrchestrator:
         user_guid: str,
         *,
         cancel_token: CancellationToken | None = None,
+        roles: Iterable[str] | None = None,
     ) -> None:
         """Drive the panel until QA, cancellation, a failed turn, or a human pause."""
         cfg = self._db.call(debates.get_debate, user_guid, conversation_id)
         if not cfg:
             raise ValueError(f"No panel for conversation {conversation_id}")
+
+        # ``roles`` decide the user's token budget; at 100% nothing starts.
+        self._roles = frozenset(roles) if roles is not None else None
+        budgets.check(self._db, user_guid, self._roles)
 
         self._skills_block = self._compute_skills_block(user_guid)
         self._skills_user_guid = user_guid
@@ -215,9 +255,19 @@ class PanelOrchestrator:
             text,
         )
 
-    def answer_qa(self, conversation_id: int, user_guid: str, question_turn_id: int) -> str:
+    def answer_qa(
+        self,
+        conversation_id: int,
+        user_guid: str,
+        question_turn_id: int,
+        *,
+        roles: Iterable[str] | None = None,
+    ) -> str:
         """Ask the moderator to answer a QA question about the discussion."""
         cfg = self._db.call(debates.get_debate, user_guid, conversation_id)
+        # A QA answer is a new request: refused at 100% of the user's token budget.
+        self._roles = frozenset(roles) if roles is not None else None
+        budgets.check(self._db, user_guid, self._roles)
         self._skills_block = self._compute_skills_block(user_guid)
         turns = self._db.call(debates.get_turns, user_guid, conversation_id)
         exhibits = self._db.call(debates.get_exhibits, user_guid, conversation_id)
@@ -414,8 +464,10 @@ class PanelOrchestrator:
     ) -> dict | None:
         """One moderator model invocation. Returns None on failure (panel pauses)."""
         moderator = cfg["agents"]["moderator"]
+        if self._over_budget(cfg):
+            return None
         try:
-            service = self._factory(moderator["model_id"])
+            service = self._service(moderator["model_id"], cfg)
             service.set_model(moderator["model_id"])
             mod_allowed = moderator.get("allowed_skills")
             if mod_allowed is not None:
@@ -481,6 +533,8 @@ class PanelOrchestrator:
         round_no = cfg["current_round"]
         agent = cfg["agents"][role]
         name = self._display_name(cfg, role)
+        if not agent.get("is_human") and self._over_budget(cfg):
+            return False
         self._emit("panellist_turn_start", {"role": role, "name": name, "round": round_no})
         self._emit("floor", {"role": role})
         try:
@@ -546,7 +600,7 @@ class PanelOrchestrator:
                 turn_config["_skills_allowlist"] = allowed_skills
 
             executor = AgentExecutor(
-                self._factory(agent["model_id"]),
+                self._service(agent["model_id"], cfg),
                 self._db,
                 turn_config,
                 mcp_manager=self._mcp_manager,
