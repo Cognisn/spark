@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **User bundle format, version 1** (`spark.bundles`): one zip archive holding a user's conversations, memories, skills, knowledge graphs, scheduled actions and preferences, as JSON Lines per table plus file contents and skill files, under a manifest with the format version, a bundle id and each member's size and sha256. Only listed tables and columns are ever written, never a user guid or any instance configuration. Opening a bundle refuses one over the size limit, too many members or too large when unpacked, a member expanding too far, a member named outside the layout (absolute or parent paths, backslashes, hidden or device names), a link or encrypted member, a repeated member, another format or format version, a member that does not match the manifest, and anything shaped like a credential. Nothing is extracted to disk
+
 ## [0.3.0a10] - 2026-11-03
 
 ### Added
