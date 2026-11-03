@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Knowledge graph build jobs** (both engines): a new revision adds `kg_build_jobs`, one row per build, owned by its user, with its status (queued, running, complete, failed or cancelled), attempts, progress, result and error. A partial unique index allows one queued or running job per user and scope, so two web replicas cannot both start a build of the same graph. `spark.knowledge.jobs` enqueues, reads, cancels and retries a user's own jobs only; a worker claims the oldest queued job with `FOR UPDATE SKIP LOCKED` on PostgreSQL, so parallel workers never claim one job twice, and records progress and the outcome only while the job is still its own. The downgrade drops the table
+- **Model clients without the web app** (`spark.llm.factory`): builds the enabled providers from a settings source with the web process's rules (Anthropic, AWS Bedrock, Ollama, Google Gemini, xAI), skipping a disabled or keyless provider and logging only the type of one that cannot start, and gives a model's own client (`ModelClients`), so the worker can call models without importing the web server
 
 ## [0.3.0a10] - 2026-11-03
 
