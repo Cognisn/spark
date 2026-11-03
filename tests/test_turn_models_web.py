@@ -154,12 +154,9 @@ class TestModelList:
 
 @pytest.mark.usefixtures("shared")
 class TestGraphBuildModel:
-    def test_each_build_uses_its_users_default_model(
-        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import spark.knowledge.tools as kg_tools
+    def test_each_build_uses_its_users_default_model(self, client: TestClient) -> None:
+        from spark.knowledge import jobs
 
-        monkeypatch.setattr(kg_tools, "_get_embedder", lambda: DirectionalEmbedder())
         app: Any = client.app
         ada, ada_guid = _signed_in(client, ADA)
         grace, grace_guid = _signed_in(client, GRACE)
@@ -167,31 +164,15 @@ class TestGraphBuildModel:
         _prefer(grace, "model-a")
         # A previous turn or setting left the shared manager on another model.
         app.state.llm_manager.set_model(GONE)
-        built: list[str] = []
-        service = ScriptedService(
-            [
-                tool_response(
-                    [{"name": "Tea", "entity_type": "thing", "description": "a drink"}], []
-                )
-                for _ in range(10)
-            ]
-        )
 
-        def factory(model_id: str) -> ScriptedService:
-            built.append(model_id)
-            return service
-
-        monkeypatch.setattr(app.state.conversation_manager, "_get_llm_service_for_model", factory)
-
+        queued: list[str] = []
         for browser, guid in ((ada, ada_guid), (grace, grace_guid)):
             cid = _call(client, conversations.create_conversation, "c", "model-a", guid)
             _call(client, msg_db.add_message, cid, "user", "Tea is a drink", 5, guid)
-            started = browser.post("/knowledge/api/build", json={"scope": "global"})
+            started = browser.post("/knowledge/api/build", json={"scope": f"conv:{cid}"})
             assert started.status_code == 200, started.text
-            for _ in range(100):
-                status = browser.get("/knowledge/api/status").json()
-                if not status["scopes"]["global"]["building"]:
-                    break
-                time.sleep(0.1)
+            # On a server the build is queued for the worker with the model it will use.
+            job = _call(client, jobs.get, guid, started.json()["job_id"])
+            queued.append(job.model_id)
 
-        assert built == ["model-b", "model-a"]
+        assert queued == ["model-b", "model-a"]
