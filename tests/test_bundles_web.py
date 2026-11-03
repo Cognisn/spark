@@ -397,6 +397,40 @@ async def test_the_upload_is_cut_off_while_it_streams() -> None:
     assert within == [b"x" * 1000]
 
 
+def _route_guards(path: str, method: str) -> list[Any]:
+    (route,) = [
+        r
+        for r in bundles_endpoint.router.routes
+        if getattr(r, "path", None) == path and method in getattr(r, "methods", ())
+    ]
+    return [d.dependency for d in route.dependencies]  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "guard"),
+    [
+        ("/bundles/export", "GET", bundles_endpoint.personal_only),
+        ("/admin/bundles", "GET", bundles_endpoint.server_only),
+        ("/admin/bundles", "POST", bundles_endpoint.server_only),
+    ],
+)
+def test_each_route_answers_only_in_its_own_mode(
+    path: str, method: str, guard: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The routes also fail later in the wrong mode (no warden runtime, no local
+    # user); the mode guard is what refuses them first, so it is checked itself.
+    assert guard in _route_guards(path, method)
+    allowed = guard is bundles_endpoint.server_only
+    for server in (True, False):
+        monkeypatch.setattr(bundles_endpoint, "_server", lambda s=server: s)
+        if server is allowed:
+            guard()
+        else:
+            with pytest.raises(bundles_endpoint.HTTPException) as refused:
+                guard()
+            assert refused.value.status_code == 404
+
+
 @pytest.mark.postgres
 def test_a_declared_length_over_the_limit_is_refused_unread(
     server: TestClient, bundle: tuple[bytes, Path], monkeypatch: pytest.MonkeyPatch

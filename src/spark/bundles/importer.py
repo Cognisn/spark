@@ -471,13 +471,8 @@ class _Run:
         names: dict[int, str] = {}
         for row in self.rows("autonomous_actions"):
             name = await self._free_action_name(str(row.get("name") or "Imported action"))
-            values = {
-                **row,
-                "name": name,
-                "is_enabled": 0,
-                "locked_by": None,
-                "locked_at": None,
-            }
+            # Locks never travel: locked_by and locked_at are not bundle columns.
+            values = {**row, "name": name, "is_enabled": 0}
             if await self.insert("autonomous_actions", values) is not None:
                 self.count("autonomous_actions")
                 self.report.actions_disabled.append(name)
