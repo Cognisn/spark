@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Usage per model call and monthly token budgets** (both engines): a new revision gives every `usage_tracking` row the source of its model call (chat, compaction, agent, debate, panel or action), the action it ran for and its period, the UTC calendar month it was recorded in; existing rows take the month of their timestamp. Two new tables hold a monthly token budget per role and an optional per-user override, where an override may also be "unlimited". The usage repository records one row per call, sums a user's tokens for a month, reports usage by month, user and model, and sets and clears budgets. Downgrading removes the tables and columns
+
 ## [0.3.0a10] - 2026-11-03
 
 ### Added
