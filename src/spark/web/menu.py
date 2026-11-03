@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from starlette.requests import Request
 
 from spark.identity.access import current_identity
-from spark.identity.permissions import API_KEYS, AUDIT_READ, USERS_ADMIN
+from spark.identity.permissions import API_KEYS, AUDIT_READ, BUNDLES_IMPORT, USERS_ADMIN
 
 __all__ = ["MenuEntry", "identity_menu"]
 
@@ -33,6 +33,7 @@ _ENTRIES = (
     MenuEntry("/admin/invitations", "bi-envelope-plus", "Invitations", USERS_ADMIN),
     MenuEntry("/admin/api-keys", "bi-key-fill", "All API keys", USERS_ADMIN),
     MenuEntry("/audit", "bi-journal-text", "Audit trail", AUDIT_READ),
+    MenuEntry("/admin/bundles", "bi-box-arrow-in-down", "Import a user bundle", BUNDLES_IMPORT),
 )
 
 

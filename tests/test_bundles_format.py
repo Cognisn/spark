@@ -335,3 +335,11 @@ def test_a_declared_size_that_lies_is_caught_while_reading() -> None:
     with pytest.raises(BundleRefused):
         with _open(data) as bundle:
             list(bundle.rows("messages"))
+
+
+def test_refuses_a_row_with_a_column_the_format_does_not_allow() -> None:
+    members = _members(_bundle())
+    members["data/messages.jsonl"] = b'{"id": 7, "conversation_id": 1, "user_guid": "someone"}\n'
+    with _open(_rebuild(members)) as bundle:
+        with pytest.raises(BundleRefused, match="column"):
+            list(bundle.rows("messages"))

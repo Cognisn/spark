@@ -454,3 +454,46 @@ async def test_vectors_are_searchable_on_postgresql(
     )
     assert [r["content"] for r in rows] == ["Has a shady garden bed"]
     assert await spark_db.fetch_value("SELECT COUNT(*) FROM context_vectors") == 1
+
+
+async def test_only_user_preferences_are_imported(spark_db: Any, store: Any) -> None:
+    from spark.instance_settings import repository
+
+    out = io.BytesIO()
+    with bf.BundleWriter(out, spark_version="x") as writer:
+        writer.set_preferences(
+            {
+                "interface.theme": "light",
+                "files.root": "/srv/elsewhere",
+                "mcp.servers": [{"name": "x", "transport": "stdio"}],
+                "interface.unknown": 1,
+            }
+        )
+    report = await _import(spark_db, out.getvalue(), _target(store))
+    assert await repository.load_preferences(spark_db, TARGET) == {"interface.theme": "light"}
+    assert sorted(report.dropped) == [
+        "setting files.root (not a user preference)",
+        "setting interface.unknown (not a user preference)",
+        "setting mcp.servers (not a user preference)",
+    ]
+    stored = await spark_db.fetch_value("SELECT COUNT(*) FROM instance_settings")
+    assert stored == 0
+
+
+async def test_a_concurrent_second_import_is_refused_by_the_receipt_claim(
+    spark_db: Any, exported: tuple[bytes, Seeded], store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from spark.bundles import importer
+
+    data, _ = exported
+    await _import(spark_db, data, _target(store))
+    files_before = sorted(f.key for f in store.list(TARGET))
+
+    async def not_yet(*args: Any) -> None:
+        return None  # as a second import that checked before the first committed
+
+    monkeypatch.setattr(importer.files_db, "get_user_file_by_key", not_yet)
+    with pytest.raises(ImportRefused, match="already imported"):
+        await _import(spark_db, data, _target(store))
+    assert await _count(spark_db, "conversations") == 2
+    assert sorted(f.key for f in store.list(TARGET)) == files_before

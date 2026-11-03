@@ -53,7 +53,14 @@ from spark.instance_settings import registry, repository
 from spark.mode import Dialect
 from spark.tools.registry import LOCAL_ONLY_CATEGORIES, TOOL_CATEGORIES, tool_category
 
-__all__ = ["ImportRefused", "ImportReport", "ImportTarget", "import_bundle"]
+__all__ = [
+    "AlreadyImported",
+    "ImportRefused",
+    "ImportReport",
+    "ImportTarget",
+    "OverQuota",
+    "import_bundle",
+]
 
 Within = Callable[[Connection, "ImportReport"], Awaitable[None]]
 
@@ -97,6 +104,14 @@ _RECEIPT = "report.json"
 
 class ImportRefused(Exception):
     """The import changed nothing; the message says why."""
+
+
+class AlreadyImported(ImportRefused):
+    """This bundle was already imported for this user."""
+
+
+class OverQuota(ImportRefused):
+    """The bundle's files would take the user over their storage quota."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -588,7 +603,7 @@ async def _record_files(run: _Run, files: _Files, target: ImportTarget) -> None:
             run.conn, run.user, new_files, quota_bytes=target.quota_bytes
         )
     except files_db.QuotaExceeded as exc:
-        raise ImportRefused(
+        raise OverQuota(
             "the bundle's files would take the user over their storage quota "
             f"({exc.used + exc.requested} of {exc.quota} bytes)"
         ) from None
@@ -632,7 +647,7 @@ async def import_bundle(
     )
     receipt_key = f"imports/{bundle.bundle_id}/{_RECEIPT}"
     if await files_db.get_user_file_by_key(db, target.user_guid, receipt_key) is not None:
-        raise ImportRefused("this bundle was already imported for this user")
+        raise AlreadyImported("this bundle was already imported for this user")
     files = _Files(prefix=f"imports/{bundle.bundle_id}/{uuid.uuid4().hex[:12]}")
     try:
         await _write_files(bundle, target, files)
@@ -645,7 +660,7 @@ async def import_bundle(
                 (target.user_guid, receipt_key, _RECEIPT),
             )
             if claimed is None:
-                raise ImportRefused("this bundle was already imported for this user")
+                raise AlreadyImported("this bundle was already imported for this user")
             run = _Run(conn, bundle, target, report)
             await run.plain("conversations")
             await run.messages()

@@ -540,6 +540,7 @@ async def personal_bundle(template: Path, tmp: Path) -> tuple[bytes, Seeded, Pat
     from spark.files.store import MountedVolumeStore
     from spark.mode import DatabaseSettings, Dialect
 
+    tmp.mkdir(parents=True, exist_ok=True)
     path = tmp / "source.db"
     shutil.copy(template, path)
     store = MountedVolumeStore(tmp / "source-files")

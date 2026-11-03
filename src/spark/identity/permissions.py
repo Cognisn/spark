@@ -46,6 +46,7 @@ USERS_ADMIN = "spark.users.admin"
 AUDIT_READ = "spark.audit.read"
 AUDIT_EXPORT = "spark.audit.export"
 API_KEYS = "spark.api_keys"
+BUNDLES_IMPORT = "spark.bundles.import"
 
 _TOOL_PERMISSIONS: dict[str, str] = {
     permission_name(category): f"Use the {category.replace('_', ' ')} tools"
@@ -63,6 +64,7 @@ PERMISSIONS: Mapping[str, str] = {
     AUDIT_READ: "Read the audit trail",
     AUDIT_EXPORT: "Export the audit trail",
     API_KEYS: "Manage one's own API keys",
+    BUNDLES_IMPORT: "Import a personal user bundle for a user",
 }
 
 

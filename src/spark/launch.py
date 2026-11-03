@@ -7,7 +7,9 @@
 * ``spark migrate`` brings the database to the current schema (SPARK's
   migration chain, then any registered chain) and exits;
 * ``spark identity create-admin --email EMAIL`` creates the first
-  administrator of a server (warden) and exits.
+  administrator of a server (warden) and exits;
+* ``spark export [--output PATH]`` writes the personal user's bundle (personal
+  mode only) and exits.
 """
 
 from __future__ import annotations
@@ -15,7 +17,10 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
-_USAGE = "usage: spark [web | worker | migrate | identity create-admin --email EMAIL]"
+_USAGE = (
+    "usage: spark [web | worker | migrate | identity create-admin --email EMAIL"
+    " | export [--output PATH]]"
+)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -34,6 +39,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(application.run_migrate())
     if args and args[0] == "identity":
         raise SystemExit(application.run_identity(args[1:]))
+    if args and args[0] == "export":
+        from spark.bundles import cli
+
+        raise SystemExit(cli.run_export(args[1:]))
     print(f"spark: unknown command {' '.join(args)!r}\n{_USAGE}", file=sys.stderr)
     raise SystemExit(2)
 

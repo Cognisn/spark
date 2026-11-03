@@ -109,6 +109,7 @@ TOOL_REFUSED: Final = "spark.tool.refused"
 FILE_DOWNLOADED: Final = "spark.file.downloaded"
 EXPORT_DOWNLOADED: Final = "spark.export.downloaded"
 ACTION_REFUSED: Final = "spark.action.refused"
+BUNDLE_IMPORTED: Final = "spark.bundle.imported"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +140,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     EXPORT_DOWNLOADED: ActionDef(Severity.INFO, "{actor} exported {resource_type} {resource_id}"),
     ACTION_REFUSED: ActionDef(
         Severity.WARNING, "scheduled action {resource_id} of {actor} refused"
+    ),
+    BUNDLE_IMPORTED: ActionDef(
+        Severity.NOTICE, "{actor} imported a user bundle for user {resource_id}: {outcome}"
     ),
 }
 

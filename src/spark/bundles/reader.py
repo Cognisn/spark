@@ -38,7 +38,7 @@ from typing import IO, Any
 from spark.bundles import format as bf
 from spark.bundles import secrets
 
-__all__ = ["Bundle", "BundleRefused", "Limits", "open_bundle"]
+__all__ = ["Bundle", "BundleRefused", "BundleTooLarge", "Limits", "open_bundle"]
 
 _MB = 1 << 20
 _DATA = re.compile(r"^data/([a-z_]+)\.jsonl$")
@@ -52,6 +52,10 @@ _RATIO_FLOOR = _MB
 
 class BundleRefused(Exception):
     """The bundle is not imported; the message says why (and never quotes content)."""
+
+
+class BundleTooLarge(BundleRefused):
+    """The bundle is over one of the size limits."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,7 +184,7 @@ def _size_of(source: IO[bytes]) -> int:
 
 def _check_infos(infos: list[zipfile.ZipInfo], limits: Limits) -> None:
     if len(infos) > limits.max_members:
-        raise BundleRefused(f"the bundle has more than {limits.max_members} members")
+        raise BundleTooLarge(f"the bundle has more than {limits.max_members} members")
     seen: set[str] = set()
     total = 0
     for info in infos:
@@ -196,13 +200,13 @@ def _check_infos(infos: list[zipfile.ZipInfo], limits: Limits) -> None:
             raise BundleRefused(f"the bundle member {name} is not a regular file")
         total += info.file_size
         if total > limits.max_unpacked_bytes:
-            raise BundleRefused(
+            raise BundleTooLarge(
                 f"the bundle's unpacked size exceeds {_amount(limits.max_unpacked_bytes)}"
             )
         if info.file_size > _RATIO_FLOOR and info.file_size > limits.max_ratio * max(
             info.compress_size, 1
         ):
-            raise BundleRefused(f"the bundle member {name} exceeds the compression limit")
+            raise BundleTooLarge(f"the bundle member {name} exceeds the compression limit")
 
 
 def _manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
@@ -297,7 +301,7 @@ def open_bundle(source: IO[bytes] | Path, limits: Limits) -> Bundle:
     """Open and check a bundle (see the module docstring); raises :class:`BundleRefused`."""
     size = source.stat().st_size if isinstance(source, Path) else _size_of(source)
     if size > limits.max_bundle_bytes:
-        raise BundleRefused(
+        raise BundleTooLarge(
             f"the bundle is larger than {_amount(limits.max_bundle_bytes)}, the import limit"
         )
     try:
