@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Knowledge graph build jobs** (both engines): a new revision adds `kg_build_jobs`, one row per build, owned by its user, with its status (queued, running, complete, failed or cancelled), attempts, progress, result and error. A partial unique index allows one queued or running job per user and scope, so two web replicas cannot both start a build of the same graph. `spark.knowledge.jobs` enqueues, reads, cancels and retries a user's own jobs only; a worker claims the oldest queued job with `FOR UPDATE SKIP LOCKED` on PostgreSQL, so parallel workers never claim one job twice, and records progress and the outcome only while the job is still its own. The downgrade drops the table
+
 ## [0.3.0a10] - 2026-11-03
 
 ### Added

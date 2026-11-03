@@ -31,7 +31,8 @@ def test_revision_follows_user_identities() -> None:
     script = migrate._scripts().get_revision(REVISION)
     assert script is not None
     assert script.down_revision == PREVIOUS
-    assert migrate.head() == REVISION
+    # Later revisions sit above it on the one chain (the integration session re-chains).
+    assert REVISION in {s.revision for s in migrate._scripts().walk_revisions()}
 
 
 @contextmanager
@@ -109,7 +110,7 @@ class TestSqlite:
         _sqlite_insert(path, "nightly", "grace")
 
     def test_downgrade_refuses_a_shared_name(self, settings: DatabaseSettings) -> None:
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         path = settings.sqlite_path
         assert path is not None
         _sqlite_insert(path, "nightly", "ada")
@@ -161,7 +162,7 @@ class TestPostgres:
 
     def test_downgrade_refuses_a_shared_name(self, pg_url: str) -> None:
         settings = DatabaseSettings(Dialect.POSTGRESQL, url=pg_url)
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         _pg_insert(pg_url, "nightly", "ada")
         _pg_insert(pg_url, "nightly", "grace")
         with pytest.raises(Exception, match="more than one user"):
