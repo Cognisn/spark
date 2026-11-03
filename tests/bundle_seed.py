@@ -518,3 +518,49 @@ async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seede
         db, "daemon_registry", daemon_id="daemon-1", hostname="host.example.com", user_guid=user
     )
     return s
+
+
+PERSONAL_USER = "personal-user-guid"
+SOURCE_MCP = [
+    {"name": "local-notes", "transport": "stdio"},
+    {"name": "remote-search", "transport": "http"},
+]
+
+
+async def personal_bundle(template: Path, tmp: Path) -> tuple[bytes, Seeded, Path]:
+    """A seeded personal SQLite database (copied from ``template``), exported as a bundle.
+
+    Returns the bundle, what was seeded, and the source database's path.
+    """
+    import io
+    import shutil
+
+    from spark.bundles.exporter import ExportSources, export_bundle
+    from spark.db import Database
+    from spark.files.store import MountedVolumeStore
+    from spark.mode import DatabaseSettings, Dialect
+
+    path = tmp / "source.db"
+    shutil.copy(template, path)
+    store = MountedVolumeStore(tmp / "source-files")
+    skills = tmp / "source-skills"
+    write_skill(skills)
+    db = await Database.open(DatabaseSettings(Dialect.SQLITE, sqlite_path=path))
+    try:
+        seeded = await seed(db, PERSONAL_USER, store)
+        out = io.BytesIO()
+        await export_bundle(
+            db,
+            PERSONAL_USER,
+            out,
+            ExportSources(
+                files=store,
+                skills_dir=skills,
+                preferences={"interface.theme": "light", "default_model.model_id": "model-alpha"},
+                mcp_servers=SOURCE_MCP,
+            ),
+            spark_version="0.3.0a10",
+        )
+    finally:
+        await db.close()
+    return out.getvalue(), seeded, path
