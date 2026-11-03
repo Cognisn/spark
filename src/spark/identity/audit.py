@@ -96,6 +96,9 @@ __all__ = [
     "register_actions",
     "scrub",
     "submit",
+    "USAGE_REFUSED",
+    "USAGE_VIEWED",
+    "USAGE_BUDGET_CHANGED",
 ]
 
 logger = logging.getLogger(__name__)
@@ -109,6 +112,9 @@ TOOL_REFUSED: Final = "spark.tool.refused"
 FILE_DOWNLOADED: Final = "spark.file.downloaded"
 EXPORT_DOWNLOADED: Final = "spark.export.downloaded"
 ACTION_REFUSED: Final = "spark.action.refused"
+USAGE_REFUSED: Final = "spark.usage.refused"
+USAGE_VIEWED: Final = "spark.usage.viewed"
+USAGE_BUDGET_CHANGED: Final = "spark.usage.budget_changed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +145,13 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     EXPORT_DOWNLOADED: ActionDef(Severity.INFO, "{actor} exported {resource_type} {resource_id}"),
     ACTION_REFUSED: ActionDef(
         Severity.WARNING, "scheduled action {resource_id} of {actor} refused"
+    ),
+    USAGE_REFUSED: ActionDef(
+        Severity.NOTICE, "request of {actor} refused: monthly token budget {resource_id} used"
+    ),
+    USAGE_VIEWED: ActionDef(Severity.INFO, "{actor} viewed usage {resource_id}"),
+    USAGE_BUDGET_CHANGED: ActionDef(
+        Severity.NOTICE, "{actor} changed the {resource_type} token budget {resource_id}"
     ),
 }
 
