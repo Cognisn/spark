@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **The non-streaming send route follows the signed-in user's role** (server mode): `/chat/<id>/api/send` passes the user's permissions to the turn, as the streaming route does, so its tools follow the user's roles instead of being refused
+- **Documentation**: the API reference gives the `attachments` parameter of both send routes and the note the model receives, and the architecture guide describes the attach flow and the two file tools
 
 ## [0.3.0a10] - 2026-11-03
 
