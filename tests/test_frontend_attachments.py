@@ -196,9 +196,7 @@ class TestUnderNode:
         assert plain == {"text": "plain words", "files": []}
         assert trailing["files"] == [] and quoted["files"] == []
 
-    def test_chip_names_are_escaped_and_link_to_the_download(
-        self, results: dict[str, Any]
-    ) -> None:
+    def test_chip_names_are_escaped_and_link_to_the_download(self, results: dict[str, Any]) -> None:
         chips = results["chips"]
         assert "<img" not in chips
         assert "&lt;img src=x onerror=alert(1)&gt;.txt" in chips
