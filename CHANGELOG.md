@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Server start-up as a restricted database role**: web and worker check the schema at start-up without running `CREATE SCHEMA IF NOT EXISTS spark`, which PostgreSQL refuses to a role without `CREATE` on the database even when the schema exists. Only `spark migrate` creates the schema, so web and worker can connect as login roles that own nothing and hold no `CREATE` on the database; an empty database is refused with "run `spark migrate`" as before. Personal mode is unchanged
+
 ## [0.3.0a20] - 2026-11-04
 
 ### Added
