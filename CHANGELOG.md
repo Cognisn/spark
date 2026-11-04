@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a19] - 2026-11-04
+
 ### Added
 - **Live end-to-end suite for rc1** (`tests/live`, `deploy/live`): the A18 checklist run against the Compose stack in server mode, marked `integration` and skipped unless `SPARK_LIVE_STACK` names a prepared stack, so CI and a plain `pytest` never run it. `deploy/live/stack.py` layers an overlay on `deploy/compose.yaml` with a second web replica, a standby worker, mock-oauth2-server and Mailpit behind a throwaway CA, and a scripted model server, writes the CA, certificates, `-dev-only` credentials and konfig key into a sandbox outside the repository, starts the stack and creates the first administrator with `spark identity create-admin`. The checks cover single sign-on, invitations and password resets mailed and completed from the link, a tool category a User may not have, the budget stop with the turn in flight finishing, a personal bundle exported and imported for a user, an untrusted tool result withheld, a chat attachment kept to its owner, a knowledge-graph build on the worker, worker failover, and a provider key saved on one replica used by the other without a restart. One live chat runs only when `SPARK_LIVE_PROVIDER` names the provider whose key the operator stored with `stack.py secret`
 
