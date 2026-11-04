@@ -9,8 +9,9 @@ Spark ships one container image with two roles, plus a migration command:
 | `spark migrate` | Brings the database to the current schema, then exits. |
 
 The image is meant for **server mode** (PostgreSQL). This page covers building
-the image, the roles, the Compose file in `deploy/` and upgrades. A full server
-deployment guide (identity, TLS, backups) follows in a later 0.3.0 build.
+the image, the roles, the Compose file in `deploy/` and upgrades. The
+[server deployment guide](deployment/index.md) covers identity, TLS, database
+roles, backups and moving from personal mode.
 
 ## Build
 
