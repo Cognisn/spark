@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **On/off settings from the environment**: konfig gives a `SPARK__` override as the string it was set to, so `SPARK__INTERFACE__BROWSER_HEARTBEAT__ENABLED=false` (set by the container image) read as on, and each web container stopped itself about every two minutes when no browser sent a heartbeat. Every on/off setting read from konfig now goes through one accessor (`spark.settings_values.setting_bool`) that takes `true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off` in any case and refuses anything else, naming the setting: the browser heartbeat and auto-open, TLS, the LLM providers, autonomous actions and the daemon, prompt inspection, prompt caching, the voice cache, the email tool's TLS, and the switches shown on the settings and main menu pages
+- **No browser heartbeat on a server**: the heartbeat monitor never starts in server mode, whatever `interface.browser_heartbeat.enabled` says
+- **Live end-to-end overlay**: drops the day-long heartbeat interval it set to keep the web replicas running
+
 ## [0.3.0a21] - 2026-11-05
 
 ### Added

@@ -25,6 +25,7 @@ from spark.db import Database, SyncDatabase
 from spark.instance_settings import consumers
 from spark.mcp_integration import access as mcp_access
 from spark.mode import DatabaseSettings
+from spark.settings_values import setting_bool
 from spark.web.auth import AuthManager, GatingAuthenticator, LoginPolicy, PersonalAuthenticator
 from spark.web.security import OriginPolicy, RequestGuardMiddleware
 from spark.web.session import SessionManager
@@ -90,7 +91,7 @@ def _initial_origin_policy(ctx: Any) -> OriginPolicy:
     """
     port = ctx.settings.get("interface.port", 0)
     if isinstance(port, (int, str)) and str(port).isdigit() and int(port) > 0:
-        scheme = "https" if ctx.settings.get("interface.ssl.enabled", False) else "http"
+        scheme = "https" if setting_bool(ctx.settings, "interface.ssl.enabled", False) else "http"
         host = str(ctx.settings.get("interface.host", "127.0.0.1"))
         return OriginPolicy.for_instance(scheme, host, int(port), _extra_origins(ctx))
     return OriginPolicy.same_host(_extra_origins(ctx))
@@ -315,7 +316,7 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
 
     templates.env.globals["identity_menu"] = identity_menu
     templates.env.globals["actions_enabled"] = lambda: (
-        bool(app.state.ctx.settings.get("autonomous_actions.enabled", False))
+        setting_bool(app.state.ctx.settings, "autonomous_actions.enabled", False)
         if hasattr(app.state, "ctx") and app.state.ctx
         else False
     )
@@ -384,14 +385,10 @@ def _resolve_port(ctx: Any, host: str = "127.0.0.1") -> int:
 def _should_open_browser(ctx: Any) -> bool:
     """Whether to auto-open the browser at startup (default: yes).
 
-    Read as a raw value rather than cast=bool: an env override
-    (SPARK__INTERFACE__OPEN_BROWSER=false) arrives as the string "false", which
-    bool() would wrongly treat as truthy.
+    Read through :func:`setting_bool`: an environment override
+    (SPARK__INTERFACE__OPEN_BROWSER=false) arrives as the string "false".
     """
-    value = ctx.settings.get("interface.open_browser", True)
-    if isinstance(value, str):
-        return value.strip().lower() not in ("false", "0", "no", "off", "")
-    return bool(value)
+    return setting_bool(ctx.settings, "interface.open_browser", True)
 
 
 def _resolve_secret(ctx: AppContext, value: str | None) -> str:
@@ -427,7 +424,7 @@ def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
     providers: list[Any] = []
 
     # Anthropic Direct
-    if settings.get("providers.anthropic.enabled"):
+    if setting_bool(settings, "providers.anthropic.enabled", False):
         try:
             from spark.llm.anthropic_direct import AnthropicDirectProvider
 
@@ -439,7 +436,7 @@ def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
             logger.warning("Failed to init Anthropic provider: %s", e)
 
     # AWS Bedrock
-    if settings.get("providers.aws_bedrock.enabled"):
+    if setting_bool(settings, "providers.aws_bedrock.enabled", False):
         try:
             from spark.llm.bedrock import BedrockProvider
 
@@ -471,7 +468,7 @@ def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
             logger.warning("Failed to init AWS Bedrock provider: %s", e)
 
     # Ollama
-    if settings.get("providers.ollama.enabled"):
+    if setting_bool(settings, "providers.ollama.enabled", False):
         try:
             from spark.llm.ollama import OllamaProvider
 
@@ -482,7 +479,7 @@ def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
             logger.warning("Failed to init Ollama provider: %s", e)
 
     # Google Gemini
-    if settings.get("providers.google_gemini.enabled"):
+    if setting_bool(settings, "providers.google_gemini.enabled", False):
         try:
             from spark.llm.google_gemini import GoogleGeminiProvider
 
@@ -494,7 +491,7 @@ def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
             logger.warning("Failed to init Google Gemini provider: %s", e)
 
     # X.AI
-    if settings.get("providers.xai.enabled"):
+    if setting_bool(settings, "providers.xai.enabled", False):
         try:
             from spark.llm.xai import XAIProvider
 
@@ -569,7 +566,10 @@ def _start_daemon_if_enabled(ctx: AppContext, status: dict[str, Any]) -> None:
 
     if mode.is_server():
         return
-    if not (ctx.settings.get("autonomous_actions.enabled") and ctx.settings.get("daemon.enabled")):
+    if not (
+        setting_bool(ctx.settings, "autonomous_actions.enabled", False)
+        and setting_bool(ctx.settings, "daemon.enabled", False)
+    ):
         return
     status["stage"] = "Starting autonomous action daemon..."
     try:
@@ -734,7 +734,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                             cat_config[key] = _resolve_secret(ctx, val)
 
             # Pass prompt inspection settings into the config (server mode: already there)
-            if not instance and ctx.settings.get("prompt_inspection.enabled"):
+            if not instance and setting_bool(ctx.settings, "prompt_inspection.enabled", False):
                 embedded_tools_config["_prompt_inspection_enabled"] = True
                 embedded_tools_config["_prompt_inspection_level"] = ctx.settings.get(
                     "prompt_inspection.level", "standard"
@@ -797,10 +797,10 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 # Personal mode's local user; a server's turns always name their user.
                 user_guid=app.state.user_guid or "default",
                 mcp_loop=getattr(app.state, "_mcp_loop", None),
-                prompt_caching=bool(
-                    instance.view.get("conversation.prompt_caching", True)
-                    if instance
-                    else ctx.settings.get("conversation.prompt_caching", True)
+                prompt_caching=setting_bool(
+                    instance.view if instance else ctx.settings,
+                    "conversation.prompt_caching",
+                    True,
                 ),
             )
             if instance:
@@ -851,16 +851,10 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             except Exception as e:
                 logger.debug("Update check failed (non-fatal): %s", e)
 
-            # Step 7: Start heartbeat monitor
-            hb_enabled = ctx.settings.get("interface.browser_heartbeat.enabled", True)
-            if hb_enabled:
-                hb_interval = int(
-                    ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30) or 30
-                )
-                hb_misses = int(
-                    ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3) or 3
-                )
-                _start_heartbeat_monitor(app, hb_interval, hb_misses)
+            # Step 7: Start heartbeat monitor (personal mode only)
+            heartbeat = _heartbeat_config(ctx)
+            if heartbeat is not None:
+                _start_heartbeat_monitor(app, *heartbeat)
 
         except Exception as e:
             logger.error("Background init failed: %s", e)
@@ -869,6 +863,30 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
 
     thread = threading.Thread(target=_init, daemon=True)
     thread.start()
+
+
+def _heartbeat_config(ctx: Any) -> tuple[int, int] | None:
+    """The browser heartbeat's (interval in seconds, missed beats allowed), or None.
+
+    The heartbeat stops the process when the browser that opened it goes away,
+    which only makes sense for a personal instance. A server never runs it,
+    whatever ``interface.browser_heartbeat.enabled`` says: no browser belongs
+    to the process, so it would stop itself every few minutes. A process that
+    never configured its mode (a test, a script) is personal.
+    """
+    from spark import mode
+
+    try:
+        server = mode.is_server()
+    except RuntimeError:
+        server = False
+    if server:
+        return None
+    if not setting_bool(ctx.settings, "interface.browser_heartbeat.enabled", True):
+        return None
+    interval = int(ctx.settings.get("interface.browser_heartbeat.interval_seconds", 30) or 30)
+    misses = int(ctx.settings.get("interface.browser_heartbeat.miss_threshold", 3) or 3)
+    return interval, misses
 
 
 def _start_heartbeat_monitor(app: FastAPI, interval: int, max_misses: int) -> None:
@@ -917,7 +935,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
 
     host = ctx.settings.get("interface.host", "127.0.0.1")
     port = _resolve_port(ctx, host)
-    ssl_enabled = ctx.settings.get("interface.ssl.enabled", False)
+    ssl_enabled = setting_bool(ctx.settings, "interface.ssl.enabled", False)
 
     scheme = "https" if ssl_enabled else "http"
     url = f"{scheme}://{host}:{port}"
@@ -967,7 +985,7 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
     if ssl_enabled:
         cert_file = ctx.settings.get("interface.ssl.cert_file")
         key_file = ctx.settings.get("interface.ssl.key_file")
-        auto_generate = ctx.settings.get("interface.ssl.auto_generate", False)
+        auto_generate = setting_bool(ctx.settings, "interface.ssl.auto_generate", False)
 
         if cert_file and key_file:
             ssl_kwargs["ssl_certfile"] = cert_file

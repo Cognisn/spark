@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.responses import Response
 
 from spark.identity.access import current_user_guid
+from spark.settings_values import setting_bool
 
 router = APIRouter()
 
@@ -329,7 +330,7 @@ def _get_provider_summary(ctx: object, llm_manager: Any | None) -> list[dict]:
 
     providers = []
     for key, meta in provider_map.items():
-        enabled = bool(settings.get(f"providers.{key}.enabled", False))
+        enabled = setting_bool(settings, f"providers.{key}.enabled", False)
         display_name = key_to_display[key]
         count = model_counts.get(display_name, 0)
         providers.append(
@@ -364,7 +365,7 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
     config: dict[str, Any] = {"embedded_tools": {}}
     for cat in categories:
         cat_config: dict[str, Any] = {
-            "enabled": bool(settings.get(f"embedded_tools.{cat['key']}.enabled", True)),
+            "enabled": setting_bool(settings, f"embedded_tools.{cat['key']}.enabled", True),
             "mode": (
                 settings.get(f"embedded_tools.{cat['key']}.mode", "read")
                 if cat["has_mode"]
@@ -397,7 +398,7 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
 
     tools = []
     for cat in categories:
-        enabled = bool(settings.get(f"embedded_tools.{cat['key']}.enabled", True))
+        enabled = setting_bool(settings, f"embedded_tools.{cat['key']}.enabled", True)
         mode = settings.get(f"embedded_tools.{cat['key']}.mode", None) if cat["has_mode"] else None
         # Count active tools for this category
         active_count = sum(

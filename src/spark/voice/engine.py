@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from spark.database import voice_usage
+from spark.settings_values import setting_bool
 from spark.voice.cache import AudioCache
 from spark.voice.elevenlabs import DEFAULT_MODEL, ElevenLabsClient
 from spark.voice.errors import VoiceUnavailable
@@ -54,7 +55,7 @@ def load_config(ctx: Any) -> VoiceConfig:
             monthly_character_cap=int(
                 settings.get("voice.elevenlabs.monthly_character_cap", 0, cast=int) or 0
             ),
-            cache_enabled=bool(settings.get("voice.elevenlabs.cache_enabled", True, cast=bool)),
+            cache_enabled=setting_bool(settings, "voice.elevenlabs.cache_enabled", True),
             cache_max_mb=int(settings.get("voice.elevenlabs.cache_max_mb", 200, cast=int) or 200),
             interaction_mode=mode if mode in VALID_MODES else "listen_along",
         )

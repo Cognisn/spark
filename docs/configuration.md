@@ -37,6 +37,8 @@ export SPARK__LOGGING__LEVEL=DEBUG
 export SPARK__INTERFACE__HOST=0.0.0.0
 ```
 
+An on/off setting accepts `true` or `false`, `1` or `0`, `yes` or `no`, and `on` or `off`, in any case (for example `SPARK__INTERFACE__OPEN_BROWSER=false`). Any other value is refused with an error naming the setting.
+
 ## Secrets Management
 
 API keys and passwords can be stored securely using `secret://` URIs in the config file. The konfig secrets backend uses the OS keychain:
@@ -117,7 +119,7 @@ interface:
     miss_threshold: 3            # Shutdown after N missed heartbeats
 ```
 
-The port is randomly chosen on each startup. The browser heartbeat monitor shuts down the server when no browser tabs are connected (after `miss_threshold` consecutive missed heartbeats at `interval_seconds` intervals).
+The port is randomly chosen on each startup. In personal mode the browser heartbeat monitor shuts down the server when no browser tabs are connected (after `miss_threshold` consecutive missed heartbeats at `interval_seconds` intervals). A server never runs it, whatever `browser_heartbeat.enabled` says.
 
 #### Sign-in and request checks
 

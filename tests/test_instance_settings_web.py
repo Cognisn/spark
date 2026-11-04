@@ -176,7 +176,11 @@ class TestPersonalPage:
         from spark.web.endpoints.settings import _build_tool_categories, _View
 
         status = {"embedded_tools.web.brave_api_key": True}
-        categories = _build_tool_categories(_View(lambda key, default: OTHER, status))
+        # Every setting reads as a secret-like string, except the on/off switches,
+        # which the page reads as booleans (setting_bool refuses other strings).
+        on_off = (".enabled", ".require_approval", ".use_tls")
+        view = _View(lambda key, default: default if key.endswith(on_off) else OTHER, status)
+        categories = _build_tool_categories(view)
         fields = [f for c in categories for f in c["extra_fields"] if f["type"] == "secret"]
         assert {f["key"] for f in fields} == {
             "embedded_tools.web.brave_api_key",

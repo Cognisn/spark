@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from spark.llm.base import LLMService
 from spark.llm.manager import LLMManager
+from spark.settings_values import setting_bool
 
 __all__ = ["ModelClients", "SecretResolver", "SettingsLike", "build_manager", "build_providers"]
 
@@ -110,7 +111,7 @@ def build_providers(settings: SettingsLike, resolve: SecretResolver = _as_is) ->
     """
     providers: list[LLMService] = []
     for prefix, label, make in _PROVIDERS:
-        if not settings.get(f"{prefix}.enabled"):
+        if not setting_bool(settings, f"{prefix}.enabled", False):
             continue
         try:
             provider = make(settings, resolve)
