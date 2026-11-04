@@ -406,6 +406,15 @@ _SPECS: tuple[SettingSpec, ...] = (
     # Files (administrator; consumed by the file areas workstream)
     _int_spec("files.quota_mb", 1024, 0),
     _int_spec("files.max_upload_mb", 50, 1),
+    # Mail for warden's invitations, password resets and notices (administrator;
+    # spark.identity.mail). An empty host leaves LinkCapture as warden's sender.
+    _text("mail.smtp.host"),
+    _int_spec("mail.smtp.port", 587, 1, 65535),
+    _pick("mail.smtp.tls", ("starttls", "implicit", "none"), "starttls"),
+    _text("mail.smtp.sender_address"),
+    _text("mail.smtp.sender_name"),
+    _text("mail.smtp.username"),
+    _secret("mail.smtp.password"),
     # Per-user preferences (A4)
     _text("default_model.model_id", "", _U),
     _text("conversation.global_instructions", "", _U),

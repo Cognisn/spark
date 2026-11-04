@@ -99,6 +99,7 @@ __all__ = [
     "USAGE_REFUSED",
     "USAGE_VIEWED",
     "USAGE_BUDGET_CHANGED",
+    "MAIL_TEST_SENT",
 ]
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ KNOWLEDGE_BUILD_REFUSED: Final = "spark.knowledge.build.refused"
 MCP_TOOL_CALLED: Final = "spark.mcp.tool.called"
 MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
 BUNDLE_IMPORTED: Final = "spark.bundle.imported"
+MAIL_TEST_SENT: Final = "spark.mail.test_sent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +166,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     MCP_TOOL_REFUSED: ActionDef(Severity.NOTICE, "MCP tool {resource_id} refused for {actor}"),
     BUNDLE_IMPORTED: ActionDef(
         Severity.NOTICE, "{actor} imported a user bundle for user {resource_id}: {outcome}"
+    ),
+    MAIL_TEST_SENT: ActionDef(
+        Severity.NOTICE, "{actor} sent a test message through {resource_id}: {outcome}"
     ),
 }
 

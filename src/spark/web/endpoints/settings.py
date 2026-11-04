@@ -108,9 +108,18 @@ def _writer(request: Request) -> SecretsWriter:
     return SecretsWriter(ctx.secrets, ctx.settings, server=_server())
 
 
+# Settings only a server has: warden's mail (personal mode has no warden).
+_SERVER_ONLY_PREFIX = "mail.smtp."
+
+
+def _offered_here(key: str) -> bool:
+    """Whether this mode offers ``key``: the registry's answer, less the server-only keys."""
+    return registry.is_offered(key) and (_server() or not key.startswith(_SERVER_ONLY_PREFIX))
+
+
 def _secret_status(request: Request) -> dict[str, bool]:
     """Every secret this mode offers as set or not set (a server has no local-only tool secrets)."""
-    return _writer(request).status([k for k in registry.secret_keys() if registry.is_offered(k)])
+    return _writer(request).status([k for k in registry.secret_keys() if _offered_here(k)])
 
 
 _RESULT_ACTION_PREFIX = "embedded_tools.tool_results."
@@ -236,6 +245,7 @@ async def settings_page(request: Request) -> Response:
     view = _View(_source_value(source), status)
     sections = _filter_sections(_build_sections(view), {Scope.INSTANCE})
     sections.append(_models_offered_section(view))
+    sections.append(_mail_section(view))
     return _render(
         request,
         page="instance",
@@ -323,6 +333,8 @@ async def save_instance_settings(request: Request) -> JSONResponse:
     if isinstance(checked, JSONResponse):
         return checked
     plain, secrets = checked
+    if refused := await _mail_refusal(request, plain):
+        return refused
     actor = _actor(request)
     writer = _writer(request)
     for key, value in secrets.items():
@@ -338,6 +350,72 @@ async def save_instance_settings(request: Request) -> JSONResponse:
         # A secret changes no database row: refresh this replica's consumers directly.
         follower.changed()
     return JSONResponse({"status": "ok", "saved": sorted([*plain, *secrets])})
+
+
+async def _mail_refusal(request: Request, plain: dict[str, Any]) -> JSONResponse | None:
+    """Refuse a ``mail.smtp`` combination warden's mail may not use, before anything is written.
+
+    The combination is the saved settings with this request's values over them.
+    """
+    if not any(key.startswith("mail.smtp.") for key in plain):
+        return None
+    from spark.identity import mail
+
+    source = await instance_settings.server_settings(
+        request.app, database(request), request.app.state.ctx.settings
+    )
+    merged = {
+        key: plain[key] if key in plain else source.get(key)
+        for key in mail.MAIL_SMTP_KEYS
+        if not registry.spec(key).secret
+    }
+    problem = mail.settings_problem(merged)
+    if problem is None:
+        return None
+    key, reason = problem
+    return _refused(f"invalid value for {key}: {reason}", [key])
+
+
+@router.post("/api/mail/test")
+async def send_test_mail(request: Request) -> JSONResponse:
+    """Server mode, administrators only: mail a test message to the administrator's own address.
+
+    Uses the saved ``mail.smtp`` settings. A failure answers 502 with a fixed
+    reason that never carries the credential or the server's reply. Audited
+    either way (``spark.mail.test_sent``).
+    """
+    if not _server():
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    if not _is_admin(request):
+        return _refused("only an administrator can send a test message", [], 403)
+    from spark.identity import audit, mail
+    from spark.identity.access import current_identity
+
+    identity = current_identity(request)
+    to = identity.email if identity is not None else ""
+    if not to:
+        return _refused("the signed-in account has no email address", [], 409)
+    try:
+        await mail.send_test_mail(request.app.state.ctx.secrets, to)
+    except mail.MailNotConfigured:
+        return JSONResponse(
+            {"status": "error", "reason": "set and save mail.smtp.host before sending a test"},
+            status_code=409,
+        )
+    except mail.SmtpRefused as exc:
+        await audit.emit_request(
+            request,
+            audit.MAIL_TEST_SENT,
+            "failure",
+            resource_type="setting",
+            resource_id="mail.smtp",
+            details={"reason": exc.reason},
+        )
+        return JSONResponse({"status": "error", "reason": exc.reason}, status_code=502)
+    await audit.emit_request(
+        request, audit.MAIL_TEST_SENT, resource_type="setting", resource_id="mail.smtp"
+    )
+    return JSONResponse({"status": "ok", "to": to})
 
 
 @router.post("/api/preferences")
@@ -663,6 +741,12 @@ async def save_settings(request: Request) -> JSONResponse:
             [],
             409,
         )
+    if isinstance(data, dict):
+        server_only = sorted(str(k) for k in data if str(k).startswith(_SERVER_ONLY_PREFIX))
+        if server_only:
+            return _refused(
+                "these settings belong to server mode: " + ", ".join(server_only), server_only
+            )
     checked = _checked(data, {Scope.INSTANCE, Scope.USER, Scope.STARTUP})
     if isinstance(checked, JSONResponse):
         return checked
@@ -1361,6 +1445,58 @@ def _models_offered_section(settings: _SettingsGetter) -> dict[str, Any]:
                         "label": "Model ids (comma-separated)",
                         "value": ", ".join(offered) if isinstance(offered, list) else "",
                     }
+                ],
+            }
+        ],
+    }
+
+
+def _mail_section(settings: _SettingsGetter) -> dict[str, Any]:
+    """Server mode: the SMTP server warden's invitation, reset and notice mails go through."""
+    return {
+        "id": "mail",
+        "title": "Mail",
+        "icon": "bi-envelope-at",
+        "description": (
+            "The SMTP server for invitations, password reset links and two-step verification "
+            "notices. While the host is empty no mail is sent: administrators are shown "
+            "invitation and reset links instead, and a signed-out reset request sends nothing. "
+            "Save, then send a test message to your own address."
+        ),
+        "groups": [
+            {
+                "id": "mail_smtp",
+                "title": "SMTP",
+                "fields": [
+                    {
+                        **_text("mail.smtp.host", "Host", settings),
+                        "help": "Empty: no mail is sent.",
+                    },
+                    {
+                        **_number("mail.smtp.port", "Port", settings, 587),
+                        "help": "587 for STARTTLS, 465 for implicit TLS.",
+                    },
+                    {
+                        **_select(
+                            "mail.smtp.tls",
+                            "TLS",
+                            settings,
+                            ["starttls", "implicit", "none"],
+                            "starttls",
+                        ),
+                        "help": "The server's certificate is verified. "
+                        "none is accepted only for a loopback host (a local relay).",
+                    },
+                    _text("mail.smtp.sender_address", "Sender address", settings),
+                    _text("mail.smtp.sender_name", "Sender name", settings),
+                    {
+                        **_text("mail.smtp.username", "Username", settings),
+                        "help": "Empty: the server is used without signing in.",
+                    },
+                    {
+                        **_secret("mail.smtp.password", "Password", settings),
+                        "help": "Kept in the secrets store, never shown.",
+                    },
                 ],
             }
         ],

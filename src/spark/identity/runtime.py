@@ -17,8 +17,10 @@ the database is open, :meth:`IdentityRuntime.start` builds:
   missing CSRF key are generated into the secrets store. Replicas starting
   together take a PostgreSQL advisory lock for this, so they agree;
 * ``Identity`` with SPARK's permissions and roles
-  (:func:`spark.identity.permissions.build_registry`) and its mail sender
-  (:class:`spark.identity.mail.LinkCapture` unless another is given).
+  (:func:`spark.identity.permissions.build_registry`) and its mail sender:
+  unless another is given, :class:`spark.identity.mail.InstanceMail`, which
+  delivers over the ``mail.smtp`` instance settings when a host is set and
+  otherwise leaves :class:`spark.identity.mail.LinkCapture` in charge.
 
 The web lifespan runs :meth:`IdentityRuntime.running` for the app's lifetime
 and leaves it before the database closes.
@@ -42,7 +44,7 @@ from warden.keys import KeyStore, KeyStoreError
 from spark.db.engine import Database
 from spark.identity.audit import register_actions
 from spark.identity.db import warden_database
-from spark.identity.mail import LinkCapture
+from spark.identity.mail import InstanceMail, LinkCapture
 from spark.identity.permissions import build_registry
 from spark.instance_settings.startup import StartupConfigError, public_base_url
 
@@ -172,8 +174,10 @@ class IdentityRuntime:
         """Build the runtime over ``database`` (PostgreSQL) and konfig's settings and secrets.
 
         ``mail_sender`` delivers warden's invitation and password reset mails;
-        without one, :class:`~spark.identity.mail.LinkCapture` hands
-        administrators the links instead.
+        without one, :class:`~spark.identity.mail.InstanceMail` sends them over
+        ``mail.smtp`` (its password read from ``secrets``), or, while no host
+        is set, :class:`~spark.identity.mail.LinkCapture` hands administrators
+        the links instead.
         """
         base_url = public_base_url(settings.get("server.public_base_url", ""))
         config = warden_config(settings, secrets, base_url)
@@ -192,7 +196,7 @@ class IdentityRuntime:
                 keys,
                 build_registry(),
                 secrets=secrets,
-                mail_sender=mail_sender or LinkCapture(),
+                mail_sender=mail_sender or InstanceMail(secrets, LinkCapture()),
             )
         except BaseException:
             set_recorder(previous)
