@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A separate connection for the audit purge** (server mode, `worker.audit_purge_database_url`): when set, to a PostgreSQL URL or a `secret://` reference resolved through the secrets store as `database.url` may be, the worker's `warden-audit-purge` duty connects with it for the purge alone, as warden's purger role, so the worker's own role can stay append-only on `warden.audit_events`. Unset, the purge uses `database.url` as before. A value that is not a PostgreSQL URL, or names a secret that is not set, stops `spark worker` at start-up with a message naming the setting, never the URL or its password
+
 ### Fixed
 - **Server start-up as a restricted database role**: web and worker check the schema at start-up without running `CREATE SCHEMA IF NOT EXISTS spark`, which PostgreSQL refuses to a role without `CREATE` on the database even when the schema exists. Only `spark migrate` creates the schema, so web and worker can connect as login roles that own nothing and hold no `CREATE` on the database; an empty database is refused with "run `spark migrate`" as before. Personal mode is unchanged
 

@@ -31,6 +31,13 @@ builds that runtime once for every duty and installs SPARK's audit hooks
 (:mod:`spark.identity.audit`), so its refusals and tool results are audited as
 the web's are; it removes them when it stops or steps down.
 
+warden's audit purge (``warden-audit-purge``) deletes audit rows, which an
+append-only application role may not do. With ``worker.audit_purge_database_url``
+set (a PostgreSQL URL, or a ``secret://`` reference like ``database.url``), the
+purge alone connects with it, as warden's separate purger role, so the worker's
+own role needs no ``DELETE`` on ``warden.audit_events``
+(:func:`audit_purge_database`). Unset, the purge uses the worker's own connection.
+
 Scheduled actions run for every user, each as its owner (D22). The worker has
 no user of its own and never reads the process's user guid: before each run it
 asks warden, through an identity runtime built the way the web builds one over
@@ -51,6 +58,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final
+from urllib.parse import urlsplit
 
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 
@@ -61,6 +69,7 @@ if TYPE_CHECKING:
     from spark.identity.runtime import IdentityRuntime
 
 __all__ = [
+    "AUDIT_PURGE_DATABASE_URL",
     "WORKER_LOCK_KEY",
     "AdvisoryLock",
     "PeriodicJob",
@@ -68,6 +77,7 @@ __all__ = [
     "Worker",
     "WorkerContext",
     "WorkerRefused",
+    "audit_purge_database",
     "check_runtime",
     "clear_registrations",
     "default_duties",
@@ -88,6 +98,11 @@ WORKER_LOCK_KEY: Final = 0x737061726B2E776B
 DEFAULT_STANDBY_SECONDS: Final = 5.0
 DEFAULT_CHECK_SECONDS: Final = 5.0
 
+# The start-up setting naming the audit purge's own connection (the purger role).
+AUDIT_PURGE_DATABASE_URL: Final = "worker.audit_purge_database_url"
+_SECRET_PREFIX: Final = "secret://"
+_POSTGRES_SCHEMES: Final = frozenset({"postgresql", "postgres", "postgresql+psycopg"})
+
 
 class WorkerRefused(RuntimeError):
     """The worker cannot run with this configuration (personal mode or SQLite)."""
@@ -102,6 +117,40 @@ def check_runtime(runtime: RuntimeSettings) -> None:
             "scheduled actions"
         )
     _check_database(runtime.database)
+
+
+def audit_purge_database(settings: Any, secrets: Any) -> DatabaseSettings | None:
+    """The audit purge's own connection from ``worker.audit_purge_database_url``, or None.
+
+    The value is a PostgreSQL URL or a ``secret://<name>`` reference resolved
+    through konfig's secrets store, as ``database.url`` may be. Unset or blank,
+    the purge uses the worker's own connection. Raises :class:`WorkerRefused`
+    with a message that names the setting (and a secret's name) but never the
+    URL or its password.
+    """
+    raw = settings.get(AUDIT_PURGE_DATABASE_URL, None) if settings is not None else None
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise WorkerRefused(f"{AUDIT_PURGE_DATABASE_URL} must be a PostgreSQL URL")
+    value = raw.strip()
+    if not value:
+        return None
+    if value.startswith(_SECRET_PREFIX):
+        name = value[len(_SECRET_PREFIX) :]
+        resolved = secrets.get(name) if name and secrets is not None else None
+        if not resolved:
+            raise WorkerRefused(
+                f"{AUDIT_PURGE_DATABASE_URL} refers to the secret {name!r}, which is not set "
+                "in the secrets store"
+            )
+        value = str(resolved).strip()
+    scheme = urlsplit(value).scheme.lower() if "://" in value else ""
+    if scheme not in _POSTGRES_SCHEMES:
+        raise WorkerRefused(f"{AUDIT_PURGE_DATABASE_URL} must be a PostgreSQL URL")
+    if scheme == "postgresql+psycopg":
+        value = "postgresql" + value[len(scheme) :]
+    return DatabaseSettings(Dialect.POSTGRESQL, url=value)
 
 
 def _check_database(settings: DatabaseSettings) -> None:
@@ -507,7 +556,12 @@ def _worker_id() -> str:
 
 
 def _serve(runtime: RuntimeSettings) -> None:
-    """Run the worker until SIGTERM or SIGINT."""
+    """Run the worker until SIGTERM or SIGINT.
+
+    Before the worker starts, ``worker.audit_purge_database_url`` is read
+    (:func:`audit_purge_database`); a value that is not usable raises
+    :class:`WorkerRefused` before any duty runs.
+    """
 
     async def _body(app: Any) -> None:
         stop = asyncio.Event()
@@ -520,7 +574,8 @@ def _serve(runtime: RuntimeSettings) -> None:
             from spark.identity import pruning
             from spark.knowledge import build_jobs
 
-            pruning.register(settings)
+            purge_database = audit_purge_database(settings, getattr(app, "secrets", None))
+            pruning.register(settings, purge_database=purge_database)
             build_jobs.register(settings)
         services, periodic = default_duties()
         worker = Worker(
@@ -562,6 +617,9 @@ def main() -> int:
         return 2
     try:
         _serve(runtime)
+    except WorkerRefused as exc:
+        print(f"spark worker: {exc}", file=sys.stderr)
+        return 2
     except KeyboardInterrupt:
         logger.info("Spark worker shut down by user")
     return 0
