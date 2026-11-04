@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a21] - 2026-11-05
+
 ### Added
 - **A separate connection for the audit purge** (server mode, `worker.audit_purge_database_url`): when set, to a PostgreSQL URL or a `secret://` reference resolved through the secrets store as `database.url` may be, the worker's `warden-audit-purge` duty connects with it for the purge alone, as warden's purger role, so the worker's own role can stay append-only on `warden.audit_events`. Unset, the purge uses `database.url` as before. A value that is not a PostgreSQL URL, or names a secret that is not set, stops `spark worker` at start-up with a message naming the setting, never the URL or its password
 
