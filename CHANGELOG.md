@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a14] - 2026-11-04
+
 ### Added
 - **User bundle format, version 1** (`spark.bundles`): one zip archive holding a user's conversations, memories, skills, knowledge graphs, scheduled actions and preferences, as JSON Lines per table plus file contents and skill files, under a manifest with the format version, a bundle id and each member's size and sha256. Only listed tables and columns are ever written, never a user guid or any instance configuration. Opening a bundle refuses one over the size limit, too many members or too large when unpacked, a member expanding too far, a member named outside the layout (absolute or parent paths, backslashes, hidden or device names), a link or encrypted member, a repeated member, another format or format version, a member that does not match the manifest, and anything shaped like a credential. Nothing is extracted to disk
 - **Bundle export** (personal mode, `spark.bundles.exporter`): writes the local user's conversations (with their messages, files, links, tool and MCP toggles, debates, agent runs and context index), memories, knowledge graphs, skills (their folders and enable states), scheduled actions (with their tool permissions and run history), "Always" approvals, file area contents and preferences. Nothing of the instance travels: no provider, MCP server or other instance setting (only the transport of each MCP server the data refers to), no usage, voice usage, prompt inspection or daemon records, and only user-scope preferences. Every text value has the instance's secret values and anything shaped like a credential replaced, and a file or binary skill file holding one is left out and listed
