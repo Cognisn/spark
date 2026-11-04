@@ -1292,6 +1292,11 @@ class ConversationManager:
         if tool_name in _SKILL_READ_TOOLS:
             permission = True
 
+        # The user's own file area is theirs to read: listing and reading it never
+        # prompt (wave 5 Q27). The tools themselves are scoped to the user.
+        if tool_name in ("list_my_files", "read_my_file"):
+            permission = True
+
         if permission is None:
             # First use — prompt user
             if ask:

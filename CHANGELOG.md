@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reading your own files does not ask first**: `list_my_files` and `read_my_file` no longer prompt for approval in a conversation, as skill loading does not; they read only the user's own file area, and a server still refuses them to a role without the documents tools
 - **Dependencies**: cognisn-konfig 0.5.0 or later, whose encrypted store reloads and locks, so a secret saved on one web replica reaches the others; the MCP SDK is pinned to its 2.x line (`mcp>=2.3,<3`), the major version the MCP client was rebuilt for
 - **Strict typing in CI for the 0.3.0 server features**: the usage, bundles, MCP integration, chat attachment and knowledge graph job modules, with their endpoints and the model client factory, join CI's blocking `mypy --strict` step, replacing the three tests that ran mypy over them in the meantime
 

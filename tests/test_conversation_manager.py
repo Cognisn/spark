@@ -300,6 +300,46 @@ class TestSendMessage:
         # The callback must never have been consulted for skill loading.
         assert "use_skill" not in asked
 
+    @pytest.mark.parametrize("tool_name", ["list_my_files", "read_my_file"])
+    def test_own_file_tools_are_transparent(
+        self, sync_db, llm_manager: LLMManager, stub_llm: StubLLMService, tool_name: str
+    ) -> None:
+        """The user's own file tools never prompt for approval (wave 5 Q27)."""
+        asked: list[str] = []
+
+        def record_and_deny(name: str, inp: dict) -> str:
+            asked.append(name)
+            return "denied"
+
+        mgr = ConversationManager(
+            sync_db,
+            llm_manager,
+            ContextLimitResolver(),
+            tool_permission_callback=record_and_deny,
+        )
+        cid = mgr.create_conversation("Test", "stub-model", USER)
+        call = {"type": "tool_use", "id": "t1", "name": tool_name, "input": {}}
+        stub_llm.responses = [
+            {
+                "content": "",
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "tool_use": [call],
+                "content_blocks": [call],
+            },
+            {
+                "content": "done",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "tool_use": None,
+                "content_blocks": [{"type": "text", "text": "done"}],
+            },
+        ]
+
+        result = mgr.send_message(cid, "what did I attach?", USER)
+        assert result["content"] == "done"
+        assert asked == []
+
     def test_skill_read_and_authoring_categories_are_separate(self) -> None:
         """Approving skill loading must not carry over to skill authoring."""
         from spark.core.conversation_manager import _get_tool_category_siblings
