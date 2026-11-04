@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a17] - 2026-11-04
+
 ### Added
 - **Secrets reach every web replica** (server mode): saving or clearing a secret on the instance settings page sends a settings notification whose payload is the secret's key, never its value, and every replica's settings listener has konfig refresh its secrets store (the shared encrypted file or the AWS Secrets Manager bundle cache) before reloading, so the providers, voice and web search keys follow without a restart. The store is also refreshed whenever the listener reconnects. Two replicas saving different secrets at once both keep their change, through konfig's locked writes. Needs cognisn-konfig 0.5.0rc1 or later; with an older konfig a warning says secrets saved elsewhere apply only after a restart. The container guide's restart note is replaced
 
