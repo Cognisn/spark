@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a23] - 2026-11-05
+
 ### Fixed
 - **Budgets on the plain send route**: `POST /chat/{id}/api/send` now gives the turn the signed-in user's roles, as the stream does, so a role budget stops it; a turn refused at 100% of the user's budget is answered 429 with the message and the user's standing instead of 500, and the model is not called
 - **Live SSO test docstring**: the sample mock-oauth2-server configuration maps its token claims on `grant_type`, which the code exchange carries, and points to `deploy/live/stack.py` for the working configuration
