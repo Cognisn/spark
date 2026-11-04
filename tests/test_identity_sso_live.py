@@ -9,9 +9,14 @@ issues ``email`` ``ada@example.com`` with ``email_verified`` true, such as:
     docker run --rm -p 127.0.0.1:8443:8080 -e JSON_CONFIG='{"interactiveLogin": false,
       "httpServer": {"type": "NettyWrapper", "ssl": {}},
       "tokenCallbacks": [{"issuerId": "default", "requestMappings": [{"requestParam":
-      "scope", "match": "*", "claims": {"sub": "ada", "email": "ada@example.com",
+      "grant_type", "match": "*", "claims": {"sub": "ada", "email": "ada@example.com",
       "email_verified": true, "aud": ["spark"]}}]}]}'
       ghcr.io/navikt/mock-oauth2-server:<pinned version>
+
+The mapping matches on ``grant_type`` because the authorisation code exchange
+carries no ``scope`` parameter; mapped on ``scope``, the token endpoint issues a
+random subject and no email, and warden refuses the sign-in. ``deploy/live/stack.py``
+builds the working configuration the live suite uses.
 
 warden reaches providers over HTTPS only, so ``SSL_CERT_FILE`` must name a PEM
 bundle that trusts the mock's certificate (with the public CAs). The browser
