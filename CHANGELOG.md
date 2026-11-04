@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a15] - 2026-11-04
+
 ### Added
 - **Reading your own files** (both modes): two tools in the documents category, `list_my_files` and `read_my_file`, list and read the signed-in user's own file area: files attached in chat and documents Spark created. A file is addressed by its id; Word, Excel, PowerPoint and PDF files are read as text, other text files in pages of characters, and binary files are refused. Another user's file id answers as an id that does not exist. Personal mode reads the personal area (`<data directory>/files`) without any allowed paths configured; a server offers the tools only to a user holding `spark.tools.documents`. What they return enters the prompt as untrusted document content
 - **Attachments in a chat message** (both modes): both send routes take the ids of files the user has uploaded to their area (`attachments`, a comma-separated query value on `/stream/chat`, a list on `/chat/<id>/api/send`). Each must be the signed-in user's own file, or the message is refused with 404 and nothing runs. The message the model receives then ends with a note naming each file by id and name, `[Attached files: read them with the read_my_file tool]`, never its content; the model reads the files with `read_my_file`. A message may carry up to 20 attachments, and may be attachments alone
