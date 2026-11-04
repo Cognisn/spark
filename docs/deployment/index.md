@@ -89,8 +89,9 @@ address served by Caddy's internal certificate:
 - the replicas override with Caddy (port and site name changed to loopback) in front
   of two web replicas and two workers, a GET of the sign-in page through it, a
   password sign-in through to the second factor, and the Origin and Host refusals;
-- every step of the restricted database roles, the worker's `DELETE` grant and the
-  privilege check; the external database override with `docker compose config` only;
+- every step of the restricted database roles with no `CREATE` on the database, the
+  purger role and `worker.audit_purge_database_url`, and the privilege checks; the
+  external database override with `docker compose config` only;
 - placing a secret, restarting web and worker, and a refused wrong master key;
 - the backup and restore commands, with the restricted grants surviving the restore;
 - `spark export --output` in personal mode in the image.
