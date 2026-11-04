@@ -183,9 +183,19 @@ def _str_list(spec: SettingSpec, value: Any) -> list[str]:
     return [item.strip() for item in items if item.strip()]
 
 
-def _mcp_servers(spec: SettingSpec, value: Any) -> list[dict[str, Any]]:
+def _mcp_servers(spec: SettingSpec, value: Any, *, stored: bool = False) -> list[dict[str, Any]]:
+    # The mode's rules (A12: HTTP and SSE only on a server) live with the MCP integration.
+    from spark import mode
+    from spark.mcp_integration import servers as mcp_servers
+
     if not isinstance(value, list):
         raise InvalidSettingError(spec.key, "expected a list of servers")
+    try:
+        server = mode.is_server()
+    except RuntimeError:
+        server = False
+    if stored:
+        value = mcp_servers.stored_entries(value, server=server)
     names: set[str] = set()
     servers: list[dict[str, Any]] = []
     for entry in value:
@@ -200,8 +210,12 @@ def _mcp_servers(spec: SettingSpec, value: Any) -> list[dict[str, Any]]:
             raise InvalidSettingError(
                 spec.key, f"server {name!r} transport must be one of {', '.join(_MCP_TRANSPORTS)}"
             )
+        try:
+            checked = mcp_servers.validate_entry(entry, server=server)
+        except mcp_servers.ServerEntryError as exc:
+            raise InvalidSettingError(spec.key, str(exc)) from None
         names.add(name)
-        servers.append(dict(entry))
+        servers.append(checked)
     return servers
 
 
@@ -463,18 +477,24 @@ def offered_keys(scope: Scope | None = None) -> list[str]:
     return [k for k in keys(scope) if is_offered(k)]
 
 
-def coerce(key: str, value: Any) -> Any:
+def coerce(key: str, value: Any, *, stored: bool = False) -> Any:
     """Validate ``value`` for ``key`` and return it in its stored form.
 
     Accepts the forms the settings page sends (``"true"``, numeric strings,
     comma-separated lists). Raises :class:`UnknownSettingError` or
     :class:`InvalidSettingError`.
+
+    ``stored`` reads a value already in the database: for ``mcp.servers`` an entry
+    the mode no longer accepts (a stdio server on a server) is ignored with a
+    warning instead of refusing the whole list.
     """
     s = spec(key)
     if s.secret:
         if not isinstance(value, str):
             raise InvalidSettingError(key, "expected text")
         return value
+    if s.kind is Kind.MCP_SERVERS:
+        return _mcp_servers(s, value, stored=stored)
     return _COERCERS[s.kind](s, value)
 
 

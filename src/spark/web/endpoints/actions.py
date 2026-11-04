@@ -192,8 +192,11 @@ async def get_action_tools(request: Request, action_id: int) -> JSONResponse:
 
     # Add MCP tools
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
-    if mcp_mgr and mcp_mgr._tools_cache:
-        for t in mcp_mgr._tools_cache:
+    if mcp_mgr:
+        from spark.identity.access import request_permissions
+
+        # Only the servers granted to this user (server mode, A12).
+        for t in mcp_mgr.cached_tools(permissions=request_permissions(request)):
             all_tools.append(
                 {
                     "name": t.get("name", ""),

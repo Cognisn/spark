@@ -430,11 +430,13 @@ class ConversationManager:
             try:
                 import asyncio
 
+                # Only the MCP servers ``permissions`` grant (server mode, A12).
+                def _listing() -> Any:
+                    return self._mcp_manager.list_all_tools(permissions=permissions)
+
                 # list_all_tools is async — dispatch on the persistent MCP loop
                 if self._mcp_loop and self._mcp_loop.is_running():
-                    future = asyncio.run_coroutine_threadsafe(
-                        self._mcp_manager.list_all_tools(), self._mcp_loop
-                    )
+                    future = asyncio.run_coroutine_threadsafe(_listing(), self._mcp_loop)
                     mcp_tools = future.result(timeout=10)
                 else:
                     # Fallback for cases without a persistent loop (e.g. tests)
@@ -444,13 +446,13 @@ class ConversationManager:
                             import concurrent.futures
 
                             with concurrent.futures.ThreadPoolExecutor() as pool:
-                                mcp_tools = pool.submit(
-                                    lambda: asyncio.run(self._mcp_manager.list_all_tools())
-                                ).result(timeout=10)
+                                mcp_tools = pool.submit(lambda: asyncio.run(_listing())).result(
+                                    timeout=10
+                                )
                         else:
-                            mcp_tools = loop.run_until_complete(self._mcp_manager.list_all_tools())
+                            mcp_tools = loop.run_until_complete(_listing())
                     except RuntimeError:
-                        mcp_tools = asyncio.run(self._mcp_manager.list_all_tools())
+                        mcp_tools = asyncio.run(_listing())
 
                 for t in mcp_tools:
                     tools.append(
@@ -1836,6 +1838,7 @@ class ConversationManager:
                 mcp_manager=self._mcp_manager,
                 mcp_loop=getattr(self, "_mcp_loop", None),
                 user_guid=user_guid,
+                conversation_id=conversation_id,
                 tool_permission_callback=callbacks.tool_permission,
                 status_callback=status_callback,
             )
@@ -1954,7 +1957,13 @@ class ConversationManager:
                 import asyncio
 
                 async def _call() -> dict:
-                    return await self._mcp_manager.call_tool(tool_name, tool_input)
+                    return await self._mcp_manager.call_tool(
+                        tool_name,
+                        tool_input,
+                        permissions=permissions,
+                        user_guid=uid,
+                        conversation_id=conversation_id,
+                    )
 
                 if self._mcp_loop and self._mcp_loop.is_running():
                     # Dispatch onto the persistent MCP loop where the sessions live.

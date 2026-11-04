@@ -23,6 +23,7 @@ import spark
 import spark.instance_settings as instance_settings
 from spark.db import Database, SyncDatabase
 from spark.instance_settings import consumers
+from spark.mcp_integration import access as mcp_access
 from spark.mode import DatabaseSettings
 from spark.web.auth import AuthManager, GatingAuthenticator, LoginPolicy, PersonalAuthenticator
 from spark.web.security import OriginPolicy, RequestGuardMiddleware
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 
     from spark.identity.runtime import IdentityRuntime
     from spark.llm.manager import LLMManager
+    from spark.mcp_integration.runtime import MCPRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +231,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     app.state.authenticator.bind(None)
                     app.state.identity_runtime = None
     finally:
+        mcp_runtime = getattr(app.state, "mcp_runtime", None)
+        if mcp_runtime is not None:
+            await asyncio.to_thread(mcp_runtime.stop)
+            app.state.mcp_runtime = None
         if database is not None:
             await instance_settings.detach(app)
             app.state.sync_db = None
@@ -341,6 +347,8 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
             answer = await authenticator.admit(request)
             if answer is not None:
                 return answer
+            # The MCP servers granted to the user's roles (instance settings, A12).
+            mcp_access.apply_grants(request)
             request.state.csrf_token = authenticator.csrf_token(request) or ""
             return await call_next(request)
 
@@ -570,14 +578,57 @@ def _start_daemon_if_enabled(ctx: AppContext, status: dict[str, Any]) -> None:
         logger.warning("Daemon tray start failed (non-fatal): %s", e)
 
 
-async def _connect_and_list_mcp(mcp_manager: Any) -> None:
-    """Connect all MCP servers and populate tool cache."""
-    results = await mcp_manager.connect_all()
-    connected = sum(1 for v in results.values() if v)
-    failed = sum(1 for v in results.values() if not v)
-    logger.info("MCP servers: %d connected, %d failed", connected, failed)
-    tools = await mcp_manager.list_all_tools()
-    logger.info("MCP tool cache: %d tools loaded", len(tools))
+def _personal_mcp_config() -> dict[str, Any]:
+    """``config.yaml``'s contents for the MCP servers (personal mode)."""
+    import yaml
+
+    from spark.core.application import _get_config_path
+
+    config_path = _get_config_path()
+    if not config_path.exists():
+        return {}
+    raw = yaml.safe_load(config_path.read_text()) or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _start_mcp(
+    app: FastAPI, ctx: AppContext, instance: _ServerConsumers | None
+) -> MCPRuntime | None:
+    """Connect the MCP servers on their own loop thread; never fails start-up.
+
+    Server mode reads ``mcp.servers`` from the instance settings (credentials from
+    the secrets store), never ``config.yaml``, and always starts the loop so a
+    server an administrator adds later connects without a restart. Personal mode
+    reads ``config.yaml`` and starts the loop only when servers are configured.
+    """
+    from spark.mcp_integration.manager import MCPManager
+    from spark.mcp_integration.runtime import MCPRuntime
+
+    runtime: MCPRuntime | None = None
+    app.state.mcp_manager = None
+    try:
+        if instance is not None:
+            manager = MCPManager()
+            for config in consumers.mcp_server_configs(instance.source, instance.mcp_secret):
+                manager.add_server(config)
+            if (_personal_mcp_config().get("mcp") or {}).get("servers"):
+                logger.warning(
+                    "Ignoring config.yaml's mcp section: server mode reads mcp.servers "
+                    "from the instance settings"
+                )
+        else:
+            raw_config = _personal_mcp_config()
+            if not (raw_config.get("mcp") or {}).get("servers"):
+                return None
+            manager = MCPManager.from_config(raw_config)
+        runtime = MCPRuntime.start(manager)
+        app.state.mcp_runtime = runtime
+        app.state._mcp_loop = runtime.loop  # turn threads dispatch MCP calls onto it
+        app.state.mcp_manager = manager
+        runtime.connect_all()
+    except Exception as e:
+        logger.warning("MCP server init failed (non-fatal): %s", e)
+    return runtime
 
 
 class _ServerConsumers:
@@ -605,13 +656,23 @@ class _ServerConsumers:
     def embedded_tools_config(self) -> dict[str, Any]:
         return consumers.embedded_tools_config(self.source, self.secrets)
 
-    def follow(self, llm_manager: Any, conversation_manager: Any) -> consumers.SettingsFollower:
+    def mcp_secret(self, name: str) -> str | None:
+        """One MCP server credential from konfig's secrets store (server side only)."""
+        store = getattr(self._ctx, "secrets", None)
+        value = store.get(name) if store is not None else None
+        return str(value) if value else None
+
+    def follow(
+        self, llm_manager: Any, conversation_manager: Any, mcp: MCPRuntime | None = None
+    ) -> consumers.SettingsFollower:
         follower = consumers.follow(
             self.source,
             self.secrets,
             llm_manager=llm_manager,
             conversation_manager=conversation_manager,
             build_providers=lambda view: _build_providers(self._ctx, view),
+            mcp=mcp,
+            mcp_secrets=self.mcp_secret,
         )
         follower.changed()  # catch up with any change made while starting
         return follower
@@ -682,46 +743,10 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                     "prompt_inspection.action", "warn"
                 )
 
-            # Step 3b: Connect saved MCP servers
+            # Step 3b: Connect saved MCP servers (server mode: the instance settings)
             status["stage"] = "Connecting MCP servers..."
-            mcp_manager = None
-            try:
-                import asyncio as _asyncio
-
-                import yaml as _yaml
-
-                from spark.core.application import _get_config_path
-                from spark.mcp_integration.manager import MCPManager
-
-                config_path = _get_config_path()
-                if config_path.exists():
-                    raw_config = _yaml.safe_load(config_path.read_text()) or {}
-                    mcp_config = raw_config.get("mcp", {})
-                    if mcp_config.get("servers"):
-                        mcp_manager = MCPManager.from_config(raw_config)
-
-                        # Create a persistent event loop for MCP connections
-                        # This loop stays alive so async generators aren't garbage collected
-                        mcp_loop = _asyncio.new_event_loop()
-
-                        def _run_mcp_loop() -> None:
-                            _asyncio.set_event_loop(mcp_loop)
-                            mcp_loop.run_forever()
-
-                        mcp_thread = threading.Thread(target=_run_mcp_loop, daemon=True)
-                        mcp_thread.start()
-
-                        # Connect and list tools in the persistent loop
-                        future = _asyncio.run_coroutine_threadsafe(
-                            _connect_and_list_mcp(mcp_manager), mcp_loop
-                        )
-                        future.result(timeout=60)
-
-                        app.state._mcp_loop = mcp_loop  # Keep reference to prevent GC
-
-                app.state.mcp_manager = mcp_manager
-            except Exception as e:
-                logger.warning("MCP server init failed (non-fatal): %s", e)
+            mcp_runtime = _start_mcp(app, ctx, instance)
+            mcp_manager = mcp_runtime.manager if mcp_runtime is not None else None
 
             # Skills manager (content on disk; enable state in the database)
             try:
@@ -780,7 +805,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             )
             if instance:
                 app.state.settings_follower = instance.follow(
-                    llm_manager, app.state.conversation_manager
+                    llm_manager, app.state.conversation_manager, mcp_runtime
                 )
 
             # Migrate any orphaned memories stored under "default" user_guid

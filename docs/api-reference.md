@@ -244,19 +244,37 @@ Save a new or updated MCP server configuration.
 
 ### POST /settings/mcp/api/test
 
-Test an MCP server connection.
+Test an MCP server connection without saving it.
 
-### POST /settings/mcp/api/connect/{server_name}
+### POST /settings/mcp/api/toggle
 
-Connect to a specific MCP server.
+Enable or disable a server: `{"name": "my-server", "enabled": false}`.
 
-### POST /settings/mcp/api/disconnect/{server_name}
+### GET /settings/mcp/api/{server_name}/config
 
-Disconnect from a specific MCP server.
+One server's configuration, for editing.
+
+### GET /settings/mcp/api/{server_name}/tools
+
+The tools a server offers.
+
+### GET /settings/mcp/api/roles
+
+The roles a server can be granted to (server mode's editor).
 
 ### DELETE /settings/mcp/api/{server_name}
 
 Delete an MCP server configuration.
+
+### Server mode
+
+On a server these endpoints need `spark.settings.instance` (401 signed out, 403 without it) and work on the `mcp.servers` instance setting, never `config.yaml`:
+
+- `transport` must be `http` or `sse`; a stdio server answers 400 with the reason.
+- `name` is lower-case letters, digits, `-` and `_`.
+- `roles` lists the roles the server is granted to (see `/api/roles`); an unknown role answers 400.
+- `auth_token`, `basic_password` and `custom_headers` are written to the secrets store; an empty value keeps the stored one, and `clear_secrets` (a list of those field names) removes them. Responses never contain a credential: `config` and `list` report `secrets_set` instead.
+- Toggling or deleting a server that does not exist answers 404; deleting a server removes its credentials.
 
 ## Memories
 

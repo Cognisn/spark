@@ -312,8 +312,12 @@ Each provider normalises responses to a common format:
 
 ### MCP Integration
 
-- **MCPManager** -- Manages multiple MCP server connections with tool caching
-- **MCPClient** -- Client for a single server supporting stdio, HTTP, and SSE transports
+- **MCPManager** -- Manages multiple MCP server connections with tool caching. Its listings and calls take the caller's permissions: in server mode it offers only the servers those permissions grant (`spark.mcp.<server>`) and fails closed without them; every call, failure and refusal is audited (`spark.mcp.tool.called`, `spark.mcp.tool.refused`). `reconcile()` brings the connections in line with a new server list
+- **MCPClient** -- Client for a single server supporting stdio, HTTP, and SSE transports (MCP SDK 1.x and 2.x). Each connection is owned by one task from opening to closing, as the SDK's anyio transports require
+- **MCPRuntime** (`spark.mcp_integration.runtime`) -- The persistent event loop the sessions live on, on its own thread; turn threads dispatch onto it and the settings follower applies changes there
+- **Server policy** (`spark.mcp_integration.servers`) -- What a server allows (HTTP and SSE only, permission-safe names, roles from `ROLES`, no credentials in the setting), the grants of a set of roles, and the configuration of an entry with its credentials from the secrets store
+- **Grants** (`spark.mcp_integration.access`) -- warden defines roles at start-up, and MCP servers are run-time settings, so each server's `roles` live in `mcp.servers` and the auth middleware adds the granted `spark.mcp.<server>` permissions to each signed-in request (not to API key requests)
+- In server mode the web process builds its servers from `mcp.servers` (instance settings, credentials from konfig's secrets store), never `config.yaml`, and the `SettingsFollower` reconnects the servers whose entry or credentials changed, on every replica
 - Tools from MCP servers are merged with built-in tools transparently
 
 ### Safety
@@ -519,7 +523,8 @@ flowchart LR
   single local user is used only when a call names no user, and never on a server.
 - On a server, the routes that act on the host process (`/api/quit`,
   `/api/open-folder`, `/settings/api/lock`, `/settings/api/unlock`) answer 404, and
-  the MCP server settings (`/settings/mcp/*`, which write `config.yaml`) need
+  the MCP server settings (`/settings/mcp/*`, which on a server write the
+  `mcp.servers` instance setting and the secrets store) need
   `spark.settings.instance`.
 - A chat stream's pending interactions are addressed by id through app-wide
   registries: tool permission prompts (`/chat/permission/respond`), agent model

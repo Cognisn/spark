@@ -277,8 +277,12 @@ async def _render_dashboard(request: Request) -> Response:
 
     providers = _get_provider_summary(ctx, llm_manager)
     embedded_tools = _get_embedded_tool_summary(ctx)
-    mcp_stats = _get_mcp_stats(ctx, embedded_tools, mcp_manager)
-    mcp_servers = _get_mcp_server_list(ctx, embedded_tools, mcp_manager)
+    from spark.identity.access import request_permissions
+
+    # Only the MCP servers granted to this user (server mode, A12).
+    granted = request_permissions(request)
+    mcp_stats = _get_mcp_stats(ctx, embedded_tools, mcp_manager, granted)
+    mcp_servers = _get_mcp_server_list(ctx, embedded_tools, mcp_manager, granted)
     recent_conversations = await _get_recent_conversations(request)
     favourite_conversations = await _get_favourite_conversations(request)
 
@@ -414,7 +418,9 @@ def _get_embedded_tool_summary(ctx: object) -> list[dict]:
     return tools
 
 
-def _get_mcp_stats(ctx: object, embedded_tools: list[dict], mcp_manager: Any = None) -> dict:
+def _get_mcp_stats(
+    ctx: object, embedded_tools: list[dict], mcp_manager: Any = None, permissions: Any = None
+) -> dict:
     """Build MCP summary stats (servers, failures, total tools)."""
     embedded_tool_count = sum(t["tool_count"] for t in embedded_tools)
     embedded_enabled = any(t["enabled"] for t in embedded_tools)
@@ -424,13 +430,12 @@ def _get_mcp_stats(ctx: object, embedded_tools: list[dict], mcp_manager: Any = N
     total_tools = embedded_tool_count
 
     if mcp_manager:
-        for name, client in mcp_manager.servers.items():
+        for name, client in mcp_manager.servers_for(permissions).items():
             mcp_configured += 1
             if not client.connected:
                 mcp_failed += 1
         # Count tools from cache
-        if mcp_manager._tools_cache:
-            total_tools += len(mcp_manager._tools_cache)
+        total_tools += len(mcp_manager.cached_tools(permissions=permissions))
 
     return {
         "servers_configured": mcp_configured,
@@ -440,7 +445,7 @@ def _get_mcp_stats(ctx: object, embedded_tools: list[dict], mcp_manager: Any = N
 
 
 def _get_mcp_server_list(
-    ctx: object, embedded_tools: list[dict], mcp_manager: Any = None
+    ctx: object, embedded_tools: list[dict], mcp_manager: Any = None, permissions: Any = None
 ) -> list[dict]:
     """Build the list of MCP server cards (including embedded)."""
     servers = []
@@ -461,8 +466,8 @@ def _get_mcp_server_list(
 
     # Real MCP servers
     if mcp_manager:
-        tools_cache = mcp_manager._tools_cache or []
-        for name, client in mcp_manager.servers.items():
+        tools_cache = mcp_manager.cached_tools(permissions=permissions)
+        for name, client in mcp_manager.servers_for(permissions).items():
             tool_count = sum(1 for t in tools_cache if t.get("server") == name)
             servers.append(
                 {

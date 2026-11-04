@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **MCP servers in server mode** (A12): a server allows HTTP and SSE MCP servers only. A stdio server runs a command on the host, so `mcp.servers` refuses one with a clear message however it is configured, and a stdio entry already stored is ignored with a warning while the other servers are kept. Server names are lower-case letters, digits, `-` and `_`, because each is part of its permission
+- **MCP grants by role** (server mode): each server in `mcp.servers` lists the roles it is granted to (`roles`), which a user holds as the `spark.mcp.<server>` permission; a server listing no role is granted to no one. The MCP manager lists and calls only the servers a caller's permissions grant, and with no permissions lists nothing and refuses every call
+- **MCP servers from the instance settings** (server mode, D37): the web process builds its MCP servers from the `mcp.servers` instance setting with credentials from konfig's secrets store, never from `config.yaml` (whose `mcp` section is ignored with a warning), and a change to a server or its credentials reconnects the affected servers on every replica without a restart
+- **MCP editor on the instance page** (server mode): administrators add, edit, test, enable, disable and remove HTTP and SSE servers on the instance settings page, choose the roles each is granted to, and enter credentials write-only; the `/settings/mcp/*` API works on the instance setting and refuses stdio servers, unknown roles and invalid names with the reason
+- **MCP servers shown per user** (server mode): the conversation tool panel, the main menu, the action tool list, the debate capabilities list and sub-agents show and use only the servers granted to the signed-in user's roles; requests made with an API key are granted no MCP server
+- **MCP tools per user in a turn** (server mode): the tool list a chat turn sends to the model holds only the MCP servers granted to the turn's user, and each MCP call is checked against the same grants and audited with the turn's user and conversation; a sub-agent's MCP calls are audited in its parent conversation
+- **MCP audit trail** (server mode): every MCP tool call is recorded in warden's audit trail with the user, conversation, server, tool and outcome (`spark.mcp.tool.called`), and every refusal as `spark.mcp.tool.refused`; arguments and results are never recorded
+
+### Changed
+- **MCP credentials** (server mode, A9): a server's bearer token, basic password and custom headers are not kept in `mcp.servers`; the setting refuses them, and a credential already stored there is dropped with a warning so it can be entered again into konfig's secrets store
+
+### Fixed
+- **MCP SDK 2.x**: HTTP MCP servers connect again (the SDK renamed its HTTP client), tool input schemas reach the model, a tool's own error is reported as an error, and an image result keeps its type. An unreachable HTTP server now fails to connect instead of cancelling the caller, and each connection is opened and closed in one task, as the SDK's transports require. MCP SDK 1.x still works
+
 ## [0.3.0a12] - 2026-11-04
 
 ### Added

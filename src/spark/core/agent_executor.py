@@ -28,6 +28,7 @@ class AgentExecutor:
         mcp_manager: Any | None = None,
         mcp_loop: Any | None = None,
         user_guid: str = "default",
+        conversation_id: int | None = None,
         tool_permission_callback: Callable | None = None,
         status_callback: Callable | None = None,
     ) -> None:
@@ -37,6 +38,7 @@ class AgentExecutor:
         self._mcp_manager = mcp_manager
         self._mcp_loop = mcp_loop
         self._user_guid = user_guid
+        self._conversation_id = conversation_id
         self._tool_permission_callback = tool_permission_callback
         self._status_callback = status_callback
         self._mcp_tool_names: set[str] = set()
@@ -452,9 +454,15 @@ class AgentExecutor:
             if self._mcp_manager and self._mcp_loop:
                 import asyncio
 
+                from spark.tools.registry import tool_permissions
+
                 try:
+                    # Only the servers granted to this agent's user (server mode, A12).
                     mcp_tools = asyncio.run_coroutine_threadsafe(
-                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                        self._mcp_manager.list_all_tools(
+                            permissions=tool_permissions(self._config)
+                        ),
+                        self._mcp_loop,
                     ).result(timeout=10)
                     for t in mcp_tools:
                         tools.append(
@@ -515,7 +523,13 @@ class AgentExecutor:
 
                 try:
                     future = asyncio.run_coroutine_threadsafe(
-                        self._mcp_manager.call_tool(tool_name, tool_input),
+                        self._mcp_manager.call_tool(
+                            tool_name,
+                            tool_input,
+                            permissions=tool_permissions(self._config),
+                            user_guid=self._user_guid,
+                            conversation_id=self._conversation_id,
+                        ),
                         self._mcp_loop,
                     )
                     mcp_result = future.result(timeout=60)

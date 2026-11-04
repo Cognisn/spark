@@ -116,6 +116,8 @@ USAGE_REFUSED: Final = "spark.usage.refused"
 USAGE_VIEWED: Final = "spark.usage.viewed"
 USAGE_BUDGET_CHANGED: Final = "spark.usage.budget_changed"
 KNOWLEDGE_BUILD_REFUSED: Final = "spark.knowledge.build.refused"
+MCP_TOOL_CALLED: Final = "spark.mcp.tool.called"
+MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +159,8 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     KNOWLEDGE_BUILD_REFUSED: ActionDef(
         Severity.WARNING, "knowledge graph build of {resource_id} for {actor} refused"
     ),
+    MCP_TOOL_CALLED: ActionDef(Severity.INFO, "{actor} called MCP tool {resource_id}: {outcome}"),
+    MCP_TOOL_REFUSED: ActionDef(Severity.NOTICE, "MCP tool {resource_id} refused for {actor}"),
 }
 
 

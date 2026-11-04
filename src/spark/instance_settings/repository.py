@@ -53,19 +53,19 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _checked(key: str, value: Any, scope: Scope) -> Any:
+def _checked(key: str, value: Any, scope: Scope, *, stored: bool = False) -> Any:
     """Validate ``value`` for a non-secret key of ``scope``; return its stored form."""
     spec = registry.spec(key)
     if spec.secret:
         raise SettingsError(f"{key} is a secret; secrets are written only through konfig")
     if spec.scope is not scope:
         raise SettingsError(f"{key} is a {spec.scope.value} setting, not a {scope.value} one")
-    return registry.coerce(key, value)
+    return registry.coerce(key, value, stored=stored)
 
 
 def _decoded(key: str, text: str, scope: Scope) -> tuple[bool, Any]:
     try:
-        return True, _checked(key, json.loads(text), scope)
+        return True, _checked(key, json.loads(text), scope, stored=True)
     except (SettingsError, ValueError) as exc:
         logger.warning("Ignoring stored setting %s: %s", key, exc)
         return False, None
