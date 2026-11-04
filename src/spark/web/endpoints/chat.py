@@ -13,9 +13,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.identity.access import current_user_guid, request_permissions
+from spark.usage.budgets import BudgetExceeded
 from spark.web import attachments, interactions
 from spark.web import models as offered_models
 from spark.web.db import database, sync_database
+from spark.web.endpoints.usage import refused_response, request_roles
 from spark.web.scope import not_found, owned_conversation
 
 logger = logging.getLogger(__name__)
@@ -161,15 +163,20 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     if isinstance(attached, JSONResponse):
         return attached
 
-    # The turn's tools follow the signed-in user's roles (server mode).
+    # The turn's tools follow the signed-in user's roles (server mode), and so does its
+    # token budget, exactly as on the stream.
     permissions = request_permissions(request)
+    roles = request_roles(request)
     try:
         result = await asyncio.to_thread(
             lambda: conv_mgr.send_message(
-                conversation_id, attached, user_guid, permissions=permissions
+                conversation_id, attached, user_guid, permissions=permissions, roles=roles
             )
         )
         return JSONResponse(result)
+    except BudgetExceeded as refused:
+        # Refused at turn start: nothing of the turn was stored or sent to the model.
+        return refused_response(refused)
     except Exception as e:
         logger.error("Send message failed: %s", e)
         return JSONResponse({"error": str(e)}, status_code=500)
