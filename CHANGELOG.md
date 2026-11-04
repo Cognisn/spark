@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Knowledge graph build jobs** (both engines): a new revision adds `kg_build_jobs`, one row per build, owned by its user, with its status (queued, running, complete, failed or cancelled), attempts, progress, result and error. A partial unique index allows one queued or running job per user and scope, so two web replicas cannot both start a build of the same graph. `spark.knowledge.jobs` enqueues, reads, cancels and retries a user's own jobs only; a worker claims the oldest queued job with `FOR UPDATE SKIP LOCKED` on PostgreSQL, so parallel workers never claim one job twice, and records progress and the outcome only while the job is still its own. The downgrade drops the table
+- **Model clients without the web app** (`spark.llm.factory`): builds the enabled providers from a settings source with the web process's rules (Anthropic, AWS Bedrock, Ollama, Google Gemini, xAI), skipping a disabled or keyless provider and logging only the type of one that cannot start, and gives a model's own client (`ModelClients`), so the worker can call models without importing the web server
+- **The worker builds queued knowledge graphs as their owner** (server mode): the active `spark worker` claims queued builds every `worker.knowledge_graph_poll_seconds` (default 5) and builds each as the user who queued it, reading and writing only that user's conversations and graph, with a model client from the instance settings as they are now. An owner with no warden user, a suspended or deactivated owner, or one without `spark.knowledge.instance` building the global graph is refused; the refusal is recorded on the job and audited (`spark.knowledge.build.refused`). A failed build is recorded with its error and can be retried; a cancel from any web replica stops the build before its next chunk, and a build left running by a stopped worker is failed after `worker.knowledge_graph_stale_seconds` (default 30 minutes) without progress, so it can be retried
+
+### Changed
+- **Knowledge graph builds are queued on a server** (server mode): starting a build queues a job for the worker instead of building in the web process (409 while one is queued or running for that graph), and the knowledge status, cancel and clear routes read the job table, so every web replica shows the same progress. `POST /knowledge/api/retry` queues a failed build again. Building, retrying or clearing the global graph needs `spark.knowledge.instance` (403 otherwise), and clearing waits until no build is active. The Knowledge page shows a queued build and offers Retry on a failed one. Personal mode still builds in-process
+
 ## [0.3.0a11] - 2026-11-04
 
 ### Added

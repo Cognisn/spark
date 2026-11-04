@@ -115,6 +115,7 @@ ACTION_REFUSED: Final = "spark.action.refused"
 USAGE_REFUSED: Final = "spark.usage.refused"
 USAGE_VIEWED: Final = "spark.usage.viewed"
 USAGE_BUDGET_CHANGED: Final = "spark.usage.budget_changed"
+KNOWLEDGE_BUILD_REFUSED: Final = "spark.knowledge.build.refused"
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +153,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     USAGE_VIEWED: ActionDef(Severity.INFO, "{actor} viewed usage {resource_id}"),
     USAGE_BUDGET_CHANGED: ActionDef(
         Severity.NOTICE, "{actor} changed the {resource_type} token budget {resource_id}"
+    ),
+    KNOWLEDGE_BUILD_REFUSED: ActionDef(
+        Severity.WARNING, "knowledge graph build of {resource_id} for {actor} refused"
     ),
 }
 

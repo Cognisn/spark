@@ -236,7 +236,7 @@
         const progress = document.getElementById('kg-global-progress');
         progress.classList.toggle('d-none', !global.building && !global.last_result);
         if (global.building) {
-            progress.textContent = 'Building...';
+            progress.textContent = buildingText(global.job);
             setTimeout(refreshStatus, 2000);
         } else if (global.last_result) {
             const r = global.last_result;
@@ -244,6 +244,7 @@
                 `${r.entities || 0} entities, ${r.relationships || 0} relationships` +
                 (r.skipped_chunks ? `, ${r.skipped_chunks} skipped` : '') +
                 (r.error ? ` — ${r.error}` : '');
+            if (retryable(global.job)) progress.appendChild(retryButton(global.job.id));
         }
 
         const list = document.getElementById('kg-conversation-list');
@@ -258,8 +259,10 @@
             ? status.conversation_graphs.map(g => `
                 <div class="d-flex align-items-center justify-content-between py-1">
                     <span>${esc(g.name)} <span style="color: var(--app-text-muted);">
-                        ${g.nodes} entities · ${g.edges} relationships${g.building ? ' · building...' : ''}</span></span>
+                        ${g.nodes} entities · ${g.edges} relationships${g.building ? ' · ' + esc(buildingText(g.job)) : ''}${retryable(g.job) ? ' · last build failed' : ''}</span></span>
                     <span>
+                        ${retryable(g.job) ? `<button class="btn btn-app-ghost btn-sm" title="Retry the failed build"
+                                onclick="retryBuild(${Number(g.job.id)})"><i class="bi bi-arrow-repeat"></i></button>` : ''}
                         <button class="btn btn-app-ghost btn-sm" onclick="startBuild('conv:${g.conversation_id}')">
                             <i class="bi bi-hammer"></i></button>
                         <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);"
@@ -269,6 +272,35 @@
             : '<span style="color: var(--app-text-muted);">No conversation graphs enabled yet. ' +
               'Enable one in a conversation\'s settings.</span>';
     }
+
+    // On a server a build is a job the worker runs: queued, then running with progress.
+    function buildingText(job) {
+        if (job && job.status === 'queued') return 'Queued for the worker...';
+        const p = job && job.progress;
+        return p ? `Building... ${p.chunks || 0} chunk(s), ${p.entities || 0} entities` : 'Building...';
+    }
+
+    function retryable(job) {
+        return Boolean(job && job.status === 'failed');
+    }
+
+    function retryButton(jobId) {
+        const button = document.createElement('button');
+        button.className = 'btn btn-app-ghost btn-sm ms-2';
+        button.textContent = 'Retry';
+        button.addEventListener('click', () => window.retryBuild(jobId));
+        return button;
+    }
+
+    window.retryBuild = async function (jobId) {
+        const r = await fetch('/knowledge/api/retry', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId }),
+        });
+        if (r.status === 409) { AppToast.warning('Busy', 'A build is already running for this scope.'); }
+        if (r.status === 403) { AppToast.warning('Not permitted', 'Your role cannot build the global graph.'); }
+        refreshStatus();
+    };
 
     window.startBuild = async function (scope) {
         const status = await fetch('/knowledge/api/status').then(r => r.json());
@@ -283,6 +315,7 @@
             body: JSON.stringify({ scope }),
         });
         if (r.status === 409) { AppToast.warning('Busy', 'A build is already running for this scope.'); }
+        if (r.status === 403) { AppToast.warning('Not permitted', 'Your role cannot build the global graph.'); }
         refreshStatus();
     };
 
@@ -301,6 +334,7 @@
             body: JSON.stringify({ scope }),
         });
         if (r.status === 409) { AppToast.warning('Busy', 'Cannot clear while a build is running.'); return; }
+        if (r.status === 403) { AppToast.warning('Not permitted', 'Your role cannot clear the global graph.'); return; }
         refreshStatus(); loadGraph();
     };
 
