@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Server deployment guide** (`docs/deployment/`): running a Spark server with the Compose stack (services, roles, volumes, web and worker replicas, the migrate step, the files volume, pgvector 0.8 or later), konfig secrets in the encrypted store with `KONFIG_MASTER_KEY` or in AWS Secrets Manager with its IAM policy, and how a saved secret reaches every replica; the reverse proxy and TLS (`server.public_base_url`, the Origin and Host checks and the cookies), with Caddy and nginx examples; the first administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings and identity mail (`mail.smtp`, and links shown to administrators while it is unset); an external PostgreSQL, restricted database roles and the `DELETE` grant warden's audit purge needs on `warden.audit_events`; backups, restores, upgrades with `spark migrate` and rolling back; and moving people from personal mode with a user bundle. Each page says which of its commands were run for the guide and which were not
+- **README: server mode**: a short section on running Spark as a multi-user server, linking the guide
+
 ## [0.3.0a18] - 2026-11-04
 
 ### Changed
