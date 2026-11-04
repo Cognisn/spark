@@ -122,11 +122,9 @@ SPARK__INTERFACE__OPEN_BROWSER=false SPARK__INTERFACE__PORT=8765 spark
 #### Databases
 
 Personal mode (the default) keeps everything in a local SQLite database and needs
-nothing extra. Server mode uses PostgreSQL through psycopg 3, which is included:
-set `mode: server` and `database.url` (or `SPARK__MODE=server` and
-`SPARK__DATABASE__URL`), run `spark migrate`, then start Spark. Server mode needs the
-pgvector extension (0.8 or later) in that PostgreSQL. MySQL and SQL Server are no
-longer supported.
+nothing extra. Server mode uses PostgreSQL with pgvector 0.8 or later, through
+psycopg 3, which is included; see [Server Mode](#server-mode). MySQL and SQL Server
+are no longer supported.
 
 ## Quick Start
 
@@ -147,6 +145,26 @@ Spark stores its configuration in platform-standard locations:
 | Windows | %APPDATA%/spark/ | %APPDATA%/spark/ | %LOCALAPPDATA%/spark/logs/ |
 
 API keys are stored in the OS keychain (macOS Keychain, Windows Credential Locker, Linux Secret Service) via the [cognisn-konfig](https://pypi.org/project/cognisn-konfig/) library.
+
+## Server Mode
+
+Spark can also run as a multi-user server for a team: PostgreSQL with pgvector, the
+web interface (`spark web`, one or more replicas) and a background worker
+(`spark worker`) from one container image, with sign-in, two-step verification,
+single sign-on, roles and an audit trail through
+[warden](https://pypi.org/project/cognisn-warden/), and every secret in konfig's
+encrypted store or AWS Secrets Manager.
+
+```bash
+cp deploy/spark.env.example deploy/spark.env   # then set real values
+docker compose -p spark -f deploy/compose.yaml up -d
+docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admin --email admin@example.com
+```
+
+A server needs a TLS reverse proxy in front and `server.public_base_url` set to its
+address. The [server deployment guide](https://github.com/Cognisn/spark/blob/main/docs/deployment/index.md) covers the Compose
+stack, secrets, the reverse proxy, identity and mail, database roles, backups,
+upgrades, and moving people over from personal mode with a user bundle.
 
 ## Architecture
 
