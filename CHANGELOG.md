@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a13] - 2026-11-04
+
 ### Added
 - **MCP servers in server mode** (A12): a server allows HTTP and SSE MCP servers only. A stdio server runs a command on the host, so `mcp.servers` refuses one with a clear message however it is configured, and a stdio entry already stored is ignored with a warning while the other servers are kept. Server names are lower-case letters, digits, `-` and `_`, because each is part of its permission
 - **MCP grants by role** (server mode): each server in `mcp.servers` lists the roles it is granted to (`roles`), which a user holds as the `spark.mcp.<server>` permission; a server listing no role is granted to no one. The MCP manager lists and calls only the servers a caller's permissions grant, and with no permissions lists nothing and refuses every call
