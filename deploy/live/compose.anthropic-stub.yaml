@@ -1,0 +1,12 @@
+# Points the Anthropic SDK in both web replicas at the scripted model server,
+# so the cross-replica check can see which provider key each replica sends.
+# stack.py layers this file for the scripted run and leaves it out for the
+# live chat, which must reach the real provider.
+
+services:
+  web:
+    environment:
+      ANTHROPIC_BASE_URL: http://model-stub:11434
+  web2:
+    environment:
+      ANTHROPIC_BASE_URL: http://model-stub:11434

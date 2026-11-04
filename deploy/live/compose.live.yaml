@@ -1,0 +1,114 @@
+# The live end-to-end stack (A18): layered over deploy/compose.yaml by
+# deploy/live/stack.py, never used on its own and never for a real deployment.
+#
+# Adds a second web replica, a standby worker, an OIDC provider
+# (mock-oauth2-server) and a mail catcher (Mailpit) behind a throwaway CA, and
+# a scripted model server. Every value below comes from the env file that
+# stack.py writes into the sandbox; the CA, keys and passwords live only there.
+# Every published port binds to 127.0.0.1.
+
+x-live-environment: &live-environment
+  # The throwaway CA plus the public CAs: SPARK reaches the OIDC provider
+  # and the mail catcher over verified TLS, as it does in production.
+  SSL_CERT_FILE: /etc/spark-live/ca-bundle.pem
+  # The second replica answers on its own origin.
+  SPARK__INTERFACE__ALLOWED_ORIGINS: "http://127.0.0.1:${LIVE_WEB2_PORT}"
+  # Workaround (Skuld 0.3.0 Q34, D71): the image's heartbeat "false" reaches
+  # SPARK as a string and reads as on, so each web replica stops itself after
+  # three missed 30-second heartbeats. A day-long interval keeps it running.
+  SPARK__INTERFACE__BROWSER_HEARTBEAT__INTERVAL_SECONDS: "86400"
+
+x-live-volumes: &live-volumes
+  - ${LIVE_CERTS}:/etc/spark-live:ro
+  - ${LIVE_TOOLS}:/opt/spark-live:ro
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${LIVE_POSTGRES_PORT}:5432"
+
+  migrate:
+    image: ${SPARK_IMAGE}
+    environment: *live-environment
+    volumes: *live-volumes
+
+  web:
+    image: ${SPARK_IMAGE}
+    environment: *live-environment
+    volumes: *live-volumes
+    depends_on:
+      oidc:
+        condition: service_started
+      mail:
+        condition: service_started
+      model-stub:
+        condition: service_started
+
+  web2:
+    image: ${SPARK_IMAGE}
+    init: true
+    command: ["web"]
+    env_file:
+      - path: ${SPARK_ENV_FILE}
+        required: true
+    environment:
+      <<: *live-environment
+      SPARK__MODE: server
+      SPARK__SECRETS__BACKEND: encrypted_file
+      SPARK__SECRETS__FILE_PATH: /var/lib/spark/data/spark/secrets.enc
+      SPARK__FILES__ROOT: /var/lib/spark-files
+    volumes:
+      - spark-data:/var/lib/spark
+      - spark-files:/var/lib/spark-files
+      - spark-models:/var/cache/spark/huggingface
+      - ${LIVE_CERTS}:/etc/spark-live:ro
+      - ${LIVE_TOOLS}:/opt/spark-live:ro
+    ports:
+      - "127.0.0.1:${LIVE_WEB2_PORT}:8000"
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      # The first replica creates the instance's identity in the secrets file.
+      web:
+        condition: service_healthy
+
+  worker:
+    image: ${SPARK_IMAGE}
+    environment: *live-environment
+    volumes: *live-volumes
+    # One active worker and one on standby (failover check).
+    scale: 2
+
+  oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:${LIVE_OIDC_VERSION}
+    environment:
+      SERVER_PORT: "8443"
+      JSON_CONFIG_PATH: /etc/spark-live/oidc.json
+    volumes:
+      - ${LIVE_CERTS}:/etc/spark-live:ro
+    ports:
+      - "127.0.0.1:${LIVE_OIDC_PORT}:8443"
+    restart: unless-stopped
+
+  mail:
+    image: axllent/mailpit:${LIVE_MAILPIT_VERSION}
+    command:
+      - --smtp-tls-cert=/etc/spark-live/mail.crt
+      - --smtp-tls-key=/etc/spark-live/mail.key
+      - --smtp-require-starttls
+      - --smtp-auth-accept-any
+    volumes:
+      - ${LIVE_CERTS}:/etc/spark-live:ro
+    ports:
+      - "127.0.0.1:${LIVE_MAIL_API_PORT}:8025"
+    restart: unless-stopped
+
+  model-stub:
+    image: python:${LIVE_PYTHON_VERSION}
+    command: ["python", "-I", "/opt/spark-live/model_stub.py"]
+    volumes:
+      - ${LIVE_TOOLS}:/opt/spark-live:ro
+    ports:
+      - "127.0.0.1:${LIVE_STUB_PORT}:11434"
+    restart: unless-stopped
