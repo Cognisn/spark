@@ -122,14 +122,23 @@ in `spark worker`.
   `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
   sign-in asks the administrator to set up an authenticator app (a QR code, or the
   key typed in) and shows ten recovery codes once: keep them somewhere safe.
+- **Mail**: set `mail.smtp` on the instance page (**Settings**, as an
+  administrator): the host, the port with its TLS mode (587 with STARTTLS or 465
+  with implicit TLS; no TLS only for a relay on a loopback address), the sender
+  address and name, and the username. The password is a secret, stored in the
+  secrets store as `mail_smtp_password`: enter it on the page, or place it under
+  that name with konfig's secrets tooling before the first start (it is not read
+  from a `SPARK__` variable). The rest of `mail.smtp` is set only on the page.
+  Send a test message from the page to check the settings.
 - **Inviting users**: an administrator invites from **Account > Invitations**
-  (`/admin/invitations`), choosing the roles granted on acceptance. Spark has no
-  mail service in server mode, so the invitation link is shown to the
-  administrator once, to pass on privately; it works once and expires after
-  `warden.identity.invitation_ttl_seconds` (7 days by default). The same applies to
-  a password reset link sent from a user's page. A user who asks for a reset at
-  `/auth/password-reset` gets a neutral answer and no link, so they ask an
-  administrator instead.
+  (`/admin/invitations`), choosing the roles granted on acceptance. With mail set
+  up, the invitation is mailed; it works once and expires after
+  `warden.identity.invitation_ttl_seconds` (7 days by default). Password resets
+  sent from a user's page, a reset a signed-out user asks for at
+  `/auth/password-reset`, and second factor notices are mailed the same way. With
+  no mail host, the invitation or reset link is shown to the administrator once,
+  to pass on privately, and a signed-out reset request gets a neutral answer and
+  no link, so the user asks an administrator instead.
 - **Two-step verification**: `SPARK__WARDEN__IDENTITY__REQUIRE_MFA` (default
   `true`) makes every password sign-in use an authenticator app. A user who has
   lost both their authenticator and their recovery codes needs an administrator
