@@ -13,7 +13,7 @@ name `spark`; keep that name, or your own, the same on every command.
 | `postgres` | the image's own | `pgvector/pgvector:pg16`, with its data in the `postgres-data` volume. Not published on the host. |
 | `migrate` | `spark migrate` | Brings the database to the current schema (Spark's chain, then warden's), then exits. Runs once each time the stack starts, after PostgreSQL is healthy. |
 | `web` | `spark web` | The web interface on port 8000, published on `127.0.0.1:8000` by default. Starts only after `migrate` succeeds. |
-| `worker` | `spark worker` | Scheduled actions, knowledge graph builds and warden's pruning. Starts after `migrate` succeeds and `web` is healthy. |
+| `worker` | `spark worker` | Scheduled actions, knowledge graph builds, warden's pruning and, with a retention, its audit purge. Starts after `migrate` succeeds and `web` is healthy. |
 
 All four share one image (`SPARK_IMAGE`, default `ghcr.io/cognisn/spark:0.3.0`), and
 the three Spark services share one definition: the env file, `SPARK__MODE=server`,
@@ -23,6 +23,12 @@ Web and worker refuse to start on a database behind the current schema, and the
 worker also refuses personal mode and SQLite. A schema problem therefore shows as
 `migrate` failing (`docker compose -p spark -f deploy/compose.yaml logs migrate`)
 rather than as a half-working server.
+
+Every Spark service connects as `POSTGRES_USER`, the owner of both schemas. Only
+`migrate` needs to: web and worker only read the schema at start-up, so they can run
+as login roles that own nothing and hold no `CREATE` on the database, with the audit
+purge on a role of its own. [Database roles](database.md#restricted-roles) gives the
+grants, the env files and the override.
 
 ## Volumes
 

@@ -67,6 +67,10 @@ services:
 
   # Runs scheduled actions. Scale it for standby workers: one holds the
   # PostgreSQL advisory lock and is active, the others wait to take over.
+  # With restricted database roles and an audit retention, give the worker its
+  # own env file with SPARK__WORKER__AUDIT_PURGE_DATABASE_URL, so the purge alone
+  # connects as warden's purger role (docs/deployment/database.md). Unset, the
+  # purge uses the worker's own database.url.
   worker:
     <<: *spark
     command: ["worker"]
