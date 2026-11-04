@@ -26,6 +26,7 @@ from spark import mode
 from spark.instance_settings import access, accessor, registry
 from spark.instance_settings.registry import Scope, SettingsError
 from spark.instance_settings.secrets import SecretsWriter, announce, reference
+from spark.settings_values import setting_bool
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -531,8 +532,8 @@ def _handle_daemon_settings(data: dict[str, Any], ctx: Any) -> None:
     if not daemon_keys.intersection(data.keys()):
         return
 
-    actions_enabled = ctx.settings.get("autonomous_actions.enabled", False)
-    daemon_enabled = ctx.settings.get("daemon.enabled", False)
+    actions_enabled = setting_bool(ctx.settings, "autonomous_actions.enabled", False)
+    daemon_enabled = setting_bool(ctx.settings, "daemon.enabled", False)
 
     if actions_enabled and daemon_enabled:
         # Start daemon if not running
@@ -576,17 +577,13 @@ async def test_email(request: Request) -> JSONResponse:
     port = int(settings.get("embedded_tools.email.port", 587))
     username = settings.get("embedded_tools.email.username", "")
     sender = settings.get("embedded_tools.email.sender", "")
-    use_tls = settings.get("embedded_tools.email.use_tls", True)
+    use_tls = setting_bool(settings, "embedded_tools.email.use_tls", True)
 
     # Resolve password from secrets backend
     from spark.web.server import _resolve_secret
 
     raw_password = settings.get("embedded_tools.email.password", "")
     password = _resolve_secret(ctx, raw_password) if raw_password else ""
-
-    # Normalise boolean (may be string from config)
-    if isinstance(use_tls, str):
-        use_tls = use_tls.lower() == "true"
 
     # Check if a test send was requested
     try:
@@ -1109,7 +1106,7 @@ def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
                             "type": "toggle",
                             "key": "conversation.prompt_caching",
                             "label": "Enable Prompt Caching",
-                            "value": bool(_get_val(settings, "conversation.prompt_caching", True)),
+                            "value": setting_bool(settings, "conversation.prompt_caching", True),
                             "help": "Cache system prompts and tool definitions across requests to reduce input token costs. Supported by Anthropic. Default: on.",
                         },
                     ],
@@ -1375,8 +1372,18 @@ def _ensure_list(value: object) -> list[Any]:
     return []
 
 
+def _select_bool(settings: _SettingsGetter, key: str, default: bool) -> str:
+    """An on/off setting as a yes/no select's value ("true" or "false")."""
+    return "true" if setting_bool(settings, key, default) else "false"
+
+
 def _toggle(key: str, label: str, settings: _SettingsGetter) -> dict[str, Any]:
-    return {"type": "toggle", "key": key, "label": label, "value": bool(_get_val(settings, key))}
+    return {
+        "type": "toggle",
+        "key": key,
+        "label": label,
+        "value": setting_bool(settings, key, False),
+    }
 
 
 def _text(key: str, label: str, settings: _SettingsGetter, default: object = "") -> dict[str, Any]:
@@ -1549,7 +1556,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "Filesystem",
             "icon": "bi-folder2-open",
             "description": "Read, write, search, and inspect files and directories.",
-            "enabled": bool(get("embedded_tools.filesystem.enabled", True)),
+            "enabled": setting_bool(settings, "embedded_tools.filesystem.enabled", True),
             "mode": get("embedded_tools.filesystem.mode", "read"),
             "mode_options": ["read", "read_write"],
             "mode_descriptions": {
@@ -1580,7 +1587,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "Documents",
             "icon": "bi-file-earmark-richtext",
             "description": "Read Word, Excel, PowerPoint, and PDF documents.",
-            "enabled": bool(get("embedded_tools.documents.enabled", True)),
+            "enabled": setting_bool(settings, "embedded_tools.documents.enabled", True),
             "mode": get("embedded_tools.documents.mode", "read"),
             "mode_options": ["read", "read_write"],
             "mode_descriptions": {
@@ -1612,7 +1619,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "Archives",
             "icon": "bi-file-zip",
             "description": "List and extract ZIP and TAR archive contents.",
-            "enabled": bool(get("embedded_tools.archives.enabled", True)),
+            "enabled": setting_bool(settings, "embedded_tools.archives.enabled", True),
             "mode": get("embedded_tools.archives.mode", "list"),
             "mode_options": ["list", "extract"],
             "mode_descriptions": {
@@ -1627,7 +1634,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "Web",
             "icon": "bi-globe2",
             "description": "Search the web and fetch page content.",
-            "enabled": bool(get("embedded_tools.web.enabled", True)),
+            "enabled": setting_bool(settings, "embedded_tools.web.enabled", True),
             "mode": None,
             "mode_options": [],
             "mode_descriptions": {},
@@ -1686,7 +1693,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "System Commands",
             "icon": "bi-terminal",
             "description": "Execute shell commands on the host system. The LLM can run CLI tools, scripts, and system utilities.",
-            "enabled": bool(get("embedded_tools.system_commands.enabled", False)),
+            "enabled": setting_bool(settings, "embedded_tools.system_commands.enabled", False),
             "mode": None,
             "mode_options": [],
             "mode_descriptions": {},
@@ -1718,9 +1725,9 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
                     "key": "embedded_tools.system_commands.require_approval",
                     "label": "Always Require Approval",
                     "type": "select",
-                    "value": str(
-                        get("embedded_tools.system_commands.require_approval", True)
-                    ).lower(),
+                    "value": _select_bool(
+                        settings, "embedded_tools.system_commands.require_approval", True
+                    ),
                     "options": [
                         {"value": "true", "label": "Yes — prompt for every command"},
                         {
@@ -1738,7 +1745,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
             "title": "Email",
             "icon": "bi-envelope",
             "description": "Send and draft emails via SMTP. Requires SMTP server configuration.",
-            "enabled": bool(get("embedded_tools.email.enabled", False)),
+            "enabled": setting_bool(settings, "embedded_tools.email.enabled", False),
             "mode": None,
             "mode_options": [],
             "mode_descriptions": {},
@@ -1782,7 +1789,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
                     "key": "embedded_tools.email.use_tls",
                     "label": "Use TLS",
                     "type": "select",
-                    "value": str(get("embedded_tools.email.use_tls", True)).lower(),
+                    "value": _select_bool(settings, "embedded_tools.email.use_tls", True),
                     "options": [
                         {"value": "true", "label": "Yes (STARTTLS)"},
                         {"value": "false", "label": "No"},
@@ -1800,7 +1807,7 @@ def _build_tool_categories(settings: _SettingsGetter) -> list[dict[str, Any]]:
                     "key": "embedded_tools.email.require_approval",
                     "label": "Always Require Approval",
                     "type": "select",
-                    "value": str(get("embedded_tools.email.require_approval", True)).lower(),
+                    "value": _select_bool(settings, "embedded_tools.email.require_approval", True),
                     "options": [
                         {"value": "true", "label": "Yes — always prompt before sending"},
                         {"value": "false", "label": "No — respect tool permission settings"},

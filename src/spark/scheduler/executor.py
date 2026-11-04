@@ -15,6 +15,7 @@ from spark.safety.untrusted import (
     guard_tool_result,
     new_turn_id,
 )
+from spark.settings_values import setting_bool
 from spark.tools.registry import PERMISSIONS_KEY, Permissions, tool_category
 from spark.usage import budgets
 from spark.usage.budgets import BudgetExceeded
@@ -416,7 +417,7 @@ class ActionExecutor:
 
         # Enable prompt caching if the global setting is on — caches the system
         # prompt and tool definitions across iterations, reducing input token costs.
-        use_caching = bool(self._ctx.settings.get("conversation.prompt_caching", True))
+        use_caching = setting_bool(self._ctx.settings, "conversation.prompt_caching", True)
 
         for iteration in range(max_iterations):
             response = llm.invoke_model(
@@ -807,7 +808,7 @@ class ActionExecutor:
         ]
 
         for key, init_fn in providers:
-            if settings.get(f"providers.{key}.enabled"):
+            if setting_bool(settings, f"providers.{key}.enabled", False):
                 try:
                     service = init_fn(settings)
                     service.set_model(model_id)
@@ -820,7 +821,7 @@ class ActionExecutor:
         logger.error(
             "No provider could initialise model '%s'. Enabled providers: %s",
             model_id,
-            [k for k, _ in providers if settings.get(f"providers.{k}.enabled")],
+            [k for k, _ in providers if setting_bool(settings, f"providers.{k}.enabled", False)],
         )
         return None
 

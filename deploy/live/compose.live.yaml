@@ -13,10 +13,6 @@ x-live-environment: &live-environment
   SSL_CERT_FILE: /etc/spark-live/ca-bundle.pem
   # The second replica answers on its own origin.
   SPARK__INTERFACE__ALLOWED_ORIGINS: "http://127.0.0.1:${LIVE_WEB2_PORT}"
-  # Workaround (Skuld 0.3.0 Q34, D71): the image's heartbeat "false" reaches
-  # SPARK as a string and reads as on, so each web replica stops itself after
-  # three missed 30-second heartbeats. A day-long interval keeps it running.
-  SPARK__INTERFACE__BROWSER_HEARTBEAT__INTERVAL_SECONDS: "86400"
 
 x-live-volumes: &live-volumes
   - ${LIVE_CERTS}:/etc/spark-live:ro

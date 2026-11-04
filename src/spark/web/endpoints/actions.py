@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from spark.identity.access import current_user_guid, require_permission
 from spark.identity.permissions import ACTIONS
+from spark.settings_values import setting_bool
 from spark.web.db import database, sync_database
 from spark.web.models import not_offered, offered_models
 from spark.web.scope import not_found, owned_action
@@ -30,7 +31,7 @@ def _actions_enabled(request: Request) -> bool:
     ctx = getattr(request.app.state, "ctx", None)
     if not ctx:
         return False
-    return bool(ctx.settings.get("autonomous_actions.enabled", False))
+    return setting_bool(ctx.settings, "autonomous_actions.enabled", False)
 
 
 @router.get("", response_class=HTMLResponse)
