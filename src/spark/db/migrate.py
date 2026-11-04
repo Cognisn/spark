@@ -10,7 +10,9 @@ live in the ``spark`` schema; on SQLite in the default schema.
   difference), then a stamp at the baseline.
 * :func:`check_at_head` refuses a database behind head (:class:`MigrationRequired`)
   or newer than this code (:class:`DatabaseTooNew`), for SPARK's chain and then
-  every registered chain that has a check.
+  every registered chain that has a check. It only reads: the ``spark`` schema is
+  created by :func:`upgrade` (``spark migrate``), never by a check, so web and
+  worker can connect as roles with no ``CREATE`` on the database.
 * :func:`prepare` is what start-up calls: personal mode migrates automatically
   (every chain), server mode only checks (``spark migrate`` runs the migrations there).
 * :func:`migrate_all` is ``spark migrate``: SPARK's chain, then every chain
@@ -163,11 +165,19 @@ def _scripts() -> ScriptDirectory:
 
 
 @contextmanager
-def _connect(settings: DatabaseSettings) -> Iterator[Connection]:
+def _connect(settings: DatabaseSettings, *, create_schema: bool = False) -> Iterator[Connection]:
+    """A connection in one transaction; ``create_schema`` makes the ``spark`` schema first.
+
+    Only the paths that change the schema (:func:`upgrade`, :func:`downgrade`,
+    so ``spark migrate``) create it. PostgreSQL checks ``CREATE`` on the database
+    before it looks for the schema, so running ``CREATE SCHEMA IF NOT EXISTS``
+    from a check would refuse a login role that owns nothing (a web or worker
+    role kept apart from the owner) even though the schema exists.
+    """
     engine = _engine(settings)
     try:
         with engine.begin() as conn:
-            if settings.dialect is Dialect.POSTGRESQL:
+            if create_schema and settings.dialect is Dialect.POSTGRESQL:
                 conn.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
             yield conn
     finally:
@@ -328,15 +338,15 @@ def _legacy_upgrade(path: Path) -> None:
 def upgrade(settings: DatabaseSettings, target: str = "head") -> UpgradeReport:
     """Bring the database to ``target`` (default head), upgrading a legacy SQLite file first."""
     legacy = False
-    with _connect(settings) as conn:
+    with _connect(settings, create_schema=True) as conn:
         if _is_legacy(conn, settings):
             legacy = True
     if legacy:
         assert settings.sqlite_path is not None
         _legacy_upgrade(settings.sqlite_path)
-        with _connect(settings) as conn:
+        with _connect(settings, create_schema=True) as conn:
             command.stamp(_config(conn, settings), BASELINE)
-    with _connect(settings) as conn:
+    with _connect(settings, create_schema=True) as conn:
         before = _current(conn, settings)
         _check_known(before)
         command.upgrade(_config(conn, settings), target)
@@ -350,13 +360,18 @@ def upgrade(settings: DatabaseSettings, target: str = "head") -> UpgradeReport:
 
 def downgrade(settings: DatabaseSettings, target: str) -> None:
     """Step the database down to ``target`` (``"base"`` removes SPARK's tables)."""
-    with _connect(settings) as conn:
+    with _connect(settings, create_schema=True) as conn:
         _check_known(_current(conn, settings))
         command.downgrade(_config(conn, settings), target)
 
 
 def check_at_head(settings: DatabaseSettings) -> None:
-    """Refuse a database not exactly at this code's head revision, or a chain not at its head."""
+    """Refuse a database not exactly at this code's head revision, or a chain not at its head.
+
+    Read only: it creates nothing, so a login role that holds no ``CREATE`` on the
+    database passes against a migrated schema, and an empty database is refused
+    with :class:`MigrationRequired`.
+    """
     with _connect(settings) as conn:
         revision = _current(conn, settings)
     _check_known(revision)

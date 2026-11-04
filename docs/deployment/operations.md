@@ -55,7 +55,8 @@ rest. After a restore, users sign in again only if their sessions postdate the
 backup.
 
 With [restricted roles](database.md#restricted-roles), the dump carries the grants;
-create the two login roles first on a new database server.
+create the login roles first on a new database server (`spark_web` and
+`spark_worker`, and `spark_purger` if you use one).
 
 ## Upgrades
 
@@ -99,8 +100,7 @@ SPARK"), so a mistake shows at once instead of as wrong behaviour.
 > `up -d` re-running `migrate` before web and worker, were run.
 
 With [restricted roles](database.md#restricted-roles), re-run warden's grants (step 3
-of that section, and the worker's `DELETE` grant if a retention is set) after the
-upgrade.
+of that section, which also covers the purger role if you use one) after the upgrade.
 
 ### Release candidates
 
@@ -125,3 +125,9 @@ above.
   scheduled actions and knowledge graph builds wait while no worker is running.
 - **Users and sessions**: warden's expired tokens, challenges and sign-in throttles are
   pruned hourly by the active worker.
+- **Audit purge**: with a retention set, the active worker purges once a day. A
+  refused purge (for example a restricted worker role with no
+  `worker.audit_purge_database_url`, or a wrong purger password) is logged as
+  `Worker job warden-audit-purge failed (...)` and tried again the next day, so check
+  the worker's log after setting it up. See
+  [the purge](database.md#wardens-audit-trail-and-its-purge).
