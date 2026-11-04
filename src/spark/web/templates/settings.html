@@ -51,9 +51,15 @@
         {% elif page == 'preferences' and is_admin %}
         <a class="btn btn-app-ghost btn-sm" href="/settings"><i class="bi bi-sliders me-1"></i>Instance settings</a>
         {% elif page == 'personal' %}
-        <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock/unlock settings">
-            <i class="bi bi-lock{% if is_locked %}-fill{% endif %}" id="lock-icon"></i>
-        </button>
+        <div class="d-flex align-items-center gap-2">
+            <a class="btn btn-app-ghost btn-sm" href="/bundles/export" download
+               title="Download your conversations, memories, skills, knowledge graphs, scheduled actions and preferences as one bundle, to import into a Spark server. No secrets or provider and MCP settings are included.">
+                <i class="bi bi-box-arrow-up me-1"></i>Export my data
+            </a>
+            <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock/unlock settings">
+                <i class="bi bi-lock{% if is_locked %}-fill{% endif %}" id="lock-icon"></i>
+            </button>
+        </div>
         {% endif %}
     </div>
 

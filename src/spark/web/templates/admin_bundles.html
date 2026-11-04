@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Spark - Import a user bundle{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <div class="mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Import a user bundle</h4>
+        <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+            Bring a user's data from a personal Spark: the bundle they exported (format version {{ format_version }},
+            up to {{ limit_mb }} MB). Scheduled actions are imported disabled, and anything this server cannot run is
+            left out and listed. A bundle is imported once for each user.
+        </p>
+    </div>
+    {% include "_page_messages.html" %}
+
+    {% if report %}
+    <div class="app-card mb-4">
+        <div class="card-header" style="font-size: 0.875rem;">
+            <i class="bi bi-check2-circle me-1"></i>
+            Imported for {{ target.email }} (bundle {{ report.bundle_id[:8] }})
+        </div>
+        <div class="card-body" style="font-size: 0.8125rem;">
+            <h6>Imported</h6>
+            <div class="app-table-responsive mb-3">
+            <table class="app-table">
+                <thead><tr><th>What</th><th>Rows</th></tr></thead>
+                <tbody>
+                {% for table, count in report.imported|dictsort %}
+                <tr><td>{{ table|replace("_", " ") }}</td><td>{{ count }}</td></tr>
+                {% endfor %}
+                {% for table, count in report.merged|dictsort %}
+                <tr><td>{{ table|replace("_", " ") }} merged with the user's own</td><td>{{ count }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% if report.actions_disabled %}
+            <h6>Scheduled actions, imported disabled</h6>
+            <ul>{% for name in report.actions_disabled %}<li>{{ name }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if report.skills_placed %}
+            <h6>Skills kept in the user's file area (not installed: a server's skills are shared)</h6>
+            <ul>{% for name in report.skills_placed %}<li>{{ name }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if report.dropped %}
+            <h6>Left out: this server cannot run them</h6>
+            <ul>{% for item in report.dropped %}<li>{{ item }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if report.skipped %}
+            <h6>Skipped</h6>
+            <ul>{% for item in report.skipped %}<li>{{ item }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if report.warnings %}
+            <h6>Warnings</h6>
+            <ul>{% for item in report.warnings %}<li>{{ item }}</li>{% endfor %}</ul>
+            {% endif %}
+            <p class="mb-0" style="color: var(--app-text-secondary);">
+                The user finds this report in their files as imports/{{ report.bundle_id }}/report.json.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="app-card">
+        <div class="card-body">
+            <form method="POST" action="/admin/bundles" enctype="multipart/form-data" class="d-flex flex-column gap-3" style="max-width: 520px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div>
+                    <label for="user_id" class="form-label" style="font-size: 0.875rem;">Import for</label>
+                    <select id="user_id" name="user_id" class="form-select form-select-sm" required>
+                        <option value="">Choose a user</option>
+                        {% for user in users %}
+                        <option value="{{ user.id }}">{{ user.email }}{% if user.display_name %} ({{ user.display_name }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="bundle" class="form-label" style="font-size: 0.875rem;">Bundle</label>
+                    <input id="bundle" name="bundle" type="file" accept=".zip,application/zip" class="form-control form-control-sm" required>
+                </div>
+                <div>
+                    <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-box-arrow-in-down me-1"></i> Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

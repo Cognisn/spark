@@ -9,6 +9,7 @@ from spark.web.endpoints.actions import router as actions_router
 from spark.web.endpoints.administration import router as administration_router
 from spark.web.endpoints.audit import router as audit_router
 from spark.web.endpoints.auth import router as auth_router
+from spark.web.endpoints.bundles import router as bundles_router
 from spark.web.endpoints.chat import router as chat_router
 from spark.web.endpoints.conversations import router as conversations_router
 from spark.web.endpoints.debate import router as debate_router
@@ -54,3 +55,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(help_router)
     app.include_router(provider_guides_router)
     app.include_router(usage_router)
+    app.include_router(bundles_router)

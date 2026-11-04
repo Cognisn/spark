@@ -118,6 +118,7 @@ USAGE_BUDGET_CHANGED: Final = "spark.usage.budget_changed"
 KNOWLEDGE_BUILD_REFUSED: Final = "spark.knowledge.build.refused"
 MCP_TOOL_CALLED: Final = "spark.mcp.tool.called"
 MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
+BUNDLE_IMPORTED: Final = "spark.bundle.imported"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +162,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ),
     MCP_TOOL_CALLED: ActionDef(Severity.INFO, "{actor} called MCP tool {resource_id}: {outcome}"),
     MCP_TOOL_REFUSED: ActionDef(Severity.NOTICE, "MCP tool {resource_id} refused for {actor}"),
+    BUNDLE_IMPORTED: ActionDef(
+        Severity.NOTICE, "{actor} imported a user bundle for user {resource_id}: {outcome}"
+    ),
 }
 
 

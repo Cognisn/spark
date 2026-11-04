@@ -33,6 +33,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "actions",
     "administration",
     "auth",
+    "bundles",
     "chat",
     "conversations",
     "debate",
