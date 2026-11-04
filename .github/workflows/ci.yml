@@ -221,6 +221,7 @@ jobs:
           src/spark/knowledge/jobs.py src/spark/knowledge/build_jobs.py
           src/spark/llm/factory.py src/spark/web/endpoints/knowledge.py
           src/spark/mcp_integration src/spark/web/endpoints/mcp_servers.py
+          src/spark/settings_values.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
