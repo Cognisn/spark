@@ -12,6 +12,12 @@ it never hands a value to a caller that could pass it to the browser.
 :meth:`SecretsWriter.resolve` exists for server-side consumers (provider
 clients, SMTP) only.
 
+Several web replicas share one store (wave 3 question 16). After a secret is
+saved or cleared, :func:`announce` sends a settings notification whose payload is
+the secret's key, never its value; each replica's listener then asks konfig to
+refresh its store (:func:`refresher`) so its consumers see the change without a
+restart.
+
 SPARK 0.2 named secrets without their group (``database.url`` was ``url``) and
 kept some (web search keys) as plain text in ``config.yaml``.
 :func:`migrate_config` moves both to the current names.
@@ -20,22 +26,29 @@ kept some (web search keys) as plain text in ``config.yaml``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
 
+from spark.db.engine import Executor
 from spark.instance_settings import audit, registry
 from spark.instance_settings.audit import SettingChange
 from spark.instance_settings.registry import InvalidSettingError, SettingsError
+from spark.instance_settings.repository import CHANNEL
+from spark.mode import Dialect
 
 __all__ = [
     "SECRET_PREFIX",
     "SecretsLike",
     "SecretsWriter",
+    "announce",
+    "is_secret_key",
     "migrate_config",
     "migrate_config_file",
     "reference",
+    "refresher",
 ]
 
 logger = logging.getLogger(__name__)
@@ -124,6 +137,37 @@ class SecretsWriter:
         if configured:
             return configured
         return self._secrets.get(name) or ""
+
+
+# -- Propagation between replicas -----------------------------------------------------
+
+
+def is_secret_key(key: str) -> bool:
+    """Whether ``key`` (a notification payload) names a registered secret."""
+    return registry.is_known(key) and registry.spec(key).secret
+
+
+async def announce(db: Executor, key: str) -> None:
+    """Tell every replica the secret ``key`` changed; the payload is the key, never a value.
+
+    Call it after the store has been written. PostgreSQL only: SQLite serves one
+    process, which already holds the change.
+    """
+    if not is_secret_key(key):
+        raise SettingsError(f"{key} is not a secret")
+    if db.dialect is Dialect.POSTGRESQL:
+        await db.execute("SELECT pg_notify(?, ?)", (CHANNEL, key))
+
+
+def refresher(store: object) -> Callable[[], None] | None:
+    """The store's ``refresh`` (konfig 0.5.0rc1 and later), or ``None`` when it has none."""
+    refresh = getattr(store, "refresh", None)
+    if store is not None and refresh is None:
+        logger.warning(
+            "This konfig secrets store cannot refresh: secrets saved on another replica "
+            "apply here only after a restart"
+        )
+    return refresh if callable(refresh) else None
 
 
 # -- Migration of 0.2 names and plain-text secrets ------------------------------------

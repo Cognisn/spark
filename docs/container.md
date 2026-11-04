@@ -81,8 +81,13 @@ Configuration comes through konfig, as on the desktop:
   `KONFIG_MASTER_KEY`. Every web and worker container must read the same file,
   so the Compose file names it on the shared volume. When Spark is deployed into
   AWS, konfig can use AWS Secrets Manager instead (`KONFIG_AWS_SECRETS_MANAGER`).
-  A secret saved on one web replica is used by that replica at once; other
-  replicas read the file at start, so restart them after changing a secret.
+  A secret saved or cleared on one web replica applies on every replica within
+  a few seconds, without a restart: the replica that saved it sends a settings
+  notification naming the secret (never its value), and each replica has konfig
+  re-read its store, the shared file or the Secrets Manager bundle, and rebuilds
+  the providers, voice and web search keys that use it. konfig locks the shared
+  file for each save, so secrets saved on different replicas at the same time
+  are all kept. This needs cognisn-konfig 0.5.0rc1 or later.
 - **Instance settings** (providers, models offered, tools, tool result actions)
   are kept in PostgreSQL. A change an administrator saves on one web replica
   reaches every replica within a few seconds, without a restart.
