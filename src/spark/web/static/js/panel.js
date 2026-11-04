@@ -397,6 +397,15 @@
                 evtSource.close();
             },
             cancelled: () => { setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
+            budget_exceeded: d => {
+                // The panellist holding the floor finished; the next turn waits for the budget.
+                setFloor(null);
+                document.getElementById('panel-cancel').classList.add('d-none');
+                if (window.SparkBudget) SparkBudget.show(d);
+                setStatus('Paused: monthly token budget used');
+                showResume();
+                evtSource.close();
+            },
             error: d => {
                 setFloor(null);
                 addCard('moderator', 'Error', d.error || '', { cls: 'text-danger' });
@@ -475,6 +484,9 @@
                 });
                 const data = await r.json();
                 thinking.remove();
+                if (r.status === 429 && data.budget && window.SparkBudget) {
+                    SparkBudget.show({ ...data.budget, message: data.error });
+                }
                 if (r.ok && data.answer !== undefined) {
                     addCard('moderator', 'Moderator', data.answer);
                     speakTurn('moderator', data.answer);

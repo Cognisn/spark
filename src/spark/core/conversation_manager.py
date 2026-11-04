@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -23,6 +24,8 @@ from spark.safety.untrusted import (
 )
 from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
 from spark.tools.registry import Permissions
+from spark.usage import budgets
+from spark.usage.meter import MeteredService, meter
 
 logger = logging.getLogger(__name__)
 
@@ -553,6 +556,7 @@ class ConversationManager:
         cancel_token: CancellationToken | None = None,
         permissions: Permissions = None,
         callbacks: TurnCallbacks | None = None,
+        roles: Iterable[str] | None = None,
     ) -> dict[str, Any]:
         """Send a user message and get the assistant response.
 
@@ -561,6 +565,13 @@ class ConversationManager:
         and runs only the tool categories they grant, and without them a server
         refuses every built-in tool. Personal mode ignores them. ``callbacks`` are this
         turn's interactive callbacks (a stream's); without them the manager's own apply.
+
+        ``roles`` are the user's roles (server mode), which decide their monthly token
+        budget. The budget is checked once, before anything of the turn is stored:
+        at 100% the turn is refused with :class:`spark.usage.budgets.BudgetExceeded`,
+        and a turn that started under it always finishes. Every model call the turn
+        makes, its sub-agents' and its compaction's included, is recorded against
+        ``user_guid``. The result's ``budget`` is the user's standing after the turn.
         """
         from spark.database import conversations
         from spark.database import messages as msg_db
@@ -571,10 +582,21 @@ class ConversationManager:
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
 
-        # This turn's own service for the conversation's model. The shared manager's
-        # provider and model are never changed: one manager serves every user.
+        # A new turn is refused once the user has used their monthly token budget.
+        budgets.check(self._db, user_guid, roles)
+
+        # This turn's own service for the conversation's model, metered for its user.
+        # The shared manager's provider and model are never changed: one manager
+        # serves every user.
         model_id = conv.get("model_id", "")
-        service = self._turn_service(model_id)
+        service = meter(
+            self._turn_service(model_id),
+            self._db,
+            user_guid=user_guid,
+            source="chat",
+            model_id=model_id,
+            conversation_id=conversation_id,
+        )
 
         def count_tokens(text: str) -> int:
             return service.count_tokens(text) if service is not None else len(text) // 4
@@ -943,7 +965,17 @@ class ConversationManager:
             "tool_calls": all_tool_calls,
             "iterations": iterations,
             "status": "completed",
+            "budget": self._budget_after(user_guid, roles),
         }
+
+    def _budget_after(self, user_guid: str, roles: Iterable[str] | None) -> dict[str, Any] | None:
+        """The user's budget standing after a turn, for the UI's warning (None if unreadable)."""
+        try:
+            status = self._db.call(budgets.status_for, user_guid, roles)
+        except Exception:  # noqa: BLE001 - reporting the standing must never fail a turn
+            logger.warning("Could not read the budget after a turn", exc_info=True)
+            return None
+        return status.as_dict()
 
     # -- System instructions --------------------------------------------------
 
@@ -1787,6 +1819,15 @@ class ConversationManager:
 
             from spark.tools.registry import PERMISSIONS_KEY
 
+            # The sub-agent's model calls are billed to the turn's user.
+            agent_llm = meter(
+                agent_llm,
+                self._db,
+                user_guid=user_guid,
+                source="agent",
+                model_id=model_id,
+                conversation_id=conversation_id,
+            )
             executor = AgentExecutor(
                 agent_llm,
                 self._db,
@@ -1953,11 +1994,23 @@ class ConversationManager:
         service: Any = None,
     ) -> None:
         """Check and perform context compaction if needed, with the turn's ``service``
-        or, when a compaction model is locked, a service of its own for that model."""
+        or, when a compaction model is locked, a service of its own for that model.
+
+        Either way the compaction's model calls are recorded for ``user_guid``."""
         if self._compactor:
             locked = self._compactor.locked_model
-            if locked:
-                service = self._llm.service_for(locked) or service
+            locked_service = self._llm.service_for(locked) if locked else None
+            if locked_service is not None:
+                service = meter(
+                    locked_service,
+                    self._db,
+                    user_guid=user_guid,
+                    source="compaction",
+                    model_id=locked or "",
+                    conversation_id=conversation_id,
+                )
+            elif isinstance(service, MeteredService):
+                service = service.with_source("compaction")
             self._compactor.check_and_compact(
                 conversation_id,
                 model_id,

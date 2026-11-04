@@ -58,6 +58,7 @@ function openChatStream(url) {
         const data = JSON.parse(e.data);
         if (data.final) {
             finaliseStreamingMessage(data.content);
+            if (data.budget && window.SparkBudget) SparkBudget.show(data.budget);
             if (data.usage) {
                 updateTokenDisplay(
                     data.usage.input_tokens,
@@ -140,6 +141,14 @@ function openChatStream(url) {
     currentEventSource.addEventListener('agent_complete', (e) => {
         const data = JSON.parse(e.data);
         updateStreamingAgentComplete(data.agent_id, data.agent_name, data.status, data.result);
+    });
+
+    // Refused at 100% of the monthly token budget: nothing of the turn was stored.
+    currentEventSource.addEventListener('budget_exceeded', (e) => {
+        const data = JSON.parse(e.data);
+        if (window.SparkBudget) SparkBudget.show(data);
+        appendTextMessage('error', data.message || 'Your monthly token budget is used.');
+        closeStream();
     });
 
     currentEventSource.addEventListener('cancelled', (e) => {

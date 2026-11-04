@@ -47,6 +47,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "settings",
     "skills",
     "streaming",
+    "usage",
     "voice",
 }
 

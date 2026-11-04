@@ -290,6 +290,14 @@
                 evtSource.close();
             },
             cancelled: () => { setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
+            budget_exceeded: d => {
+                // The speaker holding the floor finished; the next turn waits for the budget.
+                setFloor(null);
+                if (window.SparkBudget) SparkBudget.show(d);
+                setStatus('Paused: monthly token budget used');
+                showResume();
+                evtSource.close();
+            },
             error: d => { setFloor(null); addBlock('judge', 'text-danger', 'Error', d.error || ''); evtSource.close(); },
         };
         Object.entries(handlers).forEach(([type, fn]) =>
@@ -337,6 +345,9 @@
                 });
                 const data = await r.json();
                 thinking.remove();
+                if (r.status === 429 && data.budget && window.SparkBudget) {
+                    SparkBudget.show({ ...data.budget, message: data.error });
+                }
                 if (r.ok && data.answer !== undefined) {
                     addBlock('judge', '', 'Judge', data.answer);
                     speakTurn('judge', data.answer);

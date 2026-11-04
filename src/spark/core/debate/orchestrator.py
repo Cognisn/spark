@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Iterable
 from typing import Any, Callable
 
 from spark.core.agent_executor import AgentExecutor
@@ -19,6 +20,9 @@ from spark.core.debate.tools import (
     validate_exhibits,
 )
 from spark.database import debates
+from spark.usage import budgets
+from spark.usage.budgets import BudgetExceeded
+from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,8 @@ class DebateOrchestrator:
         self._permission_cb = tool_permission_callback
         self._limits = context_limit_resolver
         self._prompt_caching = prompt_caching
+        # The user's roles for the run in hand, which decide their token budget.
+        self._roles: frozenset[str] | None = None
 
     # ------------------------------------------------------------------ events
 
@@ -86,6 +92,35 @@ class DebateOrchestrator:
             },
         )
 
+    # ------------------------------------------------------------------ usage
+
+    def _service(self, model_id: str, cfg: dict) -> Any:
+        """A service for ``model_id`` whose model calls are billed to the debate's user."""
+        return meter(
+            self._factory(model_id),
+            self._db,
+            user_guid=cfg["user_guid"],
+            source="debate",
+            model_id=model_id,
+            conversation_id=cfg["conversation_id"],
+        )
+
+    def _over_budget(self, cfg: dict) -> bool:
+        """Whether the debate's user has used their monthly token budget.
+
+        Checked as each turn starts (A14): the turn holding the floor always
+        finishes, and the debate pauses before the next one, resumable later.
+        """
+        try:
+            budgets.check(self._db, cfg["user_guid"], self._roles)
+        except BudgetExceeded as refused:
+            self._emit(
+                "budget_exceeded",
+                {"role": "system", "message": str(refused), **refused.status.as_dict()},
+            )
+            return True
+        return False
+
     # ------------------------------------------------------------------ public
 
     def run(
@@ -94,11 +129,16 @@ class DebateOrchestrator:
         user_guid: str,
         *,
         cancel_token: CancellationToken | None = None,
+        roles: Iterable[str] | None = None,
     ) -> None:
         """Drive the debate until QA, cancellation, or a failed turn."""
         cfg = self._db.call(debates.get_debate, user_guid, conversation_id)
         if not cfg:
             raise ValueError(f"No debate for conversation {conversation_id}")
+
+        # ``roles`` decide the user's token budget; at 100% nothing starts.
+        self._roles = frozenset(roles) if roles is not None else None
+        budgets.check(self._db, user_guid, self._roles)
 
         self._skills_block = self._compute_skills_block(user_guid)
         self._skills_user_guid = user_guid
@@ -145,9 +185,19 @@ class DebateOrchestrator:
             debates.add_turn, user_guid, conversation_id, round_no, "user", turn_type, text
         )
 
-    def answer_qa(self, conversation_id: int, user_guid: str, question_turn_id: int) -> str:
+    def answer_qa(
+        self,
+        conversation_id: int,
+        user_guid: str,
+        question_turn_id: int,
+        *,
+        roles: Iterable[str] | None = None,
+    ) -> str:
         """Ask the judge to answer a QA question about its ruling."""
         cfg = self._db.call(debates.get_debate, user_guid, conversation_id)
+        # A QA answer is a new request: refused at 100% of the user's token budget.
+        self._roles = frozenset(roles) if roles is not None else None
+        budgets.check(self._db, user_guid, self._roles)
         self._skills_block = self._compute_skills_block(user_guid)
         turns = self._db.call(debates.get_turns, user_guid, conversation_id)
         exhibits = self._db.call(debates.get_exhibits, user_guid, conversation_id)
@@ -306,8 +356,10 @@ class DebateOrchestrator:
     ) -> dict | None:
         """One judge model invocation. Returns None on failure (debate pauses)."""
         judge = cfg["agents"]["judge"]
+        if self._over_budget(cfg):
+            return None
         try:
-            service = self._factory(judge["model_id"])
+            service = self._service(judge["model_id"], cfg)
             service.set_model(judge["model_id"])
             judge_allowed = judge.get("allowed_skills")
             if judge_allowed is not None:
@@ -370,6 +422,8 @@ class DebateOrchestrator:
     ) -> bool:
         round_no = cfg["current_round"]
         agent = cfg["agents"][role]
+        if self._over_budget(cfg):
+            return False
         self._emit("debater_turn_start", {"role": role, "round": round_no})
         self._emit("floor", {"role": role})
         try:
@@ -435,7 +489,7 @@ class DebateOrchestrator:
                 turn_config["_skills_allowlist"] = allowed_skills
 
             executor = AgentExecutor(
-                self._factory(agent["model_id"]),
+                self._service(agent["model_id"], cfg),
                 self._db,
                 turn_config,
                 mcp_manager=self._mcp_manager,

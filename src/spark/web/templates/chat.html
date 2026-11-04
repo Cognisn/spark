@@ -72,7 +72,7 @@
     <div id="chat-messages" class="flex-grow-1 overflow-auto px-3 chat-container"></div>
 
     <!-- Input area -->
-    <div class="chat-input-container">
+    <div class="chat-input-container" data-budget-anchor>
         <form id="chat-form" onsubmit="handleSubmit(event)">
             <div class="d-flex gap-2 align-items-end">
                 <textarea id="chat-input" class="form-control" rows="1" placeholder="Type a message..." onkeydown="handleKeydown(event)" style="resize: none;"></textarea>
@@ -482,6 +482,7 @@
 <script src="/static/js/voice.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
+<script src="/static/js/budget.js"></script>
 <script>
 const conversationId = {{ conversation.id }};
 const conversationName = "{{ conversation.name }}";

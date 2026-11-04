@@ -376,6 +376,7 @@ class ActionRunner:
                 self._db,
                 permissions=access.permissions,
                 user_guid=user_guid,
+                roles=access.roles,
             )
             if access.refusal is not None:
                 executor.refuse(action_id, access.refusal)

@@ -31,12 +31,14 @@ class OwnerAccess:
     """An action owner's standing for one run.
 
     ``refusal`` is None when the run may go ahead with ``permissions``; otherwise
-    it says why not, and ``permissions`` is None.
+    it says why not, and ``permissions`` is None. ``roles`` are the owner's roles
+    now, which decide their monthly token budget.
     """
 
     user_guid: str
     permissions: frozenset[str] | None
     refusal: str | None = None
+    roles: frozenset[str] = frozenset()
 
     @classmethod
     def refused(cls, user_guid: str, reason: str) -> OwnerAccess:
@@ -73,4 +75,5 @@ class WardenOwners:
                 user_guid, f"the action's owner is {user.status.value} in warden"
             )
         permissions = await self._identity.permissions_of(warden_user)
-        return OwnerAccess(user_guid, frozenset(permissions))
+        roles = await self._identity.roles.roles_of(warden_user)
+        return OwnerAccess(user_guid, frozenset(permissions), roles=frozenset(roles))

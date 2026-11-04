@@ -196,8 +196,11 @@ starts, under `spark.`:
 | `spark.tool_result.policy_changed` | notice | `setting`, the key | an administrator changes a tool result action |
 | `spark.tool.refused` | notice | `tool`, the tool | a tool is refused at dispatch, by role or by mode (outcome failure) |
 | `spark.file.downloaded` | info | `file`, the file id | a user downloads a file from their file area |
-| `spark.export.downloaded` | info | `conversation`, `memories` or `skill` | a conversation export, memories export or skill download |
+| `spark.export.downloaded` | info | `conversation`, `memories`, `skill` or `usage` | a conversation export, memories export, skill download or usage export |
 | `spark.action.refused` | warning | `action`, the action id | a scheduled action is refused for its owner (outcome failure) |
+| `spark.usage.refused` | notice | `budget`, the month | a request is refused at 100% of the user's monthly token budget (outcome failure) |
+| `spark.usage.viewed` | info | `usage`, the month | an administrator opens the usage view |
+| `spark.usage.budget_changed` | notice | `role` or `user`, its name or guid | an administrator sets or removes a budget |
 
 - **Actor**: the warden user id, as in warden's own events, so one actor filter shows a person's whole trail; the SPARK guid is kept in the details as `user_guid`. A guid with no warden user (or `operator`, a change made outside the web) is recorded as given.
 - **Details** never carry a value or content: keys naming a value, secret, password, token, content, text, snippet, body, message or prompt are dropped at any depth (`scrub`).
@@ -210,6 +213,40 @@ starts, under `spark.`:
 
 - **ConversationManager** -- Central orchestrator connecting database, LLM, tools, MCP, memory, and compaction; synchronous, runs on a worker thread per turn and reaches the database through the bridge (see Data Layer)
 - **ContextCompactor** -- LLM-driven intelligent context summarisation with categorised preservation
+
+### Usage and budgets (A14)
+
+Every model call is metered: `spark.usage.meter.meter` wraps the LLM service a chat
+turn, a sub-agent, a compaction, a debate or panel agent, or a scheduled action uses,
+and records each call that returns usage as one `usage_tracking` row through the
+bridge: the user it is billed to (an action's owner for an action), the model the
+service was last set to, the source (`chat`, `compaction`, `agent`, `debate`, `panel`,
+`action`), the conversation or action, and the period, the UTC calendar month
+(`YYYY-MM`). Input tokens include prompt-cache reads and writes. Rows are only
+inserted, so parallel turns for one user never lose tokens, and a failure to record
+is logged and never breaks the call. The per-conversation, debate and action run
+token counters are kept as before.
+
+`spark.usage.budgets` decides a user's monthly limit: their own override
+(`usage_user_budgets`, a number or explicitly unlimited) first; then, on a server, the
+most generous budget among their roles that set one (`usage_role_budgets`);
+otherwise none. Personal mode applies only the local user's own budget. `check` runs
+as a turn starts, in `ConversationManager.send_message`, before each debate or panel
+speaker's turn and each QA answer, and in `ActionExecutor.execute`: at 100% it raises
+`BudgetExceeded` (audited as `spark.usage.refused`) with a message saying when the
+budget resets, at 00:00 UTC on the first of the next month. A turn already running
+always finishes, so parallel turns that each started under the budget can take the
+month past it; the next request is refused. Callers pass the user's roles: the
+request's identity for the web, and the owner's roles read from warden at run time
+for the worker (`spark.scheduler.owners`).
+
+On the web, `/api/usage/me` gives the signed-in user's standing, which the chat,
+debate and panel pages show as a banner from 80% (`static/js/budget.js`). A refused
+stream sends `budget_exceeded`; a refused QA question is answered 429. `/admin/usage`
+and `/admin/usage/export.csv` (`spark.usage.admin`, Administrators only) show and
+export usage by month, user and model and set the budgets; viewing, exporting and
+changing a budget are audited. The ElevenLabs character cap is separate and stays
+instance-wide.
 - **UserGUID** -- Persistent user identifier stored in the OS keychain
 - **Updater** -- GitHub release checker with PyApp/pip update support
 
@@ -614,7 +651,9 @@ erDiagram
 | `conversation_mcp_servers` | Per-conversation MCP server enable/disable |
 | `conversation_embedded_tools` | Per-conversation tool enable/disable |
 | `conversation_tool_permissions` | Tool approval status per conversation |
-| `usage_tracking` | Global token usage and cost tracking |
+| `usage_tracking` | Token usage per model call: user, model, source, conversation or action, UTC month |
+| `usage_role_budgets` | Monthly token budget per role |
+| `usage_user_budgets` | Per-user budget override (NULL: unlimited) |
 | `prompt_inspection_violations` | Security violation records |
 | `context_index_elements` | Vector index for RAG retrieval |
 | `user_memories` | Persistent memories with embeddings |

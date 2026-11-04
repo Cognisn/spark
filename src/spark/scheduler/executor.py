@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from typing import Any
 
@@ -15,6 +16,9 @@ from spark.safety.untrusted import (
     new_turn_id,
 )
 from spark.tools.registry import PERMISSIONS_KEY, Permissions, tool_category
+from spark.usage import budgets
+from spark.usage.budgets import BudgetExceeded
+from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +44,11 @@ class ActionExecutor:
         *,
         permissions: Permissions = None,
         user_guid: str | None = None,
+        roles: Iterable[str] | None = None,
     ) -> None:
         """``permissions`` are those of the user the action runs as, ``user_guid`` that
         user: the action's owner (the worker), or the signed-in user (run now).
+        ``roles`` are that user's roles, which decide their monthly token budget.
 
         In server mode ``user_guid`` is required: an action runs only as its
         owner, never as the process. Its run needs ``spark.actions`` in
@@ -52,6 +58,7 @@ class ActionExecutor:
         """
         self._ctx = ctx
         self._permissions = permissions
+        self._roles = frozenset(roles) if roles is not None else None
         self._daemon_id = daemon_id
         self._db = db
         self._mcp_manager: Any | None = None
@@ -208,7 +215,9 @@ class ActionExecutor:
         """Execute an action by ID, as this executor's user.
 
         On a server a user without ``spark.actions`` is refused before anything
-        runs, and the refusal is recorded as a run.
+        runs, and the refusal is recorded as a run. So is a run of a user who has
+        used their monthly token budget (either mode); a run already started
+        always finishes. Every model call of the run is billed to its user.
         """
         from spark.database import autonomous_actions
 
@@ -216,6 +225,11 @@ class ActionExecutor:
         refusal = self._refusal()
         if refusal is not None:
             self.refuse(action_id, refusal)
+            return
+        try:
+            budgets.check(db, self._user_guid, self._roles)
+        except BudgetExceeded as exceeded:
+            self.refuse(action_id, str(exceeded))
             return
 
         # Initialise MCP connections for this execution
@@ -372,6 +386,14 @@ class ActionExecutor:
             raise RuntimeError(
                 f"Could not initialise LLM for model '{model_id}'. Check provider is enabled and API key is configured."
             )
+        llm = meter(
+            llm,
+            db,
+            user_guid=self._user_guid,
+            source="action",
+            model_id=model_id,
+            action_id=action.get("id"),
+        )
 
         # Get available tools
         tools = self._get_tools()
