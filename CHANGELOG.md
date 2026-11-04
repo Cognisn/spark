@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Strict typing in CI for the 0.3.0 server features**: the usage, bundles, MCP integration, chat attachment and knowledge graph job modules, with their endpoints and the model client factory, join CI's blocking `mypy --strict` step, replacing the three tests that ran mypy over them in the meantime
+
 ## [0.3.0a17] - 2026-11-04
 
 ### Added

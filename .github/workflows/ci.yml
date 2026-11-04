@@ -215,6 +215,12 @@ jobs:
           src/spark/web/qr.py src/spark/web/endpoints/lifecycle.py
           src/spark/web/endpoints/account.py src/spark/web/menu.py
           src/spark/web/endpoints/administration.py src/spark/web/endpoints/audit.py
+          src/spark/usage src/spark/web/endpoints/usage.py
+          src/spark/bundles src/spark/web/endpoints/bundles.py
+          src/spark/tools/my_files.py src/spark/web/attachments.py
+          src/spark/knowledge/jobs.py src/spark/knowledge/build_jobs.py
+          src/spark/llm/factory.py src/spark/web/endpoints/knowledge.py
+          src/spark/mcp_integration src/spark/web/endpoints/mcp_servers.py
 
       - name: Type checking of the older modules (advisory)
         continue-on-error: true
