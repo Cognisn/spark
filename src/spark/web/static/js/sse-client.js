@@ -11,7 +11,7 @@ let currentStreamId = null;
 /**
  * Send a message and stream the response via SSE.
  */
-function sendMessageWithSSE(conversationId, message) {
+function sendMessageWithSSE(conversationId, message, attachmentIds) {
     if (currentEventSource) {
         cancelCurrentRequest();
     }
@@ -30,6 +30,8 @@ function sendMessageWithSSE(conversationId, message) {
         message: message,
         conversation_id: conversationId,
     });
+    // Files uploaded in the composer: the server names them in the message by id.
+    if (attachmentIds && attachmentIds.length) params.set('attachments', attachmentIds.join(','));
 
     const url = `/stream/chat?${params.toString()}`;
     // A server-mode session is refreshed first: an EventSource cannot read a 401.

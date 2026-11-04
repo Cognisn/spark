@@ -122,6 +122,10 @@ Get message history for a conversation.
 ]
 ```
 
+### POST /chat/{conversation_id}/api/send
+
+Send a message without streaming. Body: `{"message": "...", "attachments": [12, 13]}`; `attachments` is optional, follows the same rules as on `GET /stream/chat`, and may stand without a message.
+
 ### GET /chat/{conversation_id}/api/export
 
 Export a conversation in various formats.
@@ -140,6 +144,12 @@ SSE endpoint for streaming chat responses.
 **Query params:**
 - `message` (string) -- The user message
 - `conversation_id` (integer) -- The conversation ID
+- `attachments` (string, optional) -- Comma-separated ids of the user's own files (uploaded first with `POST /files/api`), at most 20. Another user's id, or one that does not exist, answers 404 and nothing runs; ids that are not numbers answer 400. The message the model receives ends with a note naming each file by id and name (never its content):
+
+  ```
+  [Attached files: read them with the read_my_file tool]
+  - file 12: report.pdf
+  ```
 
 **SSE Events:**
 

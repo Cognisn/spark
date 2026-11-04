@@ -70,6 +70,8 @@ TOOL_CATEGORIES: Mapping[str, tuple[str, ...]] = {
         "create_excel",
         "create_powerpoint",
         "create_pdf",
+        "list_my_files",
+        "read_my_file",
     ),
     "archives": ("list_archive", "extract_archive"),
     "web": ("web_search", "web_fetch"),
@@ -291,6 +293,17 @@ def _file_tools_available(fs_config: dict[str, Any]) -> bool:
     return _server_mode() or _has_paths(fs_config)
 
 
+def _file_area_available() -> bool:
+    """Whether this process has a file area for the signed-in user's own files (either mode)."""
+    from spark import files as files_pkg
+
+    try:
+        files_pkg.file_store()
+    except FileAreaNotConfigured:
+        return False
+    return True
+
+
 def _file_scope(config: dict[str, Any]) -> Any:
     from spark.files.scope import tool_scope
 
@@ -366,6 +379,12 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
             from spark.tools.document_creation import get_tools as doc_create_tools
 
             tools.extend(doc_create_tools())
+
+    # The user's own files (chat attachments), read by file id from their area
+    if doc_config.get("enabled", True) and _file_area_available():
+        from spark.tools.my_files import get_tools as my_files_tools
+
+        tools.extend(my_files_tools())
 
     # Archives — the user's file area (server) or filesystem allowed_paths
     arc_config = embedded.get("archives", {})
@@ -462,6 +481,12 @@ def execute_builtin_tool(
             from spark.tools.documents import execute as doc_execute
 
             return doc_execute(tool_name, tool_input, scope=_file_scope(config)), False
+
+        # The user's own files, by id, from their area (both modes)
+        if tool_name in ("list_my_files", "read_my_file"):
+            from spark.tools.my_files import execute as my_files_execute
+
+            return my_files_execute(tool_name, tool_input, config)
 
         # Documents (create)
         doc_create_tools = {

@@ -59,6 +59,14 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         database(request), user_guid, conversation_id, message
     )
 
+    # Files attached in the composer: the user's own only, named in the message by id.
+    from spark.web.attachments import attach
+
+    attached = await attach(request, user_guid, request.query_params.get("attachments"), message)
+    if isinstance(attached, JSONResponse):
+        return attached  # type: ignore[return-value]
+    message = attached
+
     # Allocate a unique stream id and per-turn cancellation token.
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()

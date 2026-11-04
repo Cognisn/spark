@@ -87,6 +87,8 @@ _BUILTIN_SOURCES: Mapping[str, SourceCategory] = {
     "read_excel": SourceCategory.DOCUMENTS,
     "read_pdf": SourceCategory.DOCUMENTS,
     "read_powerpoint": SourceCategory.DOCUMENTS,
+    "read_my_file": SourceCategory.DOCUMENTS,
+    "list_my_files": SourceCategory.DOCUMENTS,
     "list_archive": SourceCategory.DOCUMENTS,
     "extract_archive": SourceCategory.DOCUMENTS,
     "spawn_agent": SourceCategory.AGENTS,

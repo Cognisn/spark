@@ -306,6 +306,7 @@ Each provider normalises responses to a common format:
 ### Tool System
 
 - **ToolRegistry** -- Assembles enabled built-in tools and dispatches execution. Every built-in tool belongs to a category (`TOOL_CATEGORIES`), each with a permission name `spark.tools.<category>`. `is_category_available()` is the one place that decides whether a category may be offered or run; registration, dispatch by name (conversation, sub-agent, scheduled action) and the settings API all ask it. In server mode the local-only categories (`filesystem`, `system_commands`, `email`) are unavailable whatever the role, and every other category needs `spark.tools.<category>` among the signed-in user's permissions. The permissions travel with the embedded tools configuration (`_permissions`, beside `_user_guid`) to the conversation manager, sub-agents, debates, panels and scheduled actions; without them a server refuses every built-in tool. Settings pages ask with `ANY_ROLE`, which is what the deployment offers. Personal mode has one local operator and ignores permissions
+- **The user's own files** (`spark.tools.my_files`) -- `list_my_files` and `read_my_file`, in the `documents` category, list and read the signed-in user's file area by file id through `spark.files`, for the turn's `_user_guid` on the turn's bridge, in both modes (personal mode reads `<data directory>/files` whatever allowed_paths says). Another user's id answers as one that does not exist. Office and PDF files go through the document readers held to the user's area; other text is paged; binary files are refused. Results are untrusted document content
 - **Command policy** (`spark.tools.command_policy`) -- Splits a system command line in the dialect of the shell that runs it (POSIX shells, cmd.exe, PowerShell), follows nested shells, and checks every command name against the blocklist; a line it cannot split with confidence is refused
 - **ToolSelector** -- Intelligently selects relevant tools based on message content
 - Each tool module exports `get_tools()` (definitions) and `execute()` (handler)
@@ -415,6 +416,10 @@ sequenceDiagram
     CM->>CM: check_compaction()
     SSE-->>Browser: complete event
 ```
+
+### Chat attachments
+
+The composer's attach button (`static/js/attachments.js`) uploads each file to `POST /files/api` with the conversation id, through the CSRF-wrapped fetch; the upload limit and the user's quota apply there (413, 507), and a file over the limit is refused in the browser before it is sent. Sending the message passes the file ids (`attachments` on `/stream/chat`, or in the body of `/chat/<id>/api/send`). `spark.web.attachments.attach` checks each id is the signed-in user's own file (404 otherwise) and appends a note naming the files by id and name, never their content, so the conversation stores the note and the model reads a file with `read_my_file`. The chat page parses the note back into chips that download the file. The conversation manager is unchanged.
 
 ## Startup Sequence
 

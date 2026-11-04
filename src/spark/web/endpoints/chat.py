@@ -12,8 +12,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from spark.identity.access import current_user_guid
-from spark.web import interactions
+from spark.identity.access import current_user_guid, request_permissions
+from spark.web import attachments, interactions
 from spark.web import models as offered_models
 from spark.web.db import database, sync_database
 from spark.web.scope import not_found, owned_conversation
@@ -152,13 +152,23 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
         return not_found()
     data = await request.json()
     message = data.get("message", "").strip()
-    if not message:
+    raw_attachments = data.get("attachments")
+    if not message and not raw_attachments:
         return JSONResponse({"error": "Empty message"}, status_code=400)
 
     user_guid = current_user_guid(request)
+    attached = await attachments.attach(request, user_guid, raw_attachments, message)
+    if isinstance(attached, JSONResponse):
+        return attached
 
+    # The turn's tools follow the signed-in user's roles (server mode).
+    permissions = request_permissions(request)
     try:
-        result = await asyncio.to_thread(conv_mgr.send_message, conversation_id, message, user_guid)
+        result = await asyncio.to_thread(
+            lambda: conv_mgr.send_message(
+                conversation_id, attached, user_guid, permissions=permissions
+            )
+        )
         return JSONResponse(result)
     except Exception as e:
         logger.error("Send message failed: %s", e)
