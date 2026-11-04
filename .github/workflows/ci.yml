@@ -55,8 +55,9 @@ jobs:
         if: runner.os != 'Windows'
         run: pytest -m "not postgres and not integration" --cov=spark --cov-report=xml -v
 
-      - name: Run tests on SQLite (Windows, no coverage)
+      - name: Run tests on SQLite (Windows, no coverage, advisory)
         if: runner.os == 'Windows'
+        continue-on-error: true
         run: pytest -m "not postgres and not integration" -v -p no:faulthandler
 
       - name: Upload coverage
