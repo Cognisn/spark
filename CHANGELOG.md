@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Docker Desktop stack** (`deploy/docker-desktop/compose.yaml`, `docs/deployment/docker-desktop.md`): server mode on one computer with every port on `127.0.0.1`, on `http://localhost` by default or behind Caddy on `https://localhost:8443` with the `https` profile, every credential a required variable from an env file, with the first administrator, backups that work from PowerShell, upgrades and troubleshooting
+- **Portainer stack** (`deploy/portainer/stack.yaml`, `docs/deployment/portainer.md`): the server as a Portainer stack for a standalone Docker environment, configured only through the stack's environment variables (from the web editor or the Git repository), with a proxy container on the stack's network, the first administrator from the container console, standby workers, backups and upgrades
+
 ## [0.3.0a23] - 2026-11-05
 
 ### Fixed

@@ -7,12 +7,15 @@ backups and upgrades, and moving people over from personal mode.
 
 Server mode is new in 0.3.0. A personal installation (one user, SQLite, the OS
 keychain) needs none of this: see [Getting Started](../getting-started.md).
+To try a server on your own computer first, see [Docker Desktop](docker-desktop.md).
 
 ## The pages
 
 | Page | Covers |
 |---|---|
 | [Compose deployment](compose.md) | The services, roles, volumes and replicas in `deploy/compose.yaml`, the env file, the migrate step, the files volume and pgvector |
+| [Portainer](portainer.md) | The same server as a Portainer stack (`deploy/portainer/stack.yaml`): its variables, the web editor and Git deployments, a proxy container, the first administrator, backups and upgrades |
+| [Docker Desktop](docker-desktop.md) | Trying server mode on your own computer (`deploy/docker-desktop/compose.yaml`), on `http://localhost` or with Caddy on `https://localhost:8443` |
 | [Secrets](secrets.md) | konfig's encrypted store and `KONFIG_MASTER_KEY` off AWS, AWS Secrets Manager and its IAM policy on AWS, and how a saved secret reaches every replica |
 | [Reverse proxy and TLS](reverse-proxy.md) | `server.public_base_url`, what the Origin check and the sign-in cookies need from the proxy, with Caddy and nginx examples |
 | [Identity](identity.md) | The first administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings, and identity mail (`mail.smtp`) |
@@ -57,7 +60,8 @@ keychain) needs none of this: see [Getting Started](../getting-started.md).
 
 1. A host with Docker and Compose, a DNS name for the server (this guide uses
    `spark.example.com`) and a TLS certificate for it.
-2. [Write the env file and start the stack](compose.md#first-start).
+2. [Write the env file and start the stack](compose.md#first-start), or
+   [deploy the Portainer stack](portainer.md#deploy-from-the-web-editor).
 3. [Keep `KONFIG_MASTER_KEY` safe](secrets.md#the-master-key), or
    [use AWS Secrets Manager](secrets.md#on-aws-secrets-manager).
 4. [Put the reverse proxy in front](reverse-proxy.md) and set

@@ -1,0 +1,97 @@
+# Spark in server mode as a Portainer stack on a standalone Docker environment
+# (not Swarm): PostgreSQL with pgvector, a one-shot migration, the web role and
+# the worker role. See docs/deployment/portainer.md.
+#
+# Paste this file into Portainer's web editor (Stacks > Add stack), or deploy it
+# from the Git repository with deploy/portainer/stack.yaml as the Compose path,
+# and set the variables below under Environment variables. The stack refuses to
+# deploy while a required one is missing.
+#
+#   SPARK_IMAGE            the image, pinned to a version (no latest tag)
+#   SPARK_PUBLIC_BASE_URL  https address users reach Spark on, through your proxy
+#   POSTGRES_PASSWORD      the database owner's password (letters, digits, - and _)
+#   KONFIG_MASTER_KEY      the key to konfig's encrypted secrets file
+#   POSTGRES_USER, POSTGRES_DB, SPARK_BIND, SPARK_WEB_PORT, SPARK_LOG_LEVEL
+#                          optional, with the defaults shown below
+#
+# The web port is published on 127.0.0.1 unless SPARK_BIND says otherwise: put
+# a TLS reverse proxy in front, and never let users reach port 8000 directly.
+
+x-spark: &spark
+  image: ${SPARK_IMAGE:?set SPARK_IMAGE, for example ghcr.io/cognisn/spark:0.3.0rc1}
+  init: true
+  environment:
+    SPARK__MODE: server
+    SPARK__DATABASE__URL: postgresql://${POSTGRES_USER:-spark}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-spark}
+    SPARK__SERVER__PUBLIC_BASE_URL: ${SPARK_PUBLIC_BASE_URL:?set SPARK_PUBLIC_BASE_URL, for example https://spark.example.com}
+    KONFIG_MASTER_KEY: ${KONFIG_MASTER_KEY:?set KONFIG_MASTER_KEY}
+    # konfig's encrypted secrets file on the data volume, shared by every container.
+    SPARK__SECRETS__BACKEND: encrypted_file
+    SPARK__SECRETS__FILE_PATH: /var/lib/spark/data/spark/secrets.enc
+    # Users' file areas (uploads and documents Spark creates), on their own volume.
+    SPARK__FILES__ROOT: /var/lib/spark-files
+    SPARK__LOGGING__LEVEL: ${SPARK_LOG_LEVEL:-INFO}
+    # Add other start-up settings here as SPARK__<SECTION>__<KEY>, for example
+    # SPARK__WARDEN__AUDIT__TRUSTED_PROXIES: 192.0.2.10/32
+  volumes:
+    - spark-data:/var/lib/spark
+    - spark-files:/var/lib/spark-files
+    - spark-models:/var/cache/spark/huggingface
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spark}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-spark}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Brings the schema to the current version, then exits. Web and worker start
+  # only after it succeeds. Portainer shows it as exited (0): that is expected.
+  migrate:
+    <<: *spark
+    command: ["migrate"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    <<: *spark
+    command: ["web"]
+    ports:
+      - "${SPARK_BIND:-127.0.0.1}:${SPARK_WEB_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Scheduled actions, knowledge graph builds, warden's pruning and audit purge.
+  worker:
+    <<: *spark
+    command: ["worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      # The web role creates the instance's identity in the shared secrets file
+      # on first start; the worker reads it.
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  spark-data:
+  spark-files:
+  spark-models:

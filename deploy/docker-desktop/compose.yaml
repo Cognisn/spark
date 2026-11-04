@@ -1,0 +1,118 @@
+# Spark in server mode on Docker Desktop (Windows, macOS or Linux), for trying a
+# multi-user Spark on one machine: PostgreSQL with pgvector, a one-shot
+# migration, the web role and the worker role. See docs/deployment/docker-desktop.md.
+#
+#   cp spark.env.example spark.env                  # then set real credentials
+#   docker compose --env-file spark.env -f compose.yaml up -d
+#
+# Credentials come only from the env file you write; the stack refuses to start
+# without them. Every published port binds to 127.0.0.1, so nothing is reachable
+# from another machine. For a server other people use, follow
+# docs/deployment/index.md instead.
+
+name: spark-desktop
+
+x-spark: &spark
+  image: ${SPARK_IMAGE:-ghcr.io/cognisn/spark:0.3.0}
+  init: true
+  environment:
+    SPARK__MODE: server
+    SPARK__DATABASE__URL: postgresql://${POSTGRES_USER:-spark}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}@postgres:5432/${POSTGRES_DB:-spark}
+    # The address you open in the browser, exactly. Plain http is accepted only
+    # for a loopback host; with the https profile use https://localhost:8443.
+    SPARK__SERVER__PUBLIC_BASE_URL: ${SPARK_PUBLIC_BASE_URL:-http://localhost:8000}
+    KONFIG_MASTER_KEY: ${KONFIG_MASTER_KEY:?set KONFIG_MASTER_KEY in the env file}
+    # konfig's encrypted secrets file on the data volume, shared by every container.
+    SPARK__SECRETS__BACKEND: encrypted_file
+    SPARK__SECRETS__FILE_PATH: /var/lib/spark/data/spark/secrets.enc
+    # Users' file areas (uploads and documents Spark creates), on their own volume.
+    SPARK__FILES__ROOT: /var/lib/spark-files
+    SPARK__LOGGING__LEVEL: ${SPARK_LOG_LEVEL:-INFO}
+  volumes:
+    - spark-data:/var/lib/spark
+    - spark-files:/var/lib/spark-files
+    - spark-models:/var/cache/spark/huggingface
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spark}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: ${POSTGRES_DB:-spark}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Brings the schema to the current version, then exits. Web and worker start
+  # only after it succeeds.
+  migrate:
+    <<: *spark
+    command: ["migrate"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    <<: *spark
+    command: ["web"]
+    ports:
+      - "127.0.0.1:${SPARK_WEB_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Scheduled actions, knowledge graph builds and warden's pruning.
+  worker:
+    <<: *spark
+    command: ["worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      # The web role creates the instance's identity in the shared secrets file
+      # on first start; the worker reads it.
+      web:
+        condition: service_healthy
+
+  # Optional https on https://localhost:8443 with a certificate from Caddy's own
+  # local authority, for browsers that keep Secure cookies only over https
+  # (Safari). Start it with --profile https and set SPARK_PUBLIC_BASE_URL to
+  # https://localhost:8443.
+  https:
+    image: caddy:2.8.4
+    profiles: ["https"]
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - https://localhost:8443
+      - --to
+      - web:8000
+      - --internal-certs
+      - --disable-redirects
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  spark-data:
+  spark-files:
+  spark-models:
+  caddy-data:
