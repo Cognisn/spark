@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0a18] - 2026-11-04
+
 ### Changed
 - **Container guide: identity mail**: `docs/container.md` describes setting `mail.smtp` on the instance page and the `mail_smtp_password` secret, and that invitations and password resets are mailed once a mail host is set
 - **Reading your own files does not ask first**: `list_my_files` and `read_my_file` no longer prompt for approval in a conversation, as skill loading does not; they read only the user's own file area, and a server still refuses them to a role without the documents tools
