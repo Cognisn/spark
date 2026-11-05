@@ -40,6 +40,7 @@ from tests.identity_screen_helpers import (  # noqa: F401 - fixtures
     verify,
 )
 from tests.identity_web_helpers import (
+    PASSWORD,
     another_client,
     make_user,
     set_cookie_headers,
@@ -91,6 +92,24 @@ class TestSignInPage:
         resp = sign_in(plain_client, ADA)
         assert resp.status_code == 303 and resp.headers["location"] == "/"
         assert _sets(resp, ACCESS_COOKIE)
+
+    @pytest.mark.parametrize("fetch_site, status", [("same-origin", 303), ("cross-site", 403)])
+    def test_a_browser_posts_the_form_with_a_null_origin(
+        self, plain_client: TestClient, fetch_site: str, status: int
+    ) -> None:
+        # The page's no-referrer policy makes a browser send Origin: null on
+        # its form post; only the fetch metadata tells our own page apart.
+        make_user(plain_client, ADA)
+        page = plain_client.get("/auth/sign-in")
+        assert '<meta name="referrer" content="no-referrer">' in page.text
+        resp = plain_client.post(
+            "/auth/sign-in",
+            data={"email": ADA, "password": PASSWORD, CSRF_FORM_FIELD: form_token(page)},
+            headers={"Origin": "null", "Sec-Fetch-Site": fetch_site, "Sec-Fetch-Mode": "navigate"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == status
+        assert _sets(resp, ACCESS_COOKIE) is (status == 303)
 
 
 class TestEnrolmentUnderChallenge:

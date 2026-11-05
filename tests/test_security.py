@@ -252,6 +252,48 @@ class TestStateChangingRequests:
         headers = _headers(origin=None, **{"Sec-Fetch-Site": "cross-site"})
         assert client.post("/change", headers=headers).status_code == 403
 
+    def test_null_origin_from_our_own_no_referrer_page_passes(
+        self, guarded: tuple[TestClient, list[str]]
+    ) -> None:
+        # What a browser sends for a form posted from a page whose referrer
+        # policy is no-referrer, such as the sign-in screen.
+        client, reached = guarded
+        headers = _headers(origin="null", **{"Sec-Fetch-Site": "same-origin"})
+        assert client.post("/change", headers=headers).status_code == 200
+        assert reached == ["POST"]
+
+    @pytest.mark.parametrize("fetch_site", [None, "cross-site", "same-site", "none"])
+    def test_null_origin_without_same_origin_fetch_metadata_is_refused(
+        self, guarded: tuple[TestClient, list[str]], fetch_site: str | None
+    ) -> None:
+        # A sandboxed frame or a data: page also sends Origin: null, with
+        # cross-site fetch metadata.
+        client, reached = guarded
+        extra = {} if fetch_site is None else {"Sec-Fetch-Site": fetch_site}
+        resp = client.post("/change", headers=_headers(origin="null", **extra))
+        assert resp.status_code == 403
+        assert "Origin" in resp.json()["detail"]
+        assert reached == []
+
+    def test_null_origin_with_a_cross_site_referer_is_refused(
+        self, guarded: tuple[TestClient, list[str]]
+    ) -> None:
+        client, reached = guarded
+        headers = _headers(
+            origin="null", Referer="http://example.com/page", **{"Sec-Fetch-Site": "same-origin"}
+        )
+        assert client.post("/change", headers=headers).status_code == 403
+        assert reached == []
+
+    def test_null_origin_under_a_foreign_host_header_is_refused(
+        self, guarded: tuple[TestClient, list[str]]
+    ) -> None:
+        client, reached = guarded
+        headers = _headers(origin="null", Host="rebind.example.net:22400")
+        headers["Sec-Fetch-Site"] = "same-origin"
+        assert client.post("/change", headers=headers).status_code == 403
+        assert reached == []
+
     def test_foreign_host_header_is_refused(self, guarded: tuple[TestClient, list[str]]) -> None:
         client, reached = guarded
         headers = _headers(

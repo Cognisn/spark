@@ -202,7 +202,7 @@ and give the restore command the path (`pg_restore ... /tmp/spark-db.dump`,
 
 | What you see | Why, and what to do |
 |---|---|
-| "Request refused: it did not come from this Spark instance's own pages (Origin check failed)" | The address in the browser differs from `SPARK_PUBLIC_BASE_URL`. `http://127.0.0.1:8000` and `http://localhost:8000` are different addresses: open exactly the configured one. |
+| "Request refused: it did not come from this Spark instance's own pages (Origin check failed)" | The address in the browser differs from `SPARK_PUBLIC_BASE_URL`. `http://127.0.0.1:8000` and `http://localhost:8000` are different addresses: open exactly the configured one. The web log's `serving ...` line shows the address the container has; after changing the env file, run the `up -d` command again, because restarting a container (Docker Desktop's restart button, or `docker compose restart`) keeps its old settings. |
 | Signing in at `http://localhost` fails or returns to the sign-in page | The browser refused the `Secure` sign-in cookies over plain http (Safari does). Use [the https profile](#https-on-localhost). |
 | `required variable ... is missing a value` | `spark.env` lacks that variable, or the command was run without `--env-file spark.env`. |
 | `migrate` shows `Exited (1)` | `docker compose --env-file spark.env -f compose.yaml logs migrate` names the problem; web and worker wait for it. |

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Signing in from a browser in server mode**: the sign-in and account screens send no referrer, so browsers post their forms with `Origin: null`, which the Origin check refused for every browser sign-in. A `null` Origin now counts as no Origin, and the request passes only when the browser's fetch metadata says it came from the same origin (`Sec-Fetch-Site: same-origin`) and the Host is the public address; the screens keep `no-referrer`, so a link's token never leaves in a Referer
+- **Docker Desktop guide**: the troubleshooting entry for the Origin refusal points to the web log's `serving` line and explains that changing the env file needs the `up -d` command again, not a restart
+
 ## [0.3.0rc1] - 2026-11-05
 
 ### Added

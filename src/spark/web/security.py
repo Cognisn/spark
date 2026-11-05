@@ -11,7 +11,8 @@
 
 Provenance is the ``Origin`` header, or failing that the ``Referer``, or
 failing both a ``Sec-Fetch-Site: same-origin`` header; a request with none of
-them is refused. With an explicit list of origins the ``Host`` header must be
+them is refused. ``Origin: null`` counts as no Origin: a browser sends it for
+a form posted from a ``no-referrer`` page, and it says nothing either way. With an explicit list of origins the ``Host`` header must be
 one of them too, which keeps out pages served under another name that resolves
 to this instance.
 
@@ -161,7 +162,10 @@ def provenance_ok(policy: OriginPolicy, headers: Headers, scheme: str) -> bool:
     if not policy.allows_host(host):
         return False
     origin = headers.get("origin")
-    if origin is not None:
+    # A page with ``Referrer-Policy: no-referrer`` (the sign-in and account
+    # screens) makes the browser send ``Origin: null`` on its own form posts.
+    # That names no origin, so the Referer and fetch metadata decide instead.
+    if origin is not None and _normalise(origin) != "null":
         return policy.allows_origin(origin, host, scheme)
     referer = headers.get("referer")
     if referer:
