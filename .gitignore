@@ -212,3 +212,8 @@ __marimo__/
 # macOS Finder metadata
 .DS_Store
 **/.DS_Store
+
+# Code graph: machine-local interpreter, scan root and extraction cache
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/cache/
