@@ -6,8 +6,8 @@
 - Release branch style: release/v<version>
 - Workstream branches: <kind>/<version>-<aspect>, where <version> is the bare release version with no `v` (for example `feat/0.3.0-file-areas` belongs to `release/v0.3.0`)
 - Merge to main: squash
-- Commit scopes: llm, core, debate, panel, tools, mcp, skills, knowledge, index, scheduler, daemon, safety, voice, db, web, deps, ci, docs, dev, release
-- Shared modules: pyproject.toml, src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, src/spark/identity/ (permissions, access, audit, runtime, sessions), src/spark/database/scope.py and src/spark/web/scope.py (user scoping), src/spark/tools/registry.py (the tool decision point), tests/conftest.py (shared fixtures), .github/workflows/
+- Commit scopes: connections, core, debate, panel, tools, mcp, skills, knowledge, index, scheduler, daemon, safety, voice, db, web, deps, ci, docs, dev, release
+- Shared modules: pyproject.toml, src/spark/connections/ (the connection model, store, runtime, service, usage sink and start-up) and src/spark/database/connections.py (the connection repositories), src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, src/spark/identity/ (permissions, access, audit, runtime, sessions), src/spark/database/scope.py and src/spark/web/scope.py (user scoping), src/spark/tools/registry.py (the tool decision point), tests/conftest.py (shared fixtures), .github/workflows/
 
 # SPARK
 
@@ -17,7 +17,7 @@ Spark (Secure Personal AI Research Kit) is a multi-provider LLM web interface wi
 
 | Scope | Covers |
 |---|---|
-| `llm` | `src/spark/llm/` providers and the model manager |
+| `connections` | `src/spark/connections/` named model connections on conduit, and their repositories |
 | `core` | `src/spark/core/` other than debate and panel (application, conversation manager, agents, compaction, updater) |
 | `debate` | `src/spark/core/debate/` |
 | `panel` | `src/spark/core/panel/` |
@@ -62,6 +62,14 @@ Version stamps are unscoped: `chore: stamp <version>`.
 - Schema changes are new Alembic revisions in `src/spark/migrations/versions/` (never edits to `schema_0_2_0.py` or the baseline), each with a tested downgrade, on both SQLite and PostgreSQL. Only the integration session renumbers or re-chains revisions.
 - Tests: `spark_db` (async, SQLite and PostgreSQL), `sync_db` (the bridge, SQLite) and `tests/db_helpers.app_client` (the web app with its lifespan database). PostgreSQL tests are marked `postgres` and run in testcontainers (`pgvector/pgvector:pg16`); CI's server job sets `SPARK_TEST_POSTGRES=required`. A coroutine that is never awaited fails the suite.
 - `python scripts/licence_audit.py` must pass: no strong copyleft runtime dependency; weak copyleft only as a named exception in that script, agreed by Matthew.
+
+## Model connections
+
+- Every model call goes through conduit (`cognisn-conduit`), reached only through `spark.connections`: no provider SDK is imported anywhere else. A model is chosen as a (connection, model id) pair, kept as `connection/model` (`spark.connections.refs.ModelRef`); a bare model id from before connections resolves to a connection offering it.
+- One `ConnectionRuntime` per process owns the conduit loop thread (`conduit.LoopThread`) and one provider per enabled connection, built through conduit's provider registry with the connection's residency policy. Synchronous code calls models through `ConnectionService.invoke_model` (the sync facade); code on conduit's loop (an event sink) never calls the facade. Orchestrators take services from a `ModelSource` (the runtime), never build clients.
+- A connection's settings hold credentials only as `secret://` references, resolved through konfig when conduit builds the provider (A9): never stored, logged or sent to a page. Server mode keeps connections in the database (`spark.database.connections`), personal mode in `config.yaml`; both through `ConnectionStore`.
+- Usage is recorded by the event sink from conduit's `model_call_finished` events: attribute a call (`spark.usage.meter.meter`, or a service's `attributed`) or it is not billed.
+- Tests use conduit's stub provider (`tests/model_helpers.py`): no live call in the default suite.
 
 ## Identity (server mode)
 
