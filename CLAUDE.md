@@ -1,5 +1,5 @@
 # Project configuration
-- Kvasir library: spark
+- Kvasir library: devwork (tag project-spark); fallback: spark
 - Issue tracker: github
 - GitHub repository: Cognisn/spark
 - Default branch: main
