@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc3] - 2026-11-16
+
 ### Added
 - **Named model connections on conduit** (`spark.connections`): every model is now reached through conduit (`cognisn-conduit` 0.1.0rc2 or later, with the extras for Amazon Bedrock, Claude through Bedrock's mantle endpoint, Anthropic and Claude in Microsoft Foundry, OpenAI, X.AI and Microsoft Foundry, Google Gemini and Ollama, and konfig). A connection is one named service with its own conduit settings, Region and residency policy (in-Region for Bedrock, mantle and Foundry, global for direct APIs, local for Ollama, by default); several of one kind sit side by side, and every credential is a `secret://` reference resolved through konfig only when the provider is built. One connection runtime per process owns conduit's loop thread and builds one provider per enabled connection through conduit's provider registry, rebuilding a connection live when its settings or secrets change and never dropping a working one for a change that fails
 - **Connection schema and repositories** (revision `connections`): connections, the models each offers (enabled, and a tier of lower, standard or higher), SPARK's catalogue overlay entries, per-connection metering settings (base rate, tier multipliers, and token weights of 1, 5, 0.1 and 1.25 for input, output, cache read and cache write) and assignments to roles or users with a monthly credit allowance; `usage_tracking` gains the connection and the cache read and write tokens apart. Every write notifies the other web replicas. The downgrade removes it all
