@@ -198,7 +198,6 @@ class TestRefusedByName:
         mgr = ConversationManager(
             MagicMock(),
             MagicMock(),
-            MagicMock(),
             embedded_tools_config=FULL_CONFIG,
             mcp_manager=mcp,
         )
@@ -259,9 +258,7 @@ class TestSystemPrompt:
     def test_server_mode_does_not_advertise_local_tools(self, server_mode: None) -> None:
         from spark.core.conversation_manager import ConversationManager
 
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=FULL_CONFIG
-        )
+        mgr = ConversationManager(MagicMock(), MagicMock(), embedded_tools_config=FULL_CONFIG)
         context = mgr._build_conversation_tool_context()
         assert "System commands" not in context
         assert "Filesystem access" not in context
@@ -270,9 +267,7 @@ class TestSystemPrompt:
     def test_personal_mode_advertises_local_tools(self, personal_mode: None) -> None:
         from spark.core.conversation_manager import ConversationManager
 
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=FULL_CONFIG
-        )
+        mgr = ConversationManager(MagicMock(), MagicMock(), embedded_tools_config=FULL_CONFIG)
         context = mgr._build_conversation_tool_context()
         assert "System commands" in context
         assert "Filesystem access" in context

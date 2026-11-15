@@ -101,10 +101,12 @@ class TestPropagation:
 
     async def test_clear_propagates(self, replicas: tuple[Replica, Replica]) -> None:
         a, b = replicas
-        await a.settings.set("models.offered", ["m-1"], actor="admin")
-        await _eventually(lambda: b.settings.get("models.offered") == ["m-1"])
-        await a.settings.clear("models.offered", actor="admin")
-        await _eventually(lambda: b.settings.get("models.offered") == [])
+        await a.settings.set("embedded_tools.filesystem.allowed_paths", ["m-1"], actor="admin")
+        await _eventually(
+            lambda: b.settings.get("embedded_tools.filesystem.allowed_paths") == ["m-1"]
+        )
+        await a.settings.clear("embedded_tools.filesystem.allowed_paths", actor="admin")
+        await _eventually(lambda: b.settings.get("embedded_tools.filesystem.allowed_paths") == [])
 
     async def test_changes_flow_both_ways(self, replicas: tuple[Replica, Replica]) -> None:
         a, b = replicas

@@ -222,24 +222,6 @@ class TestOtherBooleanReads:
         assert "http://127.0.0.1:22500" in policy.allowed
         assert not any(origin.startswith("https://") for origin in policy.allowed)
 
-    def test_providers_switched_off_in_the_environment_are_not_built(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from spark.llm.factory import build_providers
-        from spark.web.server import _build_providers
-
-        settings = _konfig(
-            tmp_path,
-            monkeypatch,
-            SPARK__PROVIDERS__ANTHROPIC__ENABLED="false",
-            SPARK__PROVIDERS__AWS_BEDROCK__ENABLED="false",
-            SPARK__PROVIDERS__OLLAMA__ENABLED="false",
-            SPARK__PROVIDERS__GOOGLE_GEMINI__ENABLED="false",
-            SPARK__PROVIDERS__XAI__ENABLED="false",
-        )
-        assert _build_providers(_ctx(settings), settings) == []  # type: ignore[arg-type]
-        assert build_providers(settings) == []
-
     def test_actions_enabled_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from spark.web.endpoints.actions import _actions_enabled
 

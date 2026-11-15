@@ -170,7 +170,7 @@ class TestResultPolicyOnAServer:
         assert not re.search(r"embedded_tools\.(system_commands|filesystem|email)\.", html)
         status = server.get("/settings/api/secrets").json()
         assert "embedded_tools.email.password" not in status
-        assert "providers.anthropic.api_key" in status
+        assert "voice.elevenlabs.api_key" in status
 
     def test_administrator_saves_the_policy_and_each_change_is_audited(
         self, server: TestClient, events: list[tuple[str, dict[str, Any]]]

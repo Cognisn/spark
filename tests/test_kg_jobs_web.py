@@ -23,7 +23,7 @@ from spark.identity.permissions import POWER_USER, USER
 from spark.knowledge import jobs
 from spark.mode import DatabaseSettings
 from tests.identity_web_helpers import make_user, server_client, sign_in, write_config
-from tests.test_models_offered_web import OllamaStandIn, shared  # noqa: F401 - fixtures
+from tests.test_models_offered_web import shared  # noqa: F401 - fixtures
 from tests.test_user_scoping_web import (  # noqa: F401 - fixtures
     FETCH,
     _call,
@@ -51,7 +51,7 @@ def no_build_in_the_web_process(client: TestClient, monkeypatch: pytest.MonkeyPa
 
 
 def _conversation(client: TestClient, guid: str) -> int:
-    cid: int = _call(client, conversations.create_conversation, "c", "model-a", guid)
+    cid: int = _call(client, conversations.create_conversation, "c", "stub/model-a", guid)
     _call(client, msg_db.add_message, cid, "user", "Tea is a drink", 5, guid)
     return cid
 
@@ -77,7 +77,7 @@ class TestBuildQueuesAJob:
         assert body["status"] == "queued" and body["scope"] == f"conv:{cid}"
         job = _call(client, jobs.get, guid, body["job_id"])
         assert job is not None and job.status == jobs.QUEUED
-        assert job.model_id in ("model-a", "model-b")
+        assert job.model_id in ("stub/model-a", "stub/model-b")
 
     def test_a_second_build_of_the_scope_waits(self, client: TestClient) -> None:
         ada, guid = _signed_in(client, ADA, POWER_USER)

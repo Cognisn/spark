@@ -26,7 +26,7 @@ from spark.web.server import create_app
 from tests.db_helpers import app_client
 from tests.identity_screen_helpers import plain_client, server_db  # noqa: F401
 from tests.identity_web_helpers import another_client, make_user, sign_in
-from tests.test_conversation_manager_budgets import ScriptedLLM, _manager
+from tests.test_conversation_manager_budgets import MODEL, Script, _manager
 from tests.test_voice_endpoints import _mock_settings_get
 from tests.web_helpers import sign_in as sign_in_personal
 
@@ -45,17 +45,18 @@ def _guid(client: TestClient) -> str:
     return str(client.get("/auth/session", headers=FETCH).json()["user_guid"])
 
 
-def _install_manager(client: TestClient) -> ScriptedLLM:
-    """A real conversation manager on the app's database whose model is a counting stub."""
-    mgr, stub = _manager(client.app.state.sync_db)  # type: ignore[attr-defined]
+def _install_manager(client: TestClient) -> Script:
+    """A real conversation manager on the app's database whose model is a counting stub
+    connection (the app closes its runtime on shutdown)."""
+    mgr, script = _manager(client.app.state.sync_db)  # type: ignore[attr-defined]
     mgr._get_vector_index = lambda conversation_id, user_guid: None
     client.app.state.conversation_manager = mgr  # type: ignore[attr-defined]
-    stub_llm: ScriptedLLM = stub
-    return stub_llm
+    client.app.state.connections = mgr._models  # type: ignore[attr-defined]
+    return script
 
 
 def _conversation(client: TestClient, guid: str) -> int:
-    cid: int = _call(client, convdb.create_conversation, "Synthetic", "stub-model", guid)
+    cid: int = _call(client, convdb.create_conversation, "Synthetic", MODEL, guid)
     return cid
 
 

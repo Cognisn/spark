@@ -221,9 +221,10 @@ async def _build_model(request: Request, user_guid: str) -> str:
     preferred = await default_model(request, user_guid)
     if preferred:
         return preferred
-    llm_manager = getattr(request.app.state, "llm_manager", None)
-    listed = llm_manager.list_all_models() if llm_manager is not None else []
-    return str(listed[0].get("id", "")) if listed else ""
+    from spark.web.models import listed
+
+    offered = listed(request)
+    return str(offered[0].get("id", "")) if offered else ""
 
 
 @router.post("/api/cancel")

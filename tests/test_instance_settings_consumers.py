@@ -1,8 +1,8 @@
-"""Settings consumers in server mode: providers, models offered and embedded tools.
+"""Settings consumers in server mode: model connections and embedded tools.
 
-The provider set-up, the models offered and the conversation manager's embedded
-tools configuration read the instance settings (and the secrets store) in server
-mode, and follow every change without a restart.
+The model connections and the conversation manager's embedded tools configuration
+follow the instance settings (and the secrets store) in server mode, every change
+without a restart.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ import pytest
 
 from spark import mode
 from spark.instance_settings import consumers, registry
-from spark.llm.manager import LLMManager
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
+from tests.model_helpers import FakeModels
 
 
 class Source:
@@ -50,21 +50,6 @@ class Secrets:
         return self.values.get(key, "")
 
 
-class FakeProvider:
-    def __init__(self, name: str, models: list[str]) -> None:
-        self.name = name
-        self.models = models
-
-    def get_provider_name(self) -> str:
-        return self.name
-
-    def list_available_models(self) -> list[dict[str, Any]]:
-        return [{"id": m, "name": m} for m in self.models]
-
-    def set_model(self, model_id: str) -> None:
-        self.model = model_id
-
-
 @pytest.fixture(autouse=True)
 def _server_mode(tmp_path: Path) -> Iterator[None]:
     mode.configure(RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="x")))
@@ -83,24 +68,31 @@ def _wait_for(predicate: Any, timeout: float = 5.0) -> bool:
 
 class TestInstanceView:
     def test_plain_settings_come_from_the_source(self) -> None:
-        view = consumers.InstanceView(Source({"providers.ollama.enabled": True}), Secrets())
-        assert view.get("providers.ollama.enabled") is True
-        assert view.get("providers.ollama.base_url") == "http://localhost:11434"
+        view = consumers.InstanceView(Source({"embedded_tools.email.enabled": True}), Secrets())
+        assert view.get("embedded_tools.email.enabled") is True
+        assert view.get("embedded_tools.email.port") == 587
 
     def test_secrets_come_from_the_secrets_store(self) -> None:
         view = consumers.InstanceView(
-            Source(), Secrets({"providers.anthropic.api_key": "sk-view-dev-only"})
+            Source(), Secrets({"voice.elevenlabs.api_key": "sk-view-dev-only"})
         )
-        assert view.get("providers.anthropic.api_key") == "sk-view-dev-only"
+        assert view.get("voice.elevenlabs.api_key") == "sk-view-dev-only"
 
     def test_unknown_key_gives_the_default_and_cast_applies(self) -> None:
-        view = consumers.InstanceView(Source({"providers.aws_bedrock.read_timeout": 90}), Secrets())
+        view = consumers.InstanceView(
+            Source({"embedded_tools.system_commands.timeout": 90}), Secrets()
+        )
         assert view.get("not.a.setting", "fallback") == "fallback"
-        assert view.get("providers.aws_bedrock.read_timeout", cast=str) == "90"
+        assert view.get("embedded_tools.system_commands.timeout", cast=str) == "90"
+
+    def test_retired_provider_settings_are_unknown(self) -> None:
+        view = consumers.InstanceView(Source(), Secrets({"providers.xai.api_key": "x"}))
+        assert view.get("providers.xai.api_key", "gone") == "gone"
+        assert view.get("models.offered", "gone") == "gone"
 
     def test_an_unset_secret_gives_the_default(self) -> None:
         view = consumers.InstanceView(Source(), Secrets())
-        assert view.get("providers.xai.api_key", "") == ""
+        assert view.get("embedded_tools.web.brave_api_key", "") == ""
 
 
 class TestEmbeddedToolsConfig:
@@ -135,54 +127,13 @@ class TestEmbeddedToolsConfig:
         assert config["_prompt_inspection_action"] == "warn"
 
 
-class TestModelsOffered:
-    def _manager(self) -> LLMManager:
-        mgr = LLMManager()
-        mgr.register_provider(FakeProvider("one", ["model-a", "model-b"]))  # type: ignore[arg-type]
-        return mgr
-
-    def test_empty_offers_every_model(self) -> None:
-        mgr = self._manager()
-        mgr.set_offered(lambda: [])
-        assert [m["id"] for m in mgr.list_all_models()] == ["model-a", "model-b"]
-
-    def test_only_offered_models_are_listed(self) -> None:
-        mgr = self._manager()
-        mgr.set_offered(lambda: ["model-b"])
-        assert [m["id"] for m in mgr.list_all_models()] == ["model-b"]
-
-    def test_no_filter_by_default(self) -> None:
-        assert len(self._manager().list_all_models()) == 2
-
-
-class TestReplaceProviders:
-    def test_providers_swapped_and_active_kept_when_still_present(self) -> None:
-        mgr = LLMManager()
-        mgr.register_provider(FakeProvider("one", ["a"]))  # type: ignore[arg-type]
-        mgr.register_provider(FakeProvider("two", ["b"]))  # type: ignore[arg-type]
-        mgr.set_model("b")
-        mgr.replace_providers([FakeProvider("two", ["b"]), FakeProvider("three", ["c"])])  # type: ignore[list-item]
-        assert sorted(mgr.providers) == ["three", "two"]
-        assert mgr.active_provider == "two"
-
-    def test_active_falls_back_when_its_provider_goes(self) -> None:
-        mgr = LLMManager()
-        mgr.register_provider(FakeProvider("one", ["a"]))  # type: ignore[arg-type]
-        mgr.replace_providers([FakeProvider("three", ["c"])])  # type: ignore[list-item]
-        assert mgr.active_provider == "three"
-        mgr.replace_providers([])
-        assert mgr.active_provider is None
-
-
 class TestConversationManagerUpdates:
     def _manager(self) -> Any:
         from spark.core.conversation_manager import ConversationManager
-        from spark.llm.context_limits import ContextLimitResolver
 
         return ConversationManager(
             None,  # type: ignore[arg-type]
-            LLMManager(),
-            ContextLimitResolver(None),
+            FakeModels(),
             embedded_tools_config={
                 "embedded_tools": {"web": {"enabled": True}},
                 "_memory_index": "kept",
@@ -218,55 +169,55 @@ class Conversations:
         self.limits.append(limits)
 
 
+class Connections:
+    """The connection runtime's refresher: counts refreshes, may fail once."""
+
+    def __init__(self, fail_first: bool = False) -> None:
+        self.refreshes = 0
+        self._fail = fail_first
+
+    def refresh(self) -> None:
+        self.refreshes += 1
+        if self._fail:
+            self._fail = False
+            raise RuntimeError("connections could not be read")
+
+
 class TestFollower:
     def _follow(
-        self, source: Source, builds: list[Any]
-    ) -> tuple[LLMManager, Conversations, consumers.SettingsFollower]:
-        mgr = LLMManager()
+        self, source: Source, connections: Connections | None = None
+    ) -> tuple[Connections, Conversations, consumers.SettingsFollower]:
+        connections = connections or Connections()
         conversations = Conversations()
-
-        def build(view: Any) -> list[Any]:
-            builds.append(view.get("providers.anthropic.enabled"))
-            if view.get("providers.anthropic.enabled"):
-                return [FakeProvider("anthropic", ["model-a", "model-b"])]
-            return []
-
         follower = consumers.follow(
             source,  # type: ignore[arg-type]
             Secrets(),
-            llm_manager=mgr,
+            connections=connections,
             conversation_manager=conversations,
-            build_providers=build,
         )
-        return mgr, conversations, follower
+        return connections, conversations, follower
 
-    def test_a_provider_change_rebuilds_the_providers(self) -> None:
-        source, builds = Source(), []
-        mgr, _, follower = self._follow(source, builds)
-        source.change(providers__anthropic__enabled=True)
-        assert _wait_for(lambda: "anthropic" in mgr.providers)
+    def test_every_change_refreshes_the_connections(self) -> None:
+        source = Source()
+        connections, _, follower = self._follow(source)
+        source.change(embedded_tools__web__enabled=False)
+        assert _wait_for(lambda: connections.refreshes == 1)
+        follower.wait_idle()
+        source.change(embedded_tools__web__enabled=True)
+        assert _wait_for(lambda: connections.refreshes == 2)
         follower.wait_idle()
 
-    def test_an_unrelated_change_does_not_rebuild_the_providers(self) -> None:
-        source, builds = Source({"providers.anthropic.enabled": True}), []
-        mgr, conversations, follower = self._follow(source, builds)
-        mgr.replace_providers([FakeProvider("anthropic", ["model-a"])])  # type: ignore[list-item]
+    def test_a_failed_connections_refresh_still_applies_tools(self) -> None:
+        source = Source()
+        connections, conversations, follower = self._follow(source, Connections(fail_first=True))
         source.change(embedded_tools__web__enabled=False)
         assert _wait_for(lambda: len(conversations.configs) == 1)
         follower.wait_idle()
-        assert builds == []
-
-    def test_models_offered_follow_the_setting(self) -> None:
-        source, builds = Source({"providers.anthropic.enabled": True}), []
-        mgr, _, follower = self._follow(source, builds)
-        mgr.replace_providers([FakeProvider("anthropic", ["model-a", "model-b"])])  # type: ignore[list-item]
-        source.change(models__offered=["model-a"])
-        assert [m["id"] for m in mgr.list_all_models()] == ["model-a"]
-        follower.wait_idle()
+        assert connections.refreshes == 1
 
     def test_embedded_tools_and_limits_follow_every_change(self) -> None:
-        source, builds = Source(), []
-        _, conversations, follower = self._follow(source, builds)
+        source = Source()
+        _, conversations, follower = self._follow(source)
         source.change(embedded_tools__web__enabled=False, conversation__max_tool_iterations=9)
         assert _wait_for(lambda: len(conversations.configs) == 1)
         follower.wait_idle()
@@ -275,9 +226,9 @@ class TestFollower:
 
     def test_observer_returns_at_once(self) -> None:
         """The listener calls observers on the event loop: the work runs on a thread."""
-        source, builds = Source(), []
+        source = Source()
         block = threading.Event()
-        _, conversations, follower = self._follow(source, builds)
+        _, conversations, follower = self._follow(source)
         conversations.update_embedded_tools_config = lambda c: block.wait(5)  # type: ignore[method-assign]
         started = time.monotonic()
         source.change(embedded_tools__web__enabled=False)
@@ -286,8 +237,8 @@ class TestFollower:
         follower.wait_idle()
 
     def test_a_failing_refresh_is_logged_and_the_next_change_still_applies(self) -> None:
-        source, builds = Source(), []
-        _, conversations, follower = self._follow(source, builds)
+        source = Source()
+        _, conversations, follower = self._follow(source)
         calls: list[int] = []
 
         def flaky(config: dict[str, Any]) -> None:

@@ -14,10 +14,9 @@ from typing import Any
 import pytest
 
 from spark.core.conversation_manager import ConversationManager
-from spark.llm.context_limits import ContextLimitResolver
-from spark.llm.manager import LLMManager
 from spark.safety import untrusted
 from spark.safety.untrusted import UNTRUSTED_CONTENT_INSTRUCTIONS
+from tests.model_helpers import FakeModels
 from tests.web_helpers import sign_in
 
 USER = "user-1"
@@ -143,12 +142,10 @@ def audit_events() -> Iterator[list[tuple[str, Mapping[str, Any]]]]:
 def _manager(
     sync_db: Any, model: StubModel, action: str = "warn", **kwargs: Any
 ) -> ConversationManager:
-    llm = LLMManager()
-    llm.register_provider(model)  # type: ignore[arg-type]
+    llm = FakeModels(model)
     return ConversationManager(
         sync_db,
         llm,
-        ContextLimitResolver(),
         max_tool_iterations=5,
         embedded_tools_config={
             "embedded_tools": {"web": {"enabled": True}, "tool_results": {"web": action}}

@@ -328,9 +328,9 @@ async def ai_create_message(request: Request) -> JSONResponse:
     """API: send a message to the AI action creation assistant."""
     if r := _guard(request):
         return r
-    llm_manager = getattr(request.app.state, "llm_manager", None)
+    conv_mgr = getattr(request.app.state, "conversation_manager", None)
     db = getattr(request.app.state, "database", None)
-    if not llm_manager or not llm_manager.active_service or not db:
+    if conv_mgr is None or not db:
         return JSONResponse({"error": "LLM not available"}, status_code=503)
 
     data = await request.json()
@@ -354,14 +354,16 @@ async def ai_create_message(request: Request) -> JSONResponse:
     messages = list(history)
     messages.append({"role": "user", "content": message})
 
-    conv_mgr = getattr(request.app.state, "conversation_manager", None)
-    # This session's model answers through a service of its own, so one user's
-    # choice never changes the shared manager's model for anyone else.
-    service = llm_manager
-    if model_id and conv_mgr is not None:
-        service = (
-            await asyncio.to_thread(conv_mgr._get_llm_service_for_model, model_id) or llm_manager
-        )
+    # This session's model answers through a service of its own: the chosen model,
+    # else the user's default.
+    from spark.web.models import default_model
+
+    chosen = model_id or await default_model(request, current_user_guid(request))
+    service = (
+        await asyncio.to_thread(conv_mgr._get_llm_service_for_model, chosen) if chosen else None
+    )
+    if service is None:
+        return JSONResponse({"error": "LLM not available"}, status_code=503)
     from spark.identity.access import tools_config_for
 
     # A copy: the shared configuration never carries one user's guid or permissions.
@@ -414,7 +416,9 @@ async def ai_create_message(request: Request) -> JSONResponse:
 
     all_tool_calls: list[dict] = []
     for _ in range(10):
-        response = service.invoke_model(
+        # A blocking model call: on a worker thread, never the serving loop.
+        response = await asyncio.to_thread(
+            service.invoke_model,
             messages,
             max_tokens=4096,
             temperature=0.7,

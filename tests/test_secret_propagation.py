@@ -21,11 +21,12 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import psycopg
 import pytest
 import yaml
+from conduit import ProviderSettings, SecretRef
 from fastapi.testclient import TestClient
 from konfig.secrets.secrets import Secrets
 from konfig.settings.settings import Settings
@@ -47,8 +48,10 @@ from tests.web_helpers import sign_in
 BOUND_SECONDS = 5.0
 MASTER_KEY = "master-key-propagation-dev-only"
 ARN = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:spark-propagation-dev-only"
-ANTHROPIC = "providers.anthropic.api_key"
-XAI = "providers.xai.api_key"
+# A model connection's credential, in the shared store under its connection name.
+LAB_KEY = "connections.lab.api_key"
+ANTHROPIC = "voice.elevenlabs.api_key"
+XAI = "embedded_tools.web.bing_api_key"
 BRAVE = "embedded_tools.web.brave_api_key"
 VOICE = "voice.elevenlabs.api_key"
 
@@ -102,6 +105,9 @@ class TestAnnounce:
 
     def test_is_secret_key(self) -> None:
         assert is_secret_key(ANTHROPIC) and is_secret_key(VOICE)
+        # A model connection's credential is one too, so its save refreshes the store.
+        assert is_secret_key(LAB_KEY) and is_secret_key("connections.lab.auth.secret_access_key")
+        assert not is_secret_key("connections.Lab/x.api_key")
         assert not is_secret_key("voice.engine")
         assert not is_secret_key("")
         assert not is_secret_key("unknown.key")
@@ -328,52 +334,97 @@ def _wait_for(predicate: Any, timeout: float = BOUND_SECONDS) -> bool:
     return bool(predicate())
 
 
-class FakeProvider:
-    def __init__(self, key: str) -> None:
-        self.key = key
+class KeyedSettings(ProviderSettings):
+    """A test adapter whose settings carry a credential (a secret reference)."""
 
-    def get_provider_name(self) -> str:
-        return "anthropic"
-
-    def list_available_models(self) -> list[dict[str, Any]]:
-        return [{"id": "model-a", "name": "model-a"}]
+    kind: Literal["keyed"] = "keyed"
+    api_key: SecretRef
 
 
 class Built:
-    """Records the Anthropic key each app's providers were last built with."""
+    """A conduit provider factory recording the key each build of the connection resolved."""
+
+    kind = "keyed"
+    settings_model = KeyedSettings
 
     def __init__(self) -> None:
-        self.keys: dict[int, list[str]] = {}
+        self.keys: list[str] = []
 
-    def __call__(self, ctx: Any, view: Any) -> list[Any]:
-        key = str(view.get(ANTHROPIC, "") or "")
-        self.keys.setdefault(id(ctx), []).append(key)
-        return [FakeProvider(key)] if view.get("providers.anthropic.enabled") else []
+    def create_client(self, settings: Any, secrets: Any) -> Any:
+        self.keys.append(secrets["api_key"].get_secret_value())
+        return None
 
-    def last(self, client: TestClient) -> str | None:
-        built = self.keys.get(id(client.app.state.ctx), [])  # type: ignore[attr-defined]
-        return built[-1] if built else None
+    def create_provider(
+        self, name: str, settings: Any, client: Any, *, catalogue: Any = None
+    ) -> Any:
+        from conduit.providers.stub import StubFactory, StubSettings
+
+        return StubFactory().create_provider(
+            name, StubSettings(not_for_production=True), None, catalogue=catalogue
+        )
+
+    def last(self) -> str | None:
+        return self.keys[-1] if self.keys else None
 
 
-def _wired(client: TestClient) -> Any:
-    """Build the client's providers and conversation manager and have them follow settings."""
+def _lab(client: TestClient) -> None:
+    """Store the connection "lab", whose key is LAB_KEY in the shared store."""
+    from spark.database import connections as repo
+
+    sync_db = client.app.state.sync_db  # type: ignore[attr-defined]
+    sync_db.call(
+        repo.save_overlay,
+        repo.OverlayRow("keyed", "stub-echo", 8_192, "local", output_limit=1_024),
+    )
+    sync_db.call(
+        repo.save_connection,
+        repo.ConnectionRow(
+            id="lab",
+            name="Lab",
+            kind="keyed",
+            settings={"kind": "keyed", "api_key": f"secret://{LAB_KEY}"},
+            residency={"scopes": ["local"], "regions": None},
+        ),
+    )
+
+
+def _save_lab_key(client: TestClient, value: str | None) -> None:
+    """Save (or clear) the connection's key in the store and tell every replica."""
+    store = client.app.state.ctx.secrets  # type: ignore[attr-defined]
+    if value is None:
+        store.delete(LAB_KEY)
+    else:
+        store.set(LAB_KEY, value)
+    client.app.state.sync_db.call(announce, LAB_KEY)  # type: ignore[attr-defined]
+
+
+def _wired(client: TestClient, built: Built) -> tuple[Any, Any]:
+    """The client's connection runtime and conversation manager, following settings."""
+    from conduit.integrations.konfig import KonfigSecretResolver
+
+    from spark.connections import startup
+    from spark.connections.runtime import ConnectionRuntime
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
 
     app = client.app
     instance = server._server_consumers(app, app.state.ctx)  # type: ignore[arg-type, attr-defined]
     assert instance is not None
-    llm = server._init_providers(app.state.ctx, instance.view)  # type: ignore[attr-defined]
+    runtime = ConnectionRuntime(
+        secrets=KonfigSecretResolver(app.state.ctx.secrets),  # type: ignore[attr-defined]
+        factories=[built],
+    )
+    load = startup.loader(app.state.sync_db, server=True, config_path=None)  # type: ignore[attr-defined]
+    runtime.apply(load())
+    app.state.connections = runtime  # type: ignore[attr-defined]  # closed with the app
     conv = ConversationManager(
         app.state.sync_db,  # type: ignore[attr-defined]
-        llm,
-        ContextLimitResolver(None),
+        runtime,
         embedded_tools_config=instance.embedded_tools_config(),
     )
-    follower = instance.follow(llm, conv)
+    follower = instance.follow(startup.Refresher(runtime, load), conv)
     follower.wait_idle()
     app.state.settings_follower = follower  # type: ignore[attr-defined]
-    return conv
+    return runtime, conv
 
 
 def _web(conv: Any) -> dict[str, Any]:
@@ -398,10 +449,8 @@ def server_db(pg_url: str) -> DatabaseSettings:
 
 
 @pytest.fixture
-def built(monkeypatch: pytest.MonkeyPatch) -> Built:
-    recorder = Built()
-    monkeypatch.setattr(server, "_build_providers", recorder)
-    return recorder
+def built() -> Built:
+    return Built()
 
 
 @pytest.mark.postgres
@@ -415,21 +464,24 @@ class TestSharedEncryptedFile:
             a = stack.enter_context(_server_app(tmp_path, "a", server_db, _encrypted_store(shared)))
             b = stack.enter_context(_server_app(tmp_path, "b", server_db, _encrypted_store(shared)))
             assert a.app.state.ctx.secrets is not b.app.state.ctx.secrets  # type: ignore[attr-defined]
-            conv = _wired(b)
-            _save(a, {"providers.anthropic.enabled": True})
-            assert _wait_for(lambda: built.last(b) == "")
+            _lab(a)
+            runtime, conv = _wired(b, built)
+            # The connection is known, but its key is not in the store yet.
+            assert "lab" in runtime.failures() and built.last() is None
 
             # Only the secret changes: no settings row, so only its notification can tell B.
-            _save(a, {ANTHROPIC: "sk-ant-propagated-dev-only"})
+            _save_lab_key(a, "sk-ant-propagated-dev-only")
             started = time.monotonic()
-            assert _wait_for(lambda: built.last(b) == "sk-ant-propagated-dev-only")
+            assert _wait_for(lambda: built.last() == "sk-ant-propagated-dev-only")
             assert time.monotonic() - started < BOUND_SECONDS
+            assert _wait_for(lambda: "lab" not in runtime.failures())
 
             _save(a, {BRAVE: "brave-propagated-dev-only"})
             assert _wait_for(lambda: _web(conv).get("brave_api_key") == "brave-propagated-dev-only")
 
-            _clear(a, ANTHROPIC)
-            assert _wait_for(lambda: built.last(b) == "")
+            # A changed key rebuilds the connection with it.
+            _save_lab_key(a, "sk-ant-rotated-dev-only")
+            assert _wait_for(lambda: built.last() == "sk-ant-rotated-dev-only")
             _clear(a, BRAVE)
             assert _wait_for(lambda: not _web(conv).get("brave_api_key"))
 
@@ -466,8 +518,8 @@ class TestSharedEncryptedFile:
                 assert not failures, failures
 
                 on_disk = EncryptedFileBackend(shared, master_key=MASTER_KEY)
-                assert on_disk.get("providers_anthropic_api_key") == first
-                assert on_disk.get("providers_xai_api_key") == second
+                assert on_disk.get("voice_elevenlabs_api_key") == first
+                assert on_disk.get("embedded_tools_web_bing_api_key") == second
                 for client in (a, b):
                     status = client.get("/settings/api/secrets").json()
                     assert status[ANTHROPIC] is True and status[XAI] is True
@@ -485,17 +537,16 @@ class TestSharedAwsBundle:
         with ExitStack() as stack:
             a = stack.enter_context(_server_app(tmp_path, "a", server_db, _aws_store(manager)))
             b = stack.enter_context(_server_app(tmp_path, "b", server_db, _aws_store(manager)))
-            _wired(b)
-            _save(a, {"providers.anthropic.enabled": True})
-            assert _wait_for(lambda: built.last(b) == "")
+            _lab(a)
+            _wired(b, built)
             b_ctx = b.app.state.ctx  # type: ignore[attr-defined]
             assert load_config(b_ctx).api_key == ""
+            assert built.last() is None
 
-            _save(a, {ANTHROPIC: "sk-ant-bundle-dev-only", VOICE: "eleven-bundle-dev-only"})
-            assert json.loads(manager.secret)["providers_anthropic_api_key"] == (
-                "sk-ant-bundle-dev-only"
-            )
-            assert _wait_for(lambda: built.last(b) == "sk-ant-bundle-dev-only")
+            _save_lab_key(a, "sk-ant-bundle-dev-only")
+            _save(a, {VOICE: "eleven-bundle-dev-only"})
+            assert json.loads(manager.secret)[LAB_KEY] == "sk-ant-bundle-dev-only"
+            assert _wait_for(lambda: built.last() == "sk-ant-bundle-dev-only")
             assert _wait_for(lambda: load_config(b_ctx).api_key == "eleven-bundle-dev-only")
 
 

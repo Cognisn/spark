@@ -8,6 +8,7 @@ from spark.database import conversation_links, conversations
 from spark.knowledge.builder import KnowledgeGraphBuilder
 from spark.knowledge.resolve import available_scopes
 from spark.knowledge.tools import execute
+from tests.model_helpers import FakeModels
 from tests.test_kg_extractor import ScriptedService, tool_response
 from tests.test_kg_query import DirectionalEmbedder
 
@@ -75,14 +76,11 @@ def test_build_query_and_link_pooling(db) -> None:
 
     # 6. Auto-context in the linked conversation carries the pooled entities
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
-    from spark.llm.manager import LLMManager
     from tests.test_conversation_manager import StubLLMService
 
     stub = StubLLMService()
-    llm = LLMManager()
-    llm.register_provider(stub)  # type: ignore[arg-type]
-    mgr = ConversationManager(db, llm, ContextLimitResolver(), max_tool_iterations=5)
+    llm = FakeModels(stub)
+    mgr = ConversationManager(db, llm, max_tool_iterations=5)
     mgr.send_message(other, "what do we know about spark?", "u1")
     assert "## Knowledge Graph Context" in stub.last_system
     assert "Cognisn" in stub.last_system

@@ -170,7 +170,7 @@ class TestSettingsPage:
         )
         assert resp.status_code == 200
         assert "Settings" in resp.text
-        assert "LLM Providers" in resp.text
+        assert "LLM Providers" not in resp.text
 
     def test_save_settings(
         self, app: TestClient, tmp_path: MagicMock, monkeypatch: pytest.MonkeyPatch

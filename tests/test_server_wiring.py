@@ -228,41 +228,57 @@ class TestServerLifespan:
 # -- Settings consumers on a second instance ------------------------------------------------
 
 
-class FakeProvider:
-    def __init__(self, name: str, models: list[str]) -> None:
-        self.name, self.models = name, models
+class CountingRefresher:
+    """The connection runtime's refresher, counting the refreshes the follower asked for."""
 
-    def get_provider_name(self) -> str:
-        return self.name
+    def __init__(self, refresher: Any) -> None:
+        self._refresher = refresher
+        self.refreshes = 0
 
-    def list_available_models(self) -> list[dict[str, Any]]:
-        return [{"id": m, "name": m} for m in self.models]
-
-
-def _fake_providers(ctx: Any, view: Any) -> list[Any]:
-    if view.get("providers.anthropic.enabled"):
-        return [FakeProvider("anthropic", ["model-a", "model-b"])]
-    return []
+    def refresh(self) -> None:
+        self.refreshes += 1
+        self._refresher.refresh()
 
 
-def _wired(client: TestClient) -> tuple[Any, Any]:
+def _wired(client: TestClient) -> tuple[Any, Any, CountingRefresher]:
+    """A connection runtime (on conduit's stub provider), a conversation manager and the
+    settings follower on one instance, as its start-up wires them."""
+    from conduit import LiteralSecretResolver
+    from conduit.providers.stub import StubFactory
+
+    from spark.connections import startup
+    from spark.connections.runtime import ConnectionRuntime
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
 
     app = client.app
     instance = server._server_consumers(app, app.state.ctx)  # type: ignore[arg-type, attr-defined]
     assert instance is not None
-    llm = server._init_providers(app.state.ctx, instance.view)  # type: ignore[attr-defined]
+    runtime = ConnectionRuntime(secrets=LiteralSecretResolver({}), factories=[StubFactory()])
+    load = startup.loader(app.state.sync_db, server=True, config_path=None)  # type: ignore[attr-defined]
+    runtime.apply(load())
+    app.state.connections = runtime  # type: ignore[attr-defined]  # closed with the app
     conv = ConversationManager(
         app.state.sync_db,  # type: ignore[attr-defined]
-        llm,
-        ContextLimitResolver(None),
+        runtime,
         embedded_tools_config=instance.embedded_tools_config(),
     )
-    follower = instance.follow(llm, conv)
+    refresher = CountingRefresher(startup.Refresher(runtime, load))
+    follower = instance.follow(refresher, conv)
     follower.wait_idle()
     app.state.settings_follower = follower  # type: ignore[attr-defined]
-    return llm, conv
+    return runtime, conv, refresher
+
+
+def _stub_row(connection_id: str) -> Any:
+    from spark.database.connections import ConnectionRow
+
+    return ConnectionRow(
+        id=connection_id,
+        name=f"Stub {connection_id}",
+        kind="stub",
+        settings={"kind": "stub", "not_for_production": True},
+        residency={"scopes": ["local"], "regions": None},
+    )
 
 
 class TestPersonalConsumers:
@@ -279,52 +295,51 @@ class TestPersonalConsumers:
 @pytest.mark.postgres
 class TestServerConsumers:
     def test_an_administrator_change_reaches_the_consumers_of_another_instance(
-        self, tmp_path: Path, server_db: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, server_db: DatabaseSettings
     ) -> None:
-        monkeypatch.setattr(server, "_build_providers", _fake_providers)
+        from spark.database import connections as repo
+
         with ExitStack() as stack:
             a = stack.enter_context(_server_app(tmp_path, "a", server_db))
             b = stack.enter_context(_server_app(tmp_path, "b", server_db))
-            llm, conv = _wired(b)
-            assert llm.providers == {}
+            runtime, conv, _ = _wired(b)
+            assert runtime.connections() == []
             assert conv._embedded_tools_config["embedded_tools"]["web"]["enabled"] is True
 
+            # A connection saved on instance a notifies instance b, which builds it.
+            a.app.state.sync_db.call(repo.save_connection, _stub_row("lab"))  # type: ignore[attr-defined]
             resp = a.post(
                 "/settings/api/instance",
-                json={
-                    "providers.anthropic.enabled": True,
-                    "models.offered": "model-b",
-                    "embedded_tools.web.enabled": False,
-                    "conversation.max_tool_iterations": 4,
-                },
+                json={"embedded_tools.web.enabled": False, "conversation.max_tool_iterations": 4},
             )
             assert resp.status_code == 200, resp.text
 
             assert _wait_for(
-                lambda: "anthropic" in llm.providers
+                lambda: [c.id for c in runtime.connections()] == ["lab"]
                 and conv._embedded_tools_config["embedded_tools"]["web"]["enabled"] is False
                 and conv._max_tool_iterations == 4
             )
-            assert [m["id"] for m in llm.list_all_models()] == ["model-b"]
+            assert [m["id"] for m in runtime.offered_models()] == ["lab/stub-echo"]
             assert "filesystem" not in conv._embedded_tools_config["embedded_tools"]
 
-    def test_a_secret_saved_on_this_instance_rebuilds_its_providers(
-        self, tmp_path: Path, server_db: DatabaseSettings, monkeypatch: pytest.MonkeyPatch
+            # A change to the connection alone (no setting) reaches b too, and an
+            # unchanged connection keeps its provider.
+            kept = runtime.provider("lab")
+            a.app.state.sync_db.call(repo.save_connection, _stub_row("other"))  # type: ignore[attr-defined]
+            assert _wait_for(lambda: [c.id for c in runtime.connections()] == ["lab", "other"])
+            assert runtime.provider("lab") is kept
+
+    def test_a_secret_saved_on_this_instance_refreshes_its_connections(
+        self, tmp_path: Path, server_db: DatabaseSettings
     ) -> None:
-        keys: list[str] = []
-
-        def builder(ctx: Any, view: Any) -> list[Any]:
-            keys.append(view.get("providers.anthropic.api_key", ""))
-            return _fake_providers(ctx, view)
-
-        monkeypatch.setattr(server, "_build_providers", builder)
         with _server_app(tmp_path, "a", server_db) as a:
-            _wired(a)
+            _, _, refresher = _wired(a)
+            before = refresher.refreshes
             resp = a.post(
-                "/settings/api/instance", json={"providers.anthropic.api_key": "sk-wired-dev-only"}
+                "/settings/api/instance", json={"voice.elevenlabs.api_key": "sk-wired-dev-only"}
             )
             assert resp.status_code == 200, resp.text
-            assert _wait_for(lambda: keys[-1:] == ["sk-wired-dev-only"])
+            assert _wait_for(lambda: refresher.refreshes > before)
 
 
 # -- The theme endpoint ----------------------------------------------------------------------

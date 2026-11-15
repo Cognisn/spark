@@ -14,8 +14,7 @@ from typing import Any
 import pytest
 
 from spark.core.conversation_manager import ConversationManager
-from spark.llm.context_limits import ContextLimitResolver
-from spark.llm.manager import LLMManager
+from tests.model_helpers import FakeModels
 from tests.test_conversation_manager import StubLLMService
 
 ADA = "user-ada-example"
@@ -110,13 +109,11 @@ def recorders(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _manager(sync_db: Any, callback: Any) -> ConversationManager:
-    llm = LLMManager()
     stub = TurnLLM()
-    llm.register_provider(stub)  # type: ignore[arg-type]
+    llm = FakeModels(stub)
     mgr = ConversationManager(
         sync_db,
         llm,
-        ContextLimitResolver(),
         max_tool_iterations=4,
         user_guid=PROCESS,
         embedded_tools_config=AGENTS_ON,

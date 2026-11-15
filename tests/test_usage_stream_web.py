@@ -20,7 +20,7 @@ from spark.identity.permissions import ADMINISTRATOR
 from spark.usage.budgets import BudgetExceeded, BudgetStatus
 from spark.web.server import create_app
 from tests.db_helpers import app_client
-from tests.test_conversation_manager_budgets import _manager
+from tests.test_conversation_manager_budgets import MODEL, _manager
 from tests.test_debate_endpoints import DEBATE_PAYLOAD
 from tests.test_panel_endpoints import PANEL_PAYLOAD
 from tests.test_voice_endpoints import _mock_settings_get
@@ -48,7 +48,7 @@ def _call(client: TestClient, fn: Any, *args: Any, **kwargs: Any) -> Any:
 
 def _chat(client: TestClient) -> int:
     mgr = client.app.state.conversation_manager  # type: ignore[attr-defined]
-    cid: int = mgr.create_conversation("chat", "stub-model", LOCAL)
+    cid: int = mgr.create_conversation("chat", MODEL, LOCAL)
     return cid
 
 

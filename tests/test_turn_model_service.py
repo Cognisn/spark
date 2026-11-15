@@ -1,12 +1,12 @@
-"""Each chat turn answers through a model service of its own.
+"""Each chat turn answers through a model service of its own, on its conversation's connection.
 
-One LLM manager, and one conversation manager, serve every user of a server. A
-turn used to set its conversation's model on the shared manager and then invoke
-the manager's active provider, so two turns on different models at once could
-answer with each other's model. Each turn now resolves a service for its
-conversation's model (:meth:`spark.llm.manager.LLMManager.service_for`) and uses
-it for every call the turn makes: invoking, counting tokens, the tool loop,
-prompt caching and compaction. The shared manager's provider and model never move.
+One connection runtime and one conversation manager serve every user of a server.
+A conversation's model is a (connection, model) pair; each turn takes a service of
+its own for it and uses that service for every call the turn makes (the tool loop,
+token counts, prompt caching and compaction), billed to the turn's user. Nothing
+shared changes with one user's choice, so turns on different connections at once
+never answer with each other's. These tests run the real runtime on conduit's stub
+provider (no network).
 """
 
 from __future__ import annotations
@@ -16,86 +16,36 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from conduit import ModelRequest
+from conduit.providers.stub import StubToolCall, StubTurn
 
 from spark import mode
+from spark.connections import ConnectionRuntime
 from spark.core.context_compaction import ContextCompactor
 from spark.core.conversation_manager import ConversationManager
 from spark.database import conversations
-from spark.llm.context_limits import ContextLimitResolver
-from spark.llm.manager import LLMManager
+from spark.database.connections import Assignment
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
+from tests.model_helpers import FixedLimits, stub_connection, stub_runtime
 from tests.test_conversation_manager import StubLLMService
 
 ADA = "user-ada-example"
 GRACE = "user-grace-example"
+ALPHA = "alpha/stub-echo"
+BETA = "beta/stub-echo"
 
 
-def _text(text: str) -> dict[str, Any]:
-    return {
-        "content": text,
-        "stop_reason": "end_turn",
-        "usage": {"input_tokens": 1, "output_tokens": 1},
-        "tool_use": None,
-        "content_blocks": [{"type": "text", "text": text}],
-    }
+def _answer(name: str) -> Any:
+    def script(request: ModelRequest, index: int) -> StubTurn:
+        return StubTurn(text=f"answer from {name}")
+
+    return script
 
 
-def _tool_call(name: str) -> dict[str, Any]:
-    call = {"type": "tool_use", "id": "call-1", "name": name, "input": {}}
-    return {
-        "content": "",
-        "stop_reason": "tool_use",
-        "usage": {"input_tokens": 1, "output_tokens": 1},
-        "tool_use": [call],
-        "content_blocks": [call],
-    }
-
-
-class RecordingProvider(StubLLMService):
-    """A provider listing ``models`` that records, in a list its copies share, the
-    model every call was made with. ``barrier`` holds each invocation until the
-    other turn's has started too, so the turns interleave."""
-
-    def __init__(
-        self,
-        name: str,
-        models: tuple[str, ...],
-        calls: list[tuple[str, str | None, Any]],
-        *,
-        barrier: threading.Barrier | None = None,
-        script: list[dict[str, Any]] | None = None,
-    ) -> None:
-        super().__init__()
-        self.name = name
-        self.models = models
-        self.calls = calls
-        self.barrier = barrier
-        self.script = script if script is not None else []
-        self.lock = threading.Lock()
-
-    def get_provider_name(self) -> str:
-        return self.name
-
-    def list_available_models(self) -> list[dict]:
-        return [
-            {"id": m, "name": m, "provider": self.name, "supports_tools": True, "context_length": 8}
-            for m in self.models
-        ]
-
-    def count_tokens(self, text: str) -> int:
-        with self.lock:
-            self.calls.append(("count", self._model_id, None))
-        return len(text) // 4
-
-    def invoke_model(self, messages: list[dict], **kwargs: Any) -> dict:
-        if self.barrier is not None:
-            self.barrier.wait()
-        model = self._model_id
-        with self.lock:
-            self.calls.append(("invoke", model, (messages[0]["content"], kwargs)))
-            if self.script:
-                return self.script.pop(0)
-        return _text(f"answer from {model}")
+def _tool_then_answer(request: ModelRequest, index: int) -> StubTurn:
+    if index % 2 == 0:
+        return StubTurn(tool_calls=(StubToolCall(name="no_such_tool"),))
+    return StubTurn(text="done")
 
 
 @pytest.fixture(params=["personal", "server"])
@@ -120,172 +70,160 @@ def _conversation(sync_db: Any, user: str, model: str) -> int:
     return cid
 
 
-def _manager(sync_db: Any, llm: LLMManager, **kwargs: Any) -> ConversationManager:
-    return ConversationManager(
-        sync_db, llm, ContextLimitResolver(), user_guid="process-guid", **kwargs
+STAFF = ["staff"]
+
+
+def _runtime(sync_db: Any, scripts: dict[str, Any]) -> ConnectionRuntime:
+    """Stub connections named after their scripts, each assigned to the staff role."""
+    return stub_runtime(
+        sync_db,
+        connections=[stub_connection(name, script=name) for name in sorted(scripts)],
+        scripts=scripts,
+        assignments=[Assignment(name, role="staff") for name in scripts],
     )
 
 
+def _manager(sync_db: Any, runtime: ConnectionRuntime, **kwargs: Any) -> ConversationManager:
+    return ConversationManager(sync_db, runtime, user_guid="process-guid", **kwargs)
+
+
+def _usage(sync_db: Any) -> list[tuple[Any, ...]]:
+    rows = sync_db.fetch_all(
+        "SELECT user_guid, connection_id, model_id, source FROM usage_tracking ORDER BY id"
+    )
+    return [(r["user_guid"], r["connection_id"], r["model_id"], r["source"]) for r in rows]
+
+
 class TestConcurrentTurns:
-    def test_two_users_on_different_models_each_get_their_own(
+    def test_two_users_on_different_connections_each_get_their_own(
         self, sync_db: Any, either_mode: str
     ) -> None:
-        calls: list[tuple[str, str | None, Any]] = []
-        barrier = threading.Barrier(2, timeout=30)
-        provider = RecordingProvider("Shared", ("model-a", "model-b"), calls, barrier=barrier)
-        llm = LLMManager()
-        llm.register_provider(provider)  # type: ignore[arg-type]
-        mgr = _manager(sync_db, llm)
-        chosen = {ADA: "model-a", GRACE: "model-b"}
-        cids = {user: _conversation(sync_db, user, model) for user, model in chosen.items()}
-        answers: dict[str, Any] = {}
+        start = threading.Barrier(2, timeout=30)
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _answer("beta")})
+        try:
+            mgr = _manager(sync_db, runtime)
+            chosen = {ADA: ALPHA, GRACE: BETA}
+            cids = {user: _conversation(sync_db, user, m) for user, m in chosen.items()}
+            answers: dict[str, Any] = {}
 
-        def turn(user: str) -> None:
-            answers[user] = mgr.send_message(cids[user], f"hello from {user}", user, tools=[])
+            def turn(user: str) -> None:
+                start.wait()
+                answers[user] = mgr.send_message(
+                    cids[user], f"hello from {user}", user, tools=[], roles=STAFF
+                )
 
-        threads = [threading.Thread(target=turn, args=(user,)) for user in chosen]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(60)
+            threads = [threading.Thread(target=turn, args=(user,)) for user in chosen]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(60)
+        finally:
+            runtime.close()
 
-        for user, model in chosen.items():
-            assert answers[user]["content"] == f"answer from {model}"
-        invoked = {(c[1], c[2][0]) for c in calls if c[0] == "invoke"}
-        assert invoked == {("model-a", f"hello from {ADA}"), ("model-b", f"hello from {GRACE}")}
-        # The shared provider was never given either model.
-        assert provider.current_model is None
+        assert answers[ADA]["content"] == "answer from alpha"
+        assert answers[GRACE]["content"] == "answer from beta"
+        assert sorted(_usage(sync_db)) == [
+            (ADA, "alpha", "stub-echo", "chat"),
+            (GRACE, "beta", "stub-echo", "chat"),
+        ]
 
 
 class TestOneTurn:
-    def _two_providers(
-        self, script: list[dict[str, Any]] | None = None
-    ) -> tuple[LLMManager, RecordingProvider, RecordingProvider, list[Any]]:
-        calls: list[tuple[str, str | None, Any]] = []
-        first = RecordingProvider("First", ("model-a",), calls)
-        second = RecordingProvider("Second", ("model-b",), calls, script=script)
-        llm = LLMManager()
-        llm.register_provider(first)  # type: ignore[arg-type]
-        llm.register_provider(second)  # type: ignore[arg-type]
-        return llm, first, second, calls
-
-    def test_leaves_the_shared_manager_unchanged(self, sync_db: Any, either_mode: str) -> None:
-        llm, first, second, calls = self._two_providers()
-        mgr = _manager(sync_db, llm)
-        cid = _conversation(sync_db, ADA, "model-b")
-
-        result = mgr.send_message(cid, "hello", ADA, tools=[])
-
-        assert result["content"] == "answer from model-b"
-        assert llm.active_provider == "First"
-        assert (first.current_model, second.current_model) == (None, None)
-
     def test_every_call_of_the_turn_uses_its_model(self, sync_db: Any, either_mode: str) -> None:
-        llm, first, second, calls = self._two_providers(
-            script=[_tool_call("no_such_tool"), _text("done")]
-        )
-        mgr = _manager(sync_db, llm)
-        compacted: list[Any] = []
-        assert mgr._compactor is not None
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _tool_then_answer})
+        try:
+            mgr = _manager(sync_db, runtime)
+            compacted: list[Any] = []
+            assert mgr._compactor is not None
 
-        def check_and_compact(*args: Any, service: Any = None, **kwargs: Any) -> bool:
-            compacted.append(service)
-            return False
+            def check_and_compact(*args: Any, service: Any = None, **kwargs: Any) -> bool:
+                compacted.append(service)
+                return False
 
-        mgr._compactor.check_and_compact = check_and_compact  # type: ignore[method-assign]
-        cid = _conversation(sync_db, ADA, "model-b")
+            mgr._compactor.check_and_compact = check_and_compact  # type: ignore[method-assign]
+            cid = _conversation(sync_db, ADA, BETA)
 
-        result = mgr.send_message(cid, "hello", ADA, tools=[])
+            result = mgr.send_message(cid, "hello", ADA, tools=[], roles=STAFF)
+        finally:
+            runtime.close()
 
         assert result["content"] == "done"
         assert result["iterations"] == 2
-        invoked = [c for c in calls if c[0] == "invoke"]
-        counted = [c for c in calls if c[0] == "count"]
-        assert [c[1] for c in invoked] == ["model-b", "model-b"]
-        assert counted and {c[1] for c in counted} == {"model-b"}
-        assert all(c[2][1]["prompt_caching"] is True for c in invoked)
-        assert [getattr(s, "current_model", None) for s in compacted] == ["model-b"]
-        assert compacted[0] is not second
+        assert _usage(sync_db) == [
+            (ADA, "beta", "stub-echo", "chat"),
+            (ADA, "beta", "stub-echo", "chat"),
+        ]
+        (service,) = compacted
+        assert service.current_model == BETA
+        assert service.attribution.source == "compaction"
 
-    def test_a_pinned_model_no_longer_offered_still_answers(
+    def test_a_bare_model_from_before_connections_still_answers(
         self, sync_db: Any, either_mode: str
     ) -> None:
-        llm, first, second, calls = self._two_providers()
-        llm.set_offered(lambda: ["model-a"])
-        mgr = _manager(sync_db, llm)
-        cid = _conversation(sync_db, ADA, "model-b")
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _answer("beta")})
+        try:
+            mgr = _manager(sync_db, runtime)
+            cid = _conversation(sync_db, ADA, "stub-echo")  # as 0.2 stored it
+            answer = mgr.send_message(cid, "hello", ADA, tools=[], roles=STAFF)["content"]
+            assert answer == "answer from alpha"
+        finally:
+            runtime.close()
 
-        assert mgr.send_message(cid, "hello", ADA, tools=[])["content"] == "answer from model-b"
+    def test_a_model_no_connection_offers_is_reported(self, sync_db: Any, either_mode: str) -> None:
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha")})
+        try:
+            mgr = _manager(sync_db, runtime)
+            cid = _conversation(sync_db, ADA, "gone/model-gone")
+            result = mgr.send_message(cid, "hello", ADA, tools=[], roles=STAFF)
+        finally:
+            runtime.close()
+        assert result["error"] is True
+        assert "not available" in result["content"]
+        assert _usage(sync_db) == []
 
-    def test_a_model_no_provider_lists_falls_back_to_the_active_service(
-        self, sync_db: Any, either_mode: str
-    ) -> None:
-        llm, first, second, calls = self._two_providers()
-        first.set_model("model-a")
-        mgr = _manager(sync_db, llm)
-        cid = _conversation(sync_db, ADA, "model-gone")
-
-        assert mgr.send_message(cid, "hello", ADA, tools=[])["content"] == "answer from model-a"
-        assert (llm.active_provider, first.current_model) == ("First", "model-a")
-
-    def test_the_turns_provider_lists_the_models_for_sub_agents(self, sync_db: Any) -> None:
-        llm, first, second, calls = self._two_providers()
-        mgr = _manager(sync_db, llm)
-
-        text, is_error = mgr._list_provider_models("model-b")
-
+    def test_the_connections_models_are_listed_for_sub_agents(self, sync_db: Any) -> None:
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _answer("beta")})
+        try:
+            mgr = _manager(sync_db, runtime)
+            text, is_error = mgr._list_provider_models(BETA)
+        finally:
+            runtime.close()
         assert not is_error
-        assert "Second" in text and "model-b" in text and "model-a" not in text
+        assert "Stub beta" in text and BETA in text and ALPHA not in text
 
 
-class TestServiceFor:
-    def test_a_copy_with_its_own_model(self) -> None:
-        calls: list[Any] = []
-        provider = RecordingProvider("Shared", ("model-a", "model-b"), calls)
-        llm = LLMManager()
-        llm.register_provider(provider)  # type: ignore[arg-type]
-
-        a = llm.service_for("model-a")
-        b = llm.service_for("model-b")
-
-        assert a is not None and b is not None
-        assert (a.current_model, b.current_model) == ("model-a", "model-b")
-        assert a is not provider and b is not provider
-        assert provider.current_model is None
-        assert llm.service_for("model-gone") is None
-
-    def test_does_not_ask_whether_the_model_is_offered(self) -> None:
-        provider = RecordingProvider("Shared", ("model-a", "model-b"), [])
-        llm = LLMManager()
-        llm.register_provider(provider)  # type: ignore[arg-type]
-        llm.set_offered(lambda: ["model-a"])
-
-        service = llm.service_for("model-b")
-
-        assert service is not None and service.current_model == "model-b"
-
-    def test_a_provider_that_cannot_be_cloned_is_copied_never_changed(self, sync_db: Any) -> None:
-        provider = RecordingProvider("Unclonable", ("model-a", "model-b"), [])
-        llm = LLMManager()
-        llm.register_provider(provider)  # type: ignore[arg-type]
-        mgr = _manager(sync_db, llm)
-
-        service = mgr._get_llm_service_for_model("model-b")
-
-        assert service is not None and service.current_model == "model-b"
-        assert provider.current_model is None
+class TestServiceForModel:
+    def test_each_call_gets_its_own_service(self, sync_db: Any) -> None:
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _answer("beta")})
+        try:
+            mgr = _manager(sync_db, runtime)
+            a = mgr._get_llm_service_for_model(ALPHA)
+            b = mgr._get_llm_service_for_model(BETA)
+            assert a is not None and b is not None and a is not b
+            assert (a.current_model, b.current_model) == (ALPHA, BETA)
+            assert mgr._get_llm_service_for_model("gone/model-gone") is None
+            assert mgr._get_llm_service_for_model("") is None
+        finally:
+            runtime.close()
 
 
 class TestCompactorService:
     def test_compacts_with_the_service_it_is_given(self, sync_db: Any) -> None:
         from spark.database import messages
 
+        def _text(text: str) -> dict[str, Any]:
+            return {
+                "content": text,
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "tool_use": None,
+                "content_blocks": [{"type": "text", "text": text}],
+            }
+
         own = StubLLMService()
         given = StubLLMService()
         given.responses = [_text("Summary of the prior conversation: " + ("blah " * 60))]
-        compactor = ContextCompactor(
-            own, sync_db, ContextLimitResolver(), threshold=0.01  # type: ignore[arg-type]
-        )
+        compactor = ContextCompactor(own, sync_db, FixedLimits(), threshold=0.01)  # type: ignore[arg-type]
         cid = sync_db.call(conversations.create_conversation, "Test", "stub-model", ADA)
         for i in range(4):
             sync_db.call(messages.add_message, cid, "user", f"message {i}", 50, ADA)
@@ -295,19 +233,21 @@ class TestCompactorService:
         assert (own.invoke_count, given.invoke_count) == (0, 1)
 
     def test_a_locked_compaction_model_gets_a_service_of_its_own(self, sync_db: Any) -> None:
-        llm, first, second, calls = TestOneTurn()._two_providers()
-        mgr = _manager(sync_db, llm, compaction_model="model-a")
-        compacted: list[Any] = []
-        assert mgr._compactor is not None
+        runtime = _runtime(sync_db, {"alpha": _answer("alpha"), "beta": _answer("beta")})
+        try:
+            mgr = _manager(sync_db, runtime, compaction_model=ALPHA)
+            compacted: list[Any] = []
+            assert mgr._compactor is not None
 
-        def check_and_compact(*args: Any, service: Any = None, **kwargs: Any) -> bool:
-            compacted.append(service)
-            return False
+            def check_and_compact(*args: Any, service: Any = None, **kwargs: Any) -> bool:
+                compacted.append(service)
+                return False
 
-        mgr._compactor.check_and_compact = check_and_compact  # type: ignore[method-assign]
-        cid = _conversation(sync_db, ADA, "model-b")
-
-        mgr.send_message(cid, "hello", ADA, tools=[])
-
-        assert [getattr(s, "current_model", None) for s in compacted] == ["model-a"]
-        assert first.current_model is None
+            mgr._compactor.check_and_compact = check_and_compact  # type: ignore[method-assign]
+            cid = _conversation(sync_db, ADA, BETA)
+            mgr.send_message(cid, "hello", ADA, tools=[], roles=STAFF)
+        finally:
+            runtime.close()
+        (service,) = compacted
+        assert service.current_model == ALPHA
+        assert (service.attribution.user_guid, service.attribution.source) == (ADA, "compaction")

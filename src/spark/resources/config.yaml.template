@@ -110,36 +110,35 @@ interface:
     miss_threshold: 3              # Shutdown after N missed heartbeats
 
 # -----------------------------------------------------------------------------
-# LLM Providers
+# Model Connections
 # -----------------------------------------------------------------------------
-providers:
-  anthropic:
-    enabled: false
-    api_key: secret://providers_anthropic_api_key
-    # rate_limit_retry: true
-    # max_retries: 3
-
-  aws_bedrock:
-    enabled: false
-    region: us-east-1
-    # auth_method: sso              # sso, iam, session
-    # profile: default
-    # cost_tracking: true
-
-  ollama:
-    enabled: false
-    base_url: http://localhost:11434
-    # timeout: 120
-    # verify_ssl: true
-
-  google_gemini:
-    enabled: false
-    api_key: secret://providers_google_gemini_api_key
-    # web_search_grounding: false
-
-  xai:
-    enabled: false
-    api_key: secret://providers_xai_api_key
+# Each connection is one named service with its own settings: several of one
+# kind may sit side by side. A model is chosen as <connection id>/<model id>.
+# Credentials are never written here: each is a secret:// reference to the OS
+# keychain. The models offered are those conduit's catalogue declares for the
+# connection's kind and Region, unless a connection lists its own "models".
+# Residency: in-Region for Bedrock and Microsoft Foundry, global for direct
+# APIs, local for Ollama, unless a connection sets its own.
+connections: []
+#  - id: work-claude
+#    name: Work Claude
+#    settings:
+#      kind: anthropic
+#      api_key: secret://connections.work-claude.api_key
+#  - id: sydney-bedrock
+#    name: Bedrock (Sydney)
+#    settings:
+#      kind: bedrock
+#      region: ap-southeast-2
+#      auth: {mode: credential_chain, profile: default}
+#    residency: {scopes: [local, in_region], regions: [ap-southeast-2]}
+#  - id: home-ollama
+#    name: Home Ollama
+#    settings:
+#      kind: ollama
+#      base_url: http://localhost:11434
+#    models:
+#      - {id: llama3.1:8b, enabled: true, tier: standard}
 
 # -----------------------------------------------------------------------------
 # Conversation Settings
@@ -163,24 +162,9 @@ conversation:
   # global_instructions: |
   #   You are a helpful AI assistant.
 
-  # Prompt caching — caches system prompts and tool definitions to reduce input costs.
-  # Supported by Anthropic (cache_control). Default: true.
+  # Prompt caching: caches system prompts and tool definitions to reduce input costs,
+  # where the model supports it (conduit's catalogue). Default: true.
   prompt_caching: true
-
-# -----------------------------------------------------------------------------
-# Model Context Limits
-# -----------------------------------------------------------------------------
-# Override or add context window sizes for specific models.
-# Format: model_id_or_pattern: {context_window: N, max_output: M}
-context_limits:
-  # Anthropic
-  claude-sonnet-4-20250514: {context_window: 200000, max_output: 16384}
-  claude-opus-4-20250514: {context_window: 200000, max_output: 16384}
-  claude-3-5-sonnet-20241022: {context_window: 200000, max_output: 8192}
-  claude-3-5-haiku-20241022: {context_window: 200000, max_output: 8192}
-  # Ollama defaults
-  llama3: {context_window: 8192, max_output: 4096}
-  mistral: {context_window: 32768, max_output: 8192}
 
 # -----------------------------------------------------------------------------
 # Token Management

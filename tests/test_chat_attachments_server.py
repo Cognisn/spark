@@ -34,6 +34,7 @@ from tests.identity_web_helpers import (
     sign_in,
     write_config,
 )
+from tests.model_helpers import FakeModels
 from tests.test_chat_attachments import CONTENT, ReadsAttachments, _events
 
 pytestmark = pytest.mark.postgres
@@ -118,16 +119,12 @@ def _upload(user: Signed, name: str, data: bytes, cid: int | None = None) -> Any
 
 def _manager(client: TestClient) -> ReadsAttachments:
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
-    from spark.llm.manager import LLMManager
 
     stub = ReadsAttachments()
-    llm = LLMManager()
-    llm.register_provider(stub)  # type: ignore[arg-type]
+    llm = FakeModels(stub)
     mgr = ConversationManager(
         client.app.state.sync_db,  # type: ignore[attr-defined]
         llm,
-        ContextLimitResolver(),
         max_tool_iterations=4,
         embedded_tools_config={"embedded_tools": {}},
     )

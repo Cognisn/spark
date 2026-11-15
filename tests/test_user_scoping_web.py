@@ -104,13 +104,11 @@ def client(tmp_path: Path, server_db: DatabaseSettings, host: list[Any]) -> Iter
     try:
         with server_client(config, server_db) as test_client:
             from spark.core.conversation_manager import ConversationManager
-            from spark.llm.context_limits import ContextLimitResolver
 
             app = test_client.app
             app.state.conversation_manager = ConversationManager(  # type: ignore[attr-defined]
                 app.state.sync_db,  # type: ignore[attr-defined]
                 MagicMock(),
-                ContextLimitResolver(None),
                 user_guid="process-guid",
             )
             yield test_client

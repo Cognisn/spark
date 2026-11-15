@@ -24,15 +24,17 @@ class TestInstanceSettings:
         assert await repository.load_instance(spark_db) == {}
 
     async def test_save_and_load_round_trip(self, spark_db: Any) -> None:
-        await repository.save_instance(spark_db, "providers.anthropic.enabled", True, actor="a")
-        await repository.save_instance(spark_db, "models.offered", ["m-1", "m-2"], actor="a")
+        await repository.save_instance(spark_db, "embedded_tools.email.enabled", True, actor="a")
+        await repository.save_instance(
+            spark_db, "embedded_tools.filesystem.allowed_paths", ["m-1", "m-2"], actor="a"
+        )
         await repository.save_instance(
             spark_db, "tool_policy.actions", {"web": "withhold"}, actor="a"
         )
         loaded = await repository.load_instance(spark_db)
         assert loaded == {
-            "providers.anthropic.enabled": True,
-            "models.offered": ["m-1", "m-2"],
+            "embedded_tools.email.enabled": True,
+            "embedded_tools.filesystem.allowed_paths": ["m-1", "m-2"],
             "tool_policy.actions": {"web": "withhold"},
         }
 
@@ -74,9 +76,7 @@ class TestInstanceSettings:
 
     async def test_secret_keys_are_never_written(self, spark_db: Any) -> None:
         with pytest.raises(SettingsError):
-            await repository.save_instance(
-                spark_db, "providers.anthropic.api_key", SECRET, actor="a"
-            )
+            await repository.save_instance(spark_db, "voice.elevenlabs.api_key", SECRET, actor="a")
         count = await spark_db.fetch_value("SELECT COUNT(*) FROM instance_settings")
         assert count == 0
 
@@ -116,8 +116,8 @@ class TestPreferences:
 
     async def test_only_user_scope_keys(self, spark_db: Any) -> None:
         for key, value in (
-            ("providers.anthropic.enabled", True),
-            ("providers.anthropic.api_key", SECRET),
+            ("embedded_tools.email.enabled", True),
+            ("voice.elevenlabs.api_key", SECRET),
             ("no.such.key", 1),
         ):
             with pytest.raises(SettingsError):

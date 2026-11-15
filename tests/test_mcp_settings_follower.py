@@ -60,12 +60,6 @@ class Target:
         return {c.name for c in configs}
 
 
-class Llm:
-    def replace_providers(self, providers: Any) -> None: ...
-
-    def set_offered(self, offered: Any) -> None: ...
-
-
 @pytest.fixture(autouse=True)
 def _server_mode() -> Iterator[None]:
     mode.configure(RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="x")))
@@ -87,9 +81,8 @@ def _follow(source: Source, store: dict[str, str], target: Target) -> consumers.
     return consumers.follow(
         source,
         Secrets(),
-        llm_manager=Llm(),
+        connections=None,
         conversation_manager=None,
-        build_providers=lambda view: [],
         mcp=target,
         mcp_secrets=store.get,
     )
@@ -143,9 +136,8 @@ class TestFollower:
         follower = consumers.follow(
             source,
             Secrets(),
-            llm_manager=Llm(),
+            connections=None,
             conversation_manager=None,
-            build_providers=lambda view: [],
         )
         source.change("mcp.servers", [])
         assert follower.wait_idle()

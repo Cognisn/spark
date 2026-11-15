@@ -304,13 +304,12 @@ async def toggle_favourite(request: Request, conversation_id: int) -> JSONRespon
 @router.get("/api/models")
 async def list_models(request: Request) -> JSONResponse:
     """API: list available models, respecting default_model settings."""
-    llm_manager = getattr(request.app.state, "llm_manager", None)
-    if not llm_manager:
+    from spark.web.models import connections, default_model, default_model_mode, listed
+
+    if connections(request) is None:
         return JSONResponse({"models": [], "default_model": None, "mandatory": False})
 
-    from spark.web.models import default_model, default_model_mode
-
-    all_models = llm_manager.list_all_models()
+    all_models = listed(request)
     # The signed-in user's default on a server (offered only); config.yaml's otherwise.
     default_model_id = await default_model(request, current_user_guid(request))
     mode = await default_model_mode(request)

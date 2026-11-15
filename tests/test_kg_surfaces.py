@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from spark.knowledge import store
+from tests.model_helpers import FakeModels
 from tests.test_kg_query import DirectionalEmbedder
 
 
@@ -23,14 +24,11 @@ def fake_embedder(monkeypatch):
 
 def _make_manager(db):
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
-    from spark.llm.manager import LLMManager
     from tests.test_conversation_manager import StubLLMService
 
     stub = StubLLMService()
-    llm = LLMManager()
-    llm.register_provider(stub)  # type: ignore[arg-type]
-    mgr = ConversationManager(db, llm, ContextLimitResolver(), max_tool_iterations=5)
+    llm = FakeModels(stub)
+    mgr = ConversationManager(db, llm, max_tool_iterations=5)
     return mgr, stub
 
 

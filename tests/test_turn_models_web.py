@@ -1,15 +1,14 @@
 """Server mode: each user's turns, default model and graph builds use that user's model.
 
 The real app runs on a PostgreSQL clone at head with synthetic users signed in
-through warden (the fixtures of ``tests.test_user_scoping_web``), over the shared
-LLM manager of ``tests.test_models_offered_web``.
+through warden (the fixtures of ``tests.test_user_scoping_web``), over the
+connection runtime of ``tests.test_models_offered_web`` (conduit's stub provider).
 
-* Two users' chat turns at once on different models each answer with their own,
-  and the shared manager's model never moves.
+* Two users' chat turns at once on different models each answer with their own.
 * The model list (``/conversations/api/models``) names the signed-in user's
   default model preference, only when it is offered, never ``config.yaml``'s.
 * A knowledge graph build without ``knowledge_graph.build_model`` uses the
-  user's default model preference, never whatever the shared manager last had.
+  user's default model preference.
 """
 
 from __future__ import annotations
@@ -24,15 +23,14 @@ from fastapi.testclient import TestClient
 from spark.database import conversations
 from spark.database import messages as msg_db
 from tests.identity_web_helpers import another_client, sign_in
-from tests.test_kg_extractor import ScriptedService, tool_response
-from tests.test_kg_query import DirectionalEmbedder
 from tests.test_models_offered_web import (  # noqa: F401 - fixtures
     ADA,
-    GONE,
     GRACE,
+    MODEL_A,
+    MODEL_B,
     OFFERED,
     ROOT,
-    OllamaStandIn,
+    Answers,
     shared,
 )
 from tests.test_user_scoping_web import (  # noqa: F401 - fixtures
@@ -68,24 +66,18 @@ def _prefer(browser: TestClient, model: str) -> None:
 @pytest.mark.usefixtures("shared")
 class TestConcurrentTurns:
     def test_each_user_answers_with_their_own_model(
-        self, client: TestClient, shared: OllamaStandIn, monkeypatch: pytest.MonkeyPatch
+        self, client: TestClient, shared: Answers
     ) -> None:
         ada, ada_guid = _signed_in(client, ADA)
         grace, grace_guid = _signed_in(client, GRACE)
-        chosen = {ada_guid: (ada, "model-a"), grace_guid: (grace, "model-b")}
+        chosen = {ada_guid: (ada, MODEL_A), grace_guid: (grace, MODEL_B)}
         cids = {guid: _plain_conversation(client, guid, m) for guid, (_, m) in chosen.items()}
         barrier = threading.Barrier(2, timeout=30)
-        invoke = OllamaStandIn.invoke_model
-
-        def held(self: OllamaStandIn, messages: list[dict], **kwargs: Any) -> dict:
-            barrier.wait()  # both turns have chosen their model before either answers
-            return invoke(self, messages, **kwargs)
-
-        monkeypatch.setattr(OllamaStandIn, "invoke_model", held)
         answers: dict[str, Any] = {}
 
         def turn(guid: str) -> None:
             browser = chosen[guid][0]
+            barrier.wait()  # both turns are sent at once
             answers[guid] = browser.post(f"/chat/{cids[guid]}/api/send", json={"message": "hi"})
 
         threads = [threading.Thread(target=turn, args=(guid,)) for guid in chosen]
@@ -96,9 +88,8 @@ class TestConcurrentTurns:
 
         for guid, (_, model) in chosen.items():
             assert answers[guid].status_code == 200, answers[guid].text
-            assert answers[guid].json()["content"] == f"answer from {model}"
-        assert shared._model_id is None
-        assert sorted(OllamaStandIn.answered) == ["model-a", "model-b"]
+            assert answers[guid].json()["content"] == f"answer from {model.split('/')[1]}"
+        assert sorted(shared.answered) == ["model-a", "model-b"]
 
 
 @pytest.mark.usefixtures("shared")
@@ -107,8 +98,8 @@ class TestModelList:
         ada, _ = _signed_in(client, ADA)
         grace, _ = _signed_in(client, GRACE)
         nobody, _ = _signed_in(client, "nobody@example.com")
-        _prefer(ada, "model-b")
-        _prefer(grace, "model-a")
+        _prefer(ada, MODEL_B)
+        _prefer(grace, MODEL_A)
 
         listed = {
             name: browser.get("/conversations/api/models").json()
@@ -116,8 +107,8 @@ class TestModelList:
         }
 
         assert {n: v["default_model"] for n, v in listed.items()} == {
-            "ada": "model-b",
-            "grace": "model-a",
+            "ada": MODEL_B,
+            "grace": MODEL_A,
             "nobody": None,
         }
         for body in listed.values():
@@ -128,28 +119,42 @@ class TestModelList:
         root = _root(client)
         ada, _ = _signed_in(client, ADA)
         grace, _ = _signed_in(client, GRACE)
-        _prefer(ada, "model-b")
-        _prefer(grace, "model-a")
+        _prefer(ada, MODEL_B)
+        _prefer(grace, MODEL_A)
         saved = root.post("/settings/api/instance", json={"default_model.mode": "mandatory"})
         assert saved.status_code == 200, saved.text
 
-        for browser, model in ((ada, "model-b"), (grace, "model-a")):
+        for browser, model in ((ada, MODEL_B), (grace, MODEL_A)):
             body = browser.get("/conversations/api/models").json()
             assert body["mandatory"] is True
             assert body["default_model"] == model
             assert [m["id"] for m in body["models"]] == [model]
 
     def test_a_default_no_longer_offered_is_not_named(self, client: TestClient) -> None:
-        root = _root(client)
+        from spark.connections import ConnectionModel
+        from spark.connections.runtime import snapshot_of
+        from spark.database.connections import Assignment, OverlayRow
+        from tests.model_helpers import stub_connection
+
         ada, _ = _signed_in(client, ADA)
-        _prefer(ada, "model-b")
-        saved = root.post("/settings/api/instance", json={"models.offered": ["model-a"]})
-        assert saved.status_code == 200, saved.text
+        _prefer(ada, "stub/model-b")
+        # The connection now offers model-a only.
+        client.app.state.connections.apply(  # type: ignore[attr-defined]
+            snapshot_of(
+                [stub_connection("stub", script="answers")],
+                [ConnectionModel("stub", "model-a"), ConnectionModel("stub", "model-b", False)],
+                [Assignment("stub", role="user")],
+                [
+                    OverlayRow("stub", m, 200_000, "local", output_limit=8_192)
+                    for m in ("model-a", "model-b")
+                ],
+            )
+        )
 
         body = ada.get("/conversations/api/models").json()
 
         assert body["default_model"] is None
-        assert [m["id"] for m in body["models"]] == ["model-a"]
+        assert [m["id"] for m in body["models"]] == [MODEL_A]
 
 
 @pytest.mark.usefixtures("shared")
@@ -160,14 +165,12 @@ class TestGraphBuildModel:
         app: Any = client.app
         ada, ada_guid = _signed_in(client, ADA)
         grace, grace_guid = _signed_in(client, GRACE)
-        _prefer(ada, "model-b")
-        _prefer(grace, "model-a")
-        # A previous turn or setting left the shared manager on another model.
-        app.state.llm_manager.set_model(GONE)
+        _prefer(ada, MODEL_B)
+        _prefer(grace, MODEL_A)
 
         queued: list[str] = []
         for browser, guid in ((ada, ada_guid), (grace, grace_guid)):
-            cid = _call(client, conversations.create_conversation, "c", "model-a", guid)
+            cid = _call(client, conversations.create_conversation, "c", MODEL_A, guid)
             _call(client, msg_db.add_message, cid, "user", "Tea is a drink", 5, guid)
             started = browser.post("/knowledge/api/build", json={"scope": f"conv:{cid}"})
             assert started.status_code == 200, started.text
@@ -175,4 +178,4 @@ class TestGraphBuildModel:
             job = _call(client, jobs.get, guid, started.json()["job_id"])
             queued.append(job.model_id)
 
-        assert queued == ["model-b", "model-a"]
+        assert queued == [MODEL_B, MODEL_A]

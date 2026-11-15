@@ -796,72 +796,42 @@ class ActionExecutor:
         return str(value)
 
     def _init_llm(self, model_id: str) -> Any:
-        """Initialise an LLM service for the given model."""
-        settings = self._ctx.settings
+        """A service for the action's model on its connection (None when no connection
+        this process runs offers it).
 
-        providers = [
-            ("anthropic", self._init_anthropic),
-            ("aws_bedrock", self._init_bedrock),
-            ("ollama", self._init_ollama),
-            ("google_gemini", self._init_gemini),
-            ("xai", self._init_xai),
-        ]
+        The process's connection runtime is started on first use. On a server the
+        action's owner must be assigned the model's connection (M9), checked at run
+        time like the owner's permissions.
+        """
+        from spark.connections import startup
+        from spark.connections.runtime import UserScope
 
-        for key, init_fn in providers:
-            if setting_bool(settings, f"providers.{key}.enabled", False):
-                try:
-                    service = init_fn(settings)
-                    service.set_model(model_id)
-                    logger.info("Initialised %s provider for model %s", key, model_id)
-                    return service
-                except Exception as e:
-                    logger.debug("Provider %s failed for model %s: %s", key, model_id, e)
-                    continue
+        server = _server()
+        config_path = None
+        if not server:
+            from spark.core.application import _get_config_path
 
-        logger.error(
-            "No provider could initialise model '%s'. Enabled providers: %s",
-            model_id,
-            [k for k, _ in providers if setting_bool(settings, f"providers.{k}.enabled", False)],
+            config_path = _get_config_path()
+        runtime = startup.ensure(
+            secrets=self._ctx.secrets, sync_db=self._db, server=server, config_path=config_path
         )
-        return None
+        ref = runtime.resolve(model_id)
+        if ref is None:
+            logger.error("No connection offers model '%s'", model_id)
+            return None
+        if server:
+            from spark.identity.permissions import SETTINGS_INSTANCE
 
-    def _init_anthropic(self, settings: Any) -> Any:
-        from spark.llm.anthropic_direct import AnthropicDirectProvider
-
-        api_key = self._resolve_secret(settings.get("providers.anthropic.api_key", ""))
-        if not api_key:
-            raise ValueError("Anthropic API key not configured")
-        return AnthropicDirectProvider(api_key=api_key)
-
-    def _init_bedrock(self, settings: Any) -> Any:
-        from spark.llm.bedrock import BedrockProvider
-
-        read_timeout = int(settings.get("providers.aws_bedrock.read_timeout", 300) or 300)
-        return BedrockProvider(
-            region=settings.get("providers.aws_bedrock.region", "us-east-1"),
-            profile=settings.get("providers.aws_bedrock.profile"),
-            read_timeout=read_timeout,
-        )
-
-    def _init_ollama(self, settings: Any) -> Any:
-        from spark.llm.ollama import OllamaProvider
-
-        return OllamaProvider(
-            base_url=settings.get("providers.ollama.base_url", "http://localhost:11434")
-        )
-
-    def _init_gemini(self, settings: Any) -> Any:
-        from spark.llm.google_gemini import GoogleGeminiProvider
-
-        api_key = self._resolve_secret(settings.get("providers.google_gemini.api_key", ""))
-        if not api_key:
-            raise ValueError("Google Gemini API key not configured")
-        return GoogleGeminiProvider(api_key=api_key)
-
-    def _init_xai(self, settings: Any) -> Any:
-        from spark.llm.xai import XAIProvider
-
-        api_key = self._resolve_secret(settings.get("providers.xai.api_key", ""))
-        if not api_key:
-            raise ValueError("X.AI API key not configured")
-        return XAIProvider(api_key=api_key)
+            permissions = self._permissions
+            administrator = (
+                isinstance(permissions, AbstractSet) and SETTINGS_INSTANCE in permissions
+            )
+            owner = UserScope(
+                self._user_guid, self._roles or frozenset(), administrator=administrator
+            )
+            if not runtime.may_use(ref.connection_id, owner):
+                raise PermissionError(
+                    f"the connection '{runtime.connection_name(ref.connection_id)}' is not "
+                    "assigned to the action's owner"
+                )
+        return runtime.service(ref)

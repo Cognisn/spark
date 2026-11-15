@@ -11,11 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from spark.connections.refs import ModelRef
+from spark.connections.runtime import ModelSource, UserScope
+from spark.connections.usage import Attribution
 from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import ContextCompactor
 from spark.db.bridge import SyncDatabase
-from spark.llm.context_limits import ContextLimitResolver
-from spark.llm.manager import LLMManager
 from spark.safety.untrusted import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
     ResultPolicy,
@@ -25,9 +26,27 @@ from spark.safety.untrusted import (
 from spark.tools.registry import TOOL_CATEGORIES as _REGISTRY_CATEGORIES
 from spark.tools.registry import Permissions
 from spark.usage import budgets
-from spark.usage.meter import MeteredService, meter
+from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
+
+
+class ConnectionNotAssigned(PermissionError):
+    """A server user's turn on a connection that is not (or no longer) assigned to them."""
+
+
+class _CatalogueLimits:
+    """Context windows and output limits from the connections' catalogue (for compaction)."""
+
+    def __init__(self, models: ModelSource) -> None:
+        self._models = models
+
+    def get_context_window(self, model_id: str) -> int:
+        return self._models.limits(model_id)[0]
+
+    def get_max_output(self, model_id: str) -> int:
+        return self._models.limits(model_id)[1]
+
 
 # Marker prefix for tool results stored as user messages
 _TOOL_RESULTS_MARKER = "[TOOL_RESULTS]"
@@ -59,8 +78,7 @@ class ConversationManager:
     def __init__(
         self,
         db: SyncDatabase,
-        llm_manager: LLMManager,
-        context_limits: ContextLimitResolver,
+        models: ModelSource,
         *,
         global_instructions: str | None = None,
         max_tool_iterations: int = 25,
@@ -81,8 +99,10 @@ class ConversationManager:
         prompt_caching: bool = True,
     ) -> None:
         self._db = db
-        self._llm = llm_manager
-        self._context_limits = context_limits
+        # The connections every model is reached through (M3): a turn, a sub-agent,
+        # a compaction or a debate asks it for a service of its own.
+        self._models = models
+        self._limits = _CatalogueLimits(models)
         self._global_instructions = global_instructions
         self._max_tool_iterations = max_tool_iterations
         self._max_tool_selections = max_tool_selections
@@ -111,11 +131,11 @@ class ConversationManager:
         self._vector_indices: dict[tuple[str, int], Any] = {}
 
         # Context compactor: each turn passes the service it compacts with (its own,
-        # or one for the locked compaction model); the active one is only a default.
+        # or one for the locked compaction model). Limits come from the catalogue.
         self._compactor: ContextCompactor | None = ContextCompactor(
-            llm_manager.active_service,
+            None,
             db,
-            context_limits,
+            self._limits,  # type: ignore[arg-type]
             threshold=rollup_threshold,
             emergency_threshold=emergency_rollup_threshold,
             summary_ratio=rollup_summary_ratio,
@@ -494,23 +514,18 @@ class ConversationManager:
         """Create a new conversation. Returns conversation ID."""
         from spark.database import conversations
 
-        cid = self._db.call(
-            conversations.create_conversation,
-            name,
-            model_id,
-            user_guid,
-            instructions=instructions,
-            web_search_enabled=web_search_enabled,
+        # Each turn takes a service of its own for the conversation's model, so
+        # nothing shared changes with one user's choice.
+        return int(
+            self._db.call(
+                conversations.create_conversation,
+                name,
+                model_id,
+                user_guid,
+                instructions=instructions,
+                web_search_enabled=web_search_enabled,
+            )
         )
-        # Personal mode sets the model on the LLM manager. A server never does on a
-        # user's choice: the manager is shared, and each turn sets its own model.
-        if not self._server():
-            try:
-                self._llm.set_model(model_id)
-            except ValueError:
-                logger.warning("Model %s not found in any provider", model_id)
-
-        return cid
 
     def get_conversations(self, user_guid: str) -> list[dict]:
         """Get all active conversations."""
@@ -584,20 +599,23 @@ class ConversationManager:
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
 
-        # A new turn is refused once the user has used their monthly token budget.
-        budgets.check(self._db, user_guid, roles)
-
-        # This turn's own service for the conversation's model, metered for its user.
-        # The shared manager's provider and model are never changed: one manager
-        # serves every user.
+        # The conversation's model, as a (connection, model) pair. On a server the
+        # user may use only a connection assigned to them (M9): checked every turn.
         model_id = conv.get("model_id", "")
-        service = meter(
-            self._turn_service(model_id),
+        ref = self._models.resolve(model_id) if model_id else None
+        self._check_assigned(ref, user_guid, roles, permissions)
+
+        # A new turn is refused once the user has used their monthly budget.
+        budgets.check(
             self._db,
-            user_guid=user_guid,
-            source="chat",
-            model_id=model_id,
-            conversation_id=conversation_id,
+            user_guid,
+            roles,
+            connection_id=ref.connection_id if ref is not None else None,
+        )
+
+        # This turn's own service for the conversation's model, billed to its user.
+        service = self._turn_service(
+            model_id, Attribution(user_guid, "chat", conversation_id=conversation_id)
         )
 
         def count_tokens(text: str) -> int:
@@ -774,10 +792,12 @@ class ConversationManager:
                         use_caching = bool(conv.get("prompt_caching", True))
 
                     if service is None:
-                        raise RuntimeError("No active LLM provider")
+                        raise RuntimeError(
+                            f"the model '{model_id}' is not available on any connection"
+                        )
                     response = service.invoke_model(
                         history,
-                        max_tokens=self._context_limits.get_max_output(model_id),
+                        max_tokens=self._limits.get_max_output(model_id),
                         temperature=0.7,
                         tools=tools if tools else None,
                         system=system,
@@ -1076,19 +1096,15 @@ class ConversationManager:
                 )
                 # List models for quick reference
                 try:
-                    provider_name = self._provider_for(model_id)
-                    if provider_name and provider_name in self._llm.providers:
-                        models = self._offered_provider_models(provider_name)
-                        if models:
-                            model_lines = []
-                            for m in models[:10]:
-                                ctx = m.get("context_length", "?")
-                                if isinstance(ctx, int) and ctx >= 1000:
-                                    ctx = f"{ctx // 1000}K"
-                                model_lines.append(
-                                    f"  - `{m['id']}` ({m.get('name', '')}, {ctx} ctx)"
-                                )
-                            agent_desc += "Available models:\n" + "\n".join(model_lines) + "\n"
+                    models = self._connection_models(model_id)
+                    if models:
+                        model_lines = []
+                        for m in models[:10]:
+                            ctx = m.get("context_length", "?")
+                            if isinstance(ctx, int) and ctx >= 1000:
+                                ctx = f"{ctx // 1000}K"
+                            model_lines.append(f"  - `{m['id']}` ({m.get('name', '')}, {ctx} ctx)")
+                        agent_desc += "Available models:\n" + "\n".join(model_lines) + "\n"
                 except Exception:
                     pass
             else:
@@ -1553,22 +1569,56 @@ class ConversationManager:
             server = False
         return None if server else self._user_guid
 
-    def _turn_service(self, model_id: str) -> Any:
-        """A service of the turn's own for its conversation's ``model_id``.
-
-        A model no provider lists falls back to the active service, unchanged, as
-        before; None when there is no provider at all.
-        """
-        service = self._llm.service_for(model_id) if model_id else None
+    def _turn_service(self, model_id: str, attribution: Attribution | None = None) -> Any:
+        """A service of the turn's own for its conversation's ``model_id``, billed as
+        ``attribution`` says; None when no running connection offers the model."""
+        service = self._models.service(model_id, attribution=attribution) if model_id else None
         if service is None:
-            logger.warning("Model %r not found in any provider; using the active one", model_id)
-            service = self._llm.active_service
+            logger.warning("Model %r is not available on any connection", model_id)
         return service
 
-    def _provider_for(self, model_id: str | None) -> str | None:
-        """The provider of a conversation's model (the active one when no provider lists it)."""
-        name = self._llm.provider_name_for(model_id) if model_id else None
-        return name or self._llm.active_provider
+    def _check_assigned(
+        self,
+        ref: ModelRef | None,
+        user_guid: str,
+        roles: Iterable[str] | None,
+        permissions: Permissions,
+    ) -> None:
+        """On a server, refuse a turn on a connection not assigned to the user (M9).
+
+        Personal mode's single user may use every connection. A model no connection
+        offers is left to the turn, which reports it.
+        """
+        if ref is None or not self._server():
+            return
+        if not self._models.may_use(
+            ref.connection_id, self._user_scope(user_guid, roles, permissions)
+        ):
+            raise ConnectionNotAssigned(
+                f"The connection '{self._models.connection_name(ref.connection_id)}' is not "
+                "available to you. Choose a model from the list."
+            )
+
+    @staticmethod
+    def _user_scope(
+        user_guid: str, roles: Iterable[str] | None, permissions: Permissions
+    ) -> UserScope:
+        """A server user, as the connections' assignment check sees them."""
+        from spark.identity.permissions import SETTINGS_INSTANCE
+        from spark.tools.registry import ANY_ROLE
+
+        administrator = (
+            permissions is not None
+            and permissions is not ANY_ROLE
+            and SETTINGS_INSTANCE in permissions
+        )
+        return UserScope(user_guid, frozenset(roles or ()), administrator=administrator)
+
+    def _connection_models(self, model_id: str) -> list[dict[str, Any]]:
+        """The models offered on the connection of a conversation's model (none when the
+        model is on no running connection)."""
+        ref = self._models.resolve(model_id) if model_id else None
+        return self._models.listed_models(ref.connection_id) if ref is not None else []
 
     def _conversation_model(self, conversation_id: int | None, user_guid: str | None) -> str:
         """The model of one of the user's conversations ("" when it cannot be read)."""
@@ -1583,76 +1633,30 @@ class ConversationManager:
         return str((conv or {}).get("model_id") or "")
 
     def _get_llm_service_for_model(self, model_id: str) -> Any:
-        """Get a dedicated LLM service instance for a specific model.
+        """A service of its own for ``model_id`` (``connection/model``, or a bare model id
+        as stored before connections), or None when no running connection offers it.
 
-        Creates a fresh provider instance to avoid conflicts with concurrent
-        conversations or agents that use different models on the same provider.
+        Debates, panels and knowledge graph builds take this as their service factory;
+        each bills its calls itself (:func:`spark.usage.meter.meter`).
         """
-        # Find which provider type owns this model
-        for name, provider in self._llm.providers.items():
-            try:
-                models = provider.list_available_models()
-                if any(m.get("id") == model_id for m in models):
-                    # Create a fresh instance of the same provider type
-                    fresh = self._clone_provider(name, provider)
-                    if fresh:
-                        fresh.set_model(model_id)
-                        return fresh
-                    # Fallback: a copy of the shared instance with its own model; the
-                    # shared instance itself is never changed.
-                    return self._llm.service_for(model_id)
-            except Exception:
-                continue
-        return None
-
-    def _clone_provider(self, name: str, provider: Any) -> Any:
-        """Create a fresh instance of an LLM provider with the same config."""
-        try:
-            provider_type = type(provider)
-            if name == "Anthropic" or "anthropic" in str(provider_type).lower():
-                return provider_type(api_key=getattr(provider, "_api_key", ""))
-            elif name == "Ollama" or "ollama" in str(provider_type).lower():
-                return provider_type(
-                    base_url=getattr(provider, "_base_url", "http://localhost:11434")
-                )
-            elif name == "Google Gemini" or "gemini" in str(provider_type).lower():
-                return provider_type(api_key=getattr(provider, "_api_key", ""))
-            elif name == "X.AI" or "xai" in str(provider_type).lower():
-                return provider_type(api_key=getattr(provider, "_api_key", ""))
-            elif name == "AWS Bedrock" or "bedrock" in str(provider_type).lower():
-                clone = provider_type(
-                    region=getattr(provider, "_region", "us-east-1"),
-                    profile=getattr(provider, "_profile", None),
-                    access_key=getattr(provider, "_access_key", None),
-                    secret_key=getattr(provider, "_secret_key", None),
-                    session_token=getattr(provider, "_session_token", None),
-                    read_timeout=getattr(provider, "_read_timeout", 300),
-                )
-                # Copy the inference profile cache so the clone can resolve
-                # model IDs without re-listing profiles from the API.
-                profiles = getattr(provider, "_inference_profiles", {})
-                if profiles:
-                    clone._inference_profiles = dict(profiles)
-                return clone
-        except Exception as e:
-            logger.debug("Could not clone provider %s: %s", name, e)
-        return None
+        return self._models.service(model_id) if model_id else None
 
     def _list_provider_models(self, model_id: str = "") -> tuple[str, bool]:
-        """List models from the provider of the conversation's model (``model_id``)."""
+        """List the models of the connection of the conversation's model (``model_id``)."""
         try:
-            provider_name = self._provider_for(model_id)
-            if not provider_name or provider_name not in self._llm.providers:
-                return "No active provider.", True
-            models = self._offered_provider_models(provider_name)
+            ref = self._models.resolve(model_id) if model_id else None
+            if ref is None:
+                return "No connection serves this conversation's model.", True
+            name = self._models.connection_name(ref.connection_id)
+            models = self._models.listed_models(ref.connection_id)
             if not models:
-                return f"No models available from {provider_name}.", False
-            lines = [f"Available models from {provider_name}:\n"]
+                return f"No models available from {name}.", False
+            lines = [f"Available models from {name}:\n"]
             for m in models:
                 ctx = m.get("context_length", "?")
                 tools_support = "Yes" if m.get("supports_tools") else "No"
                 lines.append(
-                    f"- {m['id']} ({m.get('name', '')}) — context: {ctx}, tools: {tools_support}"
+                    f"- {m['id']} ({m.get('name', '')}), context: {ctx}, tools: {tools_support}"
                 )
             return "\n".join(lines), False
         except Exception as e:
@@ -1667,10 +1671,22 @@ class ConversationManager:
         except RuntimeError:
             return False
 
-    def _offered_provider_models(self, provider_name: str) -> list[dict]:
-        """A provider's models that users may choose (``models.offered``, when set)."""
-        models = self._llm.providers[provider_name].list_available_models()
-        return [m for m in models if self._llm.is_offered(m.get("id", ""))]
+    def _agent_model(self, requested: str, conversation_model: str) -> ModelRef | None:
+        """The model a sub-agent may use: one offered on the conversation's own connection.
+
+        A sub-agent never reaches another connection, so it never escapes the
+        assignment check its conversation passed. A bare model id is looked for on that
+        connection; None when the connection does not offer the model.
+        """
+        own = self._models.resolve(conversation_model) if conversation_model else None
+        if own is None:
+            return None
+        parsed = ModelRef.parse(requested)
+        ref = parsed if parsed is not None else ModelRef(own.connection_id, requested)
+        if ref.connection_id != own.connection_id:
+            return None
+        offered = {m.get("model_id") for m in self._models.listed_models(own.connection_id)}
+        return ref if ref.model_id in offered else None
 
     @staticmethod
     def _may_spawn_agents(permissions: Permissions) -> bool:
@@ -1714,13 +1730,19 @@ class ConversationManager:
 
         if not task:
             return "Error: task description is required.", True
-        if model_id and not self._llm.is_offered(model_id):
-            # The conversation's own (pinned) model, used when none is named, keeps working.
-            return (
-                f"Error: the model '{model_id}' is not offered on this instance. "
-                "Use list_provider_models to see the models offered, or omit model_id.",
-                True,
-            )
+        conversation_model = self._conversation_model(conversation_id, user_guid)
+        if model_id:
+            # A sub-agent stays on its conversation's connection. The conversation's own
+            # (pinned) model, used when none is named, keeps working.
+            chosen = self._agent_model(model_id, conversation_model)
+            if chosen is None:
+                return (
+                    f"Error: the model '{model_id}' is not offered on this conversation's "
+                    "connection. Use list_provider_models to see the models offered, or "
+                    "omit model_id.",
+                    True,
+                )
+            model_id = str(chosen)
         if not self._may_spawn_agents(permissions):
             return (
                 "Error: spawning sub-agents needs the spark.agents permission, "
@@ -1762,10 +1784,7 @@ class ConversationManager:
         # user responds (mirroring the permission_request pattern).
         callbacks = callbacks or self._default_callbacks()
         if model_selection == "auto_select" and model_id and callbacks.agent_model:
-            provider_name = self._provider_for(self._conversation_model(conversation_id, user_guid))
-            available_models: list[dict] = []
-            if provider_name and provider_name in self._llm.providers:
-                available_models = self._offered_provider_models(provider_name)
+            available_models = self._connection_models(conversation_model)
 
             model_justification = tool_input.get("model_justification", "")
             approved_model = callbacks.agent_model(
@@ -1783,7 +1802,15 @@ class ConversationManager:
                 model_justification,
             )
             if approved_model:
-                model_id = approved_model
+                # The user's choice too must be on the conversation's connection.
+                approved = self._agent_model(str(approved_model), conversation_model)
+                if approved is None:
+                    return (
+                        f"Error: the model '{approved_model}' is not offered on this "
+                        "conversation's connection.",
+                        True,
+                    )
+                model_id = str(approved)
 
         agent_id = str(uuid.uuid4())[:12]
         agent_token: CancellationToken | None = None
@@ -2013,7 +2040,7 @@ class ConversationManager:
         Either way the compaction's model calls are recorded for ``user_guid``."""
         if self._compactor:
             locked = self._compactor.locked_model
-            locked_service = self._llm.service_for(locked) if locked else None
+            locked_service = self._models.service(locked) if locked else None
             if locked_service is not None:
                 service = meter(
                     locked_service,
@@ -2023,7 +2050,7 @@ class ConversationManager:
                     model_id=locked or "",
                     conversation_id=conversation_id,
                 )
-            elif isinstance(service, MeteredService):
+            elif service is not None and hasattr(service, "with_source"):
                 service = service.with_source("compaction")
             self._compactor.check_and_compact(
                 conversation_id,

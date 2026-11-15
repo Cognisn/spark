@@ -217,22 +217,11 @@ async def dismiss_update(request: Request) -> JSONResponse:
 
 @router.get("/api/provider-models")
 async def provider_models(request: Request) -> JSONResponse:
-    """API: list models for a given provider."""
-    provider_key = request.query_params.get("provider", "")
-    llm_manager = getattr(request.app.state, "llm_manager", None)
-    if not llm_manager:
-        return JSONResponse({"models": []})
+    """API: the models of one connection (``provider`` is the connection id)."""
+    from spark.web.models import listed
 
-    # Map config keys to provider display names
-    key_to_display = {
-        "anthropic": "Anthropic",
-        "aws_bedrock": "AWS Bedrock",
-        "ollama": "Ollama",
-        "google_gemini": "Google Gemini",
-        "xai": "X.AI",
-    }
-    display_name = key_to_display.get(provider_key, provider_key)
-
+    connection_id = request.query_params.get("provider", "")
+    offered = [m for m in listed(request) if m.get("connection_id") == connection_id]
     models = [
         {
             "id": m.get("id", ""),
@@ -240,10 +229,10 @@ async def provider_models(request: Request) -> JSONResponse:
             "supports_tools": m.get("supports_tools", False),
             "context_length": m.get("context_length", 0),
         }
-        for m in llm_manager.list_all_models()
-        if m.get("provider") == display_name
+        for m in offered
     ]
-    return JSONResponse({"provider": display_name, "models": models})
+    name = offered[0].get("connection_name", connection_id) if offered else connection_id
+    return JSONResponse({"provider": name, "models": models})
 
 
 @router.get("/api/embedded-tools")
@@ -272,11 +261,9 @@ async def main_menu(request: Request) -> HTMLResponse:
 async def _render_dashboard(request: Request) -> Response:
     templates = request.app.state.templates
     ctx = request.app.state.ctx
-    llm_manager = getattr(request.app.state, "llm_manager", None)
-
     mcp_manager = getattr(request.app.state, "mcp_manager", None)
 
-    providers = _get_provider_summary(ctx, llm_manager)
+    providers = _get_provider_summary(request)
     embedded_tools = _get_embedded_tool_summary(ctx)
     from spark.identity.access import request_permissions
 
@@ -301,47 +288,40 @@ async def _render_dashboard(request: Request) -> Response:
     )
 
 
-def _get_provider_summary(ctx: object, llm_manager: Any | None) -> list[dict]:
-    """Build a summary of configured LLM providers with model counts."""
-    settings = ctx.settings  # type: ignore[union-attr]
-    provider_map = {
-        "anthropic": {"name": "Anthropic", "icon": "bi-robot"},
-        "aws_bedrock": {"name": "AWS Bedrock", "icon": "bi-cloud"},
-        "ollama": {"name": "Ollama", "icon": "bi-cpu"},
-        "google_gemini": {"name": "Google Gemini", "icon": "bi-stars"},
-        "xai": {"name": "X.AI", "icon": "bi-lightning"},
-    }
+_KIND_ICONS = {
+    "anthropic": "bi-robot",
+    "bedrock": "bi-cloud",
+    "bedrock_mantle": "bi-cloud",
+    "ollama": "bi-cpu",
+    "gemini": "bi-stars",
+    "openai_compat": "bi-lightning",
+}
 
-    # Build model counts per provider from the llm_manager
-    model_counts: dict[str, int] = {}
-    if llm_manager:
-        for model in llm_manager.list_all_models():
-            provider_name = model.get("provider", "")
-            model_counts[provider_name] = model_counts.get(provider_name, 0) + 1
 
-    # Map provider keys to display names for count lookup
-    key_to_display = {
-        "anthropic": "Anthropic",
-        "aws_bedrock": "AWS Bedrock",
-        "ollama": "Ollama",
-        "google_gemini": "Google Gemini",
-        "xai": "X.AI",
-    }
+def _get_provider_summary(request: Request) -> list[dict]:
+    """A summary of the model connections the signed-in user may use, with model counts."""
+    from spark.web.models import connections, listed, user_scope
 
-    providers = []
-    for key, meta in provider_map.items():
-        enabled = setting_bool(settings, f"providers.{key}.enabled", False)
-        display_name = key_to_display[key]
-        count = model_counts.get(display_name, 0)
-        providers.append(
-            {
-                "key": key,
-                "enabled": enabled,
-                "model_count": count,
-                **meta,
-            }
-        )
-    return providers
+    runtime = connections(request)
+    if runtime is None:
+        return []
+    counts: dict[str, int] = {}
+    for model in listed(request):
+        cid = str(model.get("connection_id", ""))
+        counts[cid] = counts.get(cid, 0) + 1
+    user = user_scope(request)
+    failures = runtime.failures()
+    return [
+        {
+            "key": connection.id,
+            "name": connection.name,
+            "icon": _KIND_ICONS.get(connection.kind, "bi-plug"),
+            "enabled": connection.enabled and connection.id not in failures,
+            "model_count": counts.get(connection.id, 0),
+        }
+        for connection in runtime.connections()
+        if runtime.may_use(connection.id, user)
+    ]
 
 
 def _get_embedded_tool_summary(ctx: object) -> list[dict]:

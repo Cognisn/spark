@@ -188,9 +188,7 @@ class TestOffered:
         from spark.core.conversation_manager import ConversationManager
 
         config = {"embedded_tools": {"web": {"enabled": True}, "agents": {"enabled": True}}}
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=config
-        )
+        mgr = ConversationManager(MagicMock(), MagicMock(), embedded_tools_config=config)
         user = {t["name"] for t in mgr._get_all_tools(role_permissions(USER))}
         power = {t["name"] for t in mgr._get_all_tools(role_permissions(POWER_USER))}
         nobody = {t["name"] for t in mgr._get_all_tools(None)}
@@ -237,7 +235,7 @@ class TestRefused:
 
         mcp = MagicMock()
         mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=CONFIG, mcp_manager=mcp
+            MagicMock(), MagicMock(), embedded_tools_config=CONFIG, mcp_manager=mcp
         )
         for permissions in (None, ONLY_MEMORY, role_permissions(AUDITOR)):
             text, is_error = mgr._call_tool(
@@ -250,9 +248,7 @@ class TestRefused:
     def test_conversation_manager_spawn_agent_needs_the_role(self, server_mode: None) -> None:
         from spark.core.conversation_manager import ConversationManager
 
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=CONFIG
-        )
+        mgr = ConversationManager(MagicMock(), MagicMock(), embedded_tools_config=CONFIG)
         mgr._current_conversation_id = 1
         mgr._current_user_guid = "user-1"
         text, is_error = mgr._call_tool(
@@ -268,9 +264,7 @@ class TestRefused:
         from spark.core.conversation_manager import ConversationManager
 
         monkeypatch.setattr(web, "execute", lambda *a, **k: "fetched")
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=CONFIG
-        )
+        mgr = ConversationManager(MagicMock(), MagicMock(), embedded_tools_config=CONFIG)
         mgr._get_memory_index_for_tools = lambda: None  # type: ignore[method-assign]
         text, is_error = mgr._call_tool(
             "web_fetch", {"url": "https://example.com"}, permissions=role_permissions(USER)
@@ -313,11 +307,12 @@ class TestRefused:
             def execute(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
                 return {"status": "completed", "result": "done"}
 
+        from tests.model_helpers import FakeModels
+
         monkeypatch.setattr(agent_executor, "AgentExecutor", FakeExecutor)
-        mgr = ConversationManager(
-            MagicMock(), MagicMock(), MagicMock(), embedded_tools_config=CONFIG
-        )
-        mgr._get_llm_service_for_model = lambda model_id: MagicMock()  # type: ignore[method-assign]
+        # The sub-agent's model is one its conversation's connection offers.
+        models = FakeModels(MagicMock(), models=[{"id": "test/m-1", "model_id": "m-1"}])
+        mgr = ConversationManager(MagicMock(), models, embedded_tools_config=CONFIG)
         power = role_permissions(POWER_USER)
         mgr._execute_agent_spawn(
             {"task": "t", "agent_name": "a", "model_id": "m-1"}, 1, "user-1", power

@@ -15,9 +15,10 @@ or one not active, is refused, and so is a global graph build by an owner
 without ``spark.knowledge.instance``. A refusal is recorded on the job and in
 the audit trail. The build itself is the in-process engine
 (:class:`~spark.knowledge.builder.KnowledgeGraphBuilder`) on a worker thread,
-with every read and write scoped to the owner's guid, a model client from
-:mod:`spark.llm.factory` over the instance settings as they are now, progress
-written to the job, and the owner's cancel request checked before each chunk.
+with every read and write scoped to the owner's guid, a model client from the
+worker's connection runtime (:mod:`spark.connections.startup`, the connections as
+they are now), progress written to the job, and the owner's cancel request
+checked before each chunk.
 Its outcome (complete, failed or cancelled) is recorded on the job.
 """
 
@@ -50,7 +51,8 @@ DEFAULT_POLL_SECONDS: Final = 5.0
 DEFAULT_STALE_SECONDS: Final = 1800.0
 DEFAULT_MAX_JOBS: Final = 20
 
-# A model id to a client of its own for it (None when no provider lists it).
+# A model (connection and model id) to a client of its own for it (None when no
+# connection offers it).
 ClientFactory = Callable[[str], Any]
 # The model clients for one run of the job, from the worker's context.
 ClientsFor = Callable[[worker.WorkerContext], Awaitable[ClientFactory]]
@@ -61,18 +63,23 @@ class SettingsLike(Protocol):
 
 
 async def instance_clients(ctx: worker.WorkerContext) -> ClientFactory:
-    """Model clients from the instance settings as they are now, secrets from konfig."""
-    from spark.instance_settings.accessor import ServerSettings
-    from spark.instance_settings.consumers import InstanceView
-    from spark.instance_settings.secrets import SecretsWriter
-    from spark.llm.factory import ModelClients
+    """Model clients from the worker's connections as they are now, secrets from konfig."""
+    from spark.connections import startup
 
     if ctx.app is None:
         raise worker.WorkerRefused("knowledge graph builds need the worker's application context")
-    source = ServerSettings(ctx.database, ctx.app.settings)
-    await source.reload()
-    secrets = SecretsWriter(ctx.app.secrets, ctx.app.settings, server=True)
-    return ModelClients(InstanceView(source, secrets))
+    runtime = await asyncio.to_thread(
+        startup.ensure,
+        secrets=ctx.app.secrets,
+        sync_db=ctx.sync_db,
+        server=True,
+        config_path=None,
+    )
+
+    def client(model_id: str) -> Any:
+        return runtime.service(model_id)
+
+    return client
 
 
 def _embedder() -> Any:
