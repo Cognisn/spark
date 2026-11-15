@@ -37,6 +37,7 @@ from conduit import (
     CacheBreakpoint,
     ConduitError,
     ConfigurationError,
+    FacadeError,
     ImageBlock,
     LoopThread,
     Message,
@@ -440,6 +441,13 @@ class ConnectionService:
         :class:`ModelCallFailed`. A call the provider could not serve is retried
         (twice, with a short wait) only while none of its output has reached the caller.
         """
+        if self._host.loop.on_loop_thread():
+            # Code on conduit's loop (an event sink, a tool executor) awaits the async API;
+            # the sync facade would wait on itself. Refused before any stream is made.
+            raise FacadeError(
+                "a model service was called on conduit's own loop thread; await the async "
+                "API there instead"
+            )
         provider = self._host.provider(self._ref.connection_id)
         try:
             entry = self._host.entry(self._ref)
@@ -501,7 +509,7 @@ class ConnectionService:
         names: _Names,
         stream_callback: Callable[[str], Any] | None,
     ) -> None:
-        # The facade's iterate refuses to run on conduit's own loop thread.
+        # The facade's iterate refuses to run on conduit's own loop thread, too.
         events: Iterator[Any] = self._host.loop.iterate(
             provider.stream(request), timeout=self._host.timeout
         )
