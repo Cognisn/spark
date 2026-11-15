@@ -156,58 +156,59 @@ async def stack(server_db: DatabaseSettings, server_mode: Path) -> AsyncIterator
         set_recorder(previous)
 
 
-class ScriptedLLM:
+def _scripted_run() -> list[dict[str, Any]]:
     """Store a memory, write a Word document, fetch a page, then finish."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def invoke_model(self, messages: list[Any], **kwargs: Any) -> dict[str, Any]:
-        self.calls += 1
-        if self.calls == 1:
-            return {
-                "stop_reason": "tool_use",
-                "content": "",
-                "content_blocks": [],
-                "usage": {"input_tokens": 10, "output_tokens": 5},
-                "tool_use": [
-                    {"id": "t1", "name": "store_memory", "input": {"content": "tea at three"}},
-                    {
-                        "id": "t2",
-                        "name": "create_word",
-                        "input": {
-                            "path": "report.docx",
-                            "content": [{"type": "paragraph", "text": "nightly report"}],
-                        },
+    return [
+        {
+            "stop_reason": "tool_use",
+            "content": "",
+            "content_blocks": [],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "tool_use": [
+                {"id": "t1", "name": "store_memory", "input": {"content": "tea at three"}},
+                {
+                    "id": "t2",
+                    "name": "create_word",
+                    "input": {
+                        "path": "report.docx",
+                        "content": [{"type": "paragraph", "text": "nightly report"}],
                     },
-                    {"id": "t3", "name": "web_fetch", "input": {"url": "https://example.com"}},
-                ],
-            }
-        return {
+                },
+                {"id": "t3", "name": "web_fetch", "input": {"url": "https://example.com"}},
+            ],
+        },
+        {
             "stop_reason": "end_turn",
             "content": "done",
             "usage": {"input_tokens": 3, "output_tokens": 2},
-        }
+        },
+    ]
 
 
 @dataclass
 class Seen:
-    llms: list[ScriptedLLM]
+    llms: list[Any]
     memory_users: list[str]
     memories: list[tuple[str, str]]
     fetched: list[str]
 
 
 @pytest.fixture
-def seen(monkeypatch: pytest.MonkeyPatch) -> Seen:
+def seen(monkeypatch: pytest.MonkeyPatch) -> Iterator[Seen]:
     import spark.index.memory_index as memory_index
     import spark.tools.web as web
     from spark.scheduler.executor import ActionExecutor
+    from tests.model_helpers import ScriptedModels
 
     record = Seen([], [], [], [])
+    made: list[ScriptedModels] = []
 
-    def _llm(self: Any, model_id: str) -> ScriptedLLM:
-        llm = ScriptedLLM()
+    def _llm(self: Any, model_id: str) -> Any:
+        # Each run plays the script on conduit's stub provider, metered through the
+        # executor's own database bridge.
+        models = ScriptedModels(self._db, {model_id: _scripted_run()})
+        made.append(models)
+        llm = models.factory(model_id)
         record.llms.append(llm)
         return llm
 
@@ -228,7 +229,9 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> Seen:
     monkeypatch.setattr(ActionExecutor, "_init_mcp", lambda self: None)
     monkeypatch.setattr(memory_index, "MemoryIndex", FakeMemoryIndex)
     monkeypatch.setattr(web, "execute", _fetch)
-    return record
+    yield record
+    for models in made:
+        models.close()
 
 
 class Ctx:

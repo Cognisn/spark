@@ -142,8 +142,14 @@ async def status_for(
     roles: Iterable[str] | None,
     *,
     now: datetime | None = None,
+    connection_id: str | None = None,
 ) -> BudgetStatus:
-    """``user_guid``'s usage this month (``now``'s, in UTC) against the limit that applies."""
+    """``user_guid``'s usage this month (``now``'s, in UTC) against the limit that applies.
+
+    ``connection_id`` names the connection the request will use. Token budgets (A14)
+    apply across every connection, so it does not change the answer yet; credit
+    metering (M6) decides per connection here.
+    """
     period = usage.period_of(now or datetime.now(timezone.utc))
     limit = await resolve_limit(db, user_guid, roles, server=_server())
     used = await usage.tokens_in_period(db, user_guid, period)
@@ -156,12 +162,14 @@ def check(
     roles: Iterable[str] | None,
     *,
     now: datetime | None = None,
+    connection_id: str | None = None,
 ) -> BudgetStatus:
     """The status for a new request from synchronous code; raises :class:`BudgetExceeded` at 100%.
 
+    ``connection_id`` is the connection the request will use (see :func:`status_for`).
     A refusal is audited (server mode) with the usage and the limit, never content.
     """
-    status = db.call(status_for, user_guid, roles, now=now)
+    status = db.call(status_for, user_guid, roles, now=now, connection_id=connection_id)
     if status.state == "exceeded":
         from spark.identity import audit
 

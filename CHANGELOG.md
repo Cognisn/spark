@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Named model connections on conduit** (`spark.connections`): every model is now reached through conduit (`cognisn-conduit` 0.1.0rc2 or later, with the extras for Amazon Bedrock, Claude through Bedrock's mantle endpoint, Anthropic and Claude in Microsoft Foundry, OpenAI, X.AI and Microsoft Foundry, Google Gemini and Ollama, and konfig). A connection is one named service with its own conduit settings, Region and residency policy (in-Region for Bedrock, mantle and Foundry, global for direct APIs, local for Ollama, by default); several of one kind sit side by side, and every credential is a `secret://` reference resolved through konfig only when the provider is built. One connection runtime per process owns conduit's loop thread and builds one provider per enabled connection through conduit's provider registry, rebuilding a connection live when its settings or secrets change and never dropping a working one for a change that fails
+- **Connection schema and repositories** (revision `connections`): connections, the models each offers (enabled, and a tier of lower, standard or higher), SPARK's catalogue overlay entries, per-connection metering settings (base rate, tier multipliers, and token weights of 1, 5, 0.1 and 1.25 for input, output, cache read and cache write) and assignments to roles or users with a monthly credit allowance; `usage_tracking` gains the connection and the cache read and write tokens apart. Every write notifies the other web replicas. The downgrade removes it all
+- **Usage from conduit's events**: SPARK's event sink records every attributed model call from conduit's `model_call_finished` event, with the user, connection, model, task and the four token counts apart
+
+### Changed
+- **A model is a (connection, model) pair**, kept as `connection/model`. Chat turns, sub-agents, compaction, debates, panels, scheduled actions, knowledge graph builds and the action creation assistant each take a service of their own for it from the process's connection runtime, through conduit's sync facade; context windows and output limits come from conduit's catalogue plus SPARK's overlay. A model stored before connections (a bare model id) resolves to a connection that offers it
+- **Models offered per connection**: a connection offers its enabled models, or, until some are chosen, every chat model the catalogue declares for its kind within its residency policy. On a server a user sees and may use only the connections assigned to them or their roles (a connection with no assignment yet is visible to administrators only); the model lists, every point where a model is chosen, each chat turn (403 on the send route) and each scheduled action's owner are held to it, and a sub-agent stays on its conversation's connection
+- **Budget hook**: `spark.usage.budgets.check` and `status_for` take the connection a request will use; token budgets still apply across every connection. A user's monthly total counts uncached input, output, cache read and cache write tokens
+- **The dashboard** lists the model connections the signed-in user may use, with their model counts
+- **warden held at 0.1.0b8**, the build the 0.3.0 release line was proven against (warden 0.1.0b18 and 0.1.0 change its migration head and its typed session results)
+
+### Removed
+- **The 0.2 model layer** (`spark.llm`: the Anthropic, Bedrock, Gemini, Ollama and X.AI providers, `LLMManager`, its factory and `ContextLimitResolver`), and the direct `anthropic`, `boto3`, `botocore`, `google-genai`, `ollama` and `openai` dependencies (conduit's extras bring what its adapters need)
+- **The providers settings**: the `providers.*` instance settings and `models.offered` (server), the LLM Providers section of the settings page, and `config.yaml`'s `providers` and `context_limits` sections. The connections screens arrive in a later 0.3.0 build
+
+### Upgrade notes
+- **Personal mode**: on the first start after upgrading, each provider in `config.yaml`'s `providers` section that is enabled or has a key becomes a named connection in a new `connections` section (`anthropic`, `aws-bedrock`, `ollama`, `google-gemini`, `xai`), keeping its keychain secret; a key still held in plain text moves into the keychain first. The `providers` section is removed, and the conversion never runs again. Bedrock connections start in-Region for their Region, so a cross-Region or global inference profile is refused until the connection's residency allows it. A conversation on a model conduit's catalogue does not declare answers with a message saying so: choose a model from the list
+- **Server mode**: 0.3.0 was never released, so stored `providers.*` and `models.offered` settings are not migrated. They are ignored, and start-up lists them once; enter the services again as connections
+
 ## [0.3.0rc2] - 2026-11-05
 
 ### Fixed

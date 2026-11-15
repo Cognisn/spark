@@ -85,6 +85,9 @@ async def load_instance(db: Executor) -> dict[str, Any]:
     loaded: dict[str, Any] = {}
     for row in rows:
         key = str(row["key"])
+        if registry.is_retired(key):
+            # Replaced by named connections; start-up lists such rows once.
+            continue
         ok, value = _decoded(key, str(row["value"]), Scope.INSTANCE)
         if ok:
             loaded[key] = value

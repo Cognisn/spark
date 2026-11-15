@@ -208,8 +208,9 @@ def _render(
     tool_categories: list[dict[str, Any]],
     save_url: str,
 ) -> HTMLResponse:
-    llm_manager = getattr(request.app.state, "llm_manager", None)
-    available_models = llm_manager.list_all_models() if llm_manager else []
+    from spark.web.models import listed
+
+    available_models = listed(request)
     response: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "settings.html",
@@ -245,7 +246,6 @@ async def settings_page(request: Request) -> Response:
     source = await instance_settings.server_settings(request.app, database(request), ctx.settings)
     view = _View(_source_value(source), status)
     sections = _filter_sections(_build_sections(view), {Scope.INSTANCE})
-    sections.append(_models_offered_section(view))
     sections.append(_mail_section(view))
     return _render(
         request,
@@ -831,116 +831,6 @@ def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
     """Build settings sections for the template."""
     sections: list[dict[str, Any]] = [
         {
-            "id": "providers",
-            "title": "LLM Providers",
-            "icon": "bi-robot",
-            "description": "Configure your AI model providers.",
-            "groups": [
-                {
-                    "id": "anthropic",
-                    "title": "Anthropic",
-                    "help_url": "/help/provider/anthropic",
-                    "fields": [
-                        _toggle("providers.anthropic.enabled", "Enabled", settings),
-                        _secret("providers.anthropic.api_key", "API Key", settings),
-                    ],
-                },
-                {
-                    "id": "aws_bedrock",
-                    "title": "AWS Bedrock",
-                    "help_url": "/help/provider/aws_bedrock",
-                    "fields": [
-                        _toggle("providers.aws_bedrock.enabled", "Enabled", settings),
-                        _text("providers.aws_bedrock.region", "Region", settings, "us-east-1"),
-                        _select(
-                            "providers.aws_bedrock.auth_method",
-                            "Auth Method",
-                            settings,
-                            ["sso", "iam", "session"],
-                            "sso",
-                        ),
-                        {
-                            **_text(
-                                "providers.aws_bedrock.profile",
-                                "SSO Profile",
-                                settings,
-                                "",
-                            ),
-                            "bedrock_auth": "sso",
-                            "help": "AWS CLI profile name. Leave empty to use the default profile.",
-                        },
-                        {
-                            **_secret(
-                                "providers.aws_bedrock.access_key",
-                                "Access Key ID",
-                                settings,
-                            ),
-                            "bedrock_auth": "keys",
-                        },
-                        {
-                            **_secret(
-                                "providers.aws_bedrock.secret_key",
-                                "Secret Access Key",
-                                settings,
-                            ),
-                            "bedrock_auth": "keys",
-                        },
-                        {
-                            **_secret(
-                                "providers.aws_bedrock.session_token",
-                                "Session Token",
-                                settings,
-                            ),
-                            "bedrock_auth": "session",
-                            "help": "Required for temporary session credentials only.",
-                        },
-                        {
-                            **_number(
-                                "providers.aws_bedrock.read_timeout",
-                                "Read Timeout (seconds)",
-                                settings,
-                                300,
-                            ),
-                            "help": "Maximum time to wait for a response from Bedrock. "
-                            "Increase for large contexts or complex tool-use conversations.",
-                        },
-                    ],
-                },
-                {
-                    "id": "ollama",
-                    "title": "Ollama",
-                    "help_url": "/help/provider/ollama",
-                    "fields": [
-                        _toggle("providers.ollama.enabled", "Enabled", settings),
-                        _text(
-                            "providers.ollama.base_url",
-                            "Base URL",
-                            settings,
-                            "http://localhost:11434",
-                        ),
-                    ],
-                },
-                {
-                    "id": "google_gemini",
-                    "title": "Google Gemini",
-                    "help_url": "/help/provider/google_gemini",
-                    "fields": [
-                        _toggle("providers.google_gemini.enabled", "Enabled", settings),
-                        _secret("providers.google_gemini.api_key", "API Key", settings),
-                    ],
-                },
-                {
-                    "id": "xai",
-                    "title": "X.AI",
-                    "help_url": "/help/provider/xai",
-                    "fields": [
-                        _toggle("providers.xai.enabled", "Enabled", settings),
-                        _secret("providers.xai.api_key", "API Key", settings),
-                    ],
-                },
-            ],
-        },
-        {
             "id": "database",
             "title": "Database",
             "icon": "bi-database",
@@ -1433,31 +1323,6 @@ def _secret(key: str, label: str, settings: _SettingsGetter) -> dict[str, Any]:
         "key": key,
         "label": label,
         "has_value": _secret_is_set(settings, key),
-    }
-
-
-def _models_offered_section(settings: _SettingsGetter) -> dict[str, Any]:
-    """Server mode: which models users may choose (empty offers every model)."""
-    offered = _get_val(settings, "models.offered", []) or []
-    return {
-        "id": "models_offered",
-        "title": "Models Offered",
-        "icon": "bi-list-check",
-        "description": "The model ids users may choose from. Leave empty to offer every model.",
-        "groups": [
-            {
-                "id": "models_offered",
-                "title": "Models",
-                "fields": [
-                    {
-                        "type": "text",
-                        "key": "models.offered",
-                        "label": "Model ids (comma-separated)",
-                        "value": ", ".join(offered) if isinstance(offered, list) else "",
-                    }
-                ],
-            }
-        ],
     }
 
 

@@ -13,71 +13,43 @@ from spark.web.endpoints.main_menu import (
 from tests.web_helpers import sign_in
 
 
+def _request(connections: object) -> object:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(connections=connections)))
+
+
 class TestGetProviderSummary:
-    def test_returns_all_providers(self) -> None:
-        ctx = MagicMock()
-        ctx.settings.get = MagicMock(return_value=False)
-        providers = _get_provider_summary(ctx, None)
-        assert len(providers) == 5
+    """The dashboard's model connections: one entry per connection the user may use."""
 
-    def test_provider_keys(self) -> None:
-        ctx = MagicMock()
-        ctx.settings.get = MagicMock(return_value=False)
-        providers = _get_provider_summary(ctx, None)
-        keys = {p["key"] for p in providers}
-        assert keys == {"anthropic", "aws_bedrock", "ollama", "google_gemini", "xai"}
+    @pytest.fixture
+    def runtime(self) -> object:
+        from tests.model_helpers import stub_connection, stub_runtime
 
-    def test_provider_structure(self) -> None:
-        ctx = MagicMock()
-        ctx.settings.get = MagicMock(return_value=False)
-        providers = _get_provider_summary(ctx, None)
+        rt = stub_runtime(
+            connections=[
+                stub_connection("work"),
+                stub_connection("home"),
+                stub_connection("off", enabled=False),
+            ]
+        )
+        yield rt
+        rt.close()
+
+    def test_one_entry_per_connection(self, runtime: object) -> None:
+        providers = _get_provider_summary(_request(runtime))  # type: ignore[arg-type]
+        assert [p["key"] for p in providers] == ["home", "off", "work"]
         for p in providers:
-            assert "key" in p
-            assert "name" in p
-            assert "icon" in p
-            assert "enabled" in p
-            assert "model_count" in p
+            assert {"key", "name", "icon", "enabled", "model_count"} <= set(p)
 
-    def test_enabled_flag(self) -> None:
-        ctx = MagicMock()
+    def test_enabled_flag_and_model_counts(self, runtime: object) -> None:
+        providers = {p["key"]: p for p in _get_provider_summary(_request(runtime))}  # type: ignore[arg-type]
+        assert providers["work"]["enabled"] is True and providers["work"]["model_count"] == 1
+        assert providers["off"]["enabled"] is False and providers["off"]["model_count"] == 0
+        assert providers["work"]["name"] == "Stub work"
 
-        def mock_get(key: str, default: object = None) -> object:
-            if key == "providers.anthropic.enabled":
-                return True
-            return False
-
-        ctx.settings.get = mock_get
-        providers = _get_provider_summary(ctx, None)
-        anthropic = next(p for p in providers if p["key"] == "anthropic")
-        ollama = next(p for p in providers if p["key"] == "ollama")
-        assert anthropic["enabled"] is True
-        assert ollama["enabled"] is False
-
-    def test_model_count_from_llm_manager(self) -> None:
-        ctx = MagicMock()
-        ctx.settings.get = MagicMock(return_value=True)
-
-        llm_mgr = MagicMock()
-        llm_mgr.list_all_models.return_value = [
-            {"id": "m1", "provider": "Anthropic"},
-            {"id": "m2", "provider": "Anthropic"},
-            {"id": "m3", "provider": "Google Gemini"},
-        ]
-
-        providers = _get_provider_summary(ctx, llm_mgr)
-        anthropic = next(p for p in providers if p["key"] == "anthropic")
-        gemini = next(p for p in providers if p["key"] == "google_gemini")
-        ollama = next(p for p in providers if p["key"] == "ollama")
-        assert anthropic["model_count"] == 2
-        assert gemini["model_count"] == 1
-        assert ollama["model_count"] == 0
-
-    def test_model_count_no_manager(self) -> None:
-        ctx = MagicMock()
-        ctx.settings.get = MagicMock(return_value=False)
-        providers = _get_provider_summary(ctx, None)
-        for p in providers:
-            assert p["model_count"] == 0
+    def test_no_runtime_no_connections(self) -> None:
+        assert _get_provider_summary(_request(None)) == []  # type: ignore[arg-type]
 
 
 class TestGetEmbeddedToolSummary:

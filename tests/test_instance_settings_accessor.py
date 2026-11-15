@@ -55,9 +55,9 @@ class TestFileSettings:
             FileSettings(FakeKonfig({})).get("not.a.key")
 
     def test_secret_keys_are_not_read_through_the_accessor(self) -> None:
-        source = FileSettings(FakeKonfig({"providers.anthropic.api_key": "secret://x"}))
+        source = FileSettings(FakeKonfig({"voice.elevenlabs.api_key": "secret://x"}))
         with pytest.raises(SettingsError):
-            source.get("providers.anthropic.api_key")
+            source.get("voice.elevenlabs.api_key")
 
 
 class TestServerSettings:
@@ -95,10 +95,12 @@ class TestServerSettings:
     async def test_reload_sees_another_writer(self, spark_db: Any) -> None:
         source = ServerSettings(spark_db, FakeKonfig({}))
         await source.reload()
-        await repository.save_instance(spark_db, "models.offered", ["m-1"], actor="other")
-        assert source.get("models.offered") == []
+        await repository.save_instance(
+            spark_db, "embedded_tools.filesystem.allowed_paths", ["m-1"], actor="other"
+        )
+        assert source.get("embedded_tools.filesystem.allowed_paths") == []
         await source.reload()
-        assert source.get("models.offered") == ["m-1"]
+        assert source.get("embedded_tools.filesystem.allowed_paths") == ["m-1"]
 
     async def test_observers_hear_every_change(self, spark_db: Any) -> None:
         source = ServerSettings(spark_db, FakeKonfig({}))
@@ -111,7 +113,7 @@ class TestServerSettings:
     async def test_secret_and_user_keys_refused_by_set(self, spark_db: Any) -> None:
         source = ServerSettings(spark_db, FakeKonfig({}))
         for key, value in (
-            ("providers.anthropic.api_key", "sk-accessor-dev-only"),
+            ("voice.elevenlabs.api_key", "sk-accessor-dev-only"),
             ("interface.theme", "dark"),
             ("mode", "personal"),
         ):

@@ -123,11 +123,10 @@ def _replace_access(client: TestClient, token: str) -> None:
 
 def _conversations(client: TestClient) -> None:
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
 
     app = client.app
     app.state.conversation_manager = ConversationManager(  # type: ignore[attr-defined]
-        app.state.sync_db, MagicMock(), ContextLimitResolver(None)  # type: ignore[attr-defined]
+        app.state.sync_db, MagicMock()  # type: ignore[attr-defined]
     )
 
 

@@ -56,24 +56,13 @@ class TestBuildSections:
         settings.get = MagicMock(return_value=None)
         sections = _build_sections(settings)
         ids = {s["id"] for s in sections}
-        assert "providers" in ids
+        # Named model connections replace the 0.2 providers section (M3).
+        assert "providers" not in ids
         assert "database" in ids
         assert "interface" in ids
         assert "conversation" in ids
         assert "security" in ids
         assert "logging" in ids
-
-    def test_provider_groups(self) -> None:
-        settings = MagicMock()
-        settings.get = MagicMock(return_value=None)
-        sections = _build_sections(settings)
-        providers = next(s for s in sections if s["id"] == "providers")
-        group_ids = {g["id"] for g in providers["groups"]}
-        assert "anthropic" in group_ids
-        assert "aws_bedrock" in group_ids
-        assert "ollama" in group_ids
-        assert "google_gemini" in group_ids
-        assert "xai" in group_ids
 
     def test_field_types(self) -> None:
         settings = MagicMock()

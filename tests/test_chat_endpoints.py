@@ -243,11 +243,11 @@ class TestConversationsWithManager:
 
     def test_api_models(self, client: TestClient) -> None:
         cookies = _auth(client)
-        mock_llm = MagicMock()
-        mock_llm.list_all_models.return_value = [
-            {"id": "m1", "name": "Model 1", "provider": "Test"},
-        ]
-        client.app.state.llm_manager = mock_llm
+        from tests.model_helpers import FakeModels
+
+        client.app.state.connections = FakeModels(
+            models=[{"id": "m1", "name": "Model 1", "provider": "Test"}]
+        )
 
         resp = client.get("/conversations/api/models", cookies=cookies)
         assert resp.status_code == 200

@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from konfig import AppContext
 
     from spark.identity.runtime import IdentityRuntime
-    from spark.llm.manager import LLMManager
     from spark.mcp_integration.runtime import MCPRuntime
 
 logger = logging.getLogger(__name__)
@@ -236,11 +235,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if mcp_runtime is not None:
             await asyncio.to_thread(mcp_runtime.stop)
             app.state.mcp_runtime = None
+        await asyncio.to_thread(_stop_connections, app)
         if database is not None:
             await instance_settings.detach(app)
             app.state.sync_db = None
             app.state.database = None
             await database.close()
+
+
+def _stop_connections(app: FastAPI) -> None:
+    """Close the app's connection runtime (its providers and conduit loop)."""
+    from spark.connections import startup as connections_startup
+
+    runtime = getattr(app.state, "connections", None)
+    if runtime is None:
+        return
+    app.state.connections = None
+    if connections_startup.current() is runtime:
+        connections_startup.reset()
+    else:
+        runtime.close()
 
 
 def _wait_for_database(app: FastAPI) -> SyncDatabase:
@@ -401,110 +415,6 @@ def _resolve_secret(ctx: AppContext, value: str | None) -> str:
     return str(value)
 
 
-def _init_providers(ctx: AppContext, settings: Any = None) -> "LLMManager":
-    """Initialise LLM providers from settings and return an LLMManager.
-
-    ``settings`` defaults to konfig (``config.yaml``); server mode passes the
-    instance settings view.
-    """
-    from spark.llm.manager import LLMManager
-
-    mgr = LLMManager()
-    for provider in _build_providers(ctx, settings if settings is not None else ctx.settings):
-        mgr.register_provider(provider)
-    if mgr.providers:
-        logger.info("LLM providers ready: %s", ", ".join(mgr.providers.keys()))
-    else:
-        logger.warning("No LLM providers configured")
-    return mgr
-
-
-def _build_providers(ctx: AppContext, settings: Any) -> list[Any]:
-    """The enabled LLM providers described by ``settings``."""
-    providers: list[Any] = []
-
-    # Anthropic Direct
-    if setting_bool(settings, "providers.anthropic.enabled", False):
-        try:
-            from spark.llm.anthropic_direct import AnthropicDirectProvider
-
-            api_key = _resolve_secret(ctx, settings.get("providers.anthropic.api_key", ""))
-            if api_key:
-                provider = AnthropicDirectProvider(api_key=api_key)
-                providers.append(provider)
-        except Exception as e:
-            logger.warning("Failed to init Anthropic provider: %s", e)
-
-    # AWS Bedrock
-    if setting_bool(settings, "providers.aws_bedrock.enabled", False):
-        try:
-            from spark.llm.bedrock import BedrockProvider
-
-            region = settings.get("providers.aws_bedrock.region", "us-east-1")
-            auth_method = settings.get("providers.aws_bedrock.auth_method", "sso")
-            profile = settings.get("providers.aws_bedrock.profile")
-            access_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.access_key"))
-            secret_key = _resolve_secret(ctx, settings.get("providers.aws_bedrock.secret_key"))
-            session_token = _resolve_secret(
-                ctx, settings.get("providers.aws_bedrock.session_token")
-            )
-            read_timeout = int(settings.get("providers.aws_bedrock.read_timeout", 300) or 300)
-
-            # Only pass explicit keys when auth method is not SSO.
-            if auth_method in ("iam", "session") and access_key and secret_key:
-                provider = BedrockProvider(
-                    region=region,
-                    access_key=access_key,
-                    secret_key=secret_key,
-                    session_token=session_token or None,
-                    read_timeout=read_timeout,
-                )
-            else:
-                provider = BedrockProvider(
-                    region=region, profile=profile, read_timeout=read_timeout
-                )
-            providers.append(provider)
-        except Exception as e:
-            logger.warning("Failed to init AWS Bedrock provider: %s", e)
-
-    # Ollama
-    if setting_bool(settings, "providers.ollama.enabled", False):
-        try:
-            from spark.llm.ollama import OllamaProvider
-
-            base_url = settings.get("providers.ollama.base_url", "http://localhost:11434")
-            provider = OllamaProvider(base_url=base_url)
-            providers.append(provider)
-        except Exception as e:
-            logger.warning("Failed to init Ollama provider: %s", e)
-
-    # Google Gemini
-    if setting_bool(settings, "providers.google_gemini.enabled", False):
-        try:
-            from spark.llm.google_gemini import GoogleGeminiProvider
-
-            api_key = _resolve_secret(ctx, settings.get("providers.google_gemini.api_key", ""))
-            if api_key:
-                provider = GoogleGeminiProvider(api_key=api_key)
-                providers.append(provider)
-        except Exception as e:
-            logger.warning("Failed to init Google Gemini provider: %s", e)
-
-    # X.AI
-    if setting_bool(settings, "providers.xai.enabled", False):
-        try:
-            from spark.llm.xai import XAIProvider
-
-            api_key = _resolve_secret(ctx, settings.get("providers.xai.api_key", ""))
-            if api_key:
-                provider = XAIProvider(api_key=api_key)
-                providers.append(provider)
-        except Exception as e:
-            logger.warning("Failed to init X.AI provider: %s", e)
-
-    return providers
-
-
 def _start_tray_daemon_if_needed() -> None:
     """Start the system tray daemon as a detached process if not already running."""
     import subprocess
@@ -663,14 +573,13 @@ class _ServerConsumers:
         return str(value) if value else None
 
     def follow(
-        self, llm_manager: Any, conversation_manager: Any, mcp: MCPRuntime | None = None
+        self, connections: Any, conversation_manager: Any, mcp: MCPRuntime | None = None
     ) -> consumers.SettingsFollower:
         follower = consumers.follow(
             self.source,
             self.secrets,
-            llm_manager=llm_manager,
+            connections=connections,
             conversation_manager=conversation_manager,
-            build_providers=lambda view: _build_providers(self._ctx, view),
             mcp=mcp,
             mcp_secrets=self.mcp_secret,
         )
@@ -689,6 +598,31 @@ def _server_consumers(app: FastAPI, ctx: AppContext) -> _ServerConsumers | None:
     return _ServerConsumers(ctx, source, SecretsWriter(ctx.secrets, ctx.settings, server=True))
 
 
+def _start_connections(
+    ctx: AppContext, sync_db: SyncDatabase, instance: _ServerConsumers | None
+) -> tuple[Any, Any]:
+    """Start the process's connection runtime: conduit's loop, providers and usage sink.
+
+    Personal mode reads ``config.yaml``'s connections (converting 0.2 providers first,
+    once); a server reads its database, and its settings follower keeps them current.
+    """
+    from spark import mode
+    from spark.connections import startup as connections_startup
+    from spark.core.application import _get_config_path
+
+    try:
+        server = mode.is_server()
+    except RuntimeError:
+        server = False
+    return connections_startup.start(
+        secrets=ctx.secrets,
+        sync_db=sync_db,
+        server=server,
+        config_path=None if server else _get_config_path(),
+        followed=instance is not None,
+    )
+
+
 def _background_init(app: FastAPI, ctx: AppContext) -> None:
     """Heavy initialisation running in a background thread after server start."""
     import threading
@@ -702,19 +636,15 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
             # Server mode reads the administrator's instance settings, not config.yaml.
             instance = _server_consumers(app, ctx)
 
-            # Step 2: LLM Providers
-            status["stage"] = "Connecting to LLM providers..."
-            llm_manager = _init_providers(ctx, instance.view if instance else None)
-            app.state.llm_manager = llm_manager
+            # Step 2: Model connections, on the process's conduit loop
+            status["stage"] = "Connecting to model providers..."
+            connections, load_connections = _start_connections(ctx, sync_db, instance)
+            app.state.connections = connections
 
             # Step 3: Conversation Manager
             status["stage"] = "Setting up conversation manager..."
             from spark.core.conversation_manager import ConversationManager
-            from spark.llm.context_limits import ContextLimitResolver
 
-            context_limits = ContextLimitResolver(
-                ctx.settings.get("context_limits") if ctx.settings.get("context_limits") else None
-            )
             conv_settings = (
                 instance.conversation_settings()
                 if instance
@@ -759,8 +689,7 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
 
             app.state.conversation_manager = ConversationManager(
                 sync_db,
-                llm_manager,
-                context_limits,
+                connections,
                 global_instructions=ctx.settings.get("conversation.global_instructions"),
                 max_tool_iterations=(
                     conv_settings.get("max_tool_iterations", 25)
@@ -804,8 +733,12 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                 ),
             )
             if instance:
+                from spark.connections.startup import Refresher
+
                 app.state.settings_follower = instance.follow(
-                    llm_manager, app.state.conversation_manager, mcp_runtime
+                    Refresher(connections, load_connections),
+                    app.state.conversation_manager,
+                    mcp_runtime,
                 )
 
             # Migrate any orphaned memories stored under "default" user_guid

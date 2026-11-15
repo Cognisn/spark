@@ -4,12 +4,14 @@
   the instance settings, with secrets from the secrets store.
 * :func:`embedded_tools_config` builds the conversation manager's embedded tools
   configuration from the instance settings.
-* :func:`follow` keeps the providers, the models offered, the embedded tools
-  configuration and the tool limits current: every reload or change of the
+* :func:`follow` keeps the model connections, the embedded tools configuration
+  and the tool limits current: every reload or change of the
   :class:`~spark.instance_settings.accessor.ServerSettings` (the listener's, or this
-  replica's own) refreshes them on a worker thread, without a restart. Given an
-  MCP target, it also reconnects the MCP servers whose ``mcp.servers`` entry or
-  credentials changed (A12).
+  replica's own, after any settings, secret or connection change) refreshes them on
+  a worker thread, without a restart. The connection runtime rebuilds only the
+  connections whose settings or secrets changed, replacing each without dropping a
+  working one (D38). Given an MCP target, it also reconnects the MCP servers whose
+  ``mcp.servers`` entry or credentials changed (A12).
 * :func:`mcp_server_configs` builds the MCP server configurations from
   ``mcp.servers`` and the secrets store, never from ``config.yaml``.
 
@@ -22,7 +24,7 @@ import hashlib
 import json
 import logging
 import threading
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from spark.instance_settings import registry
@@ -32,11 +34,11 @@ from spark.mcp_integration import servers as mcp_servers
 from spark.mcp_integration.manager import MCPServerConfig
 
 __all__ = [
+    "ConnectionsTarget",
     "ConversationTarget",
     "InstanceView",
     "MCPTarget",
     "ObservableSource",
-    "ProviderTarget",
     "SecretResolver",
     "SettingsFollower",
     "embedded_tools_config",
@@ -47,7 +49,6 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 _EMBEDDED = "embedded_tools."
-_PROVIDERS = "providers."
 _LIMITS = {
     "max_tool_iterations": "conversation.max_tool_iterations",
     "max_tool_selections": "conversation.max_tool_selections",
@@ -63,10 +64,10 @@ class ObservableSource(SettingsSource, Protocol):
     def on_change(self, observer: Callable[[], None]) -> None: ...
 
 
-class ProviderTarget(Protocol):
-    def replace_providers(self, providers: Iterable[Any]) -> None: ...
+class ConnectionsTarget(Protocol):
+    """The connection runtime's refresher (:class:`spark.connections.startup.Refresher`)."""
 
-    def set_offered(self, offered: Callable[[], Sequence[str]] | None) -> None: ...
+    def refresh(self) -> None: ...
 
 
 class ConversationTarget(Protocol):
@@ -148,10 +149,6 @@ def embedded_tools_config(source: SettingsSource, secrets: SecretResolver) -> di
     return config
 
 
-def _provider_snapshot(view: InstanceView) -> tuple[Any, ...]:
-    return tuple(view.get(k) for k in registry.keys(Scope.INSTANCE) if k.startswith(_PROVIDERS))
-
-
 class SettingsFollower:
     """Refreshes the settings consumers after each change, one refresh at a time, on a thread.
 
@@ -163,19 +160,15 @@ class SettingsFollower:
         source: SettingsSource,
         secrets: SecretResolver,
         *,
-        llm_manager: ProviderTarget,
+        connections: ConnectionsTarget | None,
         conversation_manager: ConversationTarget | None,
-        build_providers: Callable[[InstanceView], Iterable[Any]],
         mcp: MCPTarget | None = None,
         mcp_secrets: mcp_servers.SecretLookup | None = None,
     ) -> None:
         self._source = source
         self._secrets = secrets
-        self._view = InstanceView(source, secrets)
-        self._llm = llm_manager
+        self._connections = connections
         self._conversations = conversation_manager
-        self._build_providers = build_providers
-        self._providers_seen = _provider_snapshot(self._view)
         self._mcp = mcp
         self._mcp_secrets: mcp_servers.SecretLookup = mcp_secrets or (lambda name: None)
         self._mcp_seen = _mcp_snapshot(source, self._mcp_secrets) if mcp is not None else ""
@@ -213,12 +206,12 @@ class SettingsFollower:
                 logger.exception("Applying a settings change failed")
 
     def refresh(self) -> None:
-        """Bring the providers (when their settings changed), tools and limits up to date."""
-        snapshot = _provider_snapshot(self._view)
-        if snapshot != self._providers_seen:
-            self._llm.replace_providers(self._build_providers(self._view))
-            self._providers_seen = snapshot
-            logger.info("LLM providers rebuilt after a settings change")
+        """Bring the connections (those that changed), tools and limits up to date."""
+        if self._connections is not None:
+            try:
+                self._connections.refresh()
+            except Exception:  # noqa: BLE001 - tools and limits must still apply
+                logger.exception("Refreshing the model connections failed")
         if self._conversations is not None:
             self._conversations.update_embedded_tools_config(
                 embedded_tools_config(self._source, self._secrets)
@@ -238,29 +231,23 @@ def follow(
     source: ObservableSource,
     secrets: SecretResolver,
     *,
-    llm_manager: ProviderTarget,
+    connections: ConnectionsTarget | None,
     conversation_manager: ConversationTarget | None,
-    build_providers: Callable[[InstanceView], Iterable[Any]],
     mcp: MCPTarget | None = None,
     mcp_secrets: mcp_servers.SecretLookup | None = None,
 ) -> SettingsFollower:
-    """Have the consumers follow ``source`` from now on; the models offered are read live.
+    """Have the consumers follow ``source`` from now on.
 
-    With ``mcp`` (and the secrets-store lookup ``mcp_secrets``), a change to the
-    MCP servers or their credentials is applied to ``mcp``.
+    ``connections`` re-reads and applies the connection configuration (the database
+    write of a connection notifies every replica, like a setting). With ``mcp`` (and
+    the secrets-store lookup ``mcp_secrets``), a change to the MCP servers or their
+    credentials is applied to ``mcp``.
     """
-
-    def offered() -> Sequence[str]:
-        value = source.get("models.offered")
-        return [str(v) for v in value] if isinstance(value, list) else []
-
-    llm_manager.set_offered(offered)
     follower = SettingsFollower(
         source,
         secrets,
-        llm_manager=llm_manager,
+        connections=connections,
         conversation_manager=conversation_manager,
-        build_providers=build_providers,
         mcp=mcp,
         mcp_secrets=mcp_secrets,
     )

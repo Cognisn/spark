@@ -457,7 +457,7 @@ class TestPersonalMode:
 
     def test_the_mail_password_is_not_a_personal_secret(self, personal: TestClient) -> None:
         status = personal.get("/settings/api/secrets").json()
-        assert "providers.anthropic.api_key" in status
+        assert "voice.elevenlabs.api_key" in status
         assert not any(key.startswith("mail.smtp.") for key in status)
 
     def test_mail_settings_are_refused_and_nothing_written(

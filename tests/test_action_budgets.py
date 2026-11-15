@@ -6,12 +6,14 @@ from warden, are in ``test_worker_actions.py``. Stub models only.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
 from spark.database import autonomous_actions, usage
 from spark.scheduler.executor import ActionExecutor
+from tests.model_helpers import ScriptedModels
 
 OWNER = "local-owner"
 
@@ -26,46 +28,39 @@ class Ctx:
     secrets = None
 
 
-class ScriptedLLM:
+def _run_script() -> list[dict[str, Any]]:
     """One tool call to an unknown tool, then a final answer."""
-
-    def __init__(self, first: int = 10, second: int = 4) -> None:
-        self.calls = 0
-        self.first = first
-        self.second = second
-
-    def set_model(self, model_id: str) -> None:
-        pass
-
-    def invoke_model(self, messages: list[Any], **kwargs: Any) -> dict[str, Any]:
-        self.calls += 1
-        if self.calls == 1:
-            return {
-                "stop_reason": "tool_use",
-                "content": "",
-                "content_blocks": [],
-                "usage": {"input_tokens": self.first, "output_tokens": 0},
-                "tool_use": [{"id": "t1", "name": "no_such_tool", "input": {}}],
-            }
-        return {
+    return [
+        {
+            "stop_reason": "tool_use",
+            "content": "",
+            "usage": {"input_tokens": 10, "output_tokens": 0},
+            "tool_use": [{"id": "t1", "name": "no_such_tool", "input": {}}],
+        },
+        {
             "stop_reason": "end_turn",
             "content": "done",
-            "usage": {"input_tokens": self.second, "output_tokens": 1},
-        }
+            "usage": {"input_tokens": 4, "output_tokens": 1},
+        },
+    ]
 
 
 @pytest.fixture()
-def llm(monkeypatch: pytest.MonkeyPatch) -> list[ScriptedLLM]:
-    made: list[ScriptedLLM] = []
+def llm(sync_db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Any]]:
+    """The services the runs started with (conduit's stub, two calls per run)."""
+    models = ScriptedModels(sync_db, {"model-a": []})
+    made: list[Any] = []
 
-    def _init(self: Any, model_id: str) -> ScriptedLLM:
-        model = ScriptedLLM()
-        made.append(model)
-        return model
+    def _init(self: Any, model_id: str) -> Any:
+        models.responses[model_id].extend(_run_script())
+        service = models.factory(model_id)
+        made.append(service)
+        return service
 
     monkeypatch.setattr(ActionExecutor, "_init_llm", _init)
     monkeypatch.setattr(ActionExecutor, "_init_mcp", lambda self: None)
-    return made
+    yield made
+    models.close()
 
 
 def _action(sync_db: Any) -> int:

@@ -21,10 +21,11 @@ import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Final
 from urllib.parse import urlsplit
 
 __all__ = [
+    "RETIRED_PREFIXES",
     "InvalidSettingError",
     "Kind",
     "Scope",
@@ -34,6 +35,7 @@ __all__ = [
     "coerce",
     "is_known",
     "is_offered",
+    "is_retired",
     "keys",
     "offered_keys",
     "legacy_secret_name",
@@ -294,30 +296,7 @@ _SPECS: tuple[SettingSpec, ...] = (
     _int_spec("logging.retention_runs", 10, 1, None, _S),
     _toggle("daemon.enabled", _S),
     _int_spec("daemon.heartbeat_interval", 30, 1, None, _S),
-    # Providers and models offered (administrator)
-    _toggle("providers.anthropic.enabled"),
-    _secret("providers.anthropic.api_key"),
-    _toggle("providers.aws_bedrock.enabled"),
-    _text("providers.aws_bedrock.region", "us-east-1"),
-    _pick("providers.aws_bedrock.auth_method", ("sso", "iam", "session"), "sso"),
-    _text("providers.aws_bedrock.profile"),
-    _secret("providers.aws_bedrock.access_key"),
-    _secret("providers.aws_bedrock.secret_key"),
-    _secret("providers.aws_bedrock.session_token"),
-    _int_spec("providers.aws_bedrock.read_timeout", 300, 1, 3600),
-    _toggle("providers.ollama.enabled"),
-    SettingSpec("providers.ollama.base_url", Kind.URL, _I, "http://localhost:11434"),
-    _toggle("providers.google_gemini.enabled"),
-    _secret("providers.google_gemini.api_key"),
-    _toggle("providers.xai.enabled"),
-    _secret("providers.xai.api_key"),
-    SettingSpec(
-        "models.offered",
-        Kind.STR_LIST,
-        _I,
-        [],
-        description="Model ids offered to users; empty offers every model.",
-    ),
+    # Default model (administrator); models come from named connections (M3)
     _pick("default_model.mode", ("default", "mandatory"), "default"),
     # MCP servers and tool policy (administrator)
     SettingSpec("mcp.servers", Kind.MCP_SERVERS, _I, []),
@@ -431,6 +410,16 @@ _SPECS: tuple[SettingSpec, ...] = (
 _REGISTRY: dict[str, SettingSpec] = {s.key: s for s in _SPECS}
 if len(_REGISTRY) != len(_SPECS):  # pragma: no cover - a programming error
     raise RuntimeError("a setting key is registered twice")
+
+
+#: Instance settings named model connections replaced (M12). A server ignores stored
+#: rows of them, quietly: start-up lists them once (:mod:`spark.connections.startup`).
+RETIRED_PREFIXES: Final[tuple[str, ...]] = ("providers.", "models.offered")
+
+
+def is_retired(key: str) -> bool:
+    """Whether ``key`` is a setting named connections replaced."""
+    return key.startswith(RETIRED_PREFIXES)
 
 
 def spec(key: str) -> SettingSpec:

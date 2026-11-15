@@ -26,6 +26,7 @@ kept some (web search keys) as plain text in ``config.yaml``.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -142,8 +143,15 @@ class SecretsWriter:
 # -- Propagation between replicas -----------------------------------------------------
 
 
+#: A model connection's credential name in konfig: ``connections.<id>.<field path>``.
+_CONNECTION_SECRET = re.compile(r"^connections\.[a-z0-9][a-z0-9-]{0,62}(\.[A-Za-z0-9_]+)+$")
+
+
 def is_secret_key(key: str) -> bool:
-    """Whether ``key`` (a notification payload) names a registered secret."""
+    """Whether ``key`` (a notification payload) names a registered secret or a model
+    connection's credential."""
+    if _CONNECTION_SECRET.fullmatch(key):
+        return True
     return registry.is_known(key) and registry.spec(key).secret
 
 

@@ -117,18 +117,12 @@ def server(config_file: Path, pg_url: str) -> Iterator[tuple[TestClient, Holder,
 
         instance = server_mod._server_consumers(app, app.state.ctx)
         assert instance is not None
-        follower = instance.follow(_Llm(), None, applied)  # type: ignore[arg-type]
+        follower = instance.follow(None, None, applied)  # type: ignore[arg-type]
         follower.wait_idle()
         applied.calls.clear()
         app.state.settings_follower = follower
         yield client, holder, applied
         follower.wait_idle()
-
-
-class _Llm:
-    def replace_providers(self, providers: Any) -> None: ...
-
-    def set_offered(self, offered: Any) -> None: ...
 
 
 def _stored(client: TestClient) -> list[dict[str, Any]]:

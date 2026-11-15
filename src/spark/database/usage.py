@@ -1,9 +1,12 @@
 """Token usage per model call, and monthly token budgets (A14).
 
 Every model call is one ``usage_tracking`` row: the user it is billed to, the
-model, the input and output tokens, where the call came from (:data:`SOURCES`)
-and its period, the UTC calendar month it was recorded in. A budget month is a
-period, so the monthly reset happens at midnight UTC on the first of the month.
+connection and model it ran on, its four token counts apart (uncached input,
+output, cache read and cache write), where the call came from (:data:`SOURCES`,
+the task) and its period, the UTC calendar month it was recorded in. A budget
+month is a period, so the monthly reset happens at midnight UTC on the first of
+the month. A user's total for a period counts all four, as A14's did (rows from
+before the ``connections`` revision kept their cache tokens in ``input_tokens``).
 Rows are only ever inserted, so calls recorded at the same time for one user
 never lose each other's tokens.
 
@@ -107,18 +110,26 @@ async def record_usage(
     source: str = "chat",
     action_id: int | None = None,
     at: datetime | None = None,
+    connection_id: str | None = None,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> None:
-    """Record one model call billed to ``user_guid`` (now, unless ``at`` is given)."""
+    """Record one model call billed to ``user_guid`` (now, unless ``at`` is given).
+
+    ``input_tokens`` is uncached input; cache reads and writes are counted apart.
+    """
     if source not in SOURCES:
         raise ValueError(f"unknown usage source {source!r}")
-    if input_tokens < 0 or output_tokens < 0:
+    counts = (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+    if any(count < 0 for count in counts):
         raise ValueError("token counts cannot be negative")
     when = _utc(at or datetime.now(timezone.utc))
     await db.execute(
         """INSERT INTO usage_tracking
             (conversation_id, model_id, region, input_tokens, output_tokens, cost,
-             timestamp, user_guid, source, action_id, period)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             timestamp, user_guid, source, action_id, period, connection_id,
+             cache_read_tokens, cache_write_tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             conversation_id,
             model_id,
@@ -131,14 +142,24 @@ async def record_usage(
             source,
             action_id,
             period_of(when),
+            connection_id,
+            int(cache_read_tokens),
+            int(cache_write_tokens),
         ),
     )
 
 
+# Every token a call is billed for: uncached input, output, cache reads and writes.
+_ALL_TOKENS = "input_tokens + output_tokens + cache_read_tokens + cache_write_tokens"
+# Input as A14 counted it: uncached input with the cache reads and writes.
+_ALL_INPUT = "input_tokens + cache_read_tokens + cache_write_tokens"
+
+
 async def tokens_in_period(db: Executor, user_guid: str, period: str) -> int:
-    """Input plus output tokens billed to ``user_guid`` in ``period``."""
+    """Every token (input, output, cache read and cache write) billed to ``user_guid`` in
+    ``period``."""
     total = await db.fetch_value(
-        """SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage_tracking
+        f"""SELECT COALESCE(SUM({_ALL_TOKENS}), 0) FROM usage_tracking
             WHERE user_guid = ? AND period = ?""",
         (user_guid, period),
     )
@@ -157,7 +178,7 @@ async def report_all_users(db: Executor, *, period: str | None = None) -> list[R
     rows = await db.fetch_all(
         f"""SELECT period, user_guid, model_id,
                    COUNT(*) AS requests,
-                   COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                   COALESCE(SUM({_ALL_INPUT}), 0) AS input_tokens,
                    COALESCE(SUM(output_tokens), 0) AS output_tokens
             FROM usage_tracking {where}
             GROUP BY period, user_guid, model_id
@@ -253,7 +274,7 @@ async def warden_users_all_users(db: Executor) -> dict[str, str]:
 async def get_token_usage_in_window(db: Executor, user_guid: str, since: str) -> dict[str, Any]:
     """Get total input/output tokens since a timestamp."""
     row = await db.fetch_one(
-        """SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
+        f"""SELECT COALESCE(SUM({_ALL_INPUT}), 0) as input_tokens,
                   COALESCE(SUM(output_tokens), 0) as output_tokens,
                   COALESCE(SUM(cost), 0.0) as total_cost
            FROM usage_tracking WHERE user_guid = ? AND timestamp >= ?""",
@@ -271,8 +292,8 @@ async def get_token_usage_in_window(db: Executor, user_guid: str, since: str) ->
 async def get_usage_summary(db: Executor, user_guid: str, since: str) -> list[Row]:
     """Get usage breakdown by model and region."""
     rows = await db.fetch_all(
-        """SELECT model_id, region,
-                  SUM(input_tokens) as input_tokens,
+        f"""SELECT model_id, region,
+                  SUM({_ALL_INPUT}) as input_tokens,
                   SUM(output_tokens) as output_tokens,
                   SUM(cost) as total_cost,
                   COUNT(*) as request_count

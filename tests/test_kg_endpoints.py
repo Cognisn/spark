@@ -13,6 +13,7 @@ from spark.database import conversations
 from spark.knowledge import store
 from spark.web.server import create_app
 from tests.db_helpers import app_client
+from tests.model_helpers import FakeModels
 from tests.test_kg_extractor import ScriptedService, tool_response
 from tests.test_kg_query import DirectionalEmbedder
 from tests.web_helpers import sign_in
@@ -148,18 +149,16 @@ class TestSearchAndClear:
 
 
 class TestBuildModel:
-    """A build resolves its model explicitly, never from the shared manager's current one."""
+    """A build resolves its model explicitly: the setting, the default, or the first listed."""
 
     @pytest.fixture()
     def shared_on_model_b(self, client):
-        from spark.llm.manager import LLMManager
-        from tests.test_turn_model_service import RecordingProvider
-
-        llm = LLMManager()
-        llm.register_provider(RecordingProvider("Shared", ("model-a", "model-b"), []))
-        llm.set_model("model-b")  # what a previous turn or setting left behind
-        client.app.state.llm_manager = llm
-        client.app.state.conversation_manager._llm = llm
+        client.app.state.connections = FakeModels(
+            models=[
+                {"id": "test/model-a", "model_id": "model-a", "connection_id": "test"},
+                {"id": "test/model-b", "model_id": "model-b", "connection_id": "test"},
+            ]
+        )
         return client.app.state.conversation_manager._get_llm_service_for_model
 
     def _build(self, client, db) -> None:
@@ -173,7 +172,7 @@ class TestBuildModel:
 
     def test_uses_the_default_model(self, client, db, shared_on_model_b) -> None:
         self._build(client, db)
-        assert [c.args for c in shared_on_model_b.call_args_list] == [("model-a",)]
+        assert [c.args for c in shared_on_model_b.call_args_list] == [("test/model-a",)]
 
     def test_the_build_model_setting_comes_first(
         self, client, db, shared_on_model_b, monkeypatch
@@ -187,13 +186,12 @@ class TestBuildModel:
     ) -> None:
         monkeypatch.delitem(_SETTINGS, "default_model.model_id")
         self._build(client, db)
-        assert [c.args for c in shared_on_model_b.call_args_list] == [("model-a",)]
+        assert [c.args for c in shared_on_model_b.call_args_list] == [("test/model-a",)]
 
     def test_without_any_model_the_build_is_refused(self, client, db, monkeypatch) -> None:
-        from spark.llm.manager import LLMManager
 
         monkeypatch.delitem(_SETTINGS, "default_model.model_id")
-        client.app.state.llm_manager = LLMManager()
+        client.app.state.connections = FakeModels(models=[])
         _auth(client)
         _seed_conversation(db)
         refused = client.post("/knowledge/api/build", json={"scope": "global"})

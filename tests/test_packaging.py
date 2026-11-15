@@ -36,9 +36,30 @@ def _project() -> dict:
 
 
 def test_warden_declared_from_pypi() -> None:
-    """Server-mode identity is cognisn-warden from PyPI, from the first beta SPARK supports (A10)."""
+    """Server-mode identity is cognisn-warden from PyPI (A10), held at the build the 0.3.0
+    release line was proven against until SPARK adopts warden 0.1.0."""
     deps = _project()["dependencies"]
-    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden>=0.1.0b8"]
+    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden==0.1.0b8"]
+
+
+def test_conduit_declared_from_pypi_with_every_provider() -> None:
+    """Every model is reached through cognisn-conduit from PyPI, with the extra of every
+    service a connection may use (M4, M13), and no provider SDK declared directly."""
+    deps = _project()["dependencies"]
+    [conduit] = [d for d in deps if d.startswith("cognisn-conduit")]
+    extras = set(conduit[conduit.index("[") + 1 : conduit.index("]")].split(","))
+    assert extras == {
+        "anthropic",
+        "bedrock",
+        "bedrock-mantle",
+        "gemini",
+        "konfig",
+        "ollama",
+        "openai",
+    }
+    assert conduit.endswith(">=0.1.0rc2")
+    sdks = ("anthropic", "boto3", "botocore", "google-genai", "ollama", "openai")
+    assert [d for d in deps if d.split(">")[0].split("=")[0].split("[")[0] in sdks] == []
 
 
 def test_no_direct_references_anywhere() -> None:

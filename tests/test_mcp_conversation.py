@@ -14,7 +14,6 @@ import pytest
 from spark import mode
 from spark.core.conversation_manager import ConversationManager
 from spark.identity import audit
-from spark.llm.context_limits import ContextLimitResolver
 from spark.mcp_integration.manager import MCPManager, MCPServerConfig
 from spark.mcp_integration.runtime import MCPRuntime
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
@@ -52,7 +51,6 @@ def manager(sync_db: Any, runtime: MCPRuntime) -> Iterator[ConversationManager]:
     cm = ConversationManager(
         sync_db,
         MagicMock(),
-        ContextLimitResolver(),
         mcp_manager=runtime.manager,
         mcp_loop=runtime.loop,
     )

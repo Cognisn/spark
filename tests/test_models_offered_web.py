@@ -1,19 +1,20 @@
-"""Server mode: a model is chosen only from the models offered (D38).
+"""Server mode: a model is chosen only from the models the user's connections offer (M5, M9).
 
 The real app runs on a PostgreSQL clone at head with synthetic users signed in
-through warden (the fixtures of ``tests.test_user_scoping_web``). An
-administrator sets ``models.offered`` through the instance settings; the LLM
-manager reads it live, as ``spark.instance_settings.consumers.follow`` wires it.
+through warden (the fixtures of ``tests.test_user_scoping_web``), over a real
+connection runtime on conduit's stub provider: one connection, assigned to every
+role, offering ``model-a`` and ``model-b``, with ``model-old`` declared in the
+catalogue but no longer enabled.
 
 * Every place a user chooses a model refuses one that is not offered (409):
   creating a conversation (its debate and panel agents included), changing a
   conversation's model, creating and editing an action, AI-creating an action,
   approving a sub-agent's model and the default model preference.
 * An offered model is accepted.
-* A conversation pinned to a model that has left the list keeps working, and its
-  info and page carry a notice that the model is no longer offered.
-* Choosing a model never changes the shared manager's model, so two users
-  choosing at once never affect each other.
+* A conversation pinned to a model no longer offered keeps working, and its info
+  and page carry a notice that the model is no longer offered.
+* Choosing a model changes nothing shared, so two users choosing at once never
+  affect each other.
 """
 
 from __future__ import annotations
@@ -23,13 +24,16 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from conduit import ModelRequest
+from conduit.providers.stub import StubTurn
 from fastapi.testclient import TestClient
 
+from spark.connections import ConnectionModel, ConnectionRuntime
 from spark.database import autonomous_actions, conversations
+from spark.database.connections import Assignment, OverlayRow
 from spark.identity.permissions import ADMINISTRATOR, POWER_USER
-from spark.llm.manager import LLMManager
 from spark.web import interactions
-from tests.test_conversation_manager import StubLLMService
+from tests.model_helpers import stub_connection, stub_runtime
 from tests.test_user_scoping_web import (  # noqa: F401 - fixtures
     _call,
     _signed_in,
@@ -43,70 +47,59 @@ pytestmark = pytest.mark.postgres
 ADA = "ada@example.com"
 GRACE = "grace@example.com"
 ROOT = "root@example.com"
-OFFERED = ["model-a", "model-b"]
-GONE = "model-old"
+MODEL_A = "stub/model-a"
+MODEL_B = "stub/model-b"
+OFFERED = [MODEL_A, MODEL_B]
+GONE = "stub/model-old"
+ROLES = ("user", "power_user", "auditor", "administrator")
 
 
-class OllamaStandIn(StubLLMService):
-    """A provider the conversation manager can clone (as it clones Ollama) for one model."""
+class Answers:
+    """The stub's script: answers with the model it was called on, and remembers it."""
 
-    lock = threading.Lock()
-    answered: list[str] = []
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.answered: list[str] = []
 
-    def __init__(self, base_url: str = "http://localhost:11434") -> None:
-        super().__init__()
-        self._base_url = base_url
-
-    def get_provider_name(self) -> str:
-        return "Ollama"
-
-    def list_available_models(self) -> list[dict]:
-        return [
-            {"id": m, "name": m, "provider": "Ollama", "supports_tools": True, "context_length": 8}
-            for m in (*OFFERED, GONE)
-        ]
-
-    def invoke_model(self, messages: list[dict], **kwargs: Any) -> dict:
+    def __call__(self, request: ModelRequest, index: int) -> StubTurn:
         with self.lock:
-            self.answered.append(str(self._model_id))
-        text = f"answer from {self._model_id}"
-        return {
-            "content": text,
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 1, "output_tokens": 1},
-            "tool_use": None,
-            "content_blocks": [{"type": "text", "text": text}],
-        }
+            self.answered.append(request.model)
+        return StubTurn(text=f"answer from {request.model}")
+
+
+def offered_runtime(sync_db: Any, answers: Answers) -> ConnectionRuntime:
+    """The connection runtime these web tests share (see the module docstring)."""
+    return stub_runtime(
+        sync_db,
+        connections=[stub_connection("stub", script="answers")],
+        scripts={"answers": answers},
+        assignments=[Assignment("stub", role=role) for role in ROLES],
+        overlays=[
+            OverlayRow("stub", model, 200_000, "local", output_limit=8_192, tools=True)
+            for model in ("model-a", "model-b", "model-old")
+        ],
+        models=[
+            ConnectionModel("stub", "model-a"),
+            ConnectionModel("stub", "model-b"),
+            ConnectionModel("stub", "model-old", enabled=False),
+        ],
+    )
 
 
 @pytest.fixture
-def shared(client: TestClient) -> Iterator[OllamaStandIn]:
-    """The app's LLM manager and conversation manager over one shared provider, and
-    models.offered set by an administrator."""
+def shared(client: TestClient) -> Iterator[Answers]:
+    """The app's connection runtime and conversation manager over one stub connection."""
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
 
     app: Any = client.app
-    OllamaStandIn.answered = []
-    provider = OllamaStandIn()
-    llm = LLMManager()
-    llm.register_provider(provider)  # type: ignore[arg-type]
-    source = app.state.instance_settings
-
-    def offered() -> list[str]:
-        value = source.get("models.offered")
-        return [str(v) for v in value] if isinstance(value, list) else []
-
-    llm.set_offered(offered)
-    app.state.llm_manager = llm
+    answers = Answers()
+    runtime = offered_runtime(app.state.sync_db, answers)
+    app.state.connections = runtime  # closed with the app
     app.state.conversation_manager = ConversationManager(
-        app.state.sync_db, llm, ContextLimitResolver(None), user_guid="process-guid"
+        app.state.sync_db, runtime, user_guid="process-guid"
     )
-    root, _ = _signed_in(client, ROOT, ADMINISTRATOR)
-    saved = root.post("/settings/api/instance", json={"models.offered": OFFERED})
-    assert saved.status_code == 200, saved.text
-    assert llm.offered_models() == frozenset(OFFERED)
-    yield provider
+    _signed_in(client, ROOT, ADMINISTRATOR)
+    yield answers
 
 
 def _agents(model: str) -> dict[str, Any]:
@@ -116,8 +109,8 @@ def _agents(model: str) -> dict[str, Any]:
 def _panel(model: str) -> dict[str, Any]:
     return {
         "topic": "Tea",
-        "moderator": {"model_id": "model-a"},
-        "panellists": [{"name": "One", "model_id": "model-a"}, {"name": "Two", "model_id": model}],
+        "moderator": {"model_id": MODEL_A},
+        "panellists": [{"name": "One", "model_id": MODEL_A}, {"name": "Two", "model_id": model}],
     }
 
 
@@ -134,22 +127,22 @@ def _pending_approval(client: TestClient, guid: str) -> str:
 class TestSelectionPoints:
     def test_a_model_not_offered_is_refused_everywhere(self, client: TestClient) -> None:
         ada, guid = _signed_in(client, ADA, POWER_USER)
-        cid = _call(client, conversations.create_conversation, "Ada's", "model-a", guid)
-        aid = _call(client, autonomous_actions.create_action, "ada-a", "p", "model-a", guid)
+        cid = _call(client, conversations.create_conversation, "Ada's", MODEL_A, guid)
+        aid = _call(client, autonomous_actions.create_action, "ada-a", "p", MODEL_A, guid)
         approval = _pending_approval(client, guid)
         refused = [
             ada.post("/conversations/api/create", json={"name": "x", "model_id": GONE}),
             ada.post(
                 "/conversations/api/create",
                 json={
-                    "model_id": "model-a",
+                    "model_id": MODEL_A,
                     "conversation_type": "debate",
                     "debate": {"topic": "Tea", "agents": _agents(GONE)},
                 },
             ),
             ada.post(
                 "/conversations/api/create",
-                json={"model_id": "model-a", "conversation_type": "panel", "panel": _panel(GONE)},
+                json={"model_id": MODEL_A, "conversation_type": "panel", "panel": _panel(GONE)},
             ),
             ada.post(f"/conversations/api/{cid}/model", json={"model_id": GONE}),
             ada.post(
@@ -166,49 +159,49 @@ class TestSelectionPoints:
         assert all(GONE in r.text for r in refused)
         # Nothing was created or changed.
         assert [c["id"] for c in ada.get("/conversations/api/list").json()] == [cid]
-        assert ada.get(f"/chat/{cid}/api/info").json()["model_id"] == "model-a"
+        assert ada.get(f"/chat/{cid}/api/info").json()["model_id"] == MODEL_A
         assert [(a["name"], a["model_id"]) for a in ada.get("/actions/api/list").json()] == [
-            ("ada-a", "model-a")
+            ("ada-a", MODEL_A)
         ]
         assert not client.app.state.agent_model_events[approval].is_set()  # type: ignore[attr-defined]
 
     def test_an_offered_model_is_accepted(self, client: TestClient) -> None:
         ada, guid = _signed_in(client, ADA, POWER_USER)
-        created = ada.post("/conversations/api/create", json={"name": "x", "model_id": "model-b"})
+        created = ada.post("/conversations/api/create", json={"name": "x", "model_id": MODEL_B})
         assert created.status_code == 200, created.text
         cid = created.json()["id"]
         debate = ada.post(
             "/conversations/api/create",
             json={
-                "model_id": "model-a",
+                "model_id": MODEL_A,
                 "conversation_type": "debate",
-                "debate": {"topic": "Tea", "agents": _agents("model-b")},
+                "debate": {"topic": "Tea", "agents": _agents(MODEL_B)},
             },
         )
         panel = ada.post(
             "/conversations/api/create",
-            json={"model_id": "model-a", "conversation_type": "panel", "panel": _panel("model-b")},
+            json={"model_id": MODEL_A, "conversation_type": "panel", "panel": _panel(MODEL_B)},
         )
         assert (debate.status_code, panel.status_code) == (200, 200), (debate.text, panel.text)
-        assert ada.post(f"/conversations/api/{cid}/model", json={"model_id": "model-a"}).json() == {
+        assert ada.post(f"/conversations/api/{cid}/model", json={"model_id": MODEL_A}).json() == {
             "status": "ok"
         }
         action = ada.post(
-            "/actions/api/create", json={"name": "ada-b", "prompt": "p", "model_id": "model-b"}
+            "/actions/api/create", json={"name": "ada-b", "prompt": "p", "model_id": MODEL_B}
         )
         assert action.status_code == 200, action.text
         aid = action.json()["id"]
-        assert ada.put(f"/actions/api/{aid}", json={"model_id": "model-a"}).status_code == 200
-        made = ada.post("/actions/api/ai-create", json={"message": "hi", "model_id": "model-b"})
+        assert ada.put(f"/actions/api/{aid}", json={"model_id": MODEL_A}).status_code == 200
+        made = ada.post("/actions/api/ai-create", json={"message": "hi", "model_id": MODEL_B})
         assert made.status_code == 200, made.text
         assert made.json()["response"] == "answer from model-b"
         approval = _pending_approval(client, guid)
         approved = ada.post(
-            "/chat/agent/model-approve", json={"request_id": approval, "model_id": "model-b"}
+            "/chat/agent/model-approve", json={"request_id": approval, "model_id": MODEL_B}
         )
         assert approved.status_code == 200
-        assert client.app.state.agent_model_responses[approval] == "model-b"  # type: ignore[attr-defined]
-        pref = ada.post("/settings/api/preferences", json={"default_model.model_id": "model-b"})
+        assert client.app.state.agent_model_responses[approval] == MODEL_B  # type: ignore[attr-defined]
+        pref = ada.post("/settings/api/preferences", json={"default_model.model_id": MODEL_B})
         assert pref.status_code == 200, pref.text
 
 
@@ -226,11 +219,11 @@ class TestPinnedConversation:
             memory_enabled=0,
             rag_enabled=0,
         )
-        current = _call(client, conversations.create_conversation, "New", "model-a", guid)
+        current = _call(client, conversations.create_conversation, "New", MODEL_A, guid)
 
         sent = ada.post(f"/chat/{pinned}/api/send", json={"message": "hello"})
         assert sent.status_code == 200, sent.text
-        assert sent.json()["content"] == f"answer from {GONE}"
+        assert sent.json()["content"] == "answer from model-old"
 
         info = ada.get(f"/chat/{pinned}/api/info").json()
         assert info["model_id"] == GONE
@@ -247,12 +240,12 @@ class TestPinnedConversation:
 
 @pytest.mark.usefixtures("shared")
 class TestUsersDoNotAffectEachOther:
-    def test_concurrent_choices_never_touch_the_shared_model(
-        self, client: TestClient, shared: OllamaStandIn
+    def test_concurrent_choices_each_use_their_own_model(
+        self, client: TestClient, shared: Answers
     ) -> None:
         ada, ada_guid = _signed_in(client, ADA, POWER_USER)
         grace, grace_guid = _signed_in(client, GRACE, POWER_USER)
-        chosen = {ada_guid: "model-a", grace_guid: "model-b"}
+        chosen = {ada_guid: MODEL_A, grace_guid: MODEL_B}
         results: dict[str, list[Any]] = {ada_guid: [], grace_guid: []}
         barrier = threading.Barrier(2, timeout=30)
 
@@ -282,9 +275,37 @@ class TestUsersDoNotAffectEachOther:
         for guid, model in chosen.items():
             assert len(results[guid]) == 3
             for cid, answer in results[guid]:
-                assert answer == f"answer from {model}"
+                assert answer == f"answer from {model.split('/', 1)[1]}"
                 row = _call(client, conversations.get_conversation, cid, guid)
                 assert row["model_id"] == model
-        # Each choice used its own service; the shared provider's model never moved.
-        assert shared._model_id is None
-        assert sorted(set(OllamaStandIn.answered)) == ["model-a", "model-b"]
+        assert sorted(set(shared.answered)) == ["model-a", "model-b"]
+
+
+@pytest.mark.usefixtures("shared")
+class TestAssignment:
+    """A connection reaches only the users and roles assigned it (M9)."""
+
+    def test_an_unassigned_connection_is_not_offered(self, client: TestClient) -> None:
+        app: Any = client.app
+        runtime = app.state.connections
+        snapshot_connections = [stub_connection("stub", script="answers")]
+        from spark.connections.runtime import snapshot_of
+
+        # Only the administrator role keeps the connection.
+        runtime.apply(
+            snapshot_of(
+                snapshot_connections,
+                [ConnectionModel("stub", "model-a")],
+                [Assignment("stub", role="administrator")],
+                [OverlayRow("stub", "model-a", 200_000, "local", output_limit=8_192)],
+            )
+        )
+        ada, guid = _signed_in(client, ADA, POWER_USER)
+        assert ada.get("/conversations/api/models").json()["models"] == []
+        refused = ada.post("/conversations/api/create", json={"name": "x", "model_id": MODEL_A})
+        assert refused.status_code == 409
+        # A conversation already on it is refused at the turn, not answered.
+        cid = _call(client, conversations.create_conversation, "Old", MODEL_A, guid)
+        _call(client, conversations.update_conversation, cid, guid, memory_enabled=0, rag_enabled=0)
+        sent = ada.post(f"/chat/{cid}/api/send", json={"message": "hello"})
+        assert sent.status_code == 403 and "not available to you" in sent.text

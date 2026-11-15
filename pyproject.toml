@@ -43,8 +43,10 @@ classifiers = [
 ]
 dependencies = [
     "cognisn-konfig[aws]>=0.5.0",
-    # Identity, sessions, permissions and audit in server mode
-    "cognisn-warden>=0.1.0b8",
+    # Identity, sessions, permissions and audit in server mode. Held at the build the
+    # 0.3.0 release line was proven against: warden 0.1.0b18 and 0.1.0 change its
+    # migration head and its typed session results, which SPARK has not adopted yet.
+    "cognisn-warden==0.1.0b8",
     "fastapi>=0.100.0",
     "uvicorn>=0.22.0",
     "jinja2>=3.1.0",
@@ -55,13 +57,9 @@ dependencies = [
     "pyyaml>=6.0",
     "tiktoken>=0.5.0",
     "cryptography>=42.0.0",
-    # LLM providers
-    "anthropic>=0.18.0",
-    "boto3>=1.28.0",
-    "botocore>=1.31.0",
-    "google-genai>=1.0.0",
-    "ollama>=0.2.0",
-    "openai>=1.0.0",
+    # Model providers, catalogue, residency and usage events: conduit, with the
+    # extras for every service a connection may use (M4, M13)
+    "cognisn-conduit[anthropic,bedrock,bedrock-mantle,gemini,konfig,ollama,openai]>=0.1.0rc2",
     # MCP
     "mcp>=2.3,<3",
     # Document handling

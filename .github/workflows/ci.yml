@@ -206,7 +206,7 @@ jobs:
           src/spark/tools/registry.py src/spark/tools/command_policy.py
           src/spark/tools/documents.py src/spark/tools/archives.py
           src/spark/tools/document_creation.py
-          src/spark/safety/untrusted.py src/spark/llm/manager.py
+          src/spark/safety/untrusted.py src/spark/connections
           src/spark/tools/filesystem.py src/spark/core/processes.py
           src/spark/web/db.py scripts/check_no_nvidia.py
           src/spark/identity src/spark/web/endpoints/identity.py
@@ -220,7 +220,7 @@ jobs:
           src/spark/bundles src/spark/web/endpoints/bundles.py
           src/spark/tools/my_files.py src/spark/web/attachments.py
           src/spark/knowledge/jobs.py src/spark/knowledge/build_jobs.py
-          src/spark/llm/factory.py src/spark/web/endpoints/knowledge.py
+          src/spark/web/endpoints/knowledge.py
           src/spark/mcp_integration src/spark/web/endpoints/mcp_servers.py
           src/spark/settings_values.py
 

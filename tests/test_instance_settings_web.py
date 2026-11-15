@@ -92,7 +92,7 @@ def config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "providers": {
                     "anthropic": {
                         "enabled": True,
-                        "api_key": "secret://providers_anthropic_api_key",
+                        "api_key": "secret://voice_elevenlabs_api_key",
                     }
                 }
             }
@@ -108,7 +108,7 @@ def config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def store() -> MemorySecrets:
-    return MemorySecrets({"providers_anthropic_api_key": KEY})
+    return MemorySecrets({"voice_elevenlabs_api_key": KEY})
 
 
 def _signed_in(client: TestClient) -> TestClient:
@@ -143,7 +143,7 @@ class TestPersonalPage:
     def test_one_page_as_today_with_every_section(self, personal: TestClient) -> None:
         resp = personal.get("/settings")
         assert resp.status_code == 200
-        for title in ("LLM Providers", "Database", "Global Instructions", "Embedded Tools"):
+        for title in ("Database", "Global Instructions", "Embedded Tools"):
             assert title in resp.text
         _no_secret(resp)
 
@@ -199,14 +199,14 @@ class TestPersonalPage:
     def test_the_view_never_hands_a_secret_to_the_page_builders(self) -> None:
         from spark.web.endpoints.settings import _View
 
-        view = _View(lambda key, default: OTHER, {"providers.anthropic.api_key": True})
-        assert view.get("providers.anthropic.api_key") is None
+        view = _View(lambda key, default: OTHER, {"voice.elevenlabs.api_key": True})
+        assert view.get("voice.elevenlabs.api_key") is None
         assert view.get("embedded_tools.email.password", "x") is None
         assert view.get("voice.engine") == OTHER
-        assert view.is_secret_set("providers.anthropic.api_key") is True
+        assert view.is_secret_set("voice.elevenlabs.api_key") is True
 
     def test_reveal_endpoint_is_gone(self, personal: TestClient) -> None:
-        resp = personal.get("/settings/api/reveal-secret?key=providers.anthropic.api_key")
+        resp = personal.get("/settings/api/reveal-secret?key=voice.elevenlabs.api_key")
         assert resp.status_code == 404
         _no_secret(resp)
 
@@ -250,9 +250,9 @@ class TestPersonalSave:
     def test_an_empty_secret_leaves_the_stored_one(
         self, personal: TestClient, store: MemorySecrets
     ) -> None:
-        resp = personal.post("/settings/api/save", json={"providers.anthropic.api_key": ""})
+        resp = personal.post("/settings/api/save", json={"voice.elevenlabs.api_key": ""})
         assert resp.status_code == 200
-        assert store.data["providers_anthropic_api_key"] == KEY
+        assert store.data["voice_elevenlabs_api_key"] == KEY
 
     def test_values_are_coerced(self, personal: TestClient, config_file: Path) -> None:
         resp = personal.post(
@@ -297,16 +297,16 @@ class TestPersonalSave:
         resp = personal.get("/settings/api/secrets")
         assert resp.status_code == 200
         status = resp.json()
-        assert status["providers.anthropic.api_key"] is True
-        assert status["providers.xai.api_key"] is False
+        assert status["voice.elevenlabs.api_key"] is True
+        assert status["embedded_tools.web.brave_api_key"] is False
         _no_secret(resp)
 
     def test_clear_secret(self, personal: TestClient, store: MemorySecrets) -> None:
         resp = personal.post(
-            "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
+            "/settings/api/secrets/clear", json={"key": "voice.elevenlabs.api_key"}
         )
         assert resp.status_code == 200
-        assert "providers_anthropic_api_key" not in store.data
+        assert "voice_elevenlabs_api_key" not in store.data
 
     def test_clear_refuses_a_non_secret_key(self, personal: TestClient) -> None:
         resp = personal.post("/settings/api/secrets/clear", json={"key": "voice.engine"})
@@ -356,7 +356,8 @@ class TestServerPages:
         resp = server.get("/settings")
         assert resp.status_code == 200
         assert "Instance settings" in resp.text
-        assert "LLM Providers" in resp.text
+        # Model connections replaced the providers section (M3).
+        assert "LLM Providers" not in resp.text
         assert 'data-key="conversation.global_instructions"' not in resp.text  # a preference
         assert 'data-key="mode"' not in resp.text  # start-up configuration, not editable here
         _no_secret(resp)
@@ -398,11 +399,11 @@ class TestServerInstanceSave:
     def test_plain_settings_go_to_the_database(self, server: TestClient) -> None:
         resp = server.post(
             "/settings/api/instance",
-            json={"voice.engine": "elevenlabs", "models.offered": "m-1, m-2"},
+            json={"voice.engine": "elevenlabs", "conversation.max_tool_iterations": "7"},
         )
         assert resp.status_code == 200
         assert accessor.get("voice.engine") == "elevenlabs"
-        assert accessor.get("models.offered") == ["m-1", "m-2"]
+        assert accessor.get("conversation.max_tool_iterations") == 7
         assert '"elevenlabs"' in _rows(server)
 
     def test_secrets_go_to_konfig_and_never_to_the_database(
@@ -482,15 +483,13 @@ class TestServerInstanceSave:
     ) -> None:
         resp = server.get("/settings/api/secrets")
         assert resp.status_code == 200
-        assert resp.json()["providers.anthropic.api_key"] is True
+        assert resp.json()["voice.elevenlabs.api_key"] is True
         _no_secret(resp)
         access.set_access_check(Deny())
         assert server.get("/settings/api/secrets").status_code == 403
-        resp = server.post(
-            "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
-        )
+        resp = server.post("/settings/api/secrets/clear", json={"key": "voice.elevenlabs.api_key"})
         assert resp.status_code == 403
-        assert store.data["providers_anthropic_api_key"] == KEY
+        assert store.data["voice_elevenlabs_api_key"] == KEY
 
 
 @pytest.mark.postgres
@@ -513,7 +512,7 @@ class TestServerPreferences:
     def test_instance_and_secret_keys_refused(self, server: TestClient) -> None:
         for payload in (
             {"voice.engine": "elevenlabs"},
-            {"providers.anthropic.api_key": KEY},
+            {"voice.elevenlabs.api_key": KEY},
             {"nope.nope": 1},
         ):
             resp = server.post("/settings/api/preferences", json=payload)
@@ -569,15 +568,13 @@ class TestServerRoles:
         self, server: TestClient, signed_in_as: Holder, store: MemorySecrets, role: str
     ) -> None:
         signed_in_as.identity = identity_for(role)
-        resp = server.post(
-            "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
-        )
+        resp = server.post("/settings/api/secrets/clear", json={"key": "voice.elevenlabs.api_key"})
         if role == ADMINISTRATOR:
             assert resp.status_code == 200
-            assert "providers_anthropic_api_key" not in store.data
+            assert "voice_elevenlabs_api_key" not in store.data
         else:
             assert resp.status_code == 403
-            assert store.data["providers_anthropic_api_key"] == KEY
+            assert store.data["voice_elevenlabs_api_key"] == KEY
 
     @pytest.mark.parametrize("role", ROLES)
     def test_settings_page(self, server: TestClient, signed_in_as: Holder, role: str) -> None:
@@ -610,7 +607,7 @@ class TestServerRoles:
         assert server.get("/settings/api/secrets").status_code == 403
         assert (
             server.post(
-                "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
+                "/settings/api/secrets/clear", json={"key": "voice.elevenlabs.api_key"}
             ).status_code
             == 403
         )
@@ -619,4 +616,4 @@ class TestServerRoles:
             == 403
         )
         assert _rows(server) == []
-        assert store.data["providers_anthropic_api_key"] == KEY
+        assert store.data["voice_elevenlabs_api_key"] == KEY

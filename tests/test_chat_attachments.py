@@ -35,6 +35,7 @@ from spark.mode import Mode
 from spark.web import attachments
 from spark.web.security import CSRF_HEADER
 from spark.web.server import attach_database, create_app
+from tests.model_helpers import FakeModels
 from tests.test_conversation_manager import StubLLMService
 from tests.web_helpers import sign_in
 
@@ -334,16 +335,12 @@ class ReadsAttachments(StubLLMService):
 
 def _real_manager(client: TestClient) -> ReadsAttachments:
     from spark.core.conversation_manager import ConversationManager
-    from spark.llm.context_limits import ContextLimitResolver
-    from spark.llm.manager import LLMManager
 
     stub = ReadsAttachments()
-    llm = LLMManager()
-    llm.register_provider(stub)  # type: ignore[arg-type]
+    llm = FakeModels(stub)
     mgr = ConversationManager(
         client.app.state.sync_db,  # type: ignore[attr-defined]
         llm,
-        ContextLimitResolver(),
         max_tool_iterations=4,
         user_guid=ALICE,
         embedded_tools_config={"embedded_tools": {}},

@@ -24,7 +24,7 @@ graph TB
         end
 
         subgraph LLM
-            LM[LLM Manager]
+            LM[Connection runtime / conduit]
             Anthropic[Anthropic Direct]
             Bedrock[AWS Bedrock]
             Ollama[Ollama]
@@ -216,21 +216,28 @@ starts, under `spark.`:
 
 ### Usage and budgets (A14)
 
-Every model call is metered: `spark.usage.meter.meter` wraps the LLM service a chat
-turn, a sub-agent, a compaction, a debate or panel agent, or a scheduled action uses,
-and records each call that returns usage as one `usage_tracking` row through the
-bridge: the user it is billed to (an action's owner for an action), the model the
-service was last set to, the source (`chat`, `compaction`, `agent`, `debate`, `panel`,
-`action`), the conversation or action, and the period, the UTC calendar month
-(`YYYY-MM`). Input tokens include prompt-cache reads and writes. Rows are only
-inserted, so parallel turns for one user never lose tokens, and a failure to record
-is logged and never breaks the call. The per-conversation, debate and action run
-token counters are kept as before.
+Every model call is metered from conduit's events: conduit emits one
+`model_call_finished` event per call, however it ends, with its four token counts
+apart, and SPARK's event sink (`spark.connections.usage.UsageSink`) records each call
+that was attributed as one `usage_tracking` row through the bridge: the user it is
+billed to (an action's owner for an action), the connection and the model it ran on,
+the source, which is the task (`chat`, `compaction`, `agent`, `debate`, `panel`,
+`action`), the conversation or action, the uncached input, output, cache read and
+cache write tokens, and the period, the UTC calendar month (`YYYY-MM`).
+`spark.usage.meter.meter` attributes the service a chat turn, a sub-agent, a
+compaction, a debate or panel agent, or a scheduled action uses; a call no one
+attributed (a knowledge graph build) is not recorded. A user's total counts all four
+token kinds. Rows are only inserted, so parallel turns for one user never lose
+tokens, and a failure to record is logged and never breaks the call. The
+per-conversation, debate and action run token counters are kept as before.
 
 `spark.usage.budgets` decides a user's monthly limit: their own override
 (`usage_user_budgets`, a number or explicitly unlimited) first; then, on a server, the
 most generous budget among their roles that set one (`usage_role_budgets`);
-otherwise none. Personal mode applies only the local user's own budget. `check` runs
+otherwise none. Personal mode applies only the local user's own budget. `check` and
+`status_for` take the connection a request will use (`connection_id`), so credit
+metering per connection can decide there without changing their callers; token
+budgets apply across every connection. `check` runs
 as a turn starts, in `ConversationManager.send_message`, before each debate or panel
 speaker's turn and each QA answer, and in `ActionExecutor.execute`: at 100% it raises
 `BudgetExceeded` (audited as `spark.usage.refused`) with a message saying when the
@@ -250,56 +257,78 @@ instance-wide.
 - **UserGUID** -- Persistent user identifier stored in the OS keychain
 - **Updater** -- GitHub release checker with PyApp/pip update support
 
-### LLM Layer
+### Model connections (conduit)
 
-- **LLMManager** -- Routes requests across multiple registered providers. On a server it
-  follows `models.offered` (empty offers every model): `list_all_models()` lists only the
-  models offered and `is_offered()` answers, by the same rule, whether a model may be
-  chosen. `set_model()` never asks, so a conversation pinned to a model that has left
-  the list keeps working. Sub-agents may be given only an offered model (the
-  conversation's own model, used when none is named, keeps working), the models listed
-  to the LLM for them are only those offered, and the action creation assistant may
-  create an action only with an offered model. One manager serves every user of a
-  server, so creating a conversation there never sets its model
-- **A model service for each turn** -- `LLMManager.service_for(model_id)` returns a copy of
-  the provider that lists the model with the model set on the copy: it shares the
-  provider's client and caches, but its model is its own, and the manager's active
-  provider and model never move. Like `set_model()` it does not ask whether the model is
-  offered. Each chat turn resolves one for its conversation's model and uses it for every
-  call it makes (invoking, token counting, the tool loop, prompt caching and compaction,
-  which uses a service of its own when a compaction model is locked), so turns on
-  different models at once never answer with each other's. Sub-agents, debates, panels
-  and knowledge graph builds get a service of their own the same way. The only remaining
-  caller of the shared `LLMManager.set_model()` is personal mode's conversation creation,
-  for its single local user; a settings change replaces the providers and keeps the active
-  one. A knowledge graph build's model is `knowledge_graph.build_model`, else the user's
-  default model (`spark.web.models.default_model()`: the user's preference on a server,
-  else the instance's, offered only; `config.yaml`'s in personal mode), else the first
-  model listed
-- **Models offered at every choice** (`spark.web.models`) -- Every endpoint where a user
-  chooses a model asks `not_offered()` first and answers 409, naming the model, for one
-  not offered: creating a conversation (its debate and panel agents included), changing
-  a conversation's model, creating and editing an action, AI-creating an action,
-  approving a sub-agent's model and the default model preference. The chat info
-  (`model_offered`, `model_notice`) and page tell the user when their conversation's
-  model is no longer offered. AI-creating an action answers through a service of its
-  own for the chosen model, so no user's choice changes the shared manager's model.
-  There is no per-role model permission: every signed-in user is offered the same models
-- **LLMService** -- Abstract base class that all providers implement
-- **ContextLimitResolver** -- Resolves context window and max output for any model ID
+Every model call goes through conduit (`cognisn-conduit`, its providers, catalogue,
+residency checks and events), reached only through `spark.connections`:
 
-Each provider normalises responses to a common format:
+- **Connection** (`spark.connections.model`) -- One named service: an id, a display
+  name, the conduit provider settings for its kind (Amazon Bedrock, Claude through
+  Bedrock's mantle endpoint, Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI,
+  Microsoft Foundry, Google Gemini or Ollama), a Region where the kind has one, and a
+  residency policy (in-Region for Bedrock, mantle and Foundry, global for direct APIs,
+  local for Ollama, by default). Several connections of one kind coexist. Credentials
+  are `secret://` references only, resolved through konfig when the provider is built
+  (A9); conduit's registry validates a connection's settings and refuses a plain-text
+  credential by field name
+- **ConnectionStore** (`spark.connections.store`) -- Server mode keeps connections in
+  the database (`connections`, `connection_models`; `spark.database.connections`),
+  each write notifying the other replicas on the instance settings channel; personal
+  mode keeps them in `config.yaml`'s `connections` list. Metering
+  (`connection_metering`) and assignments (`connection_assignments`) are server mode
+  only; SPARK's catalogue overlay (`catalogue_overlays`) serves both modes
+- **ConnectionRuntime** (`spark.connections.runtime`) -- One per process (the web
+  process, the worker, the tray daemon), owning the process's conduit loop thread. It
+  builds one conduit provider per enabled connection through conduit's provider
+  registry (each with the connection's residency policy, so conduit checks every call
+  against it), with SPARK's secret resolver and usage sink. Applying a new
+  configuration rebuilds only the connections whose settings, residency or resolved
+  secrets changed; a rebuilt provider replaces the old one only once built, a failed
+  rebuild keeps the working provider, and a replaced one is closed after a grace
+  period. On a server the settings follower re-reads the configuration after every
+  LISTEN/NOTIFY reload; the worker re-reads it before an action or build when it is
+  older than 30 seconds
+- **Models offered** -- A model is a (connection, model id) pair, kept as
+  `connection/model` (`spark.connections.refs.ModelRef`). A connection offers its
+  enabled `connection_models` rows, or, before any are stored, every chat model the
+  catalogue declares for its kind, within its residency policy. The catalogue is
+  conduit's default plus SPARK's overlay rows (`spark.connections.catalogue`), and
+  gives each model's context window and output limit. A bare model id stored before
+  connections resolves to the first connection offering it (else one whose catalogue
+  still declares it, so a pinned conversation keeps working)
+- **Assignment** (server mode, M9) -- A user may use a connection assigned to them or
+  to one of their roles; a connection with no assignment yet is seen by
+  administrators only. The model lists, every endpoint where a model is chosen
+  (`spark.web.models`, 409 otherwise), each chat turn (403 on the send route), and each
+  scheduled action's owner are held to it. A sub-agent may use only a model on its
+  conversation's own connection
+- **ConnectionService** (`spark.connections.service`) -- A model on a connection as
+  SPARK's synchronous orchestrators call it: a turn, sub-agent, compaction, debate or
+  panel agent, scheduled action or knowledge graph build takes a service of its own
+  and calls `invoke_model` in SPARK's transcript format, which the service maps to a
+  conduit `ModelRequest` and runs through the sync facade on the conduit loop (never
+  from the loop's own thread, which the facade refuses), passing streamed text to the
+  caller's callback. conduit's refusals (an undeclared model, residency, an output
+  budget above the model's limit) surface with conduit's reason; a provider that is
+  unavailable is retried twice before any output reached the caller
+- **Upgrade** (M12) -- Personal mode converts `config.yaml`'s 0.2 `providers` into named
+  connections on first start, once, keeping each keychain secret; a server ignores the
+  retired `providers.*` and `models.offered` settings and lists them once at start-up
+
+Every service answers in the common format the orchestrators and transcripts use:
 
 ```python
 {
     "content": str,          # Text response
-    "stop_reason": str,      # end_turn, tool_use, max_tokens
+    "stop_reason": str,      # end_turn, tool_use, max_tokens, ...
     "usage": {
-        "input_tokens": int,
+        "input_tokens": int,                 # uncached input
         "output_tokens": int,
+        "cache_read_input_tokens": int,
+        "cache_creation_input_tokens": int,
     },
     "tool_use": list | None, # Tool call blocks
-    "content_blocks": list,  # Raw content blocks
+    "content_blocks": list,  # Text, tool use and opaque provider state blocks
 }
 ```
 
@@ -442,7 +471,7 @@ sequenceDiagram
     Server->>BG: background_init()
 
     par Background Init
-        BG->>BG: Init LLM providers
+        BG->>BG: Start model connections (conduit)
         BG->>BG: Wait for the database (opened by the lifespan)
         BG->>BG: Init ConversationManager (with the bridge)
         BG->>BG: Connect MCP servers
@@ -571,8 +600,8 @@ flowchart LR
   and auditing (`spark.knowledge.build.refused`) an owner who is not active or a global
   build without `spark.knowledge.instance`, then runs the in-process engine on a thread
   as the owner, with every read and write scoped to the owner's guid. Its model client
-  comes from `spark.llm.factory`, which builds providers from the instance settings by
-  the web process's rules without any web app. Progress is written to the job (its
+  comes from the worker's own connection runtime (`spark.connections.startup.ensure`),
+  built from the stored connections without any web app. Progress is written to the job (its
   heartbeat); before each chunk the build stops if the owner cancelled or the job is no
   longer this worker's. The outcome (complete, failed or cancelled) is recorded on the
   job. A job left running with no progress for `worker.knowledge_graph_stale_seconds`

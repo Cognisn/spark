@@ -61,9 +61,9 @@ class TestWriter:
     def test_set_stores_under_the_grouped_name(self) -> None:
         store = MemorySecrets()
         SecretsWriter(store, Konfig(), server=True).set(
-            "providers.anthropic.api_key", KEY, actor="admin"
+            "voice.elevenlabs.api_key", KEY, actor="admin"
         )
-        assert store.data == {"providers_anthropic_api_key": KEY}
+        assert store.data == {"voice_elevenlabs_api_key": KEY}
 
     def test_database_url_is_no_longer_stored_as_url(self) -> None:
         store = MemorySecrets()
@@ -74,7 +74,7 @@ class TestWriter:
     def test_refuses_non_secret_and_unknown_keys(self) -> None:
         writer = SecretsWriter(MemorySecrets(), Konfig(), server=True)
         with pytest.raises(SettingsError):
-            writer.set("providers.anthropic.enabled", "true", actor="admin")
+            writer.set("embedded_tools.email.enabled", "true", actor="admin")
         with pytest.raises(SettingsError):
             writer.set("no.such.secret", KEY, actor="admin")
 
@@ -82,20 +82,20 @@ class TestWriter:
         writer = SecretsWriter(MemorySecrets(), Konfig(), server=True)
         for bad in ("", "   ", 12):
             with pytest.raises(InvalidSettingError):
-                writer.set("providers.anthropic.api_key", bad, actor="admin")  # type: ignore[arg-type]
+                writer.set("voice.elevenlabs.api_key", bad, actor="admin")  # type: ignore[arg-type]
 
     def test_clear(self) -> None:
-        store = MemorySecrets({"providers_anthropic_api_key": KEY})
+        store = MemorySecrets({"voice_elevenlabs_api_key": KEY})
         writer = SecretsWriter(store, Konfig(), server=True)
-        writer.clear("providers.anthropic.api_key", actor="admin")
+        writer.clear("voice.elevenlabs.api_key", actor="admin")
         assert store.data == {}
-        assert not writer.is_set("providers.anthropic.api_key")
+        assert not writer.is_set("voice.elevenlabs.api_key")
 
     def test_status_says_set_or_not_set_and_never_the_value(self) -> None:
-        store = MemorySecrets({"providers_anthropic_api_key": KEY})
+        store = MemorySecrets({"voice_elevenlabs_api_key": KEY})
         status = SecretsWriter(store, Konfig(), server=True).status()
-        assert status["providers.anthropic.api_key"] is True
-        assert status["providers.xai.api_key"] is False
+        assert status["voice.elevenlabs.api_key"] is True
+        assert status["embedded_tools.web.brave_api_key"] is False
         assert set(status.values()) <= {True, False}
         assert KEY not in json.dumps(status)
 
@@ -103,32 +103,32 @@ class TestWriter:
         events: list[SettingChange] = []
         audit.set_audit_hook(events.append)
         writer = SecretsWriter(MemorySecrets(), Konfig(), server=True)
-        writer.set("providers.anthropic.api_key", KEY, actor="admin")
-        writer.clear("providers.anthropic.api_key", actor="admin")
+        writer.set("voice.elevenlabs.api_key", KEY, actor="admin")
+        writer.clear("voice.elevenlabs.api_key", actor="admin")
         assert [(e.key, e.action, e.secret) for e in events] == [
-            ("providers.anthropic.api_key", "set", True),
-            ("providers.anthropic.api_key", "clear", True),
+            ("voice.elevenlabs.api_key", "set", True),
+            ("voice.elevenlabs.api_key", "clear", True),
         ]
         assert KEY not in repr(events)
 
     def test_resolve_is_for_server_side_use(self) -> None:
-        store = MemorySecrets({"providers_anthropic_api_key": KEY})
+        store = MemorySecrets({"voice_elevenlabs_api_key": KEY})
         writer = SecretsWriter(store, Konfig(), server=True)
-        assert writer.resolve("providers.anthropic.api_key") == KEY
-        assert writer.resolve("providers.xai.api_key") == ""
+        assert writer.resolve("voice.elevenlabs.api_key") == KEY
+        assert writer.resolve("embedded_tools.web.brave_api_key") == ""
 
 
 class TestPersonalMode:
     def test_is_set_follows_the_config_reference(self) -> None:
-        store = MemorySecrets({"providers_anthropic_api_key": KEY})
-        konfig = Konfig({"providers.anthropic.api_key": "secret://providers_anthropic_api_key"})
+        store = MemorySecrets({"voice_elevenlabs_api_key": KEY})
+        konfig = Konfig({"voice.elevenlabs.api_key": "secret://voice_elevenlabs_api_key"})
         writer = SecretsWriter(store, konfig, server=False)
-        assert writer.is_set("providers.anthropic.api_key")
+        assert writer.is_set("voice.elevenlabs.api_key")
 
     def test_reference_to_a_missing_secret_is_not_set(self) -> None:
-        konfig = Konfig({"providers.anthropic.api_key": "secret://anthropic_api_key"})
+        konfig = Konfig({"voice.elevenlabs.api_key": "secret://elevenlabs_api_key"})
         writer = SecretsWriter(MemorySecrets(), konfig, server=False)
-        assert not writer.is_set("providers.anthropic.api_key")
+        assert not writer.is_set("voice.elevenlabs.api_key")
 
     def test_a_plain_value_in_the_config_counts_as_set(self) -> None:
         konfig = Konfig({"embedded_tools.web.brave_api_key": "brave-dev-only"})
@@ -138,9 +138,9 @@ class TestPersonalMode:
 
     def test_resolve_follows_the_reference(self) -> None:
         store = MemorySecrets({"elsewhere": KEY})
-        konfig = Konfig({"providers.anthropic.api_key": "secret://elsewhere"})
+        konfig = Konfig({"voice.elevenlabs.api_key": "secret://elsewhere"})
         writer = SecretsWriter(store, konfig, server=False)
-        assert writer.resolve("providers.anthropic.api_key") == KEY
+        assert writer.resolve("voice.elevenlabs.api_key") == KEY
 
     def test_reference_text(self) -> None:
         assert secrets.reference("database.url") == "secret://database_url"
@@ -148,16 +148,16 @@ class TestPersonalMode:
 
 class TestMigration:
     def test_legacy_name_is_moved_and_the_reference_rewritten(self) -> None:
-        store = MemorySecrets({"url": DB_URL, "anthropic_api_key": KEY})
+        store = MemorySecrets({"url": DB_URL, "elevenlabs_api_key": KEY})
         raw = {
             "database": {"url": "secret://url"},
-            "providers": {"anthropic": {"api_key": "secret://anthropic_api_key"}},
+            "voice": {"elevenlabs": {"api_key": "secret://elevenlabs_api_key"}},
         }
         changed = secrets.migrate_config(raw, store)
-        assert sorted(changed) == ["database.url", "providers.anthropic.api_key"]
+        assert sorted(changed) == ["database.url", "voice.elevenlabs.api_key"]
         assert raw["database"]["url"] == "secret://database_url"
-        assert raw["providers"]["anthropic"]["api_key"] == "secret://providers_anthropic_api_key"
-        assert store.data == {"database_url": DB_URL, "providers_anthropic_api_key": KEY}
+        assert raw["voice"]["elevenlabs"]["api_key"] == "secret://voice_elevenlabs_api_key"
+        assert store.data == {"database_url": DB_URL, "voice_elevenlabs_api_key": KEY}
 
     def test_plain_secret_values_move_into_the_store(self) -> None:
         store = MemorySecrets()
@@ -176,10 +176,13 @@ class TestMigration:
         assert raw["database"]["url"] == "secret://database_url"
 
     def test_reference_without_a_stored_secret_is_rewritten(self) -> None:
-        raw = {"providers": {"xai": {"api_key": "secret://xai_api_key"}}}
+        raw = {"embedded_tools": {"web": {"brave_api_key": "secret://web_brave_api_key"}}}
         store = MemorySecrets()
-        assert secrets.migrate_config(raw, store) == ["providers.xai.api_key"]
-        assert raw["providers"]["xai"]["api_key"] == "secret://providers_xai_api_key"
+        assert secrets.migrate_config(raw, store) == ["embedded_tools.web.brave_api_key"]
+        assert (
+            raw["embedded_tools"]["web"]["brave_api_key"]
+            == "secret://embedded_tools_web_brave_api_key"
+        )
         assert store.data == {}
 
     def test_current_names_empty_values_and_other_references_untouched(self) -> None:
@@ -231,10 +234,10 @@ class TestThroughKonfigBackends:
         path = tmp_path / "secrets.enc"
         backend = EncryptedFileBackend(path, master_key="master-key-test-dev-only")
         writer = SecretsWriter(Secrets(backend=backend), Konfig(), server=True)
-        writer.set("providers.anthropic.api_key", KEY, actor="admin")
+        writer.set("voice.elevenlabs.api_key", KEY, actor="admin")
         assert KEY.encode() not in path.read_bytes()
         reopened = EncryptedFileBackend(path, master_key="master-key-test-dev-only")
-        assert reopened.get("providers_anthropic_api_key") == KEY
+        assert reopened.get("voice_elevenlabs_api_key") == KEY
 
     def test_aws_bundle_backend_receives_the_write(self) -> None:
         from konfig.secrets.aws_bundle_backend import AWSSecretsBundleBackend

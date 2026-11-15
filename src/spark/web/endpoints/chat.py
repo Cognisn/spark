@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark.core.conversation_manager import ConnectionNotAssigned
 from spark.identity.access import current_user_guid, request_permissions
 from spark.usage.budgets import BudgetExceeded
 from spark.web import attachments, interactions
@@ -177,6 +178,9 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     except BudgetExceeded as refused:
         # Refused at turn start: nothing of the turn was stored or sent to the model.
         return refused_response(refused)
+    except ConnectionNotAssigned as refused:
+        # The conversation's connection is not (or no longer) assigned to the user (M9).
+        return JSONResponse({"error": str(refused)}, status_code=403)
     except Exception as e:
         logger.error("Send message failed: %s", e)
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -197,11 +201,9 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
 
-    from spark.llm.context_limits import ContextLimitResolver
-
-    resolver = ContextLimitResolver()
     model_id = conv.get("model_id", "")
-    context_window = resolver.get_context_window(model_id)
+    # The model's context window, from the connections' catalogue.
+    context_window = offered_models.context_window(request, model_id)
 
     # Sum token usage from agent runs for this conversation
     agent_input_tokens = 0
@@ -221,8 +223,8 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
             "id": conv.get("id"),
             "name": conv.get("name"),
             "model_id": model_id,
-            # False (with model_notice) once the model has left models.offered: the
-            # conversation keeps working, and the page says the model is no longer offered.
+            # False (with model_notice) once the model is no longer offered to the user:
+            # the page says so.
             "model_offered": offered_models.is_offered(request, model_id) if model_id else True,
             "model_notice": offered_models.notice(request, model_id),
             "created_at": conv.get("created_at"),
