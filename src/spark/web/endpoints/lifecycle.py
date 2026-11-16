@@ -46,6 +46,7 @@ from warden.identity import (
     UserError,
 )
 
+from spark.identity.passwords import refusal_text
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import (
     INVITATION_PATH,
@@ -149,7 +150,9 @@ async def accept_invitation(request: Request) -> Response:
             token, password, source_ip=ip
         )
     except UserError as exc:  # a password warden refuses; the link is untouched
-        return await _invitation_page(request, runtime, token, error=str(exc), status_code=400)
+        return await _invitation_page(
+            request, runtime, token, error=refusal_text(exc), status_code=400
+        )
     except InvitationMismatch:
         return await _invitation_page(request, runtime, token, error=USE_SSO, status_code=409)
     except AuthenticationRefused:
@@ -160,7 +163,7 @@ async def accept_invitation(request: Request) -> Response:
     except AuthenticationRefused:
         response: Response = redirect(f"{SIGN_IN_PATH}?notice=accepted")
     else:
-        response = signed_in_or_challenged(request, result.tokens, result.challenge, "/")
+        response = signed_in_or_challenged(request, result, "/")
     forget_form_token(response, INVITATION_PATH)
     return response
 
@@ -245,7 +248,7 @@ async def complete_reset(request: Request) -> Response:
             token, password, source_ip=source_ip(runtime, request)
         )
     except UserError as exc:  # the link is untouched
-        return _reset_page(request, runtime, token, error=str(exc), status_code=400)
+        return _reset_page(request, runtime, token, error=refusal_text(exc), status_code=400)
     except AuthenticationRefused:
         return _reset_page(request, runtime, "", error=LINK_NOT_VALID, status_code=401)
     response = redirect(f"{SIGN_IN_PATH}?notice=reset")

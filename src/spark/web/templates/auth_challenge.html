@@ -1,7 +1,29 @@
 {% extends "auth_layout.html" %}
-{% block title %}Two-Step Verification{% endblock %}
+{% block title %}{% if purpose == "change" %}Choose a New Password{% else %}Two-Step Verification{% endif %}{% endblock %}
 {% block content %}
-{% if purpose == "enrol" %}
+{% if purpose == "change" %}
+<p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    {{ reason_text }} Use at least {{ min_length }} characters. Changing it signs you out everywhere else.
+</p>
+<form method="POST" action="/auth/challenge/change">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <input type="hidden" name="reason" value="{{ reason }}">
+    <div class="mb-3">
+        <label for="password" class="form-label">New password</label>
+        <input type="password" id="password" name="password" class="form-control"
+               autocomplete="new-password" minlength="{{ min_length }}" required autofocus>
+    </div>
+    <div class="mb-3">
+        <label for="confirm" class="form-label">New password again</label>
+        <input type="password" id="confirm" name="confirm" class="form-control"
+               autocomplete="new-password" minlength="{{ min_length }}" required>
+    </div>
+    <button type="submit" class="btn btn-app-primary w-100">
+        <i class="bi bi-key me-1"></i> Change password and sign in
+    </button>
+</form>
+{% elif purpose == "enrol" %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
     Your account needs a second factor before you can sign in. Scan the code with an
     authenticator app, or enter the key by hand, then type the six-digit code it shows.

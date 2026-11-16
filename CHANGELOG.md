@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A forced password change at sign-in** (server mode): when warden requires a new password before it issues a session (an administrator asked for it, the password expired, it no longer meets the password policy, or it is on a watch list), the sign-in goes on to a new-password step on the challenge screen (`POST /auth/challenge/change`) after the password and any second factor, and signs in once warden accepts the new password. After a forced enrolment the recovery codes are shown first, then the new-password step. No session cookie is set until then
+
+### Changed
+- **warden 0.1.0**: SPARK depends on `cognisn-warden>=0.1.0`, warden's first release, in place of 0.1.0b8. `spark migrate` brings warden's chain from 0.1.0b8's head (`7b2e9d4c1f08`) to 0.1.0's (`a9e4c27f13d8`), adding warden's passkey and password policy tables. warden brings `fido2` (BSD-2-Clause) as a new runtime dependency
+- **Password refusals**: a password warden's policy refuses, on the account page, an invitation or a reset, shows warden's plain messages (for example "Use at least 12 characters. This password is too common.") instead of an error code list or, on the account page, an error page
+
+### Upgrade notes
+- **Server mode**: warden 0.1.0 enforces its default password policy, which refuses about 100,000 very common passwords wherever a password is set. A user whose current password is on that list is asked to choose a new one at their next password sign-in
+
 ## [0.3.0rc3] - 2026-11-16
 
 ### Added

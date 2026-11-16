@@ -29,9 +29,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
-from warden.identity import ApiKeyError, MfaError, Principal, SignInMethod
+from warden.identity import ApiKeyError, MfaError, PasswordRejected, Principal, SignInMethod
 
 from spark.identity.access import SparkIdentity, current_identity, require_permission
+from spark.identity.passwords import refusal_text
 from spark.identity.permissions import API_KEYS
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import principal_of, source_ip, via_api_key
@@ -54,7 +55,6 @@ DONE = {
 }
 PASSWORD_REFUSED = {
     "wrong_password": "The current password is not right.",
-    "weak_password": "The new password is too short.",
     "not_permitted": "This account cannot change its password here.",
 }
 PASSWORDS_DIFFER = "The two new passwords do not match."
@@ -143,9 +143,12 @@ async def change_password(request: Request) -> Response:
     password, confirm = _text(form.get("password")), _text(form.get("confirm"))
     if password != confirm:
         return await _account_page(request, error=PASSWORDS_DIFFER, status_code=400)
-    reason = await runtime.identity.change_password(
-        principal, form.get("current"), password, source_ip=source_ip(runtime, request)
-    )
+    try:
+        reason = await runtime.identity.change_password(
+            principal, form.get("current"), password, source_ip=source_ip(runtime, request)
+        )
+    except PasswordRejected as exc:  # the policy refused it; nothing changed
+        return await _account_page(request, error=refusal_text(exc), status_code=400)
     if reason is not None:
         error = PASSWORD_REFUSED.get(reason, PASSWORD_REFUSED["not_permitted"])
         return await _account_page(request, error=error, status_code=400)

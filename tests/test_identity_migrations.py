@@ -24,7 +24,9 @@ from spark.db.migrate import DatabaseTooNew, MigrationRequired
 from spark.identity import migrations as identity_migrations
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 
-WARDEN_HEAD = "7b2e9d4c1f08"
+WARDEN_HEAD = "a9e4c27f13d8"
+# warden 0.1.0b8's head: where every SPARK 0.3.0 database up to 0.3.0rc3 has warden.
+WARDEN_B8_HEAD = "7b2e9d4c1f08"
 
 
 @pytest.fixture(autouse=True)
@@ -217,6 +219,42 @@ class TestServerMode:
         identity_migrations.register()
         with pytest.raises(MigrationRequired, match="warden"):
             migrate.check_at_head(settings)
+
+    def test_a_database_at_warden_b8_is_refused_then_upgraded_by_spark_migrate(
+        self, pg_url: str
+    ) -> None:
+        """An rc2-era database (warden at 0.1.0b8's head) upgrades cleanly to 0.1.0's head.
+
+        A user created at b8 keeps their row and password hash, and the
+        password policy, passkey and password state tables 0.1.0 adds are
+        there (empty: warden seeds its default policy at run time).
+        """
+        import psycopg
+        import warden.db
+
+        settings = _pg(pg_url)
+        migrate.upgrade(settings)
+        warden.db.migrate(pg_url, revision=WARDEN_B8_HEAD)
+        with psycopg.connect(pg_url, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO warden.users (email, status, password_hash)"
+                " VALUES ('ada@example.com', 'active', '$argon2id$dev-only') RETURNING id"
+            ).fetchone()
+        assert row is not None
+        identity_migrations.register()
+        with pytest.raises(MigrationRequired, match=WARDEN_B8_HEAD):
+            migrate.check_at_head(settings)
+        assert migrate.migrate_all(settings) == {"spark": migrate.head(), "warden": WARDEN_HEAD}
+        migrate.check_at_head(settings)
+        tables = _pg_tables(pg_url, "warden")
+        assert {"password_policies", "password_states", "webauthn_credentials"} <= tables
+        with psycopg.connect(pg_url) as conn:
+            kept = conn.execute(
+                "SELECT email, status, password_hash FROM warden.users WHERE id = %s", (row[0],)
+            ).fetchone()
+            states = conn.execute("SELECT count(*) FROM warden.password_states").fetchone()
+        assert kept == ("ada@example.com", "active", "$argon2id$dev-only")
+        assert states == (0,)
 
     def test_a_warden_chain_newer_than_this_code_is_refused(self, pg_url: str) -> None:
         import psycopg
