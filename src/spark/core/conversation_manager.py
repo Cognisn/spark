@@ -15,7 +15,7 @@ from spark.connections.refs import ModelRef
 from spark.connections.runtime import ModelSource, UserScope
 from spark.connections.usage import Attribution
 from spark.core.cancellation import CancellationToken
-from spark.core.context_compaction import ContextCompactor
+from spark.core.context_compaction import CompactionSettings, ContextCompactor, ordered_for_model
 from spark.db.bridge import SyncDatabase
 from spark.safety.untrusted import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
@@ -50,6 +50,28 @@ class _CatalogueLimits:
 
 # Marker prefix for tool results stored as user messages
 _TOOL_RESULTS_MARKER = "[TOOL_RESULTS]"
+
+# Instance settings a server reads at each turn, so a change applies without a restart
+_ROLLUP_THRESHOLD = "conversation.rollup_threshold"
+_ROLLUP_SUMMARY_RATIO = "conversation.rollup_summary_ratio"
+_EMERGENCY_ROLLUP_THRESHOLD = "conversation.emergency_rollup_threshold"
+_PROMPT_CACHING = "conversation.prompt_caching"
+
+
+def _live_setting(key: str, fallback: Any) -> Any:
+    """A server's current instance setting ``key`` (the administrator's, kept current by
+    the settings listener), or ``fallback`` in personal mode or when it cannot be read."""
+    from spark import mode
+
+    try:
+        if not mode.is_server():
+            return fallback
+        from spark.instance_settings import accessor
+
+        value = accessor.get(key)
+    except Exception:  # noqa: BLE001 - an unreadable setting keeps the start-up value
+        return fallback
+    return fallback if value is None else value
 
 
 @dataclass(frozen=True)
@@ -130,17 +152,69 @@ class ConversationManager:
         # Per-conversation vector index cache, keyed by (user guid, conversation)
         self._vector_indices: dict[tuple[str, int], Any] = {}
 
-        # Context compactor: each turn passes the service it compacts with (its own,
-        # or one for the locked compaction model). Limits come from the catalogue.
+        # Context compactor (conduit's compaction layer): each turn passes the service it
+        # compacts with (its own, or one for the locked compaction model). Limits come
+        # from the catalogue. Its thresholds are read again before each check.
+        self._compaction_settings = CompactionSettings(
+            rollup_threshold, emergency_rollup_threshold, rollup_summary_ratio
+        ).checked()
         self._compactor: ContextCompactor | None = ContextCompactor(
             None,
             db,
-            self._limits,  # type: ignore[arg-type]
-            threshold=rollup_threshold,
-            emergency_threshold=emergency_rollup_threshold,
-            summary_ratio=rollup_summary_ratio,
+            self._limits,
+            threshold=self._compaction_settings.threshold,
+            emergency_threshold=self._compaction_settings.emergency_threshold,
+            summary_ratio=self._compaction_settings.summary_ratio,
             locked_model=compaction_model,
         )
+
+    def update_compaction_settings(
+        self,
+        *,
+        rollup_threshold: float | None = None,
+        emergency_rollup_threshold: float | None = None,
+        rollup_summary_ratio: float | None = None,
+    ) -> None:
+        """Use new compaction thresholds from the next compaction check on (a settings
+        change). A server also reads its instance settings before every check."""
+        current = self._compaction_settings
+        self._compaction_settings = CompactionSettings(
+            current.threshold if rollup_threshold is None else rollup_threshold,
+            (
+                current.emergency_threshold
+                if emergency_rollup_threshold is None
+                else emergency_rollup_threshold
+            ),
+            current.summary_ratio if rollup_summary_ratio is None else rollup_summary_ratio,
+        ).checked()
+
+    def update_prompt_caching(self, enabled: bool) -> None:
+        """Use prompt caching (or not) from the next model call on (a settings change)."""
+        self._prompt_caching_enabled = bool(enabled)
+
+    def _live_compaction_settings(self) -> CompactionSettings:
+        """The compaction thresholds now: a server's instance settings, else this manager's."""
+        own = self._compaction_settings
+
+        def ratio(key: str, fallback: float) -> float:
+            value = _live_setting(key, fallback)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        return CompactionSettings(
+            ratio(_ROLLUP_THRESHOLD, own.threshold),
+            ratio(_EMERGENCY_ROLLUP_THRESHOLD, own.emergency_threshold),
+            ratio(_ROLLUP_SUMMARY_RATIO, own.summary_ratio),
+        ).checked()
+
+    def _live_prompt_caching(self, conv: dict | None) -> bool:
+        """Whether this call caches its prompt: the conversation's own choice, else a
+        server's instance setting, else this manager's."""
+        if conv and conv.get("prompt_caching") is not None:
+            return bool(conv.get("prompt_caching", True))
+        return bool(_live_setting(_PROMPT_CACHING, self._prompt_caching_enabled))
 
     def update_embedded_tools_config(self, config: dict[str, Any]) -> None:
         """Use a new embedded tools configuration from the next turn on (a settings change).
@@ -681,19 +755,9 @@ class ConversationManager:
         else:
             logger.debug("No RAG context retrieved for this message")
 
-        # Enabled skills (progressive disclosure; failure must never break a turn)
-        skills_block = ""
-        try:
-            from spark.database import skills as skills_db
-            from spark.skills.manager import get_skills_manager
-            from spark.skills.prompt import build_skills_block
-
-            enabled = self._db.call(
-                skills_db.resolve_enabled, get_skills_manager(), user_guid, conversation_id
-            )
-            skills_block = build_skills_block(enabled)
-        except Exception:  # noqa: BLE001 - skills must never break a chat turn
-            logger.warning("Skills block unavailable", exc_info=True)
+        # The user's enabled skills, through conduit's progressive disclosure: listed in
+        # the system prompt, loaded into it by use_skill (failure never breaks a turn)
+        skills = self._turn_skills(user_guid, conversation_id)
 
         # Knowledge graph context (failure-safe; graphs must never break a turn)
         kg_block = ""
@@ -717,13 +781,15 @@ class ConversationManager:
         except Exception:  # noqa: BLE001
             logger.warning("Knowledge graph context unavailable", exc_info=True)
 
-        # Build system instructions (with retrieved context if available)
-        system = self._build_system_instructions(
+        # Build system instructions (with retrieved context if available). The skills
+        # listing and any loaded skills follow, before the prompt's cache breakpoint;
+        # a skill loaded during the turn joins the system prompt of the next call.
+        base_system = self._build_system_instructions(
             conv,
             retrieved_context=retrieved_context,
-            skills_block=skills_block,
             kg_block=kg_block,
         )
+        system = self._with_skills(base_system, skills)
         logger.debug(
             "System prompt: %d chars, %d messages in history",
             len(system),
@@ -783,13 +849,13 @@ class ConversationManager:
 
                 # Get messages for model (respects conv settings)
                 history = self._get_messages_for_model(conversation_id, user_guid, conv)
+                if iteration:
+                    system = self._with_skills(base_system, skills)
 
                 # Invoke model (with error recovery)
                 try:
-                    # Resolve prompt caching: global default, overridden by per-conversation setting
-                    use_caching = self._prompt_caching_enabled
-                    if conv and conv.get("prompt_caching") is not None:
-                        use_caching = bool(conv.get("prompt_caching", True))
+                    # Prompt caching: the conversation's own choice, else the setting now
+                    use_caching = self._live_prompt_caching(conv)
 
                     if service is None:
                         raise RuntimeError(
@@ -873,6 +939,7 @@ class ConversationManager:
                         result_policy=result_policy,
                         permissions=permissions,
                         callbacks=callbacks,
+                        skills=skills,
                     )
                     all_tool_calls.extend(response["tool_use"])
 
@@ -977,6 +1044,8 @@ class ConversationManager:
 
         finally:
             self._in_tool_use_loop = False
+            if skills is not None:
+                skills.close()
 
         # Check for deferred compaction
         self._check_compaction(conversation_id, model_id, user_guid, status_callback, service)
@@ -989,6 +1058,49 @@ class ConversationManager:
             "status": "completed",
             "budget": self._budget_after(user_guid, roles),
         }
+
+    # -- Skills -----------------------------------------------------------------
+
+    def _turn_skills(self, user_guid: str, conversation_id: int) -> Any:
+        """This turn's skills (:class:`spark.skills.session.TurnSkills`): the skills the
+        user has enabled, globally and for the conversation, with the skills the
+        conversation loaded in earlier turns restored in order. None when skills are
+        unavailable (a turn never fails over skills)."""
+        from spark.connections.transcript_store import skill_transcript
+        from spark.database import messages
+        from spark.database import skills as skills_db
+        from spark.skills.manager import get_skills_manager
+        from spark.skills.session import TurnSkills
+
+        skills = None
+        try:
+            manager = get_skills_manager()
+            enabled = self._db.call(skills_db.resolve_enabled, manager, user_guid, conversation_id)
+            skills = TurnSkills(
+                manager.source(enabled=[s["name"] for s in enabled]),
+                folders=manager.folders(),
+            )
+            stored = self._db.call(
+                messages.get_messages, user_guid, conversation_id, include_rolled_up=True
+            )
+            skills.restore(skill_transcript(str(conversation_id), stored))
+            return skills
+        except Exception:  # noqa: BLE001 - skills must never break a chat turn
+            logger.warning("Skills unavailable this turn", exc_info=True)
+            if skills is not None:
+                skills.close()
+            return None
+
+    @staticmethod
+    def _with_skills(base: str, skills: Any) -> str:
+        """``base`` with the skills listing and loaded skills after it."""
+        if skills is None:
+            return base
+        try:
+            return str(skills.system(base))
+        except Exception:  # noqa: BLE001 - skills must never break a chat turn
+            logger.warning("Skills listing unavailable", exc_info=True)
+            return base
 
     def _budget_after(self, user_guid: str, roles: Iterable[str] | None) -> dict[str, Any] | None:
         """The user's budget standing after a turn, for the UI's warning (None if unreadable)."""
@@ -1188,7 +1300,8 @@ class ConversationManager:
         """
         from spark.database import messages
 
-        raw = self._db.call(messages.get_messages, user_guid, conversation_id)
+        # A compaction's summary is stored after the turns it keeps; it is read first.
+        raw = ordered_for_model(self._db.call(messages.get_messages, user_guid, conversation_id))
         include_tools = True
         max_msgs = None
 
@@ -1244,6 +1357,7 @@ class ConversationManager:
         result_policy: ResultPolicy | None = None,
         permissions: Permissions = None,
         callbacks: TurnCallbacks | None = None,
+        skills: Any = None,
     ) -> dict:
         """Execute a single tool call and return the tool_result dict.
 
@@ -1379,6 +1493,7 @@ class ConversationManager:
                 user_guid=user_guid,
                 status_callback=status_callback,
                 callbacks=callbacks,
+                skills=skills,
             )
         except Exception as e:
             result_text = f"Tool execution error: {e}"
@@ -1451,6 +1566,7 @@ class ConversationManager:
         result_policy: ResultPolicy | None = None,
         permissions: Permissions = None,
         callbacks: TurnCallbacks | None = None,
+        skills: Any = None,
     ) -> list[dict]:
         """Execute a batch of tool calls and return results.
 
@@ -1477,6 +1593,7 @@ class ConversationManager:
             "result_policy": result_policy,
             "permissions": permissions,
             "callbacks": callbacks,
+            "skills": skills,
         }
 
         # 1. Execute non-agent tools sequentially.
@@ -1945,9 +2062,11 @@ class ConversationManager:
         user_guid: str | None = None,
         status_callback: Callable | None = None,
         callbacks: TurnCallbacks | None = None,
+        skills: Any = None,
     ) -> tuple[str, bool]:
         """Execute a single tool for ``user_guid`` holding ``permissions``, in a turn of
-        ``conversation_id``. Returns (result_text, is_error)."""
+        ``conversation_id``. Returns (result_text, is_error). ``skills`` is the turn's
+        skill session, which ``use_skill`` loads into."""
         from spark.tools.registry import PERMISSIONS_KEY, unavailable_reason
 
         # A tool whose category is not available (to this mode, or to the
@@ -1981,6 +2100,10 @@ class ConversationManager:
             config["_kg_conversation_id"] = conversation_id
             config["_kg_user_guid"] = uid
             config[PERMISSIONS_KEY] = permissions
+            if skills is not None:
+                from spark.skills.tools import SESSION_KEY
+
+                config[SESSION_KEY] = skills
             return execute_builtin_tool(tool_name, tool_input, config)
 
         # Try MCP manager (async — dispatch on the persistent MCP event loop)
@@ -2037,8 +2160,10 @@ class ConversationManager:
         """Check and perform context compaction if needed, with the turn's ``service``
         or, when a compaction model is locked, a service of its own for that model.
 
-        Either way the compaction's model calls are recorded for ``user_guid``."""
+        Either way the compaction's model calls are recorded for ``user_guid``. The
+        thresholds are the ones in force now (a server's instance settings)."""
         if self._compactor:
+            self._compactor.update(self._live_compaction_settings())
             locked = self._compactor.locked_model
             locked_service = self._models.service(locked) if locked else None
             if locked_service is not None:
