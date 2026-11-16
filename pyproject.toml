@@ -43,10 +43,8 @@ classifiers = [
 ]
 dependencies = [
     "cognisn-konfig[aws]>=0.5.0",
-    # Identity, sessions, permissions and audit in server mode. Held at the build the
-    # 0.3.0 release line was proven against: warden 0.1.0b18 and 0.1.0 change its
-    # migration head and its typed session results, which SPARK has not adopted yet.
-    "cognisn-warden==0.1.0b8",
+    # Identity, sessions, permissions and audit in server mode, at warden's first release
+    "cognisn-warden>=0.1.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.22.0",
     "jinja2>=3.1.0",
