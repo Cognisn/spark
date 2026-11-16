@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Skills on conduit**: SPARK's bundled and user skills are listed and loaded through conduit's skill layer (`spark.skills.source.SparkSkillSource` over conduit's filesystem source), keeping the rule that a bundled skill wins its name and serving each user only the skills they have turned on, globally and for the conversation. In chat, `use_skill` is conduit's progressive disclosure: a loaded skill's instructions join the system prompt, before its cache breakpoint, instead of the tool result, and stay loaded in later turns of the conversation (restored in order from its stored messages, across a compaction too), so the cached prefix is the same from call to call. `read_skill_resource` reads a skill's files once it is loaded. Debates, panels, sub-agents and scheduled actions keep receiving a skill's instructions as the tool result
+- **SKILL.md validation is conduit's**: the skills page, import and skill authoring check every `SKILL.md` with conduit's parser, the one the model loads through. `version`, `license`, `compatibility`, `allowed-tools` (a list) and `metadata` are recorded; any other front matter key, a block value (`|` or `>`) or an empty body makes a skill invalid, with the reason shown. Authored skills write their description quoted, and their resource paths follow conduit's rule (letters, digits, `_`, `.` and `-` segments)
+- **Compaction on conduit's compaction layer**: `ContextCompactor` keeps SPARK's summary prompt, markers and rollup history, and lets conduit's compactor decide and cut. The latest assistant turn now stays as it was after the summary, and the model reads the summary first; while a conversation still fits the model's window, a compaction happens only when it brings it under the threshold; past the emergency threshold without a summary, the older turns give way to the truncation notice and the latest turn stays. The system prompt and loaded skills are never touched, so the cached prefix is unchanged by a compaction
+- **Compaction thresholds and prompt caching follow the instance settings at once** (server mode): `conversation.rollup_threshold`, `rollup_summary_ratio`, `emergency_rollup_threshold` and `prompt_caching` are read before each compaction check and model call, without a restart; a conversation's own prompt caching choice still applies
+
+### Upgrade notes
+- **Skills**: a user skill whose `SKILL.md` uses front matter keys other than conduit's, or block values, shows as invalid on the skills page until it is edited
+
 ## [0.3.0rc3] - 2026-11-16
 
 ### Added

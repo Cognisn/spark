@@ -744,15 +744,15 @@ class TestContextCompactor:
 
         model_msgs = mgr._get_messages_for_model(cid, USER)
         contents = [m.get("content", "") for m in model_msgs]
-        joined = " ".join(c if isinstance(c, str) else json.dumps(c) for c in contents)
+        texts = [c if isinstance(c, str) else json.dumps(c) for c in contents]
+        joined = " ".join(texts)
         assert "rolled msg one" not in joined
         assert "rolled reply one" not in joined
         assert "rolled msg two" not in joined
-        assert "rolled reply two" not in joined
-        assert any(
-            (c if isinstance(c, str) else json.dumps(c)).startswith("[COMPACTED CONTEXT")
-            for c in contents
-        )
+        # conduit's compaction keeps the last assistant turn as it was, after the summary
+        assert texts[0].startswith("[COMPACTED CONTEXT")
+        assert texts[1:] == ["rolled reply two"]
+        assert [m["role"] for m in model_msgs] == ["user", "assistant"]
 
 
 class TestToolResult:

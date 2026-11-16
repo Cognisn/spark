@@ -1,25 +1,54 @@
 """Skill discovery, validation, and jailed resource access.
 
-Skills are folders containing SKILL.md (YAML frontmatter: name, description)
-plus optional resource files. Bundled skills ship read-only in the package;
-user skills live in the platform data directory. Content truth is on disk.
+Skills are folders containing SKILL.md (front matter: name, description, and the
+optional fields conduit records) plus optional resource files. Bundled skills ship
+read-only in the package; user skills live in the platform data directory. Content
+truth is on disk.
+
+Every SKILL.md is validated by conduit's parser (:func:`conduit.skills.parse_skill_md`),
+the same rules the model's ``use_skill`` loads through, so the skills page never shows
+as valid a skill the model could not load. Resource paths follow conduit's rule as well.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-import yaml
+from conduit.skills import SkillInvalid, parse_skill_md
+from conduit.skills.format import resource_path_refusal
+
+from spark.skills.source import SparkSkillSource
 
 logger = logging.getLogger(__name__)
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 SKILL_MD_MAX = 64 * 1024
 RESOURCE_READ_MAX = 256 * 1024
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
+
+#: conduit's refusal reasons, in words for the skills page (the code follows in brackets).
+_REASONS = {
+    "front_matter_missing": "missing front matter (a first line of ---)",
+    "front_matter_unclosed": "the front matter is not closed with ---",
+    "name_missing": "frontmatter name is required",
+    "name_invalid": "frontmatter name must be kebab-case, max 64 chars",
+    "description_missing": "description is required (1 to 1024 characters, one line)",
+    "description_invalid": "description is required (1 to 1024 characters, one line)",
+    "field_unknown": "unknown front matter field",
+    "field_repeated": "a front matter field is repeated",
+    "block_scalar_unsupported": "block values (| or >) are not supported in front matter",
+    "value_invalid": "a front matter value is not valid",
+    "line_invalid": "a front matter line is not valid",
+    "version_invalid": "version must be a short label without spaces",
+    "license_invalid": "license must be short single-line text",
+    "compatibility_invalid": "compatibility must be short single-line text",
+    "allowed_tools_invalid": "allowed-tools must be a list of tool names",
+    "metadata_invalid": "metadata must be short key: value lines",
+    "body_empty": "the instructions (the body after the front matter) are empty",
+}
 
 
 class SkillValidationError(Exception):
@@ -28,6 +57,16 @@ class SkillValidationError(Exception):
 
 class SkillResourceError(Exception):
     """Raised on resource jail, size, or type violations."""
+
+
+def refusal_text(error: SkillInvalid, folder: str) -> str:
+    """conduit's refusal of a SKILL.md, in words (never the text it found)."""
+    if error.reason == "name_mismatch":
+        words = f"frontmatter name does not match folder '{folder}'"
+    else:
+        words = _REASONS.get(error.reason, "SKILL.md is not valid")
+    at = f" at line {error.line}" if error.line is not None else ""
+    return f"{words}{at} ({error.reason})"
 
 
 def _parse_skill_dir(path: Path, source: str) -> dict[str, Any]:
@@ -50,29 +89,21 @@ def _parse_skill_dir(path: Path, source: str) -> dict[str, Any]:
             return record
         text = md.read_text(encoding="utf-8")
     except Exception as e:  # noqa: BLE001 - unreadable file must not break the scan
-        record["error"] = f"SKILL.md unreadable: {e}"
-        return record
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        record["error"] = "missing YAML frontmatter"
+        record["error"] = f"SKILL.md unreadable: {type(e).__name__}"
         return record
     try:
-        meta = yaml.safe_load(match.group(1)) or {}
-    except yaml.YAMLError as e:
-        record["error"] = f"frontmatter is not valid YAML: {e}"
+        document = parse_skill_md(text, expected_name=path.name)
+    except SkillInvalid as refused:
+        record["error"] = refusal_text(refused, path.name)
         return record
-    name = str(meta.get("name", "")).strip()
-    description = str(meta.get("description", "") or "").strip()
-    if not NAME_RE.match(name) or len(name) > 64:
-        record["error"] = "frontmatter name must be kebab-case, max 64 chars"
-        return record
-    if name != path.name:
-        record["error"] = f"frontmatter name '{name}' does not match folder '{path.name}'"
-        return record
-    if not description or len(description) > 1024:
-        record["error"] = "description is required (1 to 1024 characters)"
-        return record
-    record.update({"name": name, "description": description, "valid": True})
+    record.update(
+        {
+            "name": document.name,
+            "description": document.description,
+            "version": document.version,
+            "valid": True,
+        }
+    )
     return record
 
 
@@ -94,6 +125,18 @@ class SkillsManager:
     def user_dir(self) -> Path:
         return self._user_dir
 
+    @property
+    def bundled_dir(self) -> Path | None:
+        return self._bundled_dir
+
+    def source(self, enabled: Iterable[str] | None = None) -> SparkSkillSource:
+        """These skills as a conduit skill source, limited to ``enabled`` names (a user's)."""
+        return SparkSkillSource(self._user_dir, self._bundled_dir, enabled=enabled)
+
+    def folders(self) -> dict[str, Path]:
+        """Each valid skill's folder, by name."""
+        return {name: Path(record["path"]) for name, record in self._skills.items()}
+
     def reload(self) -> None:
         """Rescan both sources. Bundled wins name collisions; user duplicate is invalid."""
         self._skills, self._invalid = {}, []
@@ -106,6 +149,8 @@ class SkillsManager:
                 logger.warning("Cannot scan %s skills directory: %s", source, e)
                 continue
             for entry in entries:
+                if entry.name.startswith("."):
+                    continue  # staging and backup folders of an import or an edit
                 record = _parse_skill_dir(entry, source)
                 if record["valid"] and record["name"] in self._skills:
                     record["valid"] = False
@@ -136,7 +181,10 @@ class SkillsManager:
 
     def get_body(self, name: str) -> str:
         text = (self.skill_path(name) / "SKILL.md").read_text(encoding="utf-8")
-        return _FRONTMATTER_RE.sub("", text, count=1)
+        try:
+            return parse_skill_md(text, expected_name=name).body
+        except SkillInvalid as refused:  # changed on disk since the last scan
+            raise SkillResourceError(refusal_text(refused, name)) from None
 
     def list_resources(self, name: str) -> list[str]:
         root = self.skill_path(name)
@@ -149,7 +197,7 @@ class SkillsManager:
     def read_resource(self, name: str, relative_path: str) -> str:
         root = self.skill_path(name).resolve()
         rel = Path(relative_path)
-        if rel.is_absolute() or ".." in rel.parts:
+        if rel.is_absolute() or ".." in rel.parts or resource_path_refusal(relative_path):
             raise SkillResourceError("Resource paths must be relative, inside the skill folder")
         target = (root / rel).resolve()
         if not target.is_relative_to(root):

@@ -74,10 +74,34 @@ class TestValidation:
         bad = m.list_skills(include_invalid=True)[0]
         assert bad["valid"] is False and expected_error in bad["error"].lower()
 
-    def test_unknown_frontmatter_keys_ignored(self, tmp_path) -> None:
-        make_skill(tmp_path / "user", "tolerant", extra="allowed-tools: Bash\n")
+    def test_recorded_frontmatter_fields_accepted(self, tmp_path) -> None:
+        # conduit's format records allowed-tools (a list), version, license and metadata
+        make_skill(tmp_path / "user", "tolerant", extra="allowed-tools: [Bash]\nversion: 1.2.0\n")
         m = SkillsManager(tmp_path / "user")
-        assert m.get_skill("tolerant") is not None
+        skill = m.get_skill("tolerant")
+        assert skill is not None and skill["version"] == "1.2.0"
+
+    @pytest.mark.parametrize(
+        "extra,reason",
+        [
+            ("author: someone\n", "field_unknown"),
+            ("allowed-tools: Bash\n", "allowed_tools_invalid"),
+            ("version: |\n  1.0\n", "block_scalar_unsupported"),
+        ],
+    )
+    def test_conduit_format_refusals(self, tmp_path, extra, reason) -> None:
+        """SKILL.md is validated by conduit's parser: anything it refuses is invalid here."""
+        make_skill(tmp_path / "user", "strict", extra=extra)
+        m = SkillsManager(tmp_path / "user")
+        assert m.get_skill("strict") is None
+        (bad,) = m.list_skills(include_invalid=True)
+        assert bad["valid"] is False and f"({reason})" in bad["error"]
+
+    def test_empty_body_refused(self, tmp_path) -> None:
+        make_skill(tmp_path / "user", "hollow", body="")
+        m = SkillsManager(tmp_path / "user")
+        assert m.get_skill("hollow") is None
+        assert "(body_empty)" in m.list_skills(include_invalid=True)[0]["error"]
 
 
 class TestBodyAndResources:
