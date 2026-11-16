@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc6] - 2026-11-16
+
 ### Added
 - **Credits** (`spark.usage.credits`): every model call on a connection is charged credits when it is recorded, as (input x input weight + output x output weight + cache read x cache read weight + cache write x cache write weight) / the connection's base rate x the model's tier multiplier (standard 1, higher and lower set per connection; weights 1, 5, 0.1 and 1.25 by default). Credits are exact to six decimal places, rounded half up once per call, and each usage row keeps the rates it was charged at, so changing a connection's rates never changes what earlier calls cost. `credits.estimate(connection, counts)` gives what sample token counts would cost at each tier
 - **Monthly credit allowances per metered connection** (server mode): a user's allowance on a metered connection is their own assignment's, otherwise the highest of their roles' assignments. Users are warned at 80%; at 100% new requests on that connection (chat turns on the stream and the send route, debate and panel turns and questions, scheduled actions and knowledge graph build chunks) are refused with a message naming the connection and the reset date, while a request already running finishes. Allowances reset at 00:00 UTC on the first of each month. Unmetered connections, and personal mode, have no limit
