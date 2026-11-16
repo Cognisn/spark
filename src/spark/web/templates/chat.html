@@ -510,6 +510,7 @@
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
 <script src="/static/js/budget.js"></script>
+<script src="/static/js/model_picker.js"></script>
 <script>
 const conversationId = {{ conversation.id }};
 const conversationName = "{{ conversation.name }}";
@@ -861,7 +862,7 @@ async function renameConversation() {
     } catch (err) { AppToast.danger('Error', 'Failed to rename.'); }
 }
 
-let _allModels = [];
+let _pickerData = null;
 
 async function changeModel() {
     const modal = new bootstrap.Modal(document.getElementById('modelSelectorModal'));
@@ -871,12 +872,11 @@ async function changeModel() {
     modal.show();
 
     try {
-        const resp = await fetch('/conversations/api/models');
-        const data = await resp.json();
-        _allModels = data.models || [];
-
+        // Grouped by connection, each model with its tier and, on a metered
+        // connection, the credits left this month (M11).
+        _pickerData = await SparkModelPicker.load();
         document.getElementById('model-selector-loading').style.display = 'none';
-        renderModelList(_allModels);
+        renderModelList();
         document.getElementById('model-selector-list').style.display = '';
     } catch (err) {
         AppToast.danger('Error', 'Failed to load models.');
@@ -884,51 +884,11 @@ async function changeModel() {
     }
 }
 
-function renderModelList(models) {
-    const list = document.getElementById('model-selector-list');
-    const currentModel = window._currentModelId || '';
-
-    // Group by provider
-    const grouped = {};
-    models.forEach(m => {
-        const provider = m.provider || 'Unknown';
-        if (!grouped[provider]) grouped[provider] = [];
-        grouped[provider].push(m);
+function renderModelList() {
+    SparkModelPicker.renderList(document.getElementById('model-selector-list'), _pickerData, {
+        current: window._currentModelId || '',
+        onSelect: selectModel,
     });
-
-    let html = '';
-    for (const [provider, providerModels] of Object.entries(grouped)) {
-        html += `<div style="font-size: 0.6875rem; font-weight: 600; color: var(--app-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.5rem 0.25rem; margin-top: 0.25rem;">${provider}</div>`;
-        providerModels.forEach(m => {
-            const isActive = m.id === currentModel;
-            const toolBadge = m.supports_tools
-                ? '<span style="font-size:0.5625rem; color:var(--app-success);">tools</span>'
-                : '';
-            const ctx = m.context_length > 0
-                ? (m.context_length >= 1000000 ? (m.context_length / 1000000).toFixed(1) + 'M'
-                   : m.context_length >= 1000 ? Math.round(m.context_length / 1000) + 'K'
-                   : m.context_length)
-                : '';
-
-            html += `
-                <div class="d-flex align-items-center gap-2 px-2 py-2 rounded model-selector-item${isActive ? ' active' : ''}"
-                     style="cursor: pointer; font-size: 0.8125rem; ${isActive ? 'background: var(--app-active-bg);' : ''}"
-                     onclick="selectModel('${m.id}')"
-                     data-model-name="${(m.name || m.id).toLowerCase()}"
-                     data-model-id="${m.id.toLowerCase()}">
-                    ${isActive ? '<i class="bi bi-check-circle-fill" style="color: var(--app-accent); flex-shrink:0;"></i>' : '<i class="bi bi-circle" style="color: var(--app-text-muted); opacity:0.3; flex-shrink:0;"></i>'}
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-weight: ${isActive ? '600' : '400'}; color: var(--app-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.name || m.id}</div>
-                        <div style="font-size:0.6875rem; color:var(--app-text-muted);">${m.id}</div>
-                    </div>
-                    <div class="d-flex align-items-center gap-2" style="flex-shrink:0;">
-                        ${toolBadge}
-                        <span style="font-size:0.625rem; color:var(--app-text-muted);">${ctx}</span>
-                    </div>
-                </div>`;
-        });
-    }
-    list.innerHTML = html;
 }
 
 function filterModelList() {
@@ -949,6 +909,7 @@ async function selectModel(modelId) {
         if (r.ok) {
             window._currentModelId = modelId;
             document.getElementById('conv-display-model').textContent = modelId;
+            SparkBudget.setConnection(SparkBudget.connectionOf(modelId));
             document.getElementById('model-notice')?.remove();
             AppToast.success('Model changed', `Now using ${modelId}`);
             bootstrap.Modal.getInstance(document.getElementById('modelSelectorModal'))?.hide();

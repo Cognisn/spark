@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterable
 from typing import Any, Callable
 
 from spark.db.bridge import SyncDatabase
@@ -120,8 +121,18 @@ class KnowledgeGraphBuilder:
         model_id: str,
         *,
         cancel_token: Any | None = None,
+        roles: Iterable[str] | None = None,
     ) -> dict[str, Any]:
-        """Extract all pending sources for a scope. Synchronous engine."""
+        """Extract all pending sources for a scope. Synchronous engine.
+
+        Every model call is billed to ``user_guid`` (source ``knowledge``). Each chunk
+        is a new request on the model's connection: at 100% of the user's monthly
+        credits there (``roles`` decide the allowance) the build stops before the
+        next chunk, keeping what it has extracted, with the refusal as its error.
+        """
+        from spark.usage import budgets
+        from spark.usage.meter import meter
+
         result = {
             "status": "complete",
             "chunks": 0,
@@ -144,12 +155,20 @@ class KnowledgeGraphBuilder:
             result["status"] = "failed"
             result["error"] = f"No provider offers the model '{model_id}'"
             return result
+        service = meter(service, user_guid=user_guid, source="knowledge")
         service.set_model(model_id)
+        connection = budgets.connection_of(model_id, service)
 
         for source_key, items in sources:
             for chunk in chunk_messages(items):
                 if cancelled():
                     result["status"] = "cancelled"
+                    return result
+                try:
+                    budgets.check(self._db, user_guid, roles, connection_id=connection)
+                except budgets.BudgetExceeded as refused:
+                    result["status"] = "failed"
+                    result["error"] = str(refused)
                     return result
                 if self._db.call(store.count_nodes, scope, user_guid) >= NODE_CAP:
                     result["status"] = "failed"

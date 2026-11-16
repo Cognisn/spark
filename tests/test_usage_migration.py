@@ -68,7 +68,7 @@ class TestSqlite:
     ) -> None:
         path = tmp_path / "spark.db"
         settings = DatabaseSettings(Dialect.SQLITE, sqlite_path=path)
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         assert NEW_TABLES <= _sqlite_tables(path)
         assert NEW_COLUMNS <= _sqlite_columns(path, "usage_tracking")
 
@@ -78,7 +78,7 @@ class TestSqlite:
         assert "usage_tracking" in _sqlite_tables(path)
         assert migrate.current(settings) == PREVIOUS
 
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         assert NEW_TABLES <= _sqlite_tables(path)
 
     def test_existing_rows_get_their_period_from_their_timestamp(self, tmp_path: Path) -> None:
@@ -94,7 +94,7 @@ class TestSqlite:
             conn.commit()
         finally:
             conn.close()
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         conn = sqlite3.connect(path)
         try:
             row = conn.execute("SELECT period, source FROM usage_tracking").fetchone()
@@ -107,7 +107,7 @@ class TestSqlite:
 class TestPostgres:
     def test_upgrade_adds_budgets_and_columns_and_downgrade_removes_them(self, pg_url: str) -> None:
         settings = DatabaseSettings(Dialect.POSTGRESQL, url=pg_url)
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         assert NEW_TABLES <= _pg_tables(pg_url)
         assert NEW_COLUMNS <= _pg_columns(pg_url, "usage_tracking")
 
@@ -116,7 +116,7 @@ class TestPostgres:
         assert not NEW_COLUMNS & _pg_columns(pg_url, "usage_tracking")
         assert migrate.current(settings) == PREVIOUS
 
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         assert NEW_TABLES <= _pg_tables(pg_url)
 
     def test_existing_rows_get_their_period_from_their_timestamp(self, pg_url: str) -> None:
@@ -129,7 +129,7 @@ class TestPostgres:
                 "INSERT INTO spark.usage_tracking (model_id, input_tokens, output_tokens,"
                 " timestamp, user_guid) VALUES ('m', 1, 2, '2026-10-31 23:59:59', 'u1')"
             )
-        migrate.upgrade(settings)
+        migrate.upgrade(settings, target=REVISION)
         with psycopg.connect(pg_url) as conn:
             row = conn.execute("SELECT period, source FROM spark.usage_tracking").fetchone()
         assert row == ("2026-10", "chat")

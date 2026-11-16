@@ -1,6 +1,7 @@
-"""Usage metering and monthly token budgets (A14).
+"""Usage metering and monthly credit allowances (A14, M6 to M10).
 
-:mod:`spark.usage.meter` records every model call against its user;
-:mod:`spark.usage.budgets` decides the limit that applies and refuses a new
-request once a user has used their monthly budget.
+:mod:`spark.usage.meter` bills every model call to its user;
+:mod:`spark.usage.credits` works out what a call costs in credits;
+:mod:`spark.usage.budgets` decides the allowance that applies on a connection and
+refuses a new request once a user has used it.
 """

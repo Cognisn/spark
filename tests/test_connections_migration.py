@@ -46,8 +46,9 @@ def test_revision_follows_kg_build_jobs() -> None:
     assert script.down_revision == PREVIOUS
 
 
-def test_revision_is_the_head() -> None:
-    assert migrate.head() == REVISION
+def test_on_the_chain_to_head() -> None:
+    chain = migrate._scripts().walk_revisions(base="base", head=migrate.head())
+    assert REVISION in {r.revision for r in chain}
 
 
 class TestSqlite:

@@ -256,12 +256,12 @@ def _runner(stack: Stack) -> Any:
     return ActionRunner(Ctx(), "worker-test", stack.sync_db, owners=stack.owners)
 
 
-async def _action(stack: Stack, owner: str, name: str = "nightly") -> int:
+async def _action(stack: Stack, owner: str, name: str = "nightly", model: str = "model-a") -> int:
     return await autonomous_actions.create_action(
         stack.db,
         name,
         "write the nightly report",
-        "model-a",
+        model,
         stack.guids.get(owner, owner),
         schedule_type="recurring",
         schedule_config=CRON,
@@ -416,7 +416,8 @@ class TestWorkerService:
 
 
 class TestBudgets:
-    """The owner's monthly token budget, decided by their warden roles read at run time (A14)."""
+    """The owner's monthly credits, their allowance decided by their warden roles read at
+    run time (M6, M9, M10)."""
 
     async def test_every_call_is_billed_to_the_owner(self, stack: Stack, seen: Seen) -> None:
         from spark.database import usage
@@ -437,32 +438,46 @@ class TestBudgets:
         period = usage.period_of(datetime.now(timezone.utc))
         assert await usage.tokens_in_period(stack.db, owner, period) == 20
 
-    async def test_an_owner_past_their_roles_budget_is_refused(
+    async def test_an_owner_past_their_roles_allowance_is_refused(
         self, stack: Stack, seen: Seen
     ) -> None:
-        from spark.database import usage
+        from tests.credit_helpers import allow, metered, spent
 
         owner = stack.guids["power"]
-        await usage.set_role_budget(stack.db, POWER_USER, 100)
-        await usage.record_usage(stack.db, None, "model-a", 100, 0, owner)
-        aid = await _action(stack, "power")
+        await metered(stack.db, name="Work Bedrock")
+        await allow(stack.db, role=POWER_USER, credits=100)
+        await spent(stack.db, owner, 100)
+        aid = await _action(stack, "power", model="stub/model-a")
         await _execute(stack, aid, "power")
         runs = await _runs(stack, "power", aid)
         assert [r["status"] for r in runs] == ["refused"]
-        assert "monthly token budget" in runs[0]["error_message"]
+        assert "monthly credits on Work Bedrock" in runs[0]["error_message"]
         assert seen.llms == []
 
-    async def test_a_budget_on_a_role_the_owner_does_not_hold_does_not_apply(
+    async def test_an_allowance_on_a_role_the_owner_does_not_hold_gives_them_none(
         self, stack: Stack, seen: Seen
     ) -> None:
-        from spark.database import usage
+        from tests.credit_helpers import allow, metered
+
+        await metered(stack.db)
+        await allow(stack.db, role=USER, credits=100)
+        aid = await _action(stack, "power", model="stub/model-a")
+        await _execute(stack, aid, "power")
+        assert [r["status"] for r in await _runs(stack, "power", aid)] == ["refused"]
+        assert seen.llms == []
+
+    async def test_an_unmetered_connection_never_refuses(self, stack: Stack, seen: Seen) -> None:
+        from tests.credit_helpers import allow, metered, spent
 
         owner = stack.guids["power"]
-        await usage.set_role_budget(stack.db, USER, 100)
-        await usage.record_usage(stack.db, None, "model-a", 100, 0, owner)
-        aid = await _action(stack, "power")
+        await metered(stack.db, is_metered=False)
+        await allow(stack.db, role=POWER_USER, credits=1)
+        await spent(stack.db, owner, 10**6)
+        aid = await _action(stack, "power", model="stub/model-a")
         await _execute(stack, aid, "power")
-        assert [r["status"] for r in await _runs(stack, "power", aid)] == ["completed"]
+        runs = await _runs(stack, "power", aid)
+        assert [r["status"] for r in runs] != ["refused"]
+        assert len(seen.llms) == 1
 
     async def test_owners_resolve_with_their_roles(self, stack: Stack) -> None:
         access = await stack.owners.resolve(stack.guids["narrow"])

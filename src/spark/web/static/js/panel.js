@@ -402,7 +402,7 @@
                 setFloor(null);
                 document.getElementById('panel-cancel').classList.add('d-none');
                 if (window.SparkBudget) SparkBudget.show(d);
-                setStatus('Paused: monthly token budget used');
+                setStatus('Paused: monthly credits used');
                 showResume();
                 evtSource.close();
             },

@@ -1,9 +1,9 @@
-"""The plain send route and the budget: roles passed down, a refusal answered 429.
+"""The plain send route and credits: roles passed down, a refusal answered 429.
 
 ``POST /chat/{id}/api/send`` is the non-streaming fallback for a chat turn. It
-must be budgeted exactly as ``/stream/chat`` is: the turn is given the signed-in
-user's roles, so a role budget stops it, and a refusal is answered 429 with the
-user's standing, never 500, and without calling the model.
+must be metered exactly as ``/stream/chat`` is: the turn is given the signed-in
+user's roles, so a role's allowance stops it, and a refusal is answered 429 with
+the user's standing, never 500, and without calling the model.
 
 Server-mode tests run the real app on a PostgreSQL clone at head with warden's
 chain; synthetic users. The personal-mode tests use SQLite.
@@ -12,6 +12,7 @@ chain; synthetic users. The personal-mode tests use SQLite.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -19,10 +20,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from spark.database import conversations as convdb
-from spark.database import messages, usage
+from spark.database import messages
 from spark.identity.permissions import ADMINISTRATOR, USER
 from spark.usage.budgets import BudgetExceeded, BudgetStatus
 from spark.web.server import create_app
+from tests.credit_helpers import allow, metered, spent
 from tests.db_helpers import app_client
 from tests.identity_screen_helpers import plain_client, server_db  # noqa: F401
 from tests.identity_web_helpers import another_client, make_user, sign_in
@@ -67,7 +69,7 @@ def _send(client: TestClient, cid: int, text: str = "hello") -> Any:
 def _assert_refused(resp: Any) -> None:
     assert resp.status_code == 429, (resp.status_code, resp.text[:500])
     body = resp.json()
-    assert "monthly token budget" in body["error"]
+    assert "monthly credits on Stub stub" in body["error"]
     assert body["budget"]["state"] == "exceeded"
 
 
@@ -90,15 +92,16 @@ def _signed_in(client: TestClient, email: str, *roles: str) -> TestClient:
 
 @pytest.mark.postgres
 class TestServerSendRoute:
-    def test_a_role_budget_already_exceeded_refuses_with_429_without_the_model(
+    def test_a_role_allowance_already_used_refuses_with_429_without_the_model(
         self, admin: TestClient
     ) -> None:
         stub = _install_manager(admin)
         ada = _signed_in(admin, ADA, USER)
         guid = _guid(ada)
         cid = _conversation(admin, guid)
-        _call(admin, usage.set_role_budget, USER, 10)
-        _call(admin, usage.record_usage, None, "m", 10, 0, guid)
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=10)
+        _call(admin, spent, guid, 10)
         assert ada.get("/api/usage/me").json()["state"] == "exceeded"
 
         resp = _send(ada, cid)
@@ -107,13 +110,15 @@ class TestServerSendRoute:
         assert stub.calls == 0
         assert _call(admin, messages.get_messages, guid, cid) == []
 
-    def test_a_per_user_override_refuses_the_same_way(self, admin: TestClient) -> None:
+    def test_the_users_own_allowance_refuses_the_same_way(self, admin: TestClient) -> None:
         stub = _install_manager(admin)
         ada = _signed_in(admin, ADA, USER)
         guid = _guid(ada)
         cid = _conversation(admin, guid)
-        _call(admin, usage.set_user_override, guid, 10)
-        _call(admin, usage.record_usage, None, "m", 10, 0, guid)
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=1000)
+        _call(admin, allow, user=guid, credits=10)
+        _call(admin, spent, guid, 10)
 
         resp = _send(ada, cid)
 
@@ -121,15 +126,16 @@ class TestServerSendRoute:
         assert stub.calls == 0
         assert _call(admin, messages.get_messages, guid, cid) == []
 
-    def test_a_user_within_budget_is_answered_as_before(self, admin: TestClient) -> None:
+    def test_a_user_within_the_allowance_is_answered_as_before(self, admin: TestClient) -> None:
         stub = _install_manager(admin)
         ada = _signed_in(admin, ADA, USER)
         grace = _signed_in(admin, GRACE, USER)
         guid = _guid(ada)
         cid = _conversation(admin, guid)
-        _call(admin, usage.set_role_budget, USER, 1000)
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=1000)
         # Another holder of the role at the limit does not stop ada.
-        _call(admin, usage.record_usage, None, "m", 1000, 0, _guid(grace))
+        _call(admin, spent, _guid(grace), 1000)
 
         resp = _send(ada, cid)
 
@@ -154,17 +160,18 @@ def personal(sqlite_settings: Any) -> Iterator[TestClient]:
 
 
 class TestPersonalSendRoute:
-    def test_an_override_refuses_with_429_without_the_model(self, personal: TestClient) -> None:
+    def test_personal_mode_meters_no_credits(self, personal: TestClient) -> None:
         stub = _install_manager(personal)
         cid = _conversation(personal, LOCAL)
-        _call(personal, usage.set_user_override, LOCAL, 10)
-        _call(personal, usage.record_usage, None, "m", 10, 0, LOCAL)
+        _call(personal, metered)
+        _call(personal, allow, role=ADMINISTRATOR, credits=1)
+        _call(personal, spent, LOCAL, 10**6)
 
         resp = _send(personal, cid)
 
-        _assert_refused(resp)
-        assert stub.calls == 0
-        assert _call(personal, messages.get_messages, LOCAL, cid) == []
+        assert resp.status_code == 200, resp.text[:500]
+        assert stub.calls == 1
+        assert resp.json()["budget"]["state"] == "unlimited"
 
     def test_the_turn_is_given_the_users_roles(
         self, personal: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -196,7 +203,9 @@ class TestPersonalSendRoute:
         assert _send(personal, cid).status_code == 500
 
         def refusing(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            raise BudgetExceeded(BudgetStatus("2026-11", used=10, limit=10))
+            raise BudgetExceeded(
+                BudgetStatus("2026-11", Decimal(10), Decimal(10), "stub", "Stub stub")
+            )
 
         monkeypatch.setattr(mgr, "send_message", refusing)
         resp = _send(personal, cid)

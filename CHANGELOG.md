@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Credits** (`spark.usage.credits`): every model call on a connection is charged credits when it is recorded, as (input x input weight + output x output weight + cache read x cache read weight + cache write x cache write weight) / the connection's base rate x the model's tier multiplier (standard 1, higher and lower set per connection; weights 1, 5, 0.1 and 1.25 by default). Credits are exact to six decimal places, rounded half up once per call, and each usage row keeps the rates it was charged at, so changing a connection's rates never changes what earlier calls cost. `credits.estimate(connection, counts)` gives what sample token counts would cost at each tier
+- **Monthly credit allowances per metered connection** (server mode): a user's allowance on a metered connection is their own assignment's, otherwise the highest of their roles' assignments. Users are warned at 80%; at 100% new requests on that connection (chat turns on the stream and the send route, debate and panel turns and questions, scheduled actions and knowledge graph build chunks) are refused with a message naming the connection and the reset date, while a request already running finishes. Allowances reset at 00:00 UTC on the first of each month. Unmetered connections, and personal mode, have no limit
+- **Knowledge graph builds are metered**: every extraction call is billed to the build's user (usage source `knowledge`)
+- **The model picker** groups models by connection, shows each model's tier and, on a metered connection, the credits left this month, in a chat and when starting a conversation, debate or panel
+- **`/api/usage/me`** answers in credits, for one connection (`?connection=` or `?model=`) or the user's most used metered connection, with every metered connection of theirs under `connections`
+
+### Changed
+- **The usage view and its CSV export** (`/admin/usage`) show usage per user, connection and model with the four token counts (input, output, cache read, cache write) and credits, totals per connection, and each user's standing on each metered connection
+- **The credit banner** on the chat, debate and panel pages speaks of credits on a named connection instead of a token budget
+
+### Removed
+- **A14's token budgets**: role token budgets, per-user token budget overrides and their forms on the usage view (`/admin/usage/budgets/roles` and `/admin/usage/budgets/users`). Revision `credit_metering` drops `usage_role_budgets` and `usage_user_budgets` and adds `credits_micro` and `credit_inputs` to `usage_tracking`
+
+### Upgrade notes
+- **Server mode**: 0.3.0 was never released, so token budgets set on a release candidate are not migrated to credit allowances. Set allowances on each metered connection's assignments instead. Usage recorded before this revision costs no credits
+
 ## [0.3.0rc5] - 2026-11-16
 
 ### Changed

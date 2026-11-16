@@ -294,7 +294,7 @@
                 // The speaker holding the floor finished; the next turn waits for the budget.
                 setFloor(null);
                 if (window.SparkBudget) SparkBudget.show(d);
-                setStatus('Paused: monthly token budget used');
+                setStatus('Paused: monthly credits used');
                 showResume();
                 evtSource.close();
             },
