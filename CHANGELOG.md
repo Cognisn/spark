@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc5] - 2026-11-16
+
 ### Changed
 - **Skills on conduit**: SPARK's bundled and user skills are listed and loaded through conduit's skill layer (`spark.skills.source.SparkSkillSource` over conduit's filesystem source), keeping the rule that a bundled skill wins its name and serving each user only the skills they have turned on, globally and for the conversation. In chat, `use_skill` is conduit's progressive disclosure: a loaded skill's instructions join the system prompt, before its cache breakpoint, instead of the tool result, and stay loaded in later turns of the conversation (restored in order from its stored messages, across a compaction too), so the cached prefix is the same from call to call. `read_skill_resource` reads a skill's files once it is loaded. Debates, panels, sub-agents and scheduled actions keep receiving a skill's instructions as the tool result
 - **SKILL.md validation is conduit's**: the skills page, import and skill authoring check every `SKILL.md` with conduit's parser, the one the model loads through. `version`, `license`, `compatibility`, `allowed-tools` (a list) and `metadata` are recorded; any other front matter key, a block value (`|` or `>`) or an empty body makes a skill invalid, with the reason shown. Authored skills write their description quoted, and their resource paths follow conduit's rule (letters, digits, `_`, `.` and `-` segments)
