@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc4] - 2026-11-16
+
 ### Added
 - **A forced password change at sign-in** (server mode): when warden requires a new password before it issues a session (an administrator asked for it, the password expired, it no longer meets the password policy, or it is on a watch list), the sign-in goes on to a new-password step on the challenge screen (`POST /auth/challenge/change`) after the password and any second factor, and signs in once warden accepts the new password. After a forced enrolment the recovery codes are shown first, then the new-password step. No session cookie is set until then
 
