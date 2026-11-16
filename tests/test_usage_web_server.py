@@ -1,14 +1,15 @@
-"""The usage view, its export and budgets in server mode: administrators only, and audited.
+"""The usage view, its export and credit allowances in server mode: administrators only.
 
 The real app on a PostgreSQL clone at head with warden's chain; synthetic users.
 Guards under test:
 
-* the view, the CSV export and both budget forms need ``spark.usage.admin``,
-  which only Administrators hold (401 signed out, 403 for every other role);
+* the view and the CSV export need ``spark.usage.admin``, which only
+  Administrators hold (401 signed out, 403 for every other role);
 * users are shown by email address, each with their own usage;
-* a role budget applies to that role's holders and a per-user override wins,
-  as each user's own ``/api/usage/me`` shows;
-* viewing, exporting and changing a budget are each audited.
+* a role's allowance on a metered connection applies to that role's holders, a
+  user's own assignment wins, and the highest of several roles applies, as each
+  user's own ``/api/usage/me`` shows; an unmetered connection has no limit;
+* viewing and exporting are audited, and so is a refused request.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from spark.database import autonomous_actions, usage
 from spark.identity import audit as spark_audit
 from spark.identity.db import warden_database
 from spark.identity.permissions import ADMINISTRATOR, AUDITOR, POWER_USER, USER
+from tests.credit_helpers import allow, metered, spent
 from tests.identity_screen_helpers import NAVIGATE, plain_client, server_db  # noqa: F401
 from tests.identity_web_helpers import another_client, make_user, sign_in
 
@@ -82,19 +84,9 @@ class TestAccess:
         guid = _guid(other)
         assert other.get("/admin/usage", headers=NAVIGATE).status_code == 403
         assert other.get("/admin/usage/export.csv").status_code == 403
-        assert (
-            other.post(
-                "/admin/usage/budgets/roles", data={"role": USER, "monthly_tokens": "1"}
-            ).status_code
-            == 403
-        )
-        assert (
-            other.post(
-                "/admin/usage/budgets/users", data={"user_guid": guid, "monthly_tokens": ""}
-            ).status_code
-            == 403
-        )
-        assert _call(admin, usage.role_budgets) == {}
+        # Their own standing is theirs to read.
+        assert other.get("/api/usage/me").status_code == 200
+        assert guid
 
     def test_signed_out_is_refused(self, admin: TestClient) -> None:
         anonymous = TestClient(admin.app, base_url=str(admin.base_url))
@@ -109,55 +101,80 @@ class TestAccess:
         _call(admin, usage.record_usage, 2, "m2", 3, 1, grace)
         page = admin.get("/admin/usage", headers=NAVIGATE)
         assert page.status_code == 200
-        found = set(re.findall(r'data-user="([^"]*)" data-model="([^"]*)"', page.text))
+        found = set(
+            re.findall(
+                r'data-user="([^"]*)" data-connection="[^"]*" data-model="([^"]*)"', page.text
+            )
+        )
         assert found == {(ADA, "m1"), (GRACE, "m2")}
 
     def test_the_export_names_users_by_email(self, admin: TestClient) -> None:
         ada = _guid(_signed_in(admin, ADA))
         _call(admin, usage.record_usage, 1, "m1", 10, 5, ada)
         rows = list(csv.reader(io.StringIO(admin.get("/admin/usage/export.csv").text)))
-        assert rows[1][1:4] == [ADA, ada, "m1"]
+        assert rows[1][1:3] == [ADA, ada]
+        assert rows[1][5] == "m1"
 
 
-class TestBudgets:
-    def test_a_role_budget_applies_to_its_holders(self, admin: TestClient) -> None:
+class TestAllowances:
+    def test_a_role_allowance_applies_to_its_holders(self, admin: TestClient) -> None:
         ada = _signed_in(admin, ADA, USER)
         power = _signed_in(admin, GRACE, POWER_USER)
-        resp = admin.post(
-            "/admin/usage/budgets/roles",
-            data={"role": USER, "monthly_tokens": "100"},
-            follow_redirects=False,
-        )
-        assert resp.status_code == 303
-        _call(admin, usage.record_usage, None, "m", 85, 0, _guid(ada))
-        _call(admin, usage.record_usage, None, "m", 85, 0, _guid(power))
+        _call(admin, metered, name="Work Bedrock")
+        _call(admin, allow, role=USER, credits=100)
+        _call(admin, allow, role=POWER_USER, credits=None)
+        _call(admin, spent, _guid(ada), 85)
+        _call(admin, spent, _guid(power), 85)
         mine = ada.get("/api/usage/me").json()
-        assert (mine["limit"], mine["state"]) == (100, "warning")
-        assert power.get("/api/usage/me").json()["state"] == "unlimited"
-
-    def test_an_unknown_role_is_refused(self, admin: TestClient) -> None:
-        resp = admin.post(
-            "/admin/usage/budgets/roles", data={"role": "nobody", "monthly_tokens": "100"}
+        assert (mine["limit"], mine["state"], mine["connection"]) == (
+            100,
+            "warning",
+            "Work Bedrock",
         )
-        assert resp.status_code == 400
-        assert _call(admin, usage.role_budgets) == {}
+        assert mine["connections"]["stub"]["remaining"] == 15
+        assert power.get("/api/usage/me?connection=stub").json()["state"] == "unlimited"
 
-    def test_an_override_wins_for_that_user_only(self, admin: TestClient) -> None:
+    def test_the_users_own_assignment_wins_for_that_user_only(self, admin: TestClient) -> None:
         ada = _signed_in(admin, ADA, USER)
         grace = _signed_in(admin, GRACE, USER)
-        _call(admin, usage.set_role_budget, USER, 100)
-        resp = admin.post(
-            "/admin/usage/budgets/users",
-            data={"user_guid": _guid(ada), "monthly_tokens": "unlimited"},
-            follow_redirects=False,
-        )
-        assert resp.status_code == 303
-        _call(admin, usage.record_usage, None, "m", 100, 0, _guid(ada))
-        _call(admin, usage.record_usage, None, "m", 100, 0, _guid(grace))
-        assert ada.get("/api/usage/me").json()["state"] == "unlimited"
-        assert grace.get("/api/usage/me").json()["state"] == "exceeded"
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=100)
+        _call(admin, allow, user=_guid(ada), credits=None)
+        _call(admin, spent, _guid(ada), 100)
+        _call(admin, spent, _guid(grace), 100)
+        assert ada.get("/api/usage/me?connection=stub").json()["state"] == "unlimited"
+        assert grace.get("/api/usage/me?connection=stub").json()["state"] == "exceeded"
 
-    def test_run_now_is_budgeted_by_the_users_own_roles(
+    def test_the_highest_of_several_roles(self, admin: TestClient) -> None:
+        ada = _signed_in(admin, ADA, USER, AUDITOR)
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=100)
+        _call(admin, allow, role=AUDITOR, credits=300)
+        _call(admin, spent, _guid(ada), 150)
+        mine = ada.get("/api/usage/me?model=stub/any-model").json()
+        assert (mine["limit"], mine["state"]) == (300, "ok")
+
+    def test_an_unmetered_connection_is_not_listed(self, admin: TestClient) -> None:
+        ada = _signed_in(admin, ADA, USER)
+        _call(admin, metered, is_metered=False)
+        _call(admin, allow, role=USER)
+        _call(admin, spent, _guid(ada), 10**6)
+        mine = ada.get("/api/usage/me").json()
+        assert (mine["state"], mine["connections"]) == ("unlimited", {})
+
+    def test_the_view_shows_each_users_standing_per_connection(self, admin: TestClient) -> None:
+        ada = _signed_in(admin, ADA, USER)
+        _call(admin, metered, name="Work Bedrock")
+        _call(admin, allow, role=USER, credits=100)
+        _call(admin, spent, _guid(ada), 90)
+        page = admin.get("/admin/usage", headers=NAVIGATE)
+        assert re.search(
+            rf'class="standing-row" data-user="{re.escape(ADA)}" data-connection="stub"'
+            r' data-standing="warning"',
+            page.text,
+        )
+
+    def test_run_now_is_metered_by_the_users_own_roles(
         self, admin: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         seen: list[Any] = []
@@ -180,13 +197,6 @@ class TestBudgets:
             time.sleep(0.05)
         assert [set(roles) for roles in seen] == [{POWER_USER}]
 
-    def test_an_override_for_an_unknown_user_is_not_found(self, admin: TestClient) -> None:
-        resp = admin.post(
-            "/admin/usage/budgets/users", data={"user_guid": "no-such-user", "monthly_tokens": "5"}
-        )
-        assert resp.status_code == 404
-        assert _call(admin, usage.user_overrides_all_users) == {}
-
 
 class TestAudit:
     def test_viewing_is_audited(self, admin: TestClient) -> None:
@@ -201,23 +211,19 @@ class TestAudit:
         ]
         assert [e.resource_id for e in events] == ["2026-10"]
 
-    def test_a_budget_change_is_audited(self, admin: TestClient) -> None:
-        admin.post("/admin/usage/budgets/roles", data={"role": USER, "monthly_tokens": "100"})
-        [event] = _events(admin, spark_audit.USAGE_BUDGET_CHANGED)
-        assert (event.resource_type, event.resource_id) == ("role", USER)
-        assert event.details["limit"] == 100
-
-    def test_a_refused_request_is_audited(self, admin: TestClient) -> None:
+    def test_a_refused_request_is_audited_with_its_connection(self, admin: TestClient) -> None:
         ada = _signed_in(admin, ADA, USER)
-        _call(admin, usage.set_role_budget, USER, 10)
-        _call(admin, usage.record_usage, None, "m", 10, 0, _guid(ada))
+        _call(admin, metered)
+        _call(admin, allow, role=USER, credits=10)
+        _call(admin, spent, _guid(ada), 10)
         from spark.usage import budgets
 
         sync_db = admin.app.state.sync_db  # type: ignore[attr-defined]
         with pytest.raises(budgets.BudgetExceeded):
-            budgets.check(sync_db, _guid(ada), {USER})
+            budgets.check(sync_db, _guid(ada), {USER}, connection_id="stub")
         [event] = _events(admin, spark_audit.USAGE_REFUSED)
         assert event.outcome == "failure"
+        assert event.details["connection_id"] == "stub"
 
 
 class TestMenu:

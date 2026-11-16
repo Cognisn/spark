@@ -1,13 +1,18 @@
-"""The usage repository: per-call rows, monthly totals, the report and the budgets (A14)."""
+"""The usage repository: per-call rows with their credits, monthly totals and the report."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
+from spark.database import connections as conn_repo
 from spark.database import usage
+from spark.database.connections import ModelRow
+from tests.credit_helpers import allow, metered
 
 OCT_LAST = datetime(2026, 10, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
 NOV_FIRST = datetime(2026, 11, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -121,57 +126,151 @@ class TestReport:
         assert await usage.periods_all_users(db) == ["2026-11", "2026-10"]
 
 
-class TestRoleBudgets:
-    async def test_none_set(self, db) -> None:
-        assert await usage.role_budgets(db) == {}
+class TestCredits:
+    """Each call is charged when recorded, at its connection's rates and its model's tier."""
 
-    async def test_set_replace_and_clear(self, db) -> None:
-        await usage.set_role_budget(db, "user", 1000)
-        await usage.set_role_budget(db, "power_user", 5000)
-        await usage.set_role_budget(db, "user", 2000)
-        assert await usage.role_budgets(db) == {"user": 2000, "power_user": 5000}
-        await usage.clear_role_budget(db, "user")
-        assert await usage.role_budgets(db) == {"power_user": 5000}
+    @staticmethod
+    async def _row(db) -> dict:
+        return await db.fetch_one(
+            "SELECT credits_micro, credit_inputs FROM usage_tracking ORDER BY id DESC LIMIT 1"
+        )
 
-    @pytest.mark.parametrize("tokens", [0, -5])
-    async def test_a_budget_must_be_positive(self, db, tokens: int) -> None:
-        with pytest.raises(ValueError, match="positive"):
-            await usage.set_role_budget(db, "user", tokens)
+    async def test_a_call_with_cache_tokens_at_the_default_rates(self, db) -> None:
+        await metered(db, "work", rates={})
+        # 500 + 100 x 5 + 10,000 x 0.1 + 2,000 x 1.25 = 4,500 weighted: 4.5 credits.
+        await usage.record_usage(
+            db,
+            1,
+            "m",
+            500,
+            100,
+            "u1",
+            connection_id="work",
+            cache_read_tokens=10_000,
+            cache_write_tokens=2_000,
+            at=NOV_FIRST,
+        )
+        row = await self._row(db)
+        assert int(row["credits_micro"]) == 4_500_000
+        assert json.loads(row["credit_inputs"]) == {
+            "metered": True,
+            "tier": "standard",
+            "multiplier": "1",
+            "base_rate_tokens": 1000,
+            "weights": {"input": "1", "output": "5", "cache_read": "0.1", "cache_write": "1.25"},
+        }
+        assert await usage.credits_in_period(db, "u1", "work", "2026-11") == Decimal("4.5")
 
-    async def test_large_budgets_fit(self, db) -> None:
-        await usage.set_role_budget(db, "user", 10_000_000_000)
-        assert await usage.role_budgets(db) == {"user": 10_000_000_000}
+    @pytest.mark.parametrize(("tier", "micro"), [("lower", 500_000), ("higher", 2_000_000)])
+    async def test_the_models_tier(self, db, tier: str, micro: int) -> None:
+        await metered(db, "work", rates={})
+        await conn_repo.save_model(db, ModelRow("work", "m", tier=tier))
+        await usage.record_usage(db, 1, "m", 1000, 0, "u1", connection_id="work")
+        row = await self._row(db)
+        assert int(row["credits_micro"]) == micro
+        assert json.loads(row["credit_inputs"])["tier"] == tier
+
+    async def test_an_unmetered_connection_is_charged_for_the_record(self, db) -> None:
+        await metered(db, "work", is_metered=False, rates={})
+        await usage.record_usage(db, 1, "m", 1000, 0, "u1", connection_id="work")
+        row = await self._row(db)
+        assert int(row["credits_micro"]) == 1_000_000
+        assert json.loads(row["credit_inputs"])["metered"] is False
+
+    async def test_a_connection_with_no_metering_uses_the_defaults(self, db) -> None:
+        await usage.record_usage(db, 1, "m", 2000, 0, "u1", connection_id="nowhere")
+        assert int((await self._row(db))["credits_micro"]) == 2_000_000
+
+    async def test_a_call_with_no_connection_costs_nothing(self, db) -> None:
+        await usage.record_usage(db, 1, "m", 2000, 0, "u1")
+        row = await self._row(db)
+        assert (int(row["credits_micro"]), row["credit_inputs"]) == (0, None)
+
+    async def test_credits_are_per_user_connection_and_month(self, db) -> None:
+        await metered(db, "work", rates={})
+        await metered(db, "lab", rates={})
+        for user, cid, at in [
+            ("u1", "work", NOV_FIRST),
+            ("u1", "work", NOV_FIRST),
+            ("u2", "work", NOV_FIRST),
+            ("u1", "lab", NOV_FIRST),
+            ("u1", "work", OCT_LAST),
+        ]:
+            await usage.record_usage(db, 1, "m", 1000, 0, user, connection_id=cid, at=at)
+        assert await usage.credits_in_period(db, "u1", "work", "2026-11") == Decimal(2)
+
+    async def test_concurrent_calls_lose_no_credits(self, db) -> None:
+        await metered(db, "work", rates={})
+        await asyncio.gather(
+            *(
+                usage.record_usage(db, 1, "m", 1000, 0, "u1", connection_id="work", at=NOV_FIRST)
+                for _ in range(40)
+            )
+        )
+        assert await usage.credits_in_period(db, "u1", "work", "2026-11") == Decimal(40)
 
 
-class TestUserOverrides:
-    async def test_no_override(self, db) -> None:
-        assert await usage.user_override(db, "u1") is None
+class TestAllowanceRows:
+    async def test_only_the_user_and_their_roles(self, db) -> None:
+        await metered(db, "work")
+        await metered(db, "lab")
+        await allow(db, "work", role="user", credits=10)
+        await allow(db, "work", role="auditor", credits=20)
+        await allow(db, "work", user="u1", credits=None)
+        await allow(db, "work", user="u2", credits=5)
+        await allow(db, "lab", role="user", credits=99)
+        rows = await usage.allowance_rows(db, "work", "u1", {"user"})
+        assert sorted((r.role or "", r.user_guid or "", r.monthly_credits) for r in rows) == [
+            ("", "u1", None),
+            ("user", "", 10),
+        ]
+        assert await usage.allowance_rows(db, "work", "u3", ()) == []
 
-    async def test_a_number(self, db) -> None:
-        await usage.set_user_override(db, "u1", 300)
-        override = await usage.user_override(db, "u1")
-        assert override is not None and override.monthly_tokens == 300
+    async def test_whether_anyone_is_assigned(self, db) -> None:
+        await metered(db, "work")
+        assert not await usage.connection_has_assignments(db, "work")
+        await allow(db, "work", user="u9", credits=1)
+        assert await usage.connection_has_assignments(db, "work")
 
-    async def test_explicitly_unlimited(self, db) -> None:
-        await usage.set_user_override(db, "u1", None)
-        override = await usage.user_override(db, "u1")
-        assert override is not None and override.monthly_tokens is None
 
-    async def test_per_user(self, db) -> None:
-        await usage.set_user_override(db, "u1", 300)
-        assert await usage.user_override(db, "u2") is None
-
-    async def test_replace_and_clear(self, db) -> None:
-        await usage.set_user_override(db, "u1", 300)
-        await usage.set_user_override(db, "u1", None)
-        assert await usage.user_overrides_all_users(db) == {"u1": None}
-        await usage.clear_user_override(db, "u1")
-        assert await usage.user_override(db, "u1") is None
-        assert await usage.user_overrides_all_users(db) == {}
-
-    async def test_a_number_must_be_positive(self, db) -> None:
-        with pytest.raises(ValueError, match="positive"):
-            await usage.set_user_override(db, "u1", 0)
+class TestTotals:
+    async def test_per_connection_with_the_four_counts_and_credits(self, db) -> None:
+        await metered(db, "work", rates={})
+        await usage.record_usage(
+            db,
+            1,
+            "m",
+            500,
+            100,
+            "u1",
+            connection_id="work",
+            cache_read_tokens=10_000,
+            cache_write_tokens=2_000,
+            at=NOV_FIRST,
+        )
+        await usage.record_usage(db, 1, "m", 1000, 0, "u2", connection_id="work", at=NOV_FIRST)
+        await usage.record_usage(db, 1, "m", 7, 0, "u2", at=NOV_FIRST)
+        totals = {
+            r["connection_id"]: r for r in await usage.connection_totals(db, period="2026-11")
+        }
+        assert set(totals) == {"", "work"}
+        work = totals["work"]
+        assert (
+            work["requests"],
+            work["input_tokens"],
+            work["output_tokens"],
+            work["cache_read_tokens"],
+            work["cache_write_tokens"],
+            work["credits"],
+        ) == (2, 1500, 100, 10_000, 2_000, Decimal("5.5"))
+        [row] = [
+            r for r in await usage.report_all_users(db, period="2026-11") if r["user_guid"] == "u1"
+        ]
+        assert (row["connection_id"], row["cache_read_tokens"], row["credits"]) == (
+            "work",
+            10_000,
+            Decimal("4.5"),
+        )
 
 
 class TestWardenUsers:

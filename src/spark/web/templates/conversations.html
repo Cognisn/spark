@@ -191,6 +191,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/model_picker.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', loadConversations);
 
@@ -405,18 +406,14 @@ function initPanelCards() {
 async function showNewConversation() {
     // Load models
     try {
-        const resp = await fetch('/conversations/api/models');
-        const data = await resp.json();
-        const models = data.models || data;  // Handle both old [] and new {models, default_model} format
-        const defaultModel = data.default_model || null;
-        const mandatory = data.mandatory || false;
+        // Grouped by connection, each model with its tier and, on a metered
+        // connection, the credits left this month (M11).
+        const data = await SparkModelPicker.load();
+        const defaultModel = data.default_model;
+        const mandatory = data.mandatory;
         const select = document.getElementById('conv-model');
 
-        const optionsHtml = models.length
-            ? models.map(m =>
-                `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.provider})</option>`
-              ).join('')
-            : '<option value="">No models available — configure a provider first</option>';
+        const optionsHtml = SparkModelPicker.optionsHtml(data, defaultModel);
         select.innerHTML = optionsHtml;
 
         // Populate the per-agent debate selects from the same model list

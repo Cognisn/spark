@@ -1,4 +1,4 @@
-"""Chat turns: every model call metered for the turn's user, the budget checked at turn start (A14).
+"""Chat turns: every model call metered for the turn's user, credits checked at turn start (M6).
 
 The turns run on the real connection runtime over conduit's stub provider: no model
 is ever called, and every usage row comes from conduit's ``model_call_finished``
@@ -17,13 +17,12 @@ import pytest
 from conduit import ModelRequest, Usage
 from conduit.providers.stub import StubToolCall, StubTurn
 
-from spark import mode
 from spark.connections import ConnectionRuntime
 from spark.core.conversation_manager import ConversationManager
 from spark.database import usage
 from spark.database.connections import Assignment
-from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from spark.usage.budgets import BudgetExceeded
+from tests.credit_helpers import allow, metered, server_mode, spent  # noqa: F401
 from tests.model_helpers import stub_connection, stub_runtime
 
 ADA = "user-ada-example"
@@ -66,15 +65,6 @@ class Script:
         if self.turns:
             return self.turns.pop(0)
         return _text("done", 30, 20)
-
-
-@pytest.fixture()
-def server_mode() -> Iterator[None]:
-    mode.configure(RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="x")))
-    try:
-        yield
-    finally:
-        mode.reset()
 
 
 @pytest.fixture()
@@ -217,21 +207,23 @@ class TestBudgetAtTurnStart:
         from spark.database import messages
 
         mgr, script = _manager(sync_db, made)
-        sync_db.call(usage.set_role_budget, "user", 100)
-        sync_db.call(usage.record_usage, None, "stub-echo", 60, 40, ADA)
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=100)
+        sync_db.call(spent, ADA, 100)
         cid = mgr.create_conversation("Ada's", MODEL, ADA)
-        with pytest.raises(BudgetExceeded, match="monthly token budget"):
+        with pytest.raises(BudgetExceeded, match="monthly credits on Stub stub"):
             mgr.send_message(cid, "hello", ADA, roles={"user"})
         assert script.calls == 0
         assert sync_db.call(messages.get_messages, ADA, cid) == []
 
-    def test_the_users_override_lifts_the_role_budget(
+    def test_the_users_own_assignment_lifts_the_role_allowance(
         self, sync_db: Any, made: Any, server_mode: None
     ) -> None:
         mgr, _ = _manager(sync_db, made)
-        sync_db.call(usage.set_role_budget, "user", 100)
-        sync_db.call(usage.set_user_override, ADA, None)
-        sync_db.call(usage.record_usage, None, "stub-echo", 500, 0, ADA)
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=100)
+        sync_db.call(allow, user=ADA, credits=None)
+        sync_db.call(spent, ADA, 500)
         cid = mgr.create_conversation("Ada's", MODEL, ADA)
         assert mgr.send_message(cid, "hello", ADA, roles={"user"})["status"] == "completed"
 
@@ -239,8 +231,30 @@ class TestBudgetAtTurnStart:
         self, sync_db: Any, made: Any, server_mode: None
     ) -> None:
         mgr, _ = _manager(sync_db, made)
-        sync_db.call(usage.set_role_budget, "user", 100)
-        sync_db.call(usage.record_usage, None, "stub-echo", 500, 0, GRACE)
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=100)
+        sync_db.call(spent, GRACE, 500)
+        cid = mgr.create_conversation("Ada's", MODEL, ADA)
+        assert mgr.send_message(cid, "hello", ADA, roles={"user"})["status"] == "completed"
+
+    def test_another_connections_spending_does_not_count(
+        self, sync_db: Any, made: Any, server_mode: None
+    ) -> None:
+        mgr, _ = _manager(sync_db, made)
+        sync_db.call(metered)
+        sync_db.call(metered, "lab")
+        sync_db.call(allow, role="user", credits=100)
+        sync_db.call(spent, ADA, 500, connection_id="lab")
+        cid = mgr.create_conversation("Ada's", MODEL, ADA)
+        assert mgr.send_message(cid, "hello", ADA, roles={"user"})["status"] == "completed"
+
+    def test_an_unmetered_connection_never_refuses(
+        self, sync_db: Any, made: Any, server_mode: None
+    ) -> None:
+        mgr, _ = _manager(sync_db, made)
+        sync_db.call(metered, is_metered=False)
+        sync_db.call(allow, role="user", credits=1)
+        sync_db.call(spent, ADA, 10**6)
         cid = mgr.create_conversation("Ada's", MODEL, ADA)
         assert mgr.send_message(cid, "hello", ADA, roles={"user"})["status"] == "completed"
 
@@ -248,23 +262,26 @@ class TestBudgetAtTurnStart:
         self, sync_db: Any, made: Any, server_mode: None
     ) -> None:
         mgr, _ = _manager(sync_db, made)
-        sync_db.call(usage.set_role_budget, "user", 100)
-        sync_db.call(usage.record_usage, None, "stub-echo", 30, 0, ADA)
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=100)
+        sync_db.call(spent, ADA, 30)
         cid = mgr.create_conversation("Ada's", MODEL, ADA)
         result = mgr.send_message(cid, "hello", ADA, roles={"user"})  # +50: 80 of 100
         assert result["budget"]["state"] == "warning"
         assert result["budget"]["used"] == 80
+        assert result["budget"]["connection_id"] == "stub"
 
-    @pytest.mark.parametrize("budget", ["role", "override"])
-    def test_an_in_flight_turn_finishes_past_the_budget(
-        self, sync_db: Any, made: Any, server_mode: None, budget: str
+    @pytest.mark.parametrize("allowance", ["role", "user"])
+    def test_an_in_flight_turn_finishes_past_the_allowance(
+        self, sync_db: Any, made: Any, server_mode: None, allowance: str
     ) -> None:
         mgr, script = _manager(sync_db, made)
-        if budget == "role":
-            sync_db.call(usage.set_role_budget, "user", 100)
+        sync_db.call(metered)
+        if allowance == "role":
+            sync_db.call(allow, role="user", credits=100)
         else:
-            sync_db.call(usage.set_user_override, ADA, 100)
-        # The first call alone passes 100%, so the turn's next call is made over budget.
+            sync_db.call(allow, user=ADA, credits=100)
+        # The first call alone passes 100%, so the turn's next call is made over the allowance.
         script.turns = [_tool_call("no_such_tool", {}, 120), _text("finished", 40, 10)]
         cid = mgr.create_conversation("Ada's", MODEL, ADA)
         result = mgr.send_message(cid, "hello", ADA, roles={"user"})
@@ -297,7 +314,8 @@ class TestParallelTurns:
         self, bridge: Any, made: Any, server_mode: None, monkeypatch: Any
     ) -> None:
         mgr, _ = _manager(bridge, made)
-        bridge.call(usage.set_role_budget, "user", 100)
+        bridge.call(metered)
+        bridge.call(allow, role="user", credits=100)
         # Every turn waits, after its budget check, until all are in flight, so each
         # passed the check under budget before any model call was recorded.
         in_flight = threading.Barrier(self.TURNS, timeout=30)
@@ -321,6 +339,7 @@ class TestParallelTurns:
         assert [r["status"] for r in results] == ["completed"] * self.TURNS
         # Each turn used 50 tokens: 200 recorded exactly, past the budget of 100.
         assert bridge.call(usage.tokens_in_period, ADA, PERIOD) == 50 * self.TURNS
+        assert bridge.call(usage.credits_in_period, ADA, "stub", PERIOD) == 50 * self.TURNS
         monkeypatch.setattr(mgr, "_turn_service", take_service)
         with pytest.raises(BudgetExceeded):
             mgr.send_message(conversations[0], "one more", ADA, roles={"user"})

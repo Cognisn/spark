@@ -1,20 +1,38 @@
 /**
- * Spark: the monthly token budget banner (A14).
+ * Spark: the monthly credit banner (M6, M11).
  *
- * From 80% of the budget the page warns; at 100% it says new requests are
- * refused until the budget resets (00:00 UTC on the first of next month).
- * The standing comes from /api/usage/me on load, and from each finished turn.
+ * Credits are counted per connection. From 80% of the user's allowance on a
+ * connection the page warns; at 100% it says new requests on that connection are
+ * refused until the credits reset (00:00 UTC on the first of next month).
+ * Unmetered connections and personal mode never show a banner.
+ *
+ * The standing comes from /api/usage/me on load, and from each finished turn. A
+ * page about one connection (a chat, on its conversation's model) asks about that
+ * connection with SparkBudget.setConnection(id); other pages (debates, panels)
+ * show the user's most used metered connection.
  * Text only: nothing from the server is ever inserted as HTML.
  */
 (function () {
-    function format(n) {
-        return Number(n).toLocaleString('en-AU');
+    let preferred = null;
+
+    function amount(n) {
+        const value = Number(n);
+        return value.toLocaleString('en-AU', {
+            minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+            maximumFractionDigits: 2,
+        });
     }
 
     function resetDate(iso) {
         return new Date(iso).toLocaleDateString('en-AU', {
             day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
         });
+    }
+
+    function connectionOf(modelId) {
+        const text = String(modelId || '');
+        const slash = text.indexOf('/');
+        return slash > 0 ? text.slice(0, slash) : null;
     }
 
     function banner() {
@@ -29,20 +47,27 @@
         return el;
     }
 
-    function show(status) {
+    function show(status, fromRefresh) {
         if (!status || !status.state) return;
+        // A turn reports the user's most used connection; a page about another
+        // connection asks about its own instead.
+        if (!fromRefresh && preferred && status.connection_id && status.connection_id !== preferred) {
+            refresh();
+            return;
+        }
         const el = banner();
+        const name = status.connection || status.connection_id || 'this connection';
         if (status.state === 'warning') {
             el.className = 'alert alert-warning mb-2 py-2 small';
-            el.textContent = `You have used ${status.percent}% of your monthly token budget `
-                + `(${format(status.used)} of ${format(status.limit)} tokens). `
-                + `It resets on ${resetDate(status.resets_at)} (UTC).`;
+            el.textContent = `You have used ${status.percent}% of your monthly credits on ${name} `
+                + `(${amount(status.used)} of ${amount(status.limit)} credits). `
+                + `They reset on ${resetDate(status.resets_at)} (UTC).`;
         } else if (status.state === 'exceeded') {
             el.className = 'alert alert-danger mb-2 py-2 small';
             el.textContent = status.message
-                || `You have used your monthly token budget (${format(status.used)} of `
-                + `${format(status.limit)} tokens). New requests are refused until it resets on `
-                + `${resetDate(status.resets_at)} (UTC).`;
+                || `You have used your monthly credits on ${name} (${amount(status.used)} of `
+                + `${amount(status.limit)} credits). New requests on ${name} are refused until `
+                + `they reset on ${resetDate(status.resets_at)} (UTC).`;
         } else {
             el.className = 'd-none';
             el.textContent = '';
@@ -50,12 +75,23 @@
     }
 
     function refresh() {
-        return fetch('/api/usage/me', { headers: { Accept: 'application/json' } })
+        const query = preferred ? `?connection=${encodeURIComponent(preferred)}` : '';
+        return fetch(`/api/usage/me${query}`, { headers: { Accept: 'application/json' } })
             .then(r => (r.ok ? r.json() : null))
-            .then(show)
+            .then(status => show(status, true))
             .catch(() => {});
     }
 
-    window.SparkBudget = { show, refresh };
-    document.addEventListener('DOMContentLoaded', refresh);
+    function setConnection(connectionId) {
+        preferred = connectionId || null;
+        return refresh();
+    }
+
+    window.SparkBudget = { show, refresh, setConnection, connectionOf, amount };
+    document.addEventListener('DOMContentLoaded', () => {
+        const anchor = document.querySelector('[data-budget-connection]');
+        preferred = (anchor && anchor.dataset.budgetConnection)
+            || connectionOf(window._currentModelId) || null;
+        refresh();
+    });
 })();

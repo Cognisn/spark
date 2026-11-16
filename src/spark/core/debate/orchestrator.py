@@ -54,7 +54,7 @@ class DebateOrchestrator:
         self._permission_cb = tool_permission_callback
         self._limits = context_limit_resolver
         self._prompt_caching = prompt_caching
-        # The user's roles for the run in hand, which decide their token budget.
+        # The user's roles for the run in hand, which decide their credit allowances.
         self._roles: frozenset[str] | None = None
 
     # ------------------------------------------------------------------ events
@@ -105,14 +105,25 @@ class DebateOrchestrator:
             conversation_id=cfg["conversation_id"],
         )
 
-    def _over_budget(self, cfg: dict) -> bool:
-        """Whether the debate's user has used their monthly token budget.
+    def _check(self, user_guid: str, model_id: str) -> None:
+        """Refuse a new request on ``model_id``'s connection at 100% of the user's allowance."""
+        connection = budgets.connection_of(model_id, self._factory(model_id))
+        budgets.check(self._db, user_guid, self._roles, connection_id=connection)
 
-        Checked as each turn starts (A14): the turn holding the floor always
+    def _check_all(self, user_guid: str, cfg: dict) -> None:
+        """At 100% on any connection one of the debate's agents uses, nothing starts."""
+        models = {a.get("model_id") for a in (cfg.get("agents") or {}).values()}
+        for model_id in sorted(m for m in models if m):
+            self._check(user_guid, model_id)
+
+    def _over_budget(self, cfg: dict, model_id: str) -> bool:
+        """Whether the debate's user has used their monthly credits on ``model_id``'s connection.
+
+        Checked as each turn starts (A14, M6): the turn holding the floor always
         finishes, and the debate pauses before the next one, resumable later.
         """
         try:
-            budgets.check(self._db, cfg["user_guid"], self._roles)
+            self._check(cfg["user_guid"], model_id)
         except BudgetExceeded as refused:
             self._emit(
                 "budget_exceeded",
@@ -136,9 +147,9 @@ class DebateOrchestrator:
         if not cfg:
             raise ValueError(f"No debate for conversation {conversation_id}")
 
-        # ``roles`` decide the user's token budget; at 100% nothing starts.
+        # ``roles`` decide the user's credit allowances; at 100% nothing starts.
         self._roles = frozenset(roles) if roles is not None else None
-        budgets.check(self._db, user_guid, self._roles)
+        self._check_all(user_guid, cfg)
 
         self._skills_block = self._compute_skills_block(user_guid)
         self._skills_user_guid = user_guid
@@ -195,9 +206,9 @@ class DebateOrchestrator:
     ) -> str:
         """Ask the judge to answer a QA question about its ruling."""
         cfg = self._db.call(debates.get_debate, user_guid, conversation_id)
-        # A QA answer is a new request: refused at 100% of the user's token budget.
+        # A QA answer is a new request: refused at 100% of the user's allowance.
         self._roles = frozenset(roles) if roles is not None else None
-        budgets.check(self._db, user_guid, self._roles)
+        self._check(user_guid, cfg["agents"]["judge"]["model_id"])
         self._skills_block = self._compute_skills_block(user_guid)
         turns = self._db.call(debates.get_turns, user_guid, conversation_id)
         exhibits = self._db.call(debates.get_exhibits, user_guid, conversation_id)
@@ -360,7 +371,7 @@ class DebateOrchestrator:
     ) -> dict | None:
         """One judge model invocation. Returns None on failure (debate pauses)."""
         judge = cfg["agents"]["judge"]
-        if self._over_budget(cfg):
+        if self._over_budget(cfg, judge["model_id"]):
             return None
         try:
             service = self._service(judge["model_id"], cfg)
@@ -426,7 +437,7 @@ class DebateOrchestrator:
     ) -> bool:
         round_no = cfg["current_round"]
         agent = cfg["agents"][role]
-        if self._over_budget(cfg):
+        if self._over_budget(cfg, agent["model_id"]):
             return False
         self._emit("debater_turn_start", {"role": role, "round": round_no})
         self._emit("floor", {"role": role})

@@ -18,7 +18,9 @@ the audit trail. The build itself is the in-process engine
 with every read and write scoped to the owner's guid, a model client from the
 worker's connection runtime (:mod:`spark.connections.startup`, the connections as
 they are now), progress written to the job, and the owner's cancel request
-checked before each chunk.
+checked before each chunk. Every model call is billed to the owner, and a build
+stops before a chunk once the owner has used their monthly credits on its model's
+connection (the owner's roles, read at run time, decide the allowance).
 Its outcome (complete, failed or cancelled) is recorded on the job.
 """
 
@@ -159,7 +161,7 @@ class GraphBuilds:
                 try:
                     if factory is None:
                         factory = await self._clients(ctx)
-                    await self._build(ctx, job, factory)
+                    await self._build(ctx, job, factory, owner.roles)
                 except Exception as exc:  # noqa: BLE001 - recorded on the job
                     await self._failed(ctx, job, exc)
             finished.append(job.id)
@@ -194,7 +196,11 @@ class GraphBuilds:
         )
 
     async def _build(
-        self, ctx: worker.WorkerContext, job: BuildJob, factory: ClientFactory
+        self,
+        ctx: worker.WorkerContext,
+        job: BuildJob,
+        factory: ClientFactory,
+        roles: frozenset[str] = frozenset(),
     ) -> None:
         from spark.knowledge.builder import KnowledgeGraphBuilder
 
@@ -208,6 +214,7 @@ class GraphBuilds:
             job.user_guid,
             job.model_id,
             cancel_token=_CancelToken(ctx, job.id),
+            roles=roles,
         )
         status = str(result.get("status"))
         outcome = status if status in jobs.OUTCOMES else jobs.FAILED

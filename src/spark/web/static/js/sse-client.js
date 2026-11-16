@@ -149,7 +149,7 @@ function openChatStream(url) {
     currentEventSource.addEventListener('budget_exceeded', (e) => {
         const data = JSON.parse(e.data);
         if (window.SparkBudget) SparkBudget.show(data);
-        appendTextMessage('error', data.message || 'Your monthly token budget is used.');
+        appendTextMessage('error', data.message || 'Your monthly credits on this connection are used.');
         closeStream();
     });
 
