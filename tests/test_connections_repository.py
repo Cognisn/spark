@@ -99,6 +99,8 @@ class TestModels:
 
 class TestOverlays:
     async def test_round_trip(self, spark_db: Any) -> None:
+        await repo.save_connection(spark_db, _connection("work"))
+        await repo.save_connection(spark_db, _connection("lab"))
         entry = repo.OverlayRow(
             provider="ollama",
             model_id="mistral-small:24b",
@@ -106,6 +108,7 @@ class TestOverlays:
             output_limit=8_192,
             residency_scope="local",
             tools=True,
+            connection_id="work",
         )
         regional = repo.OverlayRow(
             provider="openai",
@@ -114,17 +117,61 @@ class TestOverlays:
             output_limit=128_000,
             residency_scope="in_region",
             regions=("swedencentral",),
+            connection_id="work",
         )
         await repo.save_overlay(spark_db, entry)
         await repo.save_overlay(spark_db, regional)
         assert await repo.list_overlays(spark_db) == [entry, regional]
-        assert await repo.delete_overlay(spark_db, "ollama", "mistral-small:24b") is True
+        assert (
+            await repo.delete_overlay(spark_db, "ollama", "mistral-small:24b", connection_id="work")
+            is True
+        )
         assert await repo.list_overlays(spark_db) == [regional]
 
+    async def test_each_connection_keeps_its_own_entry(self, spark_db: Any) -> None:
+        await repo.save_connection(spark_db, _connection("work"))
+        await repo.save_connection(spark_db, _connection("lab"))
+        work = repo.OverlayRow("ollama", "m", 8_192, "local", output_limit=1, connection_id="work")
+        lab = repo.OverlayRow("ollama", "m", 4_096, "local", output_limit=2, connection_id="lab")
+        await repo.save_overlay(spark_db, work)
+        await repo.save_overlay(spark_db, lab)
+        assert await repo.list_overlays(spark_db, "work") == [work]
+        assert await repo.list_overlays(spark_db, "lab") == [lab]
+        assert await repo.list_overlays(spark_db) == [lab, work]
+        # Declaring it again on one connection replaces that connection's entry only.
+        corrected = repo.OverlayRow(
+            "ollama", "m", 16_384, "local", output_limit=3, connection_id="work"
+        )
+        await repo.save_overlay(spark_db, corrected)
+        assert await repo.list_overlays(spark_db) == [lab, corrected]
+        assert await repo.delete_overlay(spark_db, "ollama", "m", connection_id="lab") is True
+        assert await repo.list_overlays(spark_db) == [corrected]
+
+    async def test_an_entry_belongs_to_a_connection(self, spark_db: Any) -> None:
+        with pytest.raises(ValueError, match="connection"):
+            await repo.save_overlay(
+                spark_db, repo.OverlayRow("ollama", "m", 1, "local", output_limit=1)
+            )
+
+    async def test_deleting_a_connection_deletes_its_entries(self, spark_db: Any) -> None:
+        await repo.save_connection(spark_db, _connection("work"))
+        await repo.save_connection(spark_db, _connection("lab"))
+        for cid in ("work", "lab"):
+            await repo.save_overlay(
+                spark_db,
+                repo.OverlayRow("ollama", "m", 1, "local", output_limit=1, connection_id=cid),
+            )
+        assert await repo.delete_connection(spark_db, "work") is True
+        assert [o.connection_id for o in await repo.list_overlays(spark_db)] == ["lab"]
+
     async def test_bad_scope_refused(self, spark_db: Any) -> None:
+        await repo.save_connection(spark_db, _connection())
         with pytest.raises(ValueError, match="residency scope"):
             await repo.save_overlay(
-                spark_db, repo.OverlayRow("ollama", "m", 1, "everywhere", output_limit=1)
+                spark_db,
+                repo.OverlayRow(
+                    "ollama", "m", 1, "everywhere", output_limit=1, connection_id="work"
+                ),
             )
 
 

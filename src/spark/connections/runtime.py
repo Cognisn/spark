@@ -6,11 +6,14 @@ personal tray daemon). It owns the process's conduit loop
 (server: the shared store; personal: the OS keychain, A9); and SPARK's usage sink.
 
 :meth:`ConnectionRuntime.apply` takes a :class:`Snapshot` (the connections,
-their models and assignments, and SPARK's catalogue overlay rows, as stored) and
+their models and assignments, and SPARK's catalogue overlay entries, as stored) and
 builds a conduit provider for each enabled connection through conduit's provider
 registry, the single place a provider client is made. Each connection has a
-registry of its own holding the connection's residency policy, so conduit checks
-every call against it. Several connections of one kind coexist.
+registry of its own holding the connection's residency policy and the connection's
+own catalogue (conduit's catalogue plus the overlay entries that connection
+declared, :func:`~spark.connections.catalogue.connection_catalogue`), so conduit
+checks every call against them and a model declared on one connection is never
+offered or served on another. Several connections of one kind coexist.
 
 Applying a later snapshot rebuilds only the connections whose settings, residency
 or resolved secrets changed (server mode: the settings follower calls
@@ -20,8 +23,8 @@ previous provider, so a bad change never drops a working connection (D38). A
 replaced provider is closed after a grace period, so calls already on it finish.
 
 The models a connection offers are its enabled ``connection_models`` rows, or,
-before any are stored for it, every chat model conduit's catalogue (with SPARK's
-overlay) declares for its kind; either way only those its residency policy allows.
+before any are stored for it, every chat model its catalogue (conduit's, with the
+connection's own overlay entries) declares for its catalogue provider; either way only those its residency policy allows.
 A chosen model is a :class:`~spark.connections.refs.ModelRef`.
 
 On a server a user may use a connection assigned to them or to one of their
@@ -56,7 +59,7 @@ from conduit import (
 from conduit.providers import builtin_factories
 
 from spark.connections import model as model_mod
-from spark.connections.catalogue import build_catalogue
+from spark.connections.catalogue import build_catalogue, connection_catalogue
 from spark.connections.model import Connection, ConnectionInvalid, ConnectionModel
 from spark.connections.refs import ModelRef
 from spark.connections.service import ConnectionService, ModelUnavailable
@@ -98,6 +101,7 @@ class Snapshot:
     models: Mapping[str, tuple[ConnectionModel, ...]] = field(default_factory=dict)
     #: Per connection, its assignments (server mode).
     assignments: Mapping[str, tuple[repo.Assignment, ...]] = field(default_factory=dict)
+    #: SPARK's overlay entries, each applied to its own connection's catalogue only.
     overlays: tuple[repo.OverlayRow, ...] = ()
 
 
@@ -174,8 +178,8 @@ class ConnectionRuntime:
         self._secrets = secrets
         self._usage = usage
         self._factories = list(factories) if factories is not None else production_factories()
-        self._base_catalogue = catalogue
         self._catalogue = build_catalogue((), catalogue)
+        self._catalogues: dict[str, Catalogue] = {}
         self._owns_loop = loop is None
         self._loop = loop if loop is not None else LoopThread(name="spark-conduit")
         self._timeout = timeout
@@ -206,15 +210,26 @@ class ConnectionRuntime:
 
     @property
     def catalogue(self) -> Catalogue:
-        with self._lock:
-            return self._catalogue
+        """The catalogue conduit ships (the runtime's base), without any overlay entry."""
+        return self._catalogue
 
-    def registry(self, residency: Any = None) -> ProviderRegistry:
-        """A conduit provider registry with this runtime's adapters, secrets, catalogue and
-        sink (validation only, unless a provider is built through it)."""
+    def catalogue_for(self, connection_id: str) -> Catalogue:
+        """A configured connection's catalogue: conduit's, with that connection's own
+        overlay entries (conduit's alone for a connection this runtime does not know)."""
+        with self._lock:
+            return self._catalogues.get(connection_id, self._catalogue)
+
+    def registry(
+        self, residency: Any = None, *, connection_id: str | None = None
+    ) -> ProviderRegistry:
+        """A conduit provider registry with this runtime's adapters, secrets and sink, and
+        ``connection_id``'s catalogue (conduit's alone when None): validation only,
+        unless a provider is built through it."""
         return ProviderRegistry(
             secrets=self._secrets,
-            catalogue=self.catalogue,
+            catalogue=(
+                self.catalogue_for(connection_id) if connection_id is not None else self.catalogue
+            ),
             events=self._usage,
             residency=residency,
             factories=self._factories,
@@ -276,7 +291,7 @@ class ConnectionRuntime:
         provider = self._catalogue_provider(ref.connection_id)
         if connection is None or provider is None:
             raise ModelUnavailable(f"connection {ref.connection_id!r} is not available")
-        entry = self.catalogue.require(provider, ref.model_id)
+        entry = self.catalogue_for(ref.connection_id).require(provider, ref.model_id)
         connection.residency.check(entry, connection.region, task=ref.connection_id)
         return entry
 
@@ -294,7 +309,7 @@ class ConnectionRuntime:
         provider = self._catalogue_provider(connection_id)
         if connection is None or provider is None:
             return []
-        catalogue = self.catalogue
+        catalogue = self.catalogue_for(connection_id)
         with self._lock:
             stored = self._models.get(connection_id)
         if stored is None:
@@ -396,7 +411,11 @@ class ConnectionRuntime:
         the model is not declared)."""
         ref = self.resolve(model)
         provider = self._catalogue_provider(ref.connection_id) if ref is not None else None
-        entry = self.catalogue.get(provider, ref.model_id) if ref and provider else None
+        entry = (
+            self.catalogue_for(ref.connection_id).get(provider, ref.model_id)
+            if ref and provider
+            else None
+        )
         if entry is None:
             return FALLBACK_LIMITS
         return entry.context_window, entry.output_limit or FALLBACK_LIMITS[1]
@@ -423,17 +442,19 @@ class ConnectionRuntime:
         return digest.hexdigest()
 
     async def _build(self, connection: Connection) -> tuple[ProviderSettings, MeteredProvider]:
-        registry = self.registry(connection.residency)
+        registry = self.registry(connection.residency, connection_id=connection.id)
         settings = model_mod.validate(connection, registry)
         provider = await registry.build(connection.id, settings)
         return settings, provider
 
     async def _apply(self, snapshot: Snapshot) -> None:
-        catalogue = build_catalogue(snapshot.overlays, self._base_catalogue)
-        with self._lock:
-            self._catalogue = catalogue
-            previous = dict(self._built)
         wanted = {c.id: c for c in snapshot.connections}
+        catalogues = {
+            cid: connection_catalogue(snapshot.overlays, cid, self._catalogue) for cid in wanted
+        }
+        with self._lock:
+            self._catalogues = catalogues
+            previous = dict(self._built)
         built: dict[str, _Built] = {}
         failures: dict[str, str] = {}
         retired: list[MeteredProvider] = []

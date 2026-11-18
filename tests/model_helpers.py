@@ -164,7 +164,15 @@ class ScriptedModels:
             connections=[stub_connection("stub", script="scripted")],
             scripts={"scripted": script},
             overlays=[
-                OverlayRow("stub", model, 200_000, "local", output_limit=8_192, tools=True)
+                OverlayRow(
+                    "stub",
+                    model,
+                    200_000,
+                    "local",
+                    output_limit=8_192,
+                    tools=True,
+                    connection_id="stub",
+                )
                 for model in scripts
             ],
         )
