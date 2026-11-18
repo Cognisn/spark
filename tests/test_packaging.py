@@ -57,7 +57,7 @@ def test_conduit_declared_from_pypi_with_every_provider() -> None:
         "ollama",
         "openai",
     }
-    assert conduit.endswith(">=0.1.0rc2")
+    assert conduit.endswith(">=0.1.0rc3")
     sdks = ("anthropic", "boto3", "botocore", "google-genai", "ollama", "openai")
     assert [d for d in deps if d.split(">")[0].split("=")[0].split("[")[0] in sdks] == []
 

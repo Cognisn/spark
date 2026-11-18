@@ -10,12 +10,23 @@
         <div>
             <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Dashboard</h4>
             <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                Manage conversations, providers, and tools.
+                Manage conversations, connections, and tools.
             </p>
         </div>
-        <a href="/conversations" class="btn btn-app-primary">
-            <i class="bi bi-plus-lg me-1"></i> New Conversation
-        </a>
+        <div class="d-flex align-items-center gap-2">
+            {% if not request.app.state.identity_attached|default(false) %}
+            <a href="/settings#section-connections" class="btn btn-app-outline">
+                <i class="bi bi-plug me-1"></i> Manage connections
+            </a>
+            {% elif identity_menu(request)|selectattr('href', 'equalto', '/admin/connections')|list %}
+            <a href="/admin/connections" class="btn btn-app-outline">
+                <i class="bi bi-plug me-1"></i> Manage connections
+            </a>
+            {% endif %}
+            <a href="/conversations" class="btn btn-app-primary">
+                <i class="bi bi-plus-lg me-1"></i> New Conversation
+            </a>
+        </div>
     </div>
 
     <!-- Provider Status -->

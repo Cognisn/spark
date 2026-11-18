@@ -1721,13 +1721,13 @@ class ConversationManager:
         user_guid: str, roles: Iterable[str] | None, permissions: Permissions
     ) -> UserScope:
         """A server user, as the connections' assignment check sees them."""
-        from spark.identity.permissions import SETTINGS_INSTANCE
+        from spark.identity.permissions import ADMIN_CONNECTIONS
         from spark.tools.registry import ANY_ROLE
 
         administrator = (
             permissions is not None
             and permissions is not ANY_ROLE
-            and SETTINGS_INSTANCE in permissions
+            and ADMIN_CONNECTIONS in permissions
         )
         return UserScope(user_guid, frozenset(roles or ()), administrator=administrator)
 

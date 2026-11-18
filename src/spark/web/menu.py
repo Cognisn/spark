@@ -13,6 +13,7 @@ from starlette.requests import Request
 
 from spark.identity.access import current_identity
 from spark.identity.permissions import (
+    ADMIN_CONNECTIONS,
     API_KEYS,
     AUDIT_READ,
     BUNDLES_IMPORT,
@@ -40,6 +41,7 @@ _ENTRIES = (
     MenuEntry("/admin/api-keys", "bi-key-fill", "All API keys", USERS_ADMIN),
     MenuEntry("/audit", "bi-journal-text", "Audit trail", AUDIT_READ),
     MenuEntry("/admin/usage", "bi-bar-chart", "Usage and budgets", USAGE_ADMIN),
+    MenuEntry("/admin/connections", "bi-plug", "Connections", ADMIN_CONNECTIONS),
     MenuEntry("/admin/bundles", "bi-box-arrow-in-down", "Import a user bundle", BUNDLES_IMPORT),
 )
 

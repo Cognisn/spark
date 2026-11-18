@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Connections screens**: administrators manage model connections on a new Connections page (`/admin/connections`, server mode; in the Account menu and on the dashboard), and personal mode in a Connections section at the top of Settings. The list shows each connection's name, service, Region, residency policy, enabled models, last model discovery and status, and in server mode whether it is metered and how many assignments it has; a connection can be enabled, disabled, renamed and deleted. Deleting asks to confirm, and is refused while a scheduled action uses the connection, naming the actions
+- **Add connection**: a drop-down of the nine services (Amazon Bedrock, Claude through Amazon Bedrock (mantle), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft Foundry (OpenAI-compatible), Google Gemini, Ollama) opens a modal with that service's fields from conduit's settings for its kind, an authentication chooser where it has several (long-term Bedrock API keys only once their allow setting is ticked), the Region and the residency policy (each service's default, or chosen scopes and Regions). Saving validates through conduit's provider registry and shows its refusal. Edit uses the same modal. Several connections of one service may exist
+- **Write-only connection credentials**: a credential typed into the modal goes straight to the secrets store as `connections.<id>.<field>` (other server replicas are told to refresh), and the connection keeps only its `secret://` reference. Pages see each credential only as set or not set; a blank field keeps the stored one, and a credential no longer used (after a change of authentication, or a delete) is removed
+- **Models view per connection**: conduit's catalogue models (with SPARK's own declarations) for the connection's service and Region, each marked reachable or not by the last model discovery (run on demand, and after each save, through conduit; the time of the last run is shown), refused with conduit's reason where the residency policy forbids it, with an enabled switch and a tier (lower, standard, higher). The first change keeps every model the connection offered until then. A reachable model the catalogue lacks (an Ollama model, say) is listed apart with a form declaring it to SPARK's catalogue (kind, context window, output limit, tools, vision, prompt caching, structured output, residency scope and Regions)
+- **Metering and assignment on the connection** (server mode): metered or not, the base rate, the higher and lower tier multipliers and the four token weights, with a reset to the defaults and a worked example of a sample turn's credits at each tier; assignment to roles and named users, each with a monthly credit allowance. On a metered connection an allowance must be given, or No limit chosen explicitly
+- **Permission `spark.admin.connections`** (server mode), held by the Administrator role: it guards every connections page and API (403 without it), and it is what lets a user see and try a connection that is not yet assigned to anyone
+- Every connection change is recorded in the audit trail under the instance settings actions, naming the fields changed and never their values
+
+### Changed
+- **cognisn-conduit 0.1.0rc3 or later** is required (model discovery). Its `mcp` extra is not taken yet: conduit 0.1.0rc3 still asks for `mcp<2`, which SPARK's `mcp>=2.3` excludes
+- **Administrators of connections**: a connection assigned to no one is offered to holders of `spark.admin.connections`, in place of `spark.settings.instance`
+- The provider setup guides link back to the connections screens
+
 ## [0.3.0rc6] - 2026-11-16
 
 ### Added

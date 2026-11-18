@@ -11,6 +11,7 @@ from spark.db.engine import Executor, Row
 
 __all__ = [
     "DuplicateActionName",
+    "action_models_all_users",
     "action_stats",
     "clear_stale_locks",
     "get_all_actions",
@@ -125,6 +126,20 @@ async def get_enabled_actions_for_worker(db: Executor) -> list[Row]:
     """
     return await db.fetch_all(
         "SELECT * FROM autonomous_actions WHERE is_enabled = 1 ORDER BY user_guid, name"
+    )
+
+
+async def action_models_all_users(db: Executor) -> list[Row]:
+    """Every user's actions with their model: ``id``, ``name``, ``model_id``, ``user_guid``
+    and ``is_enabled``, by name.
+
+    Deliberately not scoped by user: only the administrator's connections screens
+    call this, to refuse deleting a connection a scheduled action still uses and to
+    name those actions. Never reached from a user's own request.
+    """
+    return await db.fetch_all(
+        "SELECT id, name, model_id, user_guid, is_enabled FROM autonomous_actions "
+        "ORDER BY name, id"
     )
 
 

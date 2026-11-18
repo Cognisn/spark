@@ -91,12 +91,8 @@
 
     <!-- Breadcrumb -->
     <nav style="font-size: 0.8125rem; margin-bottom: 1.5rem;">
-        <a href="/settings" style="color: var(--app-text-muted); text-decoration: none;">
-            <i class="bi bi-gear me-1"></i>Settings
-        </a>
-        <span style="color: var(--app-text-muted); margin: 0 0.5rem;">›</span>
-        <a href="/settings#section-providers" style="color: var(--app-text-muted); text-decoration: none;">
-            LLM Providers
+        <a href="{{ '/admin/connections' if request.app.state.identity_attached|default(false) else '/settings#section-connections' }}" style="color: var(--app-text-muted); text-decoration: none;">
+            <i class="bi bi-plug me-1"></i>Connections
         </a>
         <span style="color: var(--app-text-muted); margin: 0 0.5rem;">›</span>
         <span style="color: var(--app-text-primary);">{{ guide.title }}</span>
@@ -240,8 +236,8 @@
 
     <!-- Back to settings -->
     <div class="text-center mb-5">
-        <a href="/settings#section-providers" class="btn btn-app-primary">
-            <i class="bi bi-gear me-1"></i> Back to Provider Settings
+        <a href="{{ '/admin/connections' if request.app.state.identity_attached|default(false) else '/settings#section-connections' }}" class="btn btn-app-primary">
+            <i class="bi bi-plug me-1"></i> Back to Connections
         </a>
     </div>
 </div>
