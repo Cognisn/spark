@@ -366,6 +366,8 @@ voice:
 
 ### Token Management
 
+No code reads this section; it is listed because the default `config.yaml` still carries it. Usage limits are monthly credit allowances on a server's metered connections (see [Metering](metering.md)).
+
 ```yaml
 token_management:
   enabled: false
