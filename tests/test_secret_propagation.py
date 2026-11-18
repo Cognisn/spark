@@ -373,10 +373,6 @@ def _lab(client: TestClient) -> None:
 
     sync_db = client.app.state.sync_db  # type: ignore[attr-defined]
     sync_db.call(
-        repo.save_overlay,
-        repo.OverlayRow("keyed", "stub-echo", 8_192, "local", output_limit=1_024),
-    )
-    sync_db.call(
         repo.save_connection,
         repo.ConnectionRow(
             id="lab",
@@ -384,6 +380,12 @@ def _lab(client: TestClient) -> None:
             kind="keyed",
             settings={"kind": "keyed", "api_key": f"secret://{LAB_KEY}"},
             residency={"scopes": ["local"], "regions": None},
+        ),
+    )
+    sync_db.call(
+        repo.save_overlay,
+        repo.OverlayRow(
+            "keyed", "stub-echo", 8_192, "local", output_limit=1_024, connection_id="lab"
         ),
     )
 

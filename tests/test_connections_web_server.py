@@ -315,12 +315,12 @@ class TestAssignments:
         assert "assignment" in audited and "unassigned" in audited
 
 
-def _foundry(client: TestClient) -> str:
+def _foundry(client: TestClient, name: str = "Foundry AU") -> str:
     resp = client.post(
         API,
         json={
             "service": "anthropic_foundry",
-            "name": "Foundry AU",
+            "name": name,
             "values": {"base_url": FOUNDRY_ENDPOINT, "region": "australiaeast"},
             "secrets": {"api_key": KEY},
         },
@@ -393,3 +393,54 @@ class TestDeclaringByID:
         finally:
             admin.headers[CSRF_HEADER] = token
         assert _overlays(admin) == []
+
+
+class TestDeclarationsStayOnTheirConnection:
+    """Wave 10 Q53, on PostgreSQL: a declaration is stored for, and offered on, the
+    declaring connection only."""
+
+    def test_a_foundry_deployment_is_offered_on_its_own_connection_only(
+        self, admin: TestClient
+    ) -> None:
+        au, us = _foundry(admin, "Foundry AU"), _foundry(admin, "Foundry US")
+        direct = admin.post(
+            API,
+            json={"service": "anthropic", "name": "Claude direct", "secrets": {"api_key": KEY}},
+        ).json()["id"]
+        assert admin.post(f"{API}/{au}/overlays", json=DEPLOYMENT).status_code == 200
+        assert [(r.model_id, r.connection_id) for r in _overlays(admin)] == [("sonnet-au-prod", au)]
+        offered = _offered(admin)
+        assert f"{au}/sonnet-au-prod" in offered
+        assert f"{us}/sonnet-au-prod" not in offered
+        assert f"{direct}/sonnet-au-prod" not in offered
+        us_view = admin.get(f"{API}/{us}/models").json()["models"]
+        assert "sonnet-au-prod" not in {m["model_id"] for m in us_view}
+
+    def test_a_declared_ollama_model_is_offered_on_its_own_connection_only(
+        self, admin: TestClient
+    ) -> None:
+        home, lab = _ollama(admin, "Home box"), _ollama(admin, "Lab box")
+        body = {
+            **DEPLOYMENT,
+            "model_id": "qwen3:32b",
+            "residency_scope": "local",
+            "regions": "",
+        }
+        assert admin.post(f"{API}/{home}/overlays", json=body).status_code == 200
+        offered = _offered(admin)
+        assert f"{home}/qwen3:32b" in offered and f"{lab}/qwen3:32b" not in offered
+
+    def test_each_connection_keeps_its_own_entry_and_the_409_holds(self, admin: TestClient) -> None:
+        au, us = _foundry(admin, "Foundry AU"), _foundry(admin, "Foundry US")
+        assert admin.post(f"{API}/{au}/overlays", json=DEPLOYMENT).status_code == 200
+        us_body = {**DEPLOYMENT, "regions": "eastus", "context_window": 100000}
+        assert admin.post(f"{API}/{us}/overlays", json=us_body).status_code == 200
+        windows = {r.connection_id: r.context_window for r in _overlays(admin)}
+        assert windows == {au: 200000, us: 100000}
+        for cid in (au, us):
+            shipped = admin.post(
+                f"{API}/{cid}/overlays", json={**DEPLOYMENT, "model_id": "claude-opus-5"}
+            )
+            assert shipped.status_code == 409, cid
+        assert admin.delete(f"{API}/{au}").status_code == 200
+        assert [r.connection_id for r in _overlays(admin)] == [us]

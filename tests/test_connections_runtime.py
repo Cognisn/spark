@@ -389,11 +389,77 @@ class TestModelsAndUsers:
 
     def test_overlay_adds_a_model(self, runtime: ConnectionRuntime) -> None:
         overlay = repo.OverlayRow(
-            "stub", "stub-local-extra", 4_096, "local", output_limit=1_024, tools=True
+            "stub",
+            "stub-local-extra",
+            4_096,
+            "local",
+            output_limit=1_024,
+            tools=True,
+            connection_id="work",
         )
         runtime.apply(snapshot_of([stub("work")], overlays=[overlay]))
         assert "work/stub-local-extra" in [m["id"] for m in runtime.offered_models()]
         assert runtime.limits("work/stub-local-extra") == (4_096, 1_024)
+
+
+EXTRA = "stub-local-extra"
+
+
+def _extra(cid: str | None, context: int = 4_096) -> repo.OverlayRow:
+    return repo.OverlayRow(
+        "stub", EXTRA, context, "local", output_limit=1_024, tools=True, connection_id=cid
+    )
+
+
+class TestPerConnectionCatalogues:
+    """An overlay entry is applied to its own connection's catalogue only (wave 10 Q53)."""
+
+    def test_an_entry_is_offered_and_served_on_its_connection_only(
+        self, runtime: ConnectionRuntime
+    ) -> None:
+        runtime.apply(snapshot_of([stub("home"), stub("lab")], overlays=[_extra("home")]))
+        offered = {m["id"] for m in runtime.offered_models()}
+        assert f"home/{EXTRA}" in offered and f"lab/{EXTRA}" not in offered
+        assert runtime.catalogue_for("home").get("stub", EXTRA) is not None
+        assert runtime.catalogue_for("lab").get("stub", EXTRA) is None
+        assert runtime.catalogue.get("stub", EXTRA) is None  # conduit's own, unchanged
+        assert runtime.resolve(EXTRA) == ModelRef("home", EXTRA)
+        assert not runtime.is_offered(f"lab/{EXTRA}")
+        refusal = runtime.refusal(ModelRef("lab", EXTRA))
+        assert refusal is not None and "not declared" in refusal
+        # conduit's provider for lab refuses it too: the call never reaches the model.
+        lab = runtime.service(f"lab/{EXTRA}")
+        assert lab is not None
+        with pytest.raises(ModelRefused, match="not declared"):
+            lab.invoke_model([{"role": "user", "content": "x"}])
+        home = runtime.service(f"home/{EXTRA}")
+        assert home is not None
+        assert home.invoke_model([{"role": "user", "content": "y"}])["content"] == "y"
+
+    def test_each_connection_has_its_own_declaration_of_one_model(
+        self, runtime: ConnectionRuntime
+    ) -> None:
+        runtime.apply(
+            snapshot_of(
+                [stub("home"), stub("lab")],
+                overlays=[_extra("home", 8_192), _extra("lab", 2_048)],
+            )
+        )
+        assert runtime.limits(f"home/{EXTRA}")[0] == 8_192
+        assert runtime.limits(f"lab/{EXTRA}")[0] == 2_048
+
+    def test_an_entry_of_no_connection_applies_to_none(self, runtime: ConnectionRuntime) -> None:
+        runtime.apply(snapshot_of([stub("home")], overlays=[_extra(None), _extra("gone")]))
+        assert f"home/{EXTRA}" not in {m["id"] for m in runtime.offered_models()}
+        assert runtime.catalogue_for("home").get("stub", EXTRA) is None
+
+    def test_a_connection_added_later_does_not_inherit_entries(
+        self, runtime: ConnectionRuntime
+    ) -> None:
+        runtime.apply(snapshot_of([stub("home")], overlays=[_extra("home")]))
+        runtime.apply(snapshot_of([stub("home"), stub("new")], overlays=[_extra("home")]))
+        assert f"new/{EXTRA}" not in {m["id"] for m in runtime.offered_models()}
+        assert runtime.catalogue_for("unknown") is runtime.catalogue
 
 
 class TestLiveChanges:
@@ -432,7 +498,9 @@ class TestLiveChanges:
         rt = ConnectionRuntime(
             secrets=Secrets(), usage=UsageSink(recorded), factories=[KeyedStubFactory()]
         )
-        overlay = repo.OverlayRow("keyed", ECHO, 4_096, "local", output_limit=1_024)
+        overlay = repo.OverlayRow(
+            "keyed", ECHO, 4_096, "local", output_limit=1_024, connection_id="a"
+        )
         conn = Connection(
             "a",
             "Keyed",

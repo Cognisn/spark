@@ -250,8 +250,9 @@ beyond the few conduit declares. **Declare** opens a short form:
 | Regions | Comma separated, for an in-Region or cross-Region model. |
 
 **Save to catalogue** checks the entry with conduit and stores it as a Spark catalogue
-overlay entry for the connection's catalogue (for example `ollama`). It then appears in
-the models view, marked **Declared in SPARK**, for every connection of that service.
+overlay entry of that connection, under its catalogue (for example `ollama`). It then
+appears in that connection's models view, marked **Declared in SPARK**. Another
+connection of the same service does not offer it until it is declared there too.
 
 ### Declaring a model by its id
 
@@ -259,7 +260,7 @@ the models view, marked **Declared in SPARK**, for every connection of that serv
 model id typed in, so it needs no discovery. It has the same fields as the form above,
 plus **Model id**, and saves the same way. An id conduit's catalogue already lists for
 the service is refused ("The catalogue already lists ... for this service"). An id
-Spark has already declared is replaced, which is how you correct a declaration.
+already declared on this connection is replaced, which is how you correct a declaration.
 
 ### Declaring a Microsoft Foundry deployment
 
@@ -284,11 +285,14 @@ deployments you declare.
 6. **Save to catalogue**. The deployment appears in the models view, marked **Declared
    in SPARK**, enabled at the **Standard** tier; change its switch or tier there.
 
-A declaration belongs to the connection's catalogue (`anthropic` for Claude in
-Microsoft Foundry; `openai` or `xai` for Microsoft Foundry (OpenAI-compatible), as its
-**Catalogue** field says), so it is also listed on the other connections of that
-catalogue, such as a direct Anthropic connection, where the deployment name means
-nothing. Switch it off in those connections' models views.
+A declaration belongs to the connection that declared it, under that connection's
+catalogue (`anthropic` for Claude in Microsoft Foundry; `openai` or `xai` for Microsoft
+Foundry (OpenAI-compatible), as its **Catalogue** field says). It is offered on that
+connection only: another connection of the same catalogue, such as a second Foundry
+resource or a direct Anthropic connection, never lists it. Two connections may each
+declare the same deployment name with their own Region and limits. On a server the
+declarations are kept in the database; in personal mode, under the connection's
+`overlays` in `config.yaml`. Deleting a connection deletes its declarations.
 
 > Not run for this guide: declaring a deployment against a real Foundry resource.
 > Spark's tests declare deployments on synthetic Foundry connections.

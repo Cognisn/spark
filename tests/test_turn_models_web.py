@@ -145,7 +145,9 @@ class TestModelList:
                 [ConnectionModel("stub", "model-a"), ConnectionModel("stub", "model-b", False)],
                 [Assignment("stub", role="user")],
                 [
-                    OverlayRow("stub", m, 200_000, "local", output_limit=8_192)
+                    OverlayRow(
+                        "stub", m, 200_000, "local", output_limit=8_192, connection_id="stub"
+                    )
                     for m in ("model-a", "model-b")
                 ],
             )
