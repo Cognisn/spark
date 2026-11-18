@@ -39,7 +39,7 @@ Keep the recovery codes somewhere safe.
 
 | Role | Holds |
 |---|---|
-| `administrator` | Everything: instance settings and secrets, users, roles, invitations and API keys, the audit trail, usage and budgets, bundle import, and every user capability |
+| `administrator` | Everything: instance settings and secrets, model connections with their metering and assignments (`spark.admin.connections`), users, roles, invitations and API keys, the audit trail, usage, bundle import, and every user capability |
 | `auditor` | The audit trail at `/audit` and its CSV and NDJSON export, and nothing else |
 | `power_user` | A user's capabilities, plus scheduled actions, sub-agents and the instance-wide knowledge graph |
 | `user` | Chat, debates and panels, memories, skills, their own knowledge graphs and files, the built-in tools a server offers, and their own API keys |
@@ -78,6 +78,22 @@ Other warden settings (`SPARK__WARDEN__IDENTITY__...`) include
 `password_min_length` (12), `sign_in_attempt_limit` (10 per
 `sign_in_window_seconds`, 900) and `totp_issuer`, the name shown in the authenticator
 app.
+
+## Passwords and forced changes
+
+warden 0.1.0 enforces its default password policy wherever a password is set (the
+first administrator, an invitation, a reset, the account page): at least
+`password_min_length` characters, and not one of about 100,000 very common passwords.
+A refused password shows warden's own messages, for example "Use at least 12
+characters. This password is too common."
+
+When warden requires a new password before it issues a session (an administrator asked
+for it, the password expired, it no longer meets the policy, or it is on a watch list),
+the sign-in goes on, after the password and any second factor, to a new-password step
+on the challenge screen. No session is set until warden accepts the new password. After
+a forced enrolment in two-step verification the recovery codes are shown first, then
+the new-password step. A user whose current password is too common is asked for a new
+one at their next password sign-in.
 
 ## API keys
 
@@ -168,14 +184,17 @@ A server can run like this, but users cannot reset their own passwords.
 > local SMTP server over STARTTLS, implicit TLS and plain text, and the release's
 > live suite checks invitation mail through a mail catcher.
 
-## Usage and token budgets
+## Connections, credits and usage
 
-Administrators see usage by month, user and model at **Account > Usage and budgets**
-(`/admin/usage`), export it as CSV, and set an optional monthly token budget per role
-and per user. Users are warned from 80%, and new requests are refused at 100% until
-the budget resets at 00:00 UTC on the first of the month. The
-[container guide](../container.md#users-two-step-verification-and-single-sign-on)
-describes the rules in full.
+A user sees and uses only the model connections assigned to them or to one of their
+roles (a connection assigned to no one is seen by administrators only). Administrators
+assign connections, and on a metered connection set each assignment's monthly credit
+allowance, on **Account > Connections** (`/admin/connections`). Users are warned from
+80%, and new requests on that connection are refused at 100% until the allowance resets
+at 00:00 UTC on the first of the month. [Connections](../connections.md) and
+[Metering](../metering.md) describe the rules in full. Usage by month, user,
+connection and model, with tokens and credits, is at **Account > Usage and budgets**
+(`/admin/usage`), with a CSV export.
 
 ## The audit trail
 

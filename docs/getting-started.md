@@ -8,7 +8,7 @@ This guide covers every supported installation method, first-run configuration, 
 
 - **Python 3.12 or later** is required for pip-based installation.
 - A modern web browser (Chrome, Firefox, Safari, Edge) for the web UI.
-- At least one LLM provider API key or a running Ollama instance.
+- A credential for at least one model service (an Anthropic, OpenAI, X.AI or Google Gemini API key, AWS or Microsoft Foundry credentials), or a running Ollama instance.
 
 ---
 
@@ -169,78 +169,59 @@ flowchart TD
     B --> C{First run?}
     C -- Yes --> D[Redirect to Settings page]
     C -- No --> E[Redirect to Conversations]
-    D --> F[Configure at least one LLM provider]
-    F --> G[Click Save Settings]
+    D --> F[Add at least one connection]
+    F --> G[Choose its models]
     G --> H[Navigate to Conversations]
     H --> I[New Conversation]
     I --> J[Select a model from dropdown]
     J --> K[Start chatting]
 ```
 
-### Required: configure at least one LLM provider
+### Required: add at least one connection
 
-On the Settings page you must enable and configure at least one provider before you can start a conversation.
+Spark reaches models through **connections**. Before you can start a conversation, add
+at least one in **Settings > Connections** (the first section of Settings):
 
-#### Anthropic (Claude)
+1. Choose **Add connection** and pick a service: Amazon Bedrock, Claude through Amazon
+   Bedrock (mantle), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft
+   Foundry (OpenAI-compatible), Google Gemini or Ollama.
+2. Give it a name and fill in the service's fields: an API key for Anthropic, OpenAI,
+   X.AI or Google Gemini; the Region and an authentication mode for Amazon Bedrock; the
+   Base URL (`http://127.0.0.1:11434` by default) for Ollama. The key goes to your OS
+   keychain and is never shown again.
+3. Save. Spark checks the settings and then which models the connection can reach.
+4. Open the connection's **Models** to see what it offers. Every model its residency
+   policy allows is offered until you turn some off. Models you pulled into Ollama
+   that Spark's catalogue does not know are listed apart, to declare.
 
-1. Go to [console.anthropic.com](https://console.anthropic.com/) and generate an API key.
-2. In Spark Settings, enable the **Anthropic** provider.
-3. Paste your API key into the **API Key** field.
+[Model services](providers.md) explains getting a key from each service, and
+[Connections](connections.md) covers every field. You can add several connections,
+even of one service.
 
-#### Google Gemini
+### Start chatting
 
-1. Go to [aistudio.google.com](https://aistudio.google.com/) and generate an API key.
-2. In Spark Settings, enable the **Google Gemini** provider.
-3. Paste your API key into the **API Key** field.
-
-#### Ollama (local models)
-
-1. Install and start [Ollama](https://ollama.com/) on your machine.
-2. In Spark Settings, enable the **Ollama** provider.
-3. The default URL `http://localhost:11434` is pre-filled. Change it only if Ollama runs on a different host or port.
-4. No API key is needed.
-
-#### AWS Bedrock
-
-1. In Spark Settings, enable the **AWS Bedrock** provider.
-2. Set the **Region** (e.g. `us-east-1`).
-3. Choose an authentication method:
-   - **SSO** -- uses your configured AWS SSO profile.
-   - **IAM** -- provide an access key ID and secret access key.
-
-#### X.AI (Grok)
-
-1. Obtain an API key from X.AI.
-2. In Spark Settings, enable the **X.AI** provider.
-3. Paste your API key into the **API Key** field.
-
-### Save and start
-
-1. Click **Save Settings**.
-2. Navigate to **Conversations** using the sidebar.
-3. Click **New Conversation**.
-4. Select a model from the dropdown at the top of the conversation.
-5. Type a message and press Enter.
+1. Navigate to **Conversations** using the sidebar.
+2. Click **New Conversation**.
+3. Select a model from the dropdown. Models are grouped by connection.
+4. Type a message and press Enter.
 
 ### Optional recommended settings
 
 - **Default Model** -- in Settings under **Default Model**, pick the model you use most often. New conversations will pre-select it.
 - **Filesystem access** -- if you want the AI to read or write files on your system, go to Settings and add paths under **Filesystem > Allowed Paths**. Only the listed directories (and their children) will be accessible to file tools.
 
-### Provider configuration flow
+### Connection flow
 
 ```mermaid
 flowchart LR
-    subgraph Settings Page
-        A[Enable provider toggle] --> B{Provider type}
-        B -- Anthropic/Gemini/X.AI --> C[Paste API key]
-        B -- Ollama --> D[Verify URL]
-        B -- AWS Bedrock --> E[Set region + auth method]
-        C --> F[Save Settings]
-        D --> F
-        E --> F
+    subgraph "Settings > Connections"
+        A[Add connection] --> B[Choose a service]
+        B --> C[Name, credentials, Region, residency]
+        C --> D[Save: conduit validates]
+        D --> E[Discovery: reachable models]
+        E --> F[Models: enable, tier, declare]
     end
-    F --> G[Models appear in conversation dropdown]
+    F --> G[Models appear in the model picker, grouped by connection]
 ```
 
 ---
@@ -254,6 +235,10 @@ pip install --upgrade cognisn-spark
 ```
 
 Then restart Spark. Your conversations and settings are preserved.
+
+Upgrading from 0.2 to 0.3.0 converts `config.yaml`'s `providers` section into named
+connections on the first start, keeping each key in the keychain; see
+[Upgrading from 0.2](connections.md#upgrading-from-02).
 
 ### macOS DMG
 
@@ -289,7 +274,7 @@ The web interface has the following sections:
 
 | Page | Description |
 |------|-------------|
-| **Home** | Dashboard with recent conversations, provider status, and tool overview |
+| **Home** | Dashboard with recent conversations, your model connections, and tool overview |
 | **Conversations** | List, search, create, and manage conversations |
 | **Memories** | View and manage persistent memories |
 | **Actions** | Configure autonomous scheduled AI tasks (if enabled) |
@@ -312,6 +297,7 @@ The web interface has the following sections:
 ## Next Steps
 
 - [Configuration Reference](configuration.md) -- Full config.yaml documentation
-- [Providers](providers.md) -- Detailed provider setup for each LLM
+- [Connections](connections.md) -- Adding model connections, residency and models
+- [Model services](providers.md) -- Getting an account and a key from each service
 - [Tools](tools.md) -- Built-in and MCP tool configuration
 - [Memory](memory.md) -- Persistent memory system

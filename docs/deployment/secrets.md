@@ -23,7 +23,7 @@ refuses the encrypted file without `KONFIG_MASTER_KEY`.
 | `warden.signing-key.<id>` | warden's Ed25519 signing keys (session tokens, audit checkpoints) | the first web start |
 | `warden.totp-key` | The key that encrypts users' authenticator secrets in the database | the first web start |
 | `spark.csrf-key` | The key that binds CSRF tokens to warden sessions | the first web start |
-| `providers_anthropic_api_key`, `providers_google_gemini_api_key`, `providers_xai_api_key`, `providers_aws_bedrock_access_key`, `providers_aws_bedrock_secret_key`, `providers_aws_bedrock_session_token` | Provider credentials | the instance settings page |
+| `connections.<id>.<field>` (for example `connections.work-claude.api_key`) | A model connection's credentials | the Connections page (`/admin/connections`) |
 | `embedded_tools_web_brave_api_key`, `embedded_tools_web_google_api_key`, `embedded_tools_web_bing_api_key` | Web search keys | the instance settings page |
 | `voice_elevenlabs_api_key` | ElevenLabs | the instance settings page |
 | `mail_smtp_password` | The SMTP password for identity mail | the instance settings page, or [placed](#placing-a-secret-in-the-store) |
@@ -65,9 +65,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
   is unreadable, and the two together are every credential the server has. Keep the
   key in a password manager or vault that the backup system cannot reach.
 - **Losing it is not recoverable.** Without the key, the signing keys, the TOTP key
-  and every provider key are gone: existing sessions end, every user must set up
-  two-step verification again (an administrator resets each one), and every provider
-  key must be entered again.
+  and every connection credential are gone: existing sessions end, every user must set up
+  two-step verification again (an administrator resets each one), and every
+  connection credential must be entered again.
 - **Spark 0.3.0 cannot change the key.** A container given a different key for an
   existing file stops with "The master key does not match the secrets file ... Every
   process sharing this file must use the same KONFIG_MASTER_KEY" and leaves the file
@@ -170,8 +170,8 @@ env file works as well and is what this guide uses.
 2. Every web replica listens on that channel. On a notification naming a secret, it
    has konfig re-read the store (the shared file, or the Secrets Manager bundle past
    its cache), then reloads its settings.
-3. The reload rebuilds what uses the secret: the providers, voice and web search
-   keys. The change applies within a few seconds, without a restart.
+3. The reload rebuilds what uses the secret: the model connections, voice and web
+   search keys. The change applies within a few seconds, without a restart.
 
 A replica also re-reads the store whenever its notification listener reconnects, so
 one that missed a notification while the database was unreachable catches up. The

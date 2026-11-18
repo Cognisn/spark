@@ -48,13 +48,15 @@ API keys and passwords can be stored securely using `secret://` URIs in the conf
 - **Linux:** Secret Service (GNOME Keyring / KDE Wallet)
 
 ```yaml
-providers:
-  anthropic:
-    enabled: true
-    api_key: secret://anthropic_api_key
+connections:
+  - id: work-claude
+    name: Work Claude
+    settings:
+      kind: anthropic
+      api_key: secret://connections.work-claude.api_key
 ```
 
-When Spark encounters a `secret://` URI, it resolves the value from the keychain. Secrets entered via the Settings UI are automatically stored in the keychain.
+When Spark encounters a `secret://` URI, it resolves the value from the keychain. Secrets entered via the Settings UI are automatically stored in the keychain: a connection's credential as `connections.<id>.<field>`.
 
 ## Complete Configuration Reference
 
@@ -136,33 +138,33 @@ interface:
 
 The selected theme is saved to `config.yaml` when changed via the UI toggle, so it persists across application restarts.
 
-### LLM Providers
+### Connections
 
 ```yaml
-providers:
-  anthropic:
-    enabled: false
-    api_key: secret://anthropic_api_key
-
-  aws_bedrock:
-    enabled: false
-    region: us-east-1
-    profile: default             # AWS profile name
-
-  ollama:
-    enabled: false
-    base_url: http://localhost:11434
-
-  google_gemini:
-    enabled: false
-    api_key: secret://google_gemini_api_key
-
-  xai:
-    enabled: false
-    api_key: secret://xai_api_key
+connections:
+  - id: bedrock-sydney
+    name: Bedrock (Sydney)
+    settings:
+      kind: bedrock
+      region: ap-southeast-2
+      auth: {mode: credential_chain, profile: default}
+    residency: {scopes: [local, in_region], regions: [ap-southeast-2]}
+  - id: home-ollama
+    name: Home Ollama
+    settings:
+      kind: ollama
+      base_url: http://127.0.0.1:11434
+    models:
+      - {id: "llama3.1:8b", enabled: true, tier: standard}
 ```
 
-See [Providers](providers.md) for full details on each provider.
+Each entry is one named model connection: its id, display name, conduit's settings for
+the service (`kind` and the service's fields, every credential a `secret://`
+reference), an optional residency policy and an optional list of the models it offers.
+Personal mode keeps connections here and edits them in **Settings > Connections**; a
+server keeps them in the database. See [Connections](connections.md) for every service's
+fields. The 0.2 `providers` section is converted into this one on the first start of
+0.3.0 and then removed.
 
 ### Conversation Settings
 
@@ -181,29 +183,15 @@ conversation:
 
 #### Prompt Caching
 
-When enabled (default: on), Spark caches system prompts and tool definitions across requests to reduce input token costs. This is particularly effective for Anthropic (cache_control) and Google Gemini (context caching) where the system prompt is sent identically with every message in a conversation.
+When enabled (default: on), Spark asks the model service to cache the system prompt (with any skills loaded in the conversation) and the tool definitions across requests, to reduce input token costs. conduit applies it where its catalogue says the model supports prompt caching; cache reads and writes are recorded apart (see [Metering](metering.md)). On a server, a change to this setting applies to the next model call without a restart.
 
 The setting can be overridden per conversation in the conversation settings panel.
 
 ### Context Limits
 
-Override or define context window sizes for specific models:
-
-```yaml
-context_limits:
-  claude-sonnet-4-20250514:
-    context_window: 200000
-    max_output: 16384
-  llama3:
-    context_window: 8192
-    max_output: 4096
-```
-
-Resolution priority:
-1. Exact match in config overrides
-2. Partial match (model ID contains the pattern)
-3. Built-in defaults for known model families
-4. Global default (8192 context / 4096 output)
+The 0.2 `context_limits` section is no longer read. Each model's context window and
+output limit come from conduit's catalogue, or from the declaration saved for a model
+the catalogue lacks (see [Connections](connections.md#declaring-a-model-the-catalogue-lacks)).
 
 ### Prompt Inspection
 
@@ -301,7 +289,7 @@ See [Tools](tools.md) and [Web Search](web-search.md) for details.
 
 ```yaml
 default_model:
-  model_id: gemini-2.5-flash    # Pre-selected model for new conversations
+  model_id: home-ollama/llama3.1:8b   # Pre-selected model, as <connection id>/<model id>
   mode: default                  # default = pre-selected, mandatory = locked
 ```
 
@@ -377,6 +365,8 @@ voice:
 | `voice.interaction_mode` | `listen_along` | Debate/panel microphone behaviour |
 
 ### Token Management
+
+No code reads this section; it is listed because the default `config.yaml` still carries it. Usage limits are monthly credit allowances on a server's metered connections (see [Metering](metering.md)).
 
 ```yaml
 token_management:

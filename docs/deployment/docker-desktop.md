@@ -3,7 +3,7 @@
 `deploy/docker-desktop/compose.yaml` runs a complete Spark server on your own
 computer with Docker Desktop (Windows, macOS or Linux): PostgreSQL with pgvector, a
 one-shot migration, the web role and the worker role. It is for trying server mode
-(users, roles, budgets, the worker) on one machine. Every port binds to `127.0.0.1`,
+(users, roles, connections and credit allowances, the worker) on one machine. Every port binds to `127.0.0.1`,
 so nothing is reachable from another computer.
 
 For a server other people use, deploy on a server host with a TLS reverse proxy:
@@ -25,8 +25,8 @@ the host with Portainer. For Spark as a personal app with no server at all, see
   cookies are marked `Secure`; these browsers keep `Secure` cookies for `localhost`
   over plain http, Safari does not. With Safari, use [the https
   profile](#https-on-localhost).
-- An API key for at least one model provider (Anthropic, Google Gemini, X.AI or AWS
-  Bedrock), or an Ollama server, to chat.
+- A credential for at least one model service (Anthropic, OpenAI, X.AI, Google
+  Gemini, Amazon Bedrock or Microsoft Foundry), or an Ollama server, to chat.
 
 ## Get the files
 
@@ -63,7 +63,7 @@ ending in `-dev-only`:
 | `SPARK_IMAGE` | The image and version, for example `ghcr.io/cognisn/spark:0.3.0rc1` |
 | `POSTGRES_PASSWORD` | The database owner's password. Spark's database URL is built from it, so use letters, digits, `-` and `_` only |
 | `POSTGRES_USER`, `POSTGRES_DB` | The database owner and database name (default `spark` for both) |
-| `KONFIG_MASTER_KEY` | The key to konfig's encrypted secrets file, which holds the provider keys you enter and warden's signing keys |
+| `KONFIG_MASTER_KEY` | The key to konfig's encrypted secrets file, which holds the connection credentials you enter and warden's signing keys |
 | `SPARK_PUBLIC_BASE_URL` | The address you open in the browser, exactly (default `http://localhost:8000`) |
 | `SPARK_WEB_PORT` | The port Spark is published on, on `127.0.0.1` (default `8000`) |
 
@@ -74,7 +74,7 @@ docker run --rm --entrypoint python ghcr.io/cognisn/spark:0.3.0rc1 -c "from cryp
 ```
 
 Keep `spark.env` private, and keep a copy of `KONFIG_MASTER_KEY`: without it the
-secrets file cannot be read, and every provider key and sign-in key in it is lost.
+secrets file cannot be read, and every connection credential and sign-in key in it is lost.
 The file may have Windows line endings.
 
 If port 8000 is taken, change `SPARK_WEB_PORT` and the port in
@@ -112,14 +112,16 @@ recovery codes it shows.
 
 Then, on the instance settings page:
 
-1. Enable a provider and enter its API key. The key is stored in konfig's encrypted
-   secrets file, never in the database.
-2. Choose the models offered to users.
+1. Add a model connection on **Account > Connections** and enter its credential. The
+   credential is stored in konfig's encrypted secrets file, never in the database.
+2. Choose the models the connection offers, and assign it to the `user` role (or to
+   named users). See [Connections](../connections.md) and
+   [Metering](../metering.md).
 3. Optionally set up mail (`mail.smtp`). Without it, Spark shows an administrator
    each invitation and password reset link once, to pass on yourself; see
    [Identity](identity.md#mail).
 
-[Identity](identity.md) covers roles, invitations, budgets and single sign-on. To
+[Identity](identity.md) covers roles, invitations and single sign-on. To
 try a second user on the same computer, invite one from the administration screens
 and accept the invitation in a private window or another browser profile.
 
