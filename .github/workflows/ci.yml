@@ -1,25 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - "release/**"
-      - "feat/**"
-      - "fix/**"
-      - "docs/**"
-      - "refactor/**"
-      - "chore/**"
-      - "test/**"
-      - "perf/**"
-      - "build/**"
-      - "ci/**"
-      - "style/**"
-      - "security/**"
-  pull_request:
-    branches:
-      - main
-      - "release/**"
+  workflow_dispatch:
 
 jobs:
   test:
