@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Declare a model by its id** in the models view of any connection (the administrator's Connections page, or Settings in personal mode): type the model id with its catalogue fields (kind, context window, output limit, capabilities, residency scope and Regions), without discovery. This is how a Microsoft Foundry deployment is added, by its deployment name; a Foundry connection offers only the deployments declared for it. The declaration uses the same overlay API, validation, CSRF check, permission and audit as declaring a discovered model
+
+### Fixed
+- **A Microsoft Foundry connection can offer models from the screens.** Foundry discovery is unsupported and the default in-Region policy refuses every public catalogue model, so until now a deployment could be declared only through the API
+- **Declaring a model refuses an id conduit's catalogue already lists for the service** (409, naming the model). Before, such a declaration silently replaced conduit's entry for every connection of that service; Spark's own declarations can still be declared again to correct them
+
 ## [0.3.0rc11] - 2026-11-19
 
 ### Changed

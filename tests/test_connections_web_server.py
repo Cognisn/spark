@@ -30,9 +30,16 @@ from spark.identity import audit as spark_audit
 from spark.identity.db import warden_database
 from spark.identity.permissions import ADMINISTRATOR, AUDITOR, POWER_USER, USER
 from spark.usage import credits
+from spark.web.security import CSRF_HEADER
 from tests.identity_screen_helpers import NAVIGATE, plain_client, server_db  # noqa: F401
 from tests.identity_web_helpers import another_client, make_user, sign_in
-from tests.test_connections_web import API, KEY, connection_runtime
+from tests.test_connections_web import (
+    API,
+    DEPLOYMENT,
+    FOUNDRY_ENDPOINT,
+    KEY,
+    connection_runtime,
+)
 
 pytestmark = pytest.mark.postgres
 
@@ -306,3 +313,83 @@ class TestAssignments:
             if e.details.get("connection_id") == cid
         ]
         assert "assignment" in audited and "unassigned" in audited
+
+
+def _foundry(client: TestClient) -> str:
+    resp = client.post(
+        API,
+        json={
+            "service": "anthropic_foundry",
+            "name": "Foundry AU",
+            "values": {"base_url": FOUNDRY_ENDPOINT, "region": "australiaeast"},
+            "secrets": {"api_key": KEY},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["id"])
+
+
+def _overlays(client: TestClient) -> list[Any]:
+    from spark.database.connections import list_overlays
+
+    app: Any = client.app
+    rows: list[Any] = app.state.sync_db.call(list_overlays)
+    return rows
+
+
+def _declared(client: TestClient) -> list[Any]:
+    return [
+        e.details.get("model_id")
+        for e in _events(client, spark_audit.SETTING_CHANGED)
+        if e.details.get("change") == "overlay_declared"
+    ]
+
+
+class TestDeclaringByID:
+    """A Foundry deployment typed in by name, on PostgreSQL with warden's chain."""
+
+    def test_an_administrator_declares_a_deployment_and_it_is_offered(
+        self, admin: TestClient
+    ) -> None:
+        cid = _foundry(admin)
+        assert f"{cid}/sonnet-au-prod" not in _offered(admin)
+        resp = admin.post(f"{API}/{cid}/overlays", json=DEPLOYMENT)
+        assert resp.status_code == 200, resp.text
+        rows = {m["model_id"]: m for m in resp.json()["models"]}
+        assert rows["sonnet-au-prod"]["overlay"] and rows["sonnet-au-prod"]["refused"] is None
+        assert [(r.provider, r.model_id) for r in _overlays(admin)] == [
+            ("anthropic", "sonnet-au-prod")
+        ]
+        assert f"{cid}/sonnet-au-prod" in _offered(admin)
+        assert _declared(admin) == ["sonnet-au-prod"]
+        tier = admin.put(
+            f"{API}/{cid}/models", json={"model_id": "sonnet-au-prod", "tier": "lower"}
+        )
+        assert {m["model_id"]: m for m in tier.json()["models"]}["sonnet-au-prod"][
+            "tier"
+        ] == "lower"
+
+    def test_an_id_the_catalogue_ships_is_refused_and_not_audited(self, admin: TestClient) -> None:
+        cid = _foundry(admin)
+        resp = admin.post(f"{API}/{cid}/overlays", json={**DEPLOYMENT, "model_id": "claude-opus-5"})
+        assert resp.status_code == 409
+        assert "already lists claude-opus-5" in resp.json()["error"]
+        assert _overlays(admin) == [] and _declared(admin) == []
+
+    @pytest.mark.parametrize("role", [USER, POWER_USER, AUDITOR])
+    def test_any_other_role_is_refused_and_nothing_is_stored(
+        self, admin: TestClient, role: str
+    ) -> None:
+        cid = _foundry(admin)
+        other = _signed_in(admin, ADA, role)
+        assert other.post(f"{API}/{cid}/overlays", json=DEPLOYMENT).status_code == 403
+        assert _overlays(admin) == [] and _declared(admin) == []
+
+    def test_declaring_needs_the_csrf_token(self, admin: TestClient) -> None:
+        cid = _foundry(admin)
+        token = admin.headers.pop(CSRF_HEADER)
+        try:
+            assert admin.post(f"{API}/{cid}/overlays", json=DEPLOYMENT).status_code == 403
+        finally:
+            admin.headers[CSRF_HEADER] = token
+        assert _overlays(admin) == []

@@ -253,15 +253,45 @@ beyond the few conduit declares. **Declare** opens a short form:
 overlay entry for the connection's catalogue (for example `ollama`). It then appears in
 the models view, marked **Declared in SPARK**, for every connection of that service.
 
-> **Microsoft Foundry deployments.** Foundry model ids are deployment names, which
-> discovery cannot list, so the declare form never appears for a Foundry connection,
-> and with the default in-Region policy every public catalogue model is refused. In
-> this release a Foundry connection offers no models from the screens. A deployment
-> can be declared only through the API (`POST /api/connections/<id>/overlays`, with
-> `model_id` set to the deployment name and the fields above). This is a known gap.
->
-> Not run for this guide: declaring a deployment through the API against a real
-> Foundry resource.
+### Declaring a model by its id
+
+**Declare a model**, under the table in every connection's models view, takes the
+model id typed in, so it needs no discovery. It has the same fields as the form above,
+plus **Model id**, and saves the same way. An id conduit's catalogue already lists for
+the service is refused ("The catalogue already lists ... for this service"). An id
+Spark has already declared is replaced, which is how you correct a declaration.
+
+### Declaring a Microsoft Foundry deployment
+
+On both Microsoft Foundry services the model id is the name of a deployment on your
+Foundry resource. Discovery cannot list deployments, and the default in-Region policy
+refuses every public catalogue model, so a Foundry connection offers only the
+deployments you declare.
+
+1. In the Foundry portal, note each deployment's name, the model it runs, and the
+   Region of the resource (for example `australiaeast`).
+2. Open **Models** on the Foundry connection and choose **Declare a model**.
+3. **Model id (deployment name)**: the deployment's name, exactly as Foundry shows
+   it. If it is the same as a model id the catalogue already lists (for example
+   `claude-sonnet-5`), Spark refuses it: give the deployment its own name on the
+   Foundry resource, such as `sonnet-au-prod`.
+4. **Kind**, **Context window**, **Output limit** and the capabilities: those of the
+   model the deployment runs, from the model's documentation.
+5. **Residency scope**: **In Region** for a standard regional deployment, with the
+   resource's Region in **Regions** (filled in from the connection's Region). Choose
+   **Cross Region** or **Global** only for a data zone or global deployment, and widen
+   the connection's residency policy to allow it.
+6. **Save to catalogue**. The deployment appears in the models view, marked **Declared
+   in SPARK**, enabled at the **Standard** tier; change its switch or tier there.
+
+A declaration belongs to the connection's catalogue (`anthropic` for Claude in
+Microsoft Foundry; `openai` or `xai` for Microsoft Foundry (OpenAI-compatible), as its
+**Catalogue** field says), so it is also listed on the other connections of that
+catalogue, such as a direct Anthropic connection, where the deployment name means
+nothing. Switch it off in those connections' models views.
+
+> Not run for this guide: declaring a deployment against a real Foundry resource.
+> Spark's tests declare deployments on synthetic Foundry connections.
 
 ## Managing connections
 
