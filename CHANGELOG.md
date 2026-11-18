@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc13] - 2026-11-19
+
 ### Fixed
 - **The chat stream always tells the page a compaction ran.** After a turn finished, the stream forwarded only the tool events still queued, so the `compaction_start` and `compaction_complete` events the compactor reports at the end of a turn were often dropped and the page never showed "Compaction complete". Every event still queued when the turn ends, of every kind, is now sent in order with the same mapping as during the turn, before the final response
 
