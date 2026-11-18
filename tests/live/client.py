@@ -123,6 +123,12 @@ class Browser:
     def post(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("POST", path, **kwargs)
 
+    def put(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("PUT", path, **kwargs)
+
+    def delete(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("DELETE", path, **kwargs)
+
     def navigate(self, path: str, limit: int = 10) -> httpx.Response:
         """GET ``path`` as a page navigation, following redirects on this origin."""
         resp = self.get(path, headers=NAVIGATE)
@@ -188,8 +194,14 @@ class Browser:
 
     # -- chat -----------------------------------------------------------------------------
 
-    def events(self, path: str, params: dict[str, Any]) -> Iterator[Event]:
-        """The server-sent events of ``path``, parsed, until the stream ends."""
+    def events(
+        self, path: str, params: dict[str, Any], approve: str | None = None
+    ) -> Iterator[Event]:
+        """The server-sent events of ``path``, parsed, until the stream ends.
+
+        With ``approve`` (``once``, ``allowed`` or ``denied``) a tool permission request
+        is answered as the chat page's dialogue would (``/chat/permission/respond``).
+        """
         headers = {"Origin": self.origin, "Accept": "text/event-stream"}
         cookies = self._cookie_header(path)
         if cookies:
@@ -210,6 +222,12 @@ class Browser:
                             parsed: Any = json.loads(raw)
                         except json.JSONDecodeError:
                             parsed = raw
+                        if name == "permission_request" and approve and isinstance(parsed, dict):
+                            answered = self.post(
+                                "/chat/permission/respond",
+                                json={"request_id": parsed["request_id"], "decision": approve},
+                            )
+                            assert answered.status_code == 200, answered.text
                         yield Event(name, parsed)
                         if name in ("complete", "error"):
                             return
@@ -220,12 +238,16 @@ class Browser:
                     data.append(line[5:].lstrip())
 
     def chat(
-        self, conversation_id: int, message: str, attachments: str | None = None
+        self,
+        conversation_id: int,
+        message: str,
+        attachments: str | None = None,
+        approve: str | None = None,
     ) -> list[Event]:
         params: dict[str, Any] = {"message": message, "conversation_id": conversation_id}
         if attachments:
             params["attachments"] = attachments
-        return list(self.events("/stream/chat", params))
+        return list(self.events("/stream/chat", params, approve))
 
     def new_conversation(self, model_id: str, name: str = "Live e2e") -> int:
         resp = self.post("/conversations/api/create", json={"name": name, "model_id": model_id})
@@ -236,10 +258,15 @@ class Browser:
 
 def final_text(events: list[Event]) -> str:
     """The text of the final ``response`` event."""
+    return str(final_response(events).get("content", ""))
+
+
+def final_response(events: list[Event]) -> dict[str, Any]:
+    """The data of the final ``response`` event (its content, usage and budget standing)."""
     for event in reversed(events):
         if event.name == "response" and isinstance(event.data, dict):
-            return str(event.data.get("content", ""))
-    return ""
+            return event.data
+    return {}
 
 
 def named(events: list[Event], name: str) -> list[Event]:

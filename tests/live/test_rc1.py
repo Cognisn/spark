@@ -6,18 +6,23 @@ Each test names the checklist item it proves in its docstring (``A18 item N``):
    two users invited through the administration screens;
 1. single sign-on against mock-oauth2-server behind a throwaway CA;
 2. a tool category a User may not have refused;
-3. the budget stop at 100%, with the turn already in flight finishing;
+3. the stop at 100% of an allowance on the plain send route as on the stream
+   (since 0.3.0rc8 an allowance is in credits per connection; the stream's stop
+   with a turn in flight finishing is ``test_conduit.py``, scope 4);
 4. a bundle exported in personal mode and imported for a user;
 5. an untrusted tool result withheld from the model;
 7. a worker failover: the active worker stopped, the standby takes over;
 8. a chat attachment one user uploads that the other never sees;
 9. a knowledge-graph build run by the worker;
-10. a provider key saved on one web replica used by the other without a restart;
+10. a connection's key saved on one web replica used by the other without a
+    restart (the key of an Anthropic connection, since connections replaced the
+    providers settings);
 11. an invitation and a password reset mailed to the mail catcher and completed
     from the link.
 
 Item 6, the live chat, is ``test_live_provider.py``. Chat turns here go to the
-scripted model server (``deploy/live/model_stub.py``, D69), never a live model.
+scripted model server (``deploy/live/model_stub.py``, D69) through conduit's
+Ollama adapter on the ``stub-ollama`` connection, never a live model.
 """
 
 from __future__ import annotations
@@ -38,7 +43,16 @@ import httpx
 import pytest
 
 from tests.live.client import Browser, final_text, named
-from tests.live.conftest import Person, Stack, invite_and_accept, new_password, wait_for
+from tests.live.conftest import (
+    STUB_MODEL,
+    Person,
+    Stack,
+    assign,
+    connection,
+    invite_and_accept,
+    new_password,
+    wait_for,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(900)]
 
@@ -57,8 +71,9 @@ def _upload(person: Person, name: str, body: bytes, conversation_id: int | None 
     return int(resp.json()["file"]["id"])
 
 
-def _usage(person: Person) -> dict[str, Any]:
-    resp = person.browser.get("/api/usage/me")
+def _usage(person: Person, connection_id: str | None = None) -> dict[str, Any]:
+    params = {"connection": connection_id} if connection_id else None
+    resp = person.browser.get("/api/usage/me", params=params)
     assert resp.status_code == 200, resp.text
     found: dict[str, Any] = resp.json()
     return found
@@ -401,49 +416,59 @@ def test_the_standby_worker_takes_over_when_the_active_one_stops(
 # -- item 10: a provider key across replicas ---------------------------------------------------
 
 
-def test_a_provider_key_saved_on_one_replica_is_used_by_the_other(
+def test_a_connection_key_saved_on_one_replica_is_used_by_the_other(
     stack: Stack, admin: Person
 ) -> None:
-    """A18 item 10: an Anthropic key saved through web is sent by web2, which never restarts.
+    """A18 item 10: an Anthropic connection's key, saved and then changed through web, is
+    the key web2 sends, and web2 never restarts.
 
-    Both replicas' Anthropic SDK points at the model stub
-    (``compose.anthropic-stub.yaml``), which records a digest of the key each
-    replica sends and only then lists ``claude-stub-live-e2e``.
+    The connection's base URL is the model stub's https API (the stack's CA), which
+    records a digest of the key each caller sends. web2 runs the connection's
+    discovery, so the call is web2's own provider, built from the konfig store.
     """
     web2 = stack.container("web2")
     started = stack.started_at(web2)
-    key = f"sk-ant-live-e2e-{stack.run}-dev-only"
-    digest = hashlib.sha256(key.encode()).hexdigest()[:12]
+    web2_ip = stack.ip_of(web2)
     other = admin.browser.on(stack.web2_url)
-
-    saved = admin.browser.post(
-        "/settings/api/instance",
-        json={"providers.anthropic.enabled": True, "providers.anthropic.api_key": key},
+    connection_id = f"key-{stack.run}"
+    keys = [f"sk-ant-live-e2e-{stack.run}-{n}-dev-only" for n in (1, 2)]
+    values = {"base_url": stack.state.get("stub_tls_internal", "https://model-stub:11443")}
+    connection(
+        admin,
+        connection_id,
+        "anthropic",
+        f"Key check {stack.run}",
+        values,
+        secrets={"api_key": keys[0]},
     )
-    assert saved.status_code == 200, saved.text
     try:
+        for n, key in enumerate(keys):
+            digest = hashlib.sha256(key.encode()).hexdigest()[:12]
+            if n:
+                changed = admin.browser.put(
+                    f"/api/connections/{connection_id}",
+                    json={"values": values, "secrets": {"api_key": key}},
+                )
+                assert changed.status_code == 200, changed.text
 
-        web2_ip = stack.ip_of(web2)
+            def web2_sent_the_key(digest: str = digest) -> list[dict[str, Any]]:
+                found = other.post(f"/api/connections/{connection_id}/discover")
+                assert found.status_code == 200, found.text
+                sent = [
+                    r
+                    for r in stack.stub_requests()
+                    if r["api"] == "anthropic.models" and r["peer"] == web2_ip
+                ]
+                return sent if sent and sent[-1]["key"] == digest else []
 
-        def web2_sent_the_key() -> list[dict[str, Any]]:
-            models = other.get("/conversations/api/models").json()["models"]
-            listed = any(m["id"] == "claude-stub-live-e2e" for m in models)
-            sent = [
-                r
-                for r in stack.stub_requests()
-                if r["api"] == "anthropic.models" and r["peer"] == web2_ip
-            ]
-            return sent if listed and sent and sent[-1]["key"] == digest else []
-
-        sent = wait_for(web2_sent_the_key, 60, "web2 calling the provider with the saved key")
-        assert sent[-1]["key"] == digest, sent
+            sent = wait_for(web2_sent_the_key, 60, f"web2 sending key {n + 1}", every=3)
+            assert sent[-1]["key"] == digest, sent
+            shown = other.get(f"/api/connections/{connection_id}").json()
+            assert shown["secrets"] == {"api_key": True}, shown
+            assert key not in json.dumps(shown)
         assert stack.started_at(web2) == started, "web2 restarted"
-        assert other.get("/settings/api/secrets").json().get("providers.anthropic.api_key")
     finally:
-        admin.browser.post(
-            "/settings/api/secrets/clear", json={"key": "providers.anthropic.api_key"}
-        )
-        admin.browser.post("/settings/api/instance", json={"providers.anthropic.enabled": False})
+        admin.browser.delete(f"/api/connections/{connection_id}")
 
 
 # -- item 4: a personal bundle imported for a user -----------------------------------------
@@ -519,60 +544,34 @@ def test_a_personal_bundle_is_exported_and_imported_for_a_user(
     assert after[0][0] == len(seeded), "the refused re-import changed Bob's data"
 
 
-# -- item 3: the budget stop -------------------------------------------------------------
+# -- item 3: the stop at 100% on the plain send route --------------------------------------
 
 
-def _set_budget(admin: Person, guid: str, tokens: str) -> None:
-    page = admin.browser.navigate("/admin/usage")
-    assert page.status_code == 200, page.text[:2000]
-    resp = admin.browser.submit(
-        "/admin/usage/budgets/users", page, user_guid=guid, monthly_tokens=tokens
+def test_a_role_allowance_also_stops_the_plain_send_route(stack: Stack, admin: Person) -> None:
+    """A18 item 3 (API route): a User's role allowance on a metered connection refuses
+    ``POST /chat/{id}/api/send`` without calling the model, as the stream does (Q35)."""
+    connection_id = "stub-send-route"
+    connection(
+        admin,
+        connection_id,
+        "ollama",
+        "Model stub (send route)",
+        {"base_url": stack.state.get("stub_internal", "http://model-stub:11434")},
     )
-    assert resp.status_code == 303, resp.text[:2000]
-
-
-def test_the_budget_stops_at_100_percent_and_the_turn_in_flight_finishes(
-    stack: Stack, admin: Person, bob: Person, model_id: str
-) -> None:
-    """A18 item 3: under budget the turn starts and finishes past 100%; the next is refused."""
-    conv = bob.browser.new_conversation(model_id, "Budget")
-    used = _usage(bob)["used"]
-    _set_budget(admin, bob.guid, str(used + 100))
-
-    first = bob.browser.chat(conv, "[[tokens 90]]")
-    assert named(first, "complete"), [e.name for e in first]
-    assert _usage(bob)["state"] == "warning", _usage(bob)
-
-    # In flight: the check passes at the start (90%), the reply takes it to 210%.
-    since = time.time()
-    second = bob.browser.chat(conv, "[[sleep 4]] [[tokens 120]]")
-    assert final_text(second) == "abcd" * 120, [e.name for e in second]
-    complete = named(second, "complete")[-1].data
-    assert complete.get("status") != "refused", complete
-    status = _usage(bob)
-    assert status["state"] == "exceeded" and status["percent"] >= 100, status
-
-    since = time.time()
-    third = bob.browser.chat(conv, f"over budget {stack.run} [[tokens 5]]")
-    assert named(third, "budget_exceeded"), [e.name for e in third]
-    assert named(third, "complete")[-1].data.get("status") == "refused"
-    assert not [r for r in _stub_since(stack, since) if stack.run in r["user"]], "the model ran"
-
-
-def test_a_role_budget_also_stops_the_plain_send_route(
-    stack: Stack, admin: Person, model_id: str
-) -> None:
-    """A18 item 3 (API route): a User's role budget refuses ``POST /chat/{id}/api/send``
-    without calling the model, as the stream does."""
+    metered = admin.browser.put(
+        f"/api/connections/{connection_id}/metering", json={"metered": True}
+    )
+    assert metered.status_code == 200, metered.text
+    # One credit a month for every User on this connection: one turn uses it.
+    assign(admin, connection_id, role="user", monthly_credits=1)
     carol = invite_and_accept(stack, admin, f"carol-{stack.run}@example.com", "user")
-    conv = carol.browser.new_conversation(model_id, "Budget: send route")
-    page = admin.browser.navigate("/admin/usage")
-    resp = admin.browser.submit("/admin/usage/budgets/roles", page, role="user", monthly_tokens="1")
-    assert resp.status_code == 303, resp.text[:2000]
     try:
-        warm = carol.browser.chat(conv, "[[tokens 10]]")
+        model = f"{connection_id}/{STUB_MODEL}"
+        wait_for(lambda: any(m["id"] == model for m in offered_to(carol)), 60, "the model offered")
+        conv = carol.browser.new_conversation(model, "Allowance: send route")
+        warm = carol.browser.chat(conv, "[[tokens 400]]")
         assert named(warm, "complete"), [e.name for e in warm]
-        assert _usage(carol)["state"] == "exceeded", _usage(carol)
+        assert _usage(carol, connection_id)["state"] == "exceeded", _usage(carol, connection_id)
 
         since = time.time()
         sent = carol.browser.post(
@@ -582,9 +581,13 @@ def test_a_role_budget_also_stops_the_plain_send_route(
         # The contrast: the stream refuses the same user at the same moment.
         streamed = carol.browser.chat(conv, f"stream route {stack.run} [[tokens 5]]")
         assert named(streamed, "budget_exceeded"), [e.name for e in streamed]
-        assert not ran, f"the model ran past the role budget (HTTP {sent.status_code})"
-        assert sent.status_code in (402, 409, 429), (sent.status_code, sent.text[:500])
+        assert not ran, f"the model ran past the role allowance (HTTP {sent.status_code})"
+        assert sent.status_code == 429, (sent.status_code, sent.text[:500])
+        assert connection_id in json.dumps(sent.json()["budget"]), sent.text[:500]
     finally:
-        page = admin.browser.navigate("/admin/usage")
-        admin.browser.submit("/admin/usage/budgets/roles", page, role="user", monthly_tokens="")
         carol.browser.close()
+
+
+def offered_to(person: Person) -> list[dict[str, Any]]:
+    models: list[dict[str, Any]] = person.browser.get("/conversations/api/models").json()["models"]
+    return models

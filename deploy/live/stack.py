@@ -3,31 +3,34 @@
 Run from the repository root with the project's virtual environment:
 
     python deploy/live/stack.py --sandbox DIR prepare --project NAME --port-base N --image TAG
-    python deploy/live/stack.py --sandbox DIR up [--live]
+    python deploy/live/stack.py --sandbox DIR up
     python deploy/live/stack.py --sandbox DIR down
     python deploy/live/stack.py --sandbox DIR secret NAME [--announce KEY]
     python deploy/live/stack.py --sandbox DIR compose ARGS...
 
 ``prepare`` writes everything the stack needs into ``DIR/live``: a throwaway CA
-and the certificates it signs (OIDC provider, mail catcher), a CA bundle (the
-public CAs plus the throwaway CA), the mock-oauth2-server configuration, the
-env file with ``-dev-only`` credentials and a fresh konfig key, and
-``live.json``, which the suite in ``tests/live`` reads (``SPARK_LIVE_STACK``).
-It keeps what an earlier run wrote, so the konfig key never changes under a
-running stack. Nothing it writes belongs in the repository.
+and the certificates it signs (OIDC provider, mail catcher, the model stub's
+https API), a CA bundle (the public CAs plus the throwaway CA), the
+mock-oauth2-server configuration, the env file with ``-dev-only`` credentials and
+a fresh konfig key, and ``live.json``, which the suite in ``tests/live`` reads
+(``SPARK_LIVE_STACK``). It keeps what an earlier run wrote, so the konfig key
+never changes under a running stack. Nothing it writes belongs in the repository.
 
 ``up`` migrates, stores the SSO client secret in the konfig store, starts every
 service, waits until both web replicas report ready and creates the first
-administrator with ``spark identity create-admin``. Without ``--live`` the web
-replicas send Anthropic requests to the scripted model server; ``--live`` leaves
-that out, for the one live chat. ``down`` removes the stack and its volumes.
-``secret`` asks for one secret at this terminal (never echoed) and writes it into
-the stack's konfig store with ``set_secret.py``; ``--announce KEY`` then tells the
-running replicas, as the settings page would (for example ``secret
-providers_anthropic_api_key --announce providers.anthropic.api_key``).
+administrator with ``spark identity create-admin``. Model calls go wherever a
+connection's settings send them: the suite's connections name the model stub,
+and the one live chat uses a connection of its own, so the same stack serves
+both. ``down`` removes the stack and its volumes. ``secret`` asks for one secret
+at this terminal (never echoed) and writes it into the stack's konfig store with
+``set_secret.py``; ``--announce KEY`` then tells the running replicas, as the
+connections screen would (for example ``secret connections.live.api_key
+--announce connections.live.api_key`` replaces the key of the connection
+``live``).
 
 Ports are ``N`` plus a fixed offset (web 0, web2 1, OIDC 10, model stub 11,
-mail API 25, PostgreSQL 32), all bound to 127.0.0.1.
+mail API 25, PostgreSQL 32), all bound to 127.0.0.1. The model stub's https API
+(11443) and the MCP server (127.0.0.1:8765 inside web) are not published.
 """
 
 from __future__ import annotations
@@ -159,6 +162,9 @@ def _certificates(certs: Path) -> None:
     mail_key, mail_cert = leaf("mail", ["mail"], [])
     (certs / "mail.crt").write_bytes(mail_cert.public_bytes(pem) + ca_pem)
     (certs / "mail.key").write_bytes(_pem_key(mail_key))
+    stub_key, stub_cert = leaf("model-stub", ["model-stub"], [])
+    (certs / "model-stub.crt").write_bytes(stub_cert.public_bytes(pem) + ca_pem)
+    (certs / "model-stub.key").write_bytes(_pem_key(stub_key))
 
     import certifi
 
@@ -205,7 +211,7 @@ def prepare(sandbox: Path, project: str, port_base: int, image: str) -> Path:
     ports = {name: port_base + offset for name, offset in OFFSETS.items()}
     public = f"http://127.0.0.1:{ports['web']}"
 
-    if not (certs / "ca.crt").exists():
+    if not (certs / "ca.crt").exists() or not (certs / "model-stub.crt").exists():
         _certificates(certs)
     _oidc_config(certs)
 
@@ -269,10 +275,13 @@ def prepare(sandbox: Path, project: str, port_base: int, image: str) -> Path:
             "ca_bundle": str(certs / "ca-bundle.pem"),
             "admin_email": ADMIN_EMAIL,
             "sso_email": SSO_EMAIL,
-            "compose": _compose_prefix(live, project, scripted=True),
-            "compose_live": _compose_prefix(live, project, scripted=False),
+            "stub_internal": "http://model-stub:11434",
+            "stub_tls_internal": "https://model-stub:11443",
+            "mcp_url": "http://127.0.0.1:8765/mcp",
+            "compose": _compose_prefix(live, project),
         }
     )
+    state.pop("compose_live", None)
     state_path.write_text(json.dumps(state, indent=2), encoding="utf-8", newline="\n")
     return state_path
 
@@ -280,10 +289,8 @@ def prepare(sandbox: Path, project: str, port_base: int, image: str) -> Path:
 # -- Docker Compose --------------------------------------------------------------------------
 
 
-def _compose_prefix(live: Path, project: str, *, scripted: bool) -> list[str]:
+def _compose_prefix(live: Path, project: str) -> list[str]:
     files = [DEPLOY / "compose.yaml", HERE / "compose.live.yaml"]
-    if scripted:
-        files.append(HERE / "compose.anthropic-stub.yaml")
     command = ["docker", "compose", "-p", project, "--env-file", str(live / "live.env")]
     for f in files:
         command += ["-f", str(f)]
@@ -321,9 +328,9 @@ def _ready(url: str, timeout: float = 900.0) -> None:
     raise SystemExit(f"{url} not ready after {timeout:.0f}s: {last}")
 
 
-def up(sandbox: Path, *, live_provider: bool) -> None:
+def up(sandbox: Path) -> None:
     state = _state(sandbox)
-    compose = state["compose_live" if live_provider else "compose"]
+    compose = state["compose"]
     _run(compose + ["up", "-d", "postgres", "oidc", "mail", "model-stub"])
     _run(compose + ["run", "--rm", "-T", "migrate"])
     _run(
@@ -351,8 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--project", required=True)
     p.add_argument("--port-base", type=int, required=True)
     p.add_argument("--image", required=True)
-    u = sub.add_parser("up")
-    u.add_argument("--live", action="store_true", help="leave the Anthropic stub out")
+    sub.add_parser("up")
     sub.add_parser("down")
     s = sub.add_parser("secret")
     s.add_argument("name")
@@ -365,10 +371,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "prepare":
         print(prepare(sandbox, args.project, args.port_base, args.image))
     elif args.command == "up":
-        up(sandbox, live_provider=args.live)
+        up(sandbox)
     elif args.command == "secret":
         state = _state(sandbox)
-        command = state["compose_live"] + ["run", "--rm", "-it", "--no-deps"]
+        command = state["compose"] + ["run", "--rm", "-it", "--no-deps"]
         command += ["--entrypoint", "python", "web", "-I", "/opt/spark-live/set_secret.py"]
         command += [args.name] + (["--announce", args.announce] if args.announce else [])
         return subprocess.run(command, check=False).returncode  # noqa: S603 - fixed argv
