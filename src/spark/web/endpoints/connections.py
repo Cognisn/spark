@@ -10,7 +10,7 @@
   connection's kind and Region, marked reachable or not by the last discovery
   (``/discover`` runs it through conduit, on a worker thread), refused with
   conduit's reason where the residency policy forbids them, enabled or not and
-  tiered; ``/overlays`` declares a discovered model the catalogue lacks.
+  tiered; ``/overlays`` declares a model the catalogue lacks (discovered or typed in).
 * ``/api/connections/{id}/metering`` and ``/assignments`` (server mode only).
 
 Every route needs ``spark.admin.connections`` (401 signed out, 403 without it); in
@@ -1112,10 +1112,27 @@ def _overlay_row(provider: str, data: Mapping[str, Any]) -> repo.OverlayRow:
     )
 
 
+async def _shipped(request: Request, runtime: Any, row: repo.OverlayRow) -> bool:
+    """Whether conduit's catalogue already ships ``row``'s model for its provider.
+
+    An overlay row on a shipped key would override that entry for every connection of
+    the service, so a declaration may add a model or correct one of SPARK's own rows,
+    never replace conduit's.
+    """
+    if runtime.catalogue.get(row.provider, row.model_id) is None:
+        return False
+    own = {(o.provider, o.model_id) for o in await repo.list_overlays(database(request))}
+    return (row.provider, row.model_id) not in own
+
+
 @router.post(API + "/{connection_id}/overlays")
 async def declare_model(connection_id: str, request: Request) -> JSONResponse:
     """Declare a model the catalogue lacks, as a SPARK overlay row for the connection's
-    catalogue provider (validated as a conduit catalogue entry)."""
+    catalogue provider (validated as a conduit catalogue entry).
+
+    The model id may be one discovery listed or one typed in (a Foundry deployment
+    name, which discovery cannot list). An id conduit's catalogue already ships for
+    the provider is refused (409); one of SPARK's own rows is replaced."""
     runtime = _runtime(request)
     if runtime is None:
         return _error(NOT_STARTED, 503)
@@ -1136,6 +1153,12 @@ async def declare_model(connection_id: str, request: Request) -> JSONResponse:
             else "not a valid catalogue entry"
         )
         return _error(f"conduit refused the entry: {detail}")
+    if await _shipped(request, runtime, row):
+        return _error(
+            f"The catalogue already lists {row.model_id} for this service. Give the model "
+            "another id (for a Foundry deployment, its own deployment name).",
+            409,
+        )
     await repo.save_overlay(database(request), row)
     await _audit(request, connection_id, "overlay_declared", model_id=row.model_id)
     await _refresh(request)

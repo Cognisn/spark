@@ -39,7 +39,7 @@ from spark.connections import ConnectionRuntime, discovery
 from spark.connections.runtime import production_factories
 from spark.connections.store import FileConnectionStore
 from spark.database import autonomous_actions
-from spark.database.connections import OverlayRow, save_overlay
+from spark.database.connections import OverlayRow, list_overlays, save_overlay
 from spark.web.security import CSRF_HEADER
 from spark.web.server import create_app
 from tests.db_helpers import app_client
@@ -442,3 +442,175 @@ class TestRequestGuards:
         resp = client.delete(f"{API}/lab", headers={"Origin": "https://elsewhere.example.com"})
         assert resp.status_code == 403
         assert client.get(f"{API}/lab").status_code == 200
+
+
+# -- Declaring a model by its id (Foundry deployments, any service) --------------------
+
+FOUNDRY_ENDPOINT = "https://foundry.example.com/anthropic/"
+OPENAI_FOUNDRY_ENDPOINT = "https://foundry.example.com/openai/v1/"
+DEPLOYMENT: dict[str, Any] = {
+    "model_id": "sonnet-au-prod",
+    "kind": "chat",
+    "context_window": 200000,
+    "output_limit": 64000,
+    "tools": True,
+    "vision": True,
+    "prompt_caching": True,
+    "structured_output": False,
+    "residency_scope": "in_region",
+    "regions": "australiaeast",
+}
+
+
+def _foundry(client: TestClient, name: str = "Foundry AU") -> str:
+    resp = client.post(
+        API,
+        json={
+            "service": "anthropic_foundry",
+            "name": name,
+            "values": {"base_url": FOUNDRY_ENDPOINT, "region": "australiaeast"},
+            "secrets": {"api_key": KEY},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["id"])
+
+
+def _openai_foundry(client: TestClient, name: str = "Foundry OpenAI") -> str:
+    resp = client.post(
+        API,
+        json={
+            "service": "openai_foundry",
+            "name": name,
+            "values": {"service.endpoint": OPENAI_FOUNDRY_ENDPOINT, "region": "australiaeast"},
+            "secrets": {"service.auth.api_key": KEY},
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["id"])
+
+
+def _listed(client: TestClient, connection_id: str) -> set[str]:
+    runtime: Any = client.app.state.connections  # type: ignore[attr-defined]
+    return {m["id"] for m in runtime.listed_models(connection_id)}
+
+
+class TestDeclaringByID:
+    """A model typed in by its id, without discovery: the only way to add a Foundry
+    deployment, and available for every service."""
+
+    def test_a_foundry_connection_offers_nothing_until_a_deployment_is_declared(
+        self, client: TestClient
+    ) -> None:
+        cid = _foundry(client)
+        view = client.get(f"{API}/{cid}/models").json()
+        assert view["undeclared"] == []
+        assert all(m["refused"] for m in view["models"]), "the default policy refuses them all"
+        assert _listed(client, cid) == set()
+
+    def test_a_typed_in_deployment_is_declared_without_discovery(self, client: TestClient) -> None:
+        cid = _foundry(client)
+        resp = client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["discovery"] is None
+        rows = {m["model_id"]: m for m in resp.json()["models"]}
+        row = rows["sonnet-au-prod"]
+        assert row["overlay"] is True and row["refused"] is None
+        assert row["enabled"] is True and row["tier"] == "standard"
+        assert (row["context_window"], row["output_limit"]) == (200000, 64000)
+        assert row["tools"] and row["vision"] and row["prompt_caching"]
+        assert not row["structured_output"]
+        assert (row["residency_scope"], row["regions"]) == ("in_region", ["australiaeast"])
+        assert _listed(client, cid) == {f"{cid}/sonnet-au-prod"}
+
+    def test_the_declared_deployment_takes_a_tier_and_can_be_switched_off(
+        self, client: TestClient
+    ) -> None:
+        cid = _foundry(client)
+        client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT)
+        higher = {"model_id": "sonnet-au-prod", "tier": "higher"}
+        resp = client.put(f"{API}/{cid}/models", json=higher)
+        assert resp.status_code == 200, resp.text
+        rows = {m["model_id"]: m for m in resp.json()["models"]}
+        assert rows["sonnet-au-prod"]["tier"] == "higher"
+        off = {"model_id": "sonnet-au-prod", "enabled": False}
+        resp = client.put(f"{API}/{cid}/models", json=off)
+        rows = {m["model_id"]: m for m in resp.json()["models"]}
+        assert rows["sonnet-au-prod"]["enabled"] is False
+        assert _listed(client, cid) == set()
+
+    def test_an_openai_compatible_deployment_is_declared_under_its_catalogue(
+        self, client: TestClient
+    ) -> None:
+        cid = _openai_foundry(client)
+        body = {**DEPLOYMENT, "model_id": "gpt5-au", "output_limit": 32000}
+        resp = client.post(f"{API}/{cid}/overlays", json=body)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["catalogue_provider"] == "openai"
+        rows = {m["model_id"]: m for m in resp.json()["models"]}
+        assert rows["gpt5-au"]["refused"] is None and rows["gpt5-au"]["overlay"] is True
+
+    @pytest.mark.parametrize(
+        ("service", "model_id"),
+        [("anthropic_foundry", "claude-sonnet-5"), ("openai_foundry", "gpt-5")],
+    )
+    def test_an_id_the_catalogue_already_holds_is_refused(
+        self, client: TestClient, service: str, model_id: str
+    ) -> None:
+        cid = _foundry(client) if service == "anthropic_foundry" else _openai_foundry(client)
+        resp = client.post(f"{API}/{cid}/overlays", json={**DEPLOYMENT, "model_id": model_id})
+        assert resp.status_code == 409, resp.text
+        error = resp.json()["error"]
+        assert model_id in error and "already" in error
+        assert _call(client, list_overlays) == []
+
+    def test_an_id_the_catalogue_ships_is_refused_for_any_service(self, client: TestClient) -> None:
+        _stub(client)
+        body = {**DEPLOYMENT, "model_id": "stub-echo", "residency_scope": "local", "regions": ""}
+        resp = client.post(f"{API}/lab/overlays", json=body)
+        assert resp.status_code == 409
+        assert "stub-echo" in resp.json()["error"]
+        assert _call(client, list_overlays) == []
+
+    def test_sparks_own_declaration_can_be_declared_again_to_correct_it(
+        self, client: TestClient
+    ) -> None:
+        cid = _foundry(client)
+        assert client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT).status_code == 200
+        corrected = {**DEPLOYMENT, "context_window": 100000}
+        again = client.post(f"{API}/{cid}/overlays", json=corrected)
+        assert again.status_code == 200, again.text
+        rows = {m["model_id"]: m for m in again.json()["models"]}
+        assert rows["sonnet-au-prod"]["context_window"] == 100000
+
+    def test_the_same_validation_applies(self, client: TestClient) -> None:
+        cid = _foundry(client)
+        for body, words in (
+            ({**DEPLOYMENT, "model_id": "  "}, "model id"),
+            ({**DEPLOYMENT, "context_window": ""}, "Context window"),
+            ({**DEPLOYMENT, "output_limit": "lots"}, "Output limit"),
+            ({**DEPLOYMENT, "residency_scope": "anywhere"}, "processes requests"),
+            ({**DEPLOYMENT, "regions": ""}, "conduit refused"),
+        ):
+            resp = client.post(f"{API}/{cid}/overlays", json=body)
+            assert resp.status_code == 400, body
+            assert words in resp.json()["error"], (words, resp.json()["error"])
+        assert _call(client, list_overlays) == []
+
+    def test_declaring_needs_the_csrf_token_and_the_instances_origin(
+        self, client: TestClient
+    ) -> None:
+        cid = _foundry(client)
+        token = client.headers.pop(CSRF_HEADER)
+        try:
+            assert client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT).status_code == 403
+        finally:
+            client.headers[CSRF_HEADER] = token
+        elsewhere = {"Origin": "https://elsewhere.example.com"}
+        resp = client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT, headers=elsewhere)
+        assert resp.status_code == 403
+        assert _call(client, list_overlays) == []
+
+    def test_the_screen_has_the_declare_action(self, client: TestClient) -> None:
+        script = client.get("/static/js/connections.js").text
+        assert "Declare a model" in script and "'data-act': 'declare-typed'" in script

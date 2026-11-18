@@ -440,44 +440,91 @@
             h('h6', { text: 'Reachable but not in the catalogue' }),
             h('p', { class: 'conn-muted', text: 'Declare a model to add it to SPARK\'s catalogue for this service. Check its limits with the service first.' }),
             data.undeclared.map((u) => declareRow(holder, item, u))) : null;
-        holder.replaceChildren(...[status, note, table, undeclared].filter(Boolean));
+        holder.replaceChildren(...[status, note, table, undeclared, declareTyped(holder, item, data)].filter(Boolean));
     }
 
-    function declareRow(holder, item, model) {
+    const FOUNDRY = new Set(['anthropic_foundry', 'openai_foundry']);
+
+    // The overlay fields of a declaration; modelId is null when the id is typed in.
+    function declareForm(holder, item, modelId) {
         const error = alertBox();
-        const field = (label, input) => h('div', { class: 'col-md-4' }, h('label', { class: 'form-label', text: label }), input);
+        const field = (label, input, help) => h('div', { class: 'col-md-4' }, h('label', { class: 'form-label', text: label }), input,
+            help ? h('div', { class: 'form-text', text: help }) : null);
         const number = (placeholder) => h('input', { type: 'number', min: '1', class: 'form-control form-control-sm', placeholder });
+        const foundry = FOUNDRY.has(item.service);
+        const typed = modelId === null ? h('input', {
+            type: 'text', class: 'form-control form-control-sm conn-model', maxlength: '256', spellcheck: 'false', autocomplete: 'off',
+            placeholder: foundry ? 'the deployment name' : 'as the service names it', 'aria-label': 'Model id',
+        }) : null;
         const kind = h('select', { class: 'form-select form-select-sm' }, h('option', { value: 'chat', text: 'Chat' }), h('option', { value: 'embedding', text: 'Embedding' }));
         const context = number('for example 32768');
         const output = number('for example 4096');
         const scope = h('select', { class: 'form-select form-select-sm' }, scopes.map((s) => h('option', { value: s, text: SCOPE_LABELS[s] })));
         scope.value = item.kind === 'ollama' ? 'local' : 'in_region';
         const regions = h('input', { type: 'text', class: 'form-control form-control-sm', placeholder: 'Regions, comma separated' });
+        if (scope.value === 'in_region' && item.region) regions.value = item.region;
         const flags = ['tools', 'vision', 'prompt_caching', 'structured_output'].map((name) => {
             const box = h('input', { type: 'checkbox', class: 'form-check-input', value: name });
             return { name, box, el: h('div', { class: 'form-check form-check-inline' }, box, h('label', { class: 'form-check-label', text: name.replace('_', ' ') })) };
         });
         const form = h('div', { class: 'conn-declare', hidden: true }, error,
-            h('div', { class: 'row g-2' }, field('Kind', kind), field('Context window', context), field('Output limit', output),
-                field('Residency scope', scope), field('Regions', regions)),
+            h('div', { class: 'row g-2' },
+                typed ? field(foundry ? 'Model id (deployment name)' : 'Model id', typed,
+                    foundry ? 'The name of the deployment on the Foundry resource, exactly as it is shown there.' : null) : null,
+                field('Kind', kind), field('Context window', context), field('Output limit', output),
+                field('Residency scope', scope, foundry ? 'Where the Foundry resource processes requests.' : null),
+                field('Regions', regions)),
             h('div', { class: 'my-2' }, flags.map((f) => f.el)));
         const save = h('button', { type: 'button', class: 'btn btn-app-primary btn-sm', text: 'Save to catalogue' });
         form.appendChild(save);
         save.addEventListener('click', async () => {
             error.hidden = true;
+            const id = typed ? typed.value.trim() : modelId;
+            if (!id) { showError(error, 'Give the model id, as the service names it.'); typed.focus(); return; }
             const body = {
-                model_id: model.model_id, kind: kind.value, context_window: context.value, output_limit: output.value,
+                model_id: id, kind: kind.value, context_window: context.value, output_limit: output.value,
                 residency_scope: scope.value, regions: regions.value,
             };
             for (const f of flags) body[f.name] = f.box.checked;
-            try { renderModels(holder, item, await call('POST', '/' + encodeURIComponent(item.id) + '/overlays', body)); load(); }
-            catch (err) { showError(error, err.message); }
+            save.disabled = true;
+            try {
+                renderModels(holder, item, await call('POST', '/' + encodeURIComponent(item.id) + '/overlays', body));
+                load();
+                if (body.kind === 'embedding') toast('success', 'Declared', id + ' is in SPARK\'s catalogue. Embedding models are not listed in this view.');
+            } catch (err) { showError(error, err.message); }
+            finally { save.disabled = false; }
         });
+        return { form, focus: () => (typed || kind).focus() };
+    }
+
+    function declareRow(holder, item, model) {
+        const { form } = declareForm(holder, item, model.model_id);
         const open = h('button', { type: 'button', class: 'btn btn-app-outline btn-sm', text: 'Declare', onclick: () => { form.hidden = !form.hidden; } });
         return h('div', { class: 'conn-undeclared', 'data-model': model.model_id },
             h('div', { class: 'd-flex align-items-center justify-content-between' },
                 h('span', {}, h('span', { class: 'conn-model', text: model.model_id }), model.label ? h('span', { class: 'conn-muted ms-2', text: model.label }) : null),
                 open),
+            form);
+    }
+
+    // Declare a model by typing its id: needs no discovery, and is the only way to add
+    // a Foundry deployment (its model id is the deployment name).
+    function declareTyped(holder, item, data) {
+        const foundry = FOUNDRY.has(item.service);
+        const { form, focus } = declareForm(holder, item, null);
+        const open = h('button', {
+            type: 'button', class: 'btn btn-app-outline btn-sm', 'data-act': 'declare-typed',
+            onclick: () => { form.hidden = !form.hidden; if (!form.hidden) focus(); },
+        }, icon('bi-plus-lg'), ' Declare a model');
+        const usable = data.models.some((m) => !m.refused);
+        const hint = foundry
+            ? 'A Foundry connection offers only the deployments you declare. Declare each deployment by its name, with the limits and residency of the model it runs.'
+            : 'Add a model the catalogue lacks by its id. Check its limits with the service first.';
+        return h('div', { class: 'conn-declare-typed mt-4' },
+            h('div', { class: 'd-flex align-items-center justify-content-between gap-2' },
+                h('h6', { class: 'mb-0', text: foundry ? 'Deployments' : 'Add a model by its id' }), open),
+            h('p', { class: 'conn-muted mb-1', text: hint }),
+            foundry && !usable ? h('p', { class: 'conn-muted mb-1', text: 'No model is offered on this connection yet.' }) : null,
             form);
     }
 
