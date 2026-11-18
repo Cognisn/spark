@@ -8,6 +8,8 @@
 - Merge to main: squash
 - Commit scopes: connections, core, debate, panel, tools, mcp, skills, knowledge, index, scheduler, daemon, safety, voice, db, web, deps, ci, docs, dev, release
 - Shared modules: pyproject.toml, src/spark/connections/ (the connection model, store, runtime, service, usage sink and start-up) and src/spark/database/connections.py (the connection repositories), src/spark/db/ (the data layer and the bridge), src/spark/migrations/ (the migration chain), src/spark/mode.py (the mode accessor), src/spark/web/db.py, src/spark/core/conversation_manager.py, src/spark/web/server.py, src/spark/identity/ (permissions, access, audit, runtime, sessions), src/spark/database/scope.py and src/spark/web/scope.py (user scoping), src/spark/tools/registry.py (the tool decision point), tests/conftest.py (shared fixtures), .github/workflows/
+- CI full suite: wave gate (ci.yml)
+- Full suite command: bash scripts/wave-gate.sh
 
 # SPARK
 
@@ -48,7 +50,7 @@ Version stamps are unscoped: `chore: stamp <version>`.
 - The Windows CI test step is advisory (`continue-on-error`); Linux and macOS are the gate, with the uv smoke test.
 - Versions follow PEP 440 (`0.3.0a1`, `0.3.0b1`, `0.3.0rc1`). The single source of the version is `src/spark/_version.txt`.
 - Stamp with `python scripts/stamp_version.py <version>`. It refuses a version that does not follow the current one, and moves `[Unreleased]` in `CHANGELOG.md` into a dated section. Only the integration session stamps, on the release branch, and commits the result as `chore: stamp <version>`.
-- Workstreams merge into the release branch with `--no-ff` merge commits from a green CI tip.
+- Workstreams merge into the release branch with `--no-ff` merge commits from a tip whose local checks the workstream reported green. The gate is the full suite command, run on the release branch tip in the main clone's sandbox at the end of each wave; the release branch is pushed, and the next wave starts, only when it is green. GitHub Actions runs no tests on push (`ci.yml` runs only on `workflow_dispatch`).
 - The release line reaches `main` only as a squash merge at the final version (`chore: release <version>`), followed by the `v<version>` tag and the GitHub release, which publishes the wheel to PyPI. Each of these steps happens only when Matthew instructs it.
 - Binary, DMG and NSIS release jobs are disabled; releases are PyPI only.
 - Update `CHANGELOG.md` under `[Unreleased]` in the same commit as the change.
