@@ -501,24 +501,43 @@ def _personal_mcp_config() -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _mcp_resolver(ctx: AppContext) -> Any:
+    """SPARK's secret resolver over konfig for MCP credentials given as references (A9)."""
+    store = getattr(ctx, "secrets", None)
+    if store is None:
+        return None
+    from conduit.integrations.konfig import KonfigSecretResolver
+
+    return KonfigSecretResolver(store)
+
+
+def _conduit_loop(app: FastAPI) -> Any:
+    """The process's conduit loop, owned by its connection runtime (``None`` before one)."""
+    connections = getattr(app.state, "connections", None)
+    return getattr(connections, "loop", None)
+
+
 def _start_mcp(
     app: FastAPI, ctx: AppContext, instance: _ServerConsumers | None
 ) -> MCPRuntime | None:
-    """Connect the MCP servers on their own loop thread; never fails start-up.
+    """Connect the MCP servers on the process's conduit loop; never fails start-up.
 
     Server mode reads ``mcp.servers`` from the instance settings (credentials from
-    the secrets store), never ``config.yaml``, and always starts the loop so a
+    the secrets store), never ``config.yaml``, and always binds a manager so a
     server an administrator adds later connects without a restart. Personal mode
-    reads ``config.yaml`` and starts the loop only when servers are configured.
+    reads ``config.yaml`` and binds one only when servers are configured. A server
+    that cannot be reached is logged and left disconnected (M2).
     """
     from spark.mcp_integration.manager import MCPManager
     from spark.mcp_integration.runtime import MCPRuntime
 
     runtime: MCPRuntime | None = None
     app.state.mcp_manager = None
+    secrets = _mcp_resolver(ctx)
+    app.state.mcp_secrets = secrets
     try:
         if instance is not None:
-            manager = MCPManager()
+            manager = MCPManager(secrets=secrets)
             for config in consumers.mcp_server_configs(instance.source, instance.mcp_secret):
                 manager.add_server(config)
             if (_personal_mcp_config().get("mcp") or {}).get("servers"):
@@ -530,10 +549,10 @@ def _start_mcp(
             raw_config = _personal_mcp_config()
             if not (raw_config.get("mcp") or {}).get("servers"):
                 return None
-            manager = MCPManager.from_config(raw_config)
-        runtime = MCPRuntime.start(manager)
+            manager = MCPManager.from_config(raw_config, secrets=secrets)
+        runtime = MCPRuntime.start(manager, _conduit_loop(app))
         app.state.mcp_runtime = runtime
-        app.state._mcp_loop = runtime.loop  # turn threads dispatch MCP calls onto it
+        app.state._mcp_loop = runtime.loop  # turn threads dispatch MCP calls onto it (conduit's)
         app.state.mcp_manager = manager
         runtime.connect_all()
     except Exception as e:

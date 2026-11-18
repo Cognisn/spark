@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MCP servers are reached through conduit's MCP client** (`cognisn-conduit[mcp]`, over the official MCP SDK): stdio (personal mode only, still refused on a server), streamable HTTP and SSE, with conduit's connection lifecycle, timeouts and clean shutdown. SPARK keeps its own policy above it: which servers a user may use (`spark.mcp.<server>`, now decided in the tool registry with the built-in tools), the audit event for every tool call, approvals, and the untrusted-content framing and inspection of every result, which happens once, in SPARK
+- **MCP sessions run on the process's conduit loop**, the one the model connections use; the separate MCP loop thread is gone. The MCP settings endpoints run their connections there too, so a server saved or tested in personal mode no longer connects on the request's loop
+- **MCP credentials reach conduit only as `secret://` references**, resolved through SPARK's resolver over konfig. A `secret://` value in a personal `config.yaml` MCP entry (a token or a stdio environment variable) is now resolved from the secrets store instead of being sent as written. Bearer tokens, API keys, basic credentials and custom headers all still work
+- **Plain `http` MCP servers are accepted on this machine only** (`127.0.0.1`, `::1` or `localhost`); any other MCP server needs `https`. On a server an entry with a plain `http` URL to another host is refused when saved and ignored, with a warning, if already stored
+- A server that cannot be reached at start-up is logged by name and left disconnected while the others connect; it is tried again when its settings change
+- An MCP tool failure is reported with conduit's failure class (timeout, closed, rejected or protocol) and never the server's own error text
+- **cognisn-conduit 0.1.0rc4 or later** is required, with its `mcp` extra (conduit 0.1.0rc4 accepts `mcp>=2.3,<3`)
+
 ## [0.3.0rc7] - 2026-11-18
 
 ### Added

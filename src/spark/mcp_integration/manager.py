@@ -1,5 +1,12 @@
 """MCP server management: connection, tool discovery, and execution.
 
+Each server is reached through conduit's MCP client over the official SDK
+(:class:`~spark.mcp_integration.client.MCPClient`), on the process's conduit loop
+(:meth:`MCPManager.bind`). SPARK keeps its policy above conduit (M2): which
+servers a caller may use (asked of :mod:`spark.tools.registry`), the audit of
+every call, and the untrusted-content handling of every result (A16, in the
+conversation manager).
+
 Personal mode offers every connected server to its single user, as before.
 
 Server mode (A12) offers a caller only the servers its permissions grant
@@ -15,12 +22,14 @@ arguments and the result are never recorded.
 from __future__ import annotations
 
 import asyncio
-import base64
-import contextlib
 import logging
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from typing import Any, Final, Protocol
+from collections.abc import Callable, Coroutine, Iterable
+from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar
+
+from spark.mcp_integration.client import MCPClient, MCPServerConfig, StdioRefused
+
+if TYPE_CHECKING:
+    from conduit import SecretResolver
 
 logger = logging.getLogger(__name__)
 
@@ -29,37 +38,12 @@ __all__ = [
     "MCPManager",
     "MCPServerConfig",
     "MCPToolRefused",
+    "StdioRefused",
     "UNSCOPED",
+    "run_on",
 ]
 
-
-@dataclass
-class MCPServerConfig:
-    """Configuration for a single MCP server."""
-
-    name: str
-    transport: str = "stdio"  # stdio | http | sse
-    enabled: bool = True
-
-    # Stdio transport
-    command: str | None = None
-    args: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
-
-    # HTTP/SSE transport
-    url: str | None = None
-
-    # Authentication
-    auth_type: str = "none"  # none | bearer | api_key | basic | custom
-    auth_token: str | None = None
-    auth_header_name: str = "X-API-Key"
-    basic_username: str | None = None
-    basic_password: str | None = None
-    custom_headers: dict[str, str] = field(default_factory=dict)
-
-    # Connection
-    timeout: float = 30.0
-    ssl_verify: bool = True
+T = TypeVar("T")
 
 
 class MCPToolRefused(PermissionError):
@@ -99,317 +83,22 @@ class ClientLike(Protocol):
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
 
-class MCPClient:
-    """Client for a single MCP server.
+async def run_on(loop: asyncio.AbstractEventLoop | None, coro: Coroutine[Any, Any, T]) -> T:
+    """Await ``coro`` on ``loop`` (conduit's), from whichever loop the caller is on.
 
-    The MCP SDK's transports are anyio task groups, which must be entered and
-    left in the same task. Each connection therefore lives in one task of its
-    own (:meth:`_run`): it opens the transport and the session, reports that it
-    is ready, waits until :meth:`disconnect` asks it to stop, and closes both in
-    that same task. A transport that fails in the background (an unreachable
-    server) ends the task, which :meth:`connect` reports as a failed connection
-    rather than letting the cancellation escape to the caller.
+    An MCP session belongs to the loop it was opened on, so every session lives
+    on the process's conduit loop; a caller on another loop (a request handler)
+    has its work carried there and awaits the result.
     """
-
-    def __init__(self, config: MCPServerConfig) -> None:
-        self._config = config
-        self._session: Any = None
-        self._connected = False
-        self._runner: asyncio.Task[None] | None = None
-        self._stop: asyncio.Event | None = None
-
-    @property
-    def name(self) -> str:
-        return self._config.name
-
-    @property
-    def connected(self) -> bool:
-        return self._connected
-
-    @property
-    def config(self) -> MCPServerConfig:
-        return self._config
-
-    def _build_auth_headers(self) -> dict[str, str]:
-        """Build authentication headers based on config."""
-        headers: dict[str, str] = {}
-        auth = self._config.auth_type
-
-        if auth == "bearer" and self._config.auth_token:
-            headers["Authorization"] = f"Bearer {self._config.auth_token}"
-        elif auth == "api_key" and self._config.auth_token:
-            headers[self._config.auth_header_name] = self._config.auth_token
-        elif auth == "basic" and self._config.basic_username:
-            creds = f"{self._config.basic_username}:{self._config.basic_password or ''}"
-            encoded = base64.b64encode(creds.encode()).decode()
-            headers["Authorization"] = f"Basic {encoded}"
-        elif auth == "custom":
-            headers.update(self._config.custom_headers)
-
-        return headers
-
-    def _build_all_headers(self) -> dict[str, str]:
-        """Build combined auth + custom headers."""
-        headers = self._build_auth_headers()
-        if self._config.custom_headers:
-            headers.update(self._config.custom_headers)
-        return headers
-
-    def _make_httpx_factory(self) -> Callable[..., Any] | None:
-        """Create an httpx client factory for SSL verification control.
-
-        Returns None when ssl_verify is True (use default secure factory).
-        When ssl_verify is False (e.g. self-signed certs), creates a factory
-        that disables verification — the user explicitly opted into this.
-        The client is of the HTTP library the installed MCP SDK uses.
-        """
-        if self._config.ssl_verify:
-            return None  # Use default factory with certificate validation
-        httpx = _httpx_module()
-
-        ssl_verify = bool(self._config.ssl_verify)  # noqa: S501 — user-configured
-
-        def factory(
-            headers: dict[str, str] | None = None,
-            timeout: Any = None,
-            auth: Any = None,
-        ) -> Any:
-            return httpx.AsyncClient(
-                headers=headers,
-                timeout=timeout,
-                auth=auth,
-                verify=ssl_verify,
-            )
-
-        return factory
-
-    async def connect(self) -> bool:
-        """Connect to the MCP server. Returns True on success, False on any failure."""
-        if self._connected:
-            return True
-        if self._config.transport not in ("stdio", "http", "sse"):
-            logger.error("Unknown transport: %s", self._config.transport)
-            return False
-        loop = asyncio.get_running_loop()
-        ready: asyncio.Future[None] = loop.create_future()
-        self._stop = asyncio.Event()
-        runner = loop.create_task(self._run(ready, self._stop), name=f"mcp-{self.name}")
-        self._runner = runner
-        try:
-            await asyncio.wait_for(asyncio.shield(ready), timeout=self._config.timeout)
-        except asyncio.TimeoutError:
-            logger.error(
-                "MCP server '%s' (%s) connection timed out after %.0fs",
-                self._config.name,
-                self._config.transport,
-                self._config.timeout,
-            )
-            ready.cancel()
-            await self._end(runner)
-            return False
-        except asyncio.CancelledError:
-            # The caller was cancelled: close the half-open connection and pass it on.
-            ready.cancel()
-            await self._end(runner)
-            raise
-        except Exception as e:
-            logger.error(
-                "MCP server '%s' (%s) connection failed: %s",
-                self._config.name,
-                self._config.transport,
-                _reason(e),
-            )
-            await self._end(runner)
-            return False
-        logger.info("Connected to MCP server %s (%s)", self._config.name, self._config.transport)
-        return True
-
-    async def _run(self, ready: asyncio.Future[None], stop: asyncio.Event) -> None:
-        """Own one connection from opening to closing (see the class docstring)."""
-        from mcp import ClientSession
-
-        try:
-            async with contextlib.AsyncExitStack() as stack:
-                read, write = await self._open(stack)
-                session = await stack.enter_async_context(ClientSession(read, write))
-                await asyncio.wait_for(session.initialize(), timeout=self._config.timeout)
-                self._session = session
-                self._connected = True
-                ready.set_result(None)
-                await stop.wait()
-        except BaseException as exc:  # noqa: BLE001 - reported to connect() or logged
-            if not ready.done():
-                ready.set_exception(
-                    RuntimeError("the transport closed")
-                    if isinstance(exc, asyncio.CancelledError)
-                    else exc
-                )
-            elif not stop.is_set() and not isinstance(exc, asyncio.CancelledError):
-                logger.warning("MCP server %s connection lost: %s", self.name, _reason(exc))
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
-        finally:
-            self._session = None
-            self._connected = False
-
-    async def _open(self, stack: contextlib.AsyncExitStack) -> tuple[Any, Any]:
-        """Enter the configured transport on ``stack``: its read and write streams."""
-        transport = self._config.transport
-        if transport == "stdio":
-            return await self._open_stdio(stack)
-        if not self._config.url:
-            raise ValueError(f"{transport.upper()} transport requires 'url'")
-        if transport == "http":
-            return await self._open_http(stack, self._config.url)
-        return await self._open_sse(stack, self._config.url)
-
-    async def _open_stdio(self, stack: contextlib.AsyncExitStack) -> tuple[Any, Any]:
-        """Connect via stdio transport (personal mode only)."""
-        from mcp import StdioServerParameters
-        from mcp.client.stdio import stdio_client
-
-        if not self._config.command:
-            raise ValueError("stdio transport requires 'command'")
-
-        params = StdioServerParameters(
-            command=self._config.command,
-            args=self._config.args,
-            env=self._config.env or None,
-        )
-        streams = await stack.enter_async_context(stdio_client(params))
-        return streams[0], streams[1]
-
-    async def _open_http(self, stack: contextlib.AsyncExitStack, url: str) -> tuple[Any, Any]:
-        """Connect via HTTP streamable transport (MCP SDK 2.x, or 1.x)."""
-        from mcp.client import streamable_http
-
-        headers = self._build_all_headers()
-        factory = self._make_httpx_factory()
-        modern = getattr(streamable_http, "streamable_http_client", None)
-        if modern is not None:
-            # SDK 2.x: the caller builds, and closes, the HTTP client.
-            timeout = _httpx_module().Timeout(self._config.timeout, read=300.0)
-            make = factory or getattr(streamable_http, "create_mcp_http_client")
-            client = await stack.enter_async_context(make(headers=headers or None, timeout=timeout))
-            streams = await stack.enter_async_context(modern(url, http_client=client))
-        else:
-            kwargs: dict[str, Any] = {"url": url, "timeout": self._config.timeout}
-            if headers:
-                kwargs["headers"] = headers
-            if factory:
-                kwargs["httpx_client_factory"] = factory
-            # SDK 1.x (the name differs by version, so it is looked up).
-            legacy = getattr(streamable_http, "streamablehttp_client")
-            streams = await stack.enter_async_context(legacy(**kwargs))
-        return streams[0], streams[1]
-
-    async def _open_sse(self, stack: contextlib.AsyncExitStack, url: str) -> tuple[Any, Any]:
-        """Connect via SSE transport."""
-        from mcp.client.sse import sse_client
-
-        headers = self._build_all_headers()
-        kwargs: dict[str, Any] = {"url": url, "timeout": self._config.timeout}
-        if headers:
-            kwargs["headers"] = headers
-        factory = self._make_httpx_factory()
-        if factory:
-            kwargs["httpx_client_factory"] = factory
-        streams = await stack.enter_async_context(sse_client(**kwargs))
-        return streams[0], streams[1]
-
-    async def _end(self, runner: asyncio.Task[None]) -> None:
-        """Stop ``runner`` and wait for it, cancelling it if it does not stop in time."""
-        if self._stop is not None:
-            self._stop.set()
-        if runner.done():
-            return
-        try:
-            await asyncio.wait_for(asyncio.shield(runner), timeout=10)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            runner.cancel()
-        except Exception:  # noqa: BLE001 - the runner logs its own failure
-            pass
-
-    async def disconnect(self) -> None:
-        """Disconnect from the MCP server."""
-        runner = self._runner
-        self._runner = None
-        if runner is not None:
-            await self._end(runner)
-        self._session = None
-        self._connected = False
-        logger.info("Disconnected from MCP server %s", self._config.name)
-
-    async def list_tools(self) -> list[dict[str, Any]]:
-        """List tools available on this server."""
-        if not self._session or not self._connected:
-            return []
-
-        result = await self._session.list_tools()
-        tools = []
-        for tool in result.tools:
-            tools.append(
-                {
-                    "name": tool.name,
-                    "description": getattr(tool, "description", "") or "",
-                    "inputSchema": _field(tool, "input_schema", "inputSchema") or {},
-                    "server": self._config.name,
-                }
-            )
-        return tools
-
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Call a tool on this server."""
-        if not self._session or not self._connected:
-            raise RuntimeError(f"Not connected to {self._config.name}")
-
-        result = await asyncio.wait_for(
-            self._session.call_tool(tool_name, arguments),
-            timeout=self._config.timeout,
-        )
-
-        content: list[dict[str, Any]] = []
-        for item in result.content:
-            mime_type = _field(item, "mime_type", "mimeType")
-            if hasattr(item, "text"):
-                content.append({"type": "text", "text": item.text})
-            elif hasattr(item, "data") and mime_type is not None:
-                content.append({"type": "image", "data": item.data, "mimeType": mime_type})
-            else:
-                content.append({"type": "resource", "resource": str(item)})
-
-        return {
-            "content": content,
-            "isError": bool(_field(result, "is_error", "isError")),
-        }
-
-
-def _field(item: Any, *names: str) -> Any:
-    """The first of ``names`` ``item`` has (MCP SDK 2.x snake case, then 1.x camel case)."""
-    for name in names:
-        value = getattr(item, name, None)
-        if value is not None:
-            return value
-    return None
-
-
-def _reason(exc: BaseException) -> str:
-    """A short reason for a failure: the first leaf of an exception group, as its type and text."""
-    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
-        exc = exc.exceptions[0]
-    return f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-
-
-def _httpx_module() -> Any:
-    """The HTTP library the installed MCP SDK uses: ``httpx2`` (SDK 2.x) or ``httpx``."""
+    if loop is None or loop.is_closed():
+        return await coro
     try:
-        import httpx2
-
-        return httpx2
-    except ImportError:
-        import httpx
-
-        return httpx
+        current: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover - always awaited inside a loop
+        current = None
+    if current is loop:
+        return await coro
+    return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coro, loop))
 
 
 def _server_mode() -> bool:
@@ -450,12 +139,43 @@ def _audit(
 
 
 class MCPManager:
-    """Manages multiple MCP server connections."""
+    """Manages multiple MCP server connections.
 
-    def __init__(self, client_factory: Callable[[MCPServerConfig], ClientLike] = MCPClient) -> None:
-        self._client_factory = client_factory
+    Its sessions live on one loop, the process's conduit loop (:meth:`bind`, done by
+    :class:`~spark.mcp_integration.runtime.MCPRuntime`): every coroutine method may
+    be awaited from any loop and runs there. ``secrets`` is SPARK's resolver over
+    konfig, given to each client for credentials configured as references.
+    """
+
+    def __init__(
+        self,
+        client_factory: Callable[[MCPServerConfig], ClientLike] | None = None,
+        *,
+        secrets: SecretResolver | None = None,
+    ) -> None:
+        self._secrets = secrets
+        self._client_factory: Callable[[MCPServerConfig], ClientLike] = (
+            client_factory if client_factory is not None else self._new_client
+        )
         self._clients: dict[str, ClientLike] = {}
         self._tools_cache: list[dict[str, Any]] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _new_client(self, config: MCPServerConfig) -> ClientLike:
+        return MCPClient(config, secrets=self._secrets)
+
+    def new_client(self, config: MCPServerConfig) -> ClientLike:
+        """A client for ``config`` made as the manager makes its own (not registered)."""
+        return self._client_factory(config)
+
+    def bind(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Keep every session on ``loop`` (conduit's), whoever awaits the manager."""
+        self._loop = loop
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """The loop the sessions live on, once bound."""
+        return self._loop
 
     def add_server(self, config: MCPServerConfig) -> None:
         """Add an MCP server configuration."""
@@ -473,16 +193,14 @@ class MCPManager:
     # -- Scoping (server mode) -----------------------------------------------------
 
     def _granted(self, name: str, permissions: Scope) -> bool:
-        """Whether a caller with ``permissions`` may use server ``name``."""
-        if not _server_mode():
-            return True
-        # Only a user's own permissions grant a server: no permissions, or a value
-        # describing the deployment (the registry's ANY_ROLE), grant nothing.
-        if not isinstance(permissions, (set, frozenset, list, tuple)):
-            return False
-        from spark.mcp_integration.servers import is_granted
+        """Whether a caller with ``permissions`` may use server ``name``.
 
-        return is_granted(name, permissions)
+        Asked of SPARK's tool decision point,
+        :func:`spark.tools.registry.is_mcp_server_available`.
+        """
+        from spark.tools.registry import is_mcp_server_available
+
+        return is_mcp_server_available(name, permissions=permissions)
 
     def servers_for(self, permissions: Scope = UNSCOPED) -> dict[str, ClientLike]:
         """The registered clients a caller with ``permissions`` may see."""
@@ -499,7 +217,16 @@ class MCPManager:
     async def connect_all(
         self, *, progress_callback: Callable[[str, bool], Any] | None = None
     ) -> dict[str, bool]:
-        """Connect to all registered servers. Returns name→success mapping."""
+        """Connect to all registered servers. Returns name→success mapping.
+
+        A server that cannot be reached is reported as ``False`` and the others
+        still connect; it is tried again when its settings next change.
+        """
+        return await run_on(self._loop, self._connect_all(progress_callback))
+
+    async def _connect_all(
+        self, progress_callback: Callable[[str, bool], Any] | None
+    ) -> dict[str, bool]:
         results: dict[str, bool] = {}
         for name, client in self._clients.items():
             success = await client.connect()
@@ -511,6 +238,9 @@ class MCPManager:
 
     async def disconnect_all(self) -> None:
         """Disconnect from all servers."""
+        await run_on(self._loop, self._disconnect_all())
+
+    async def _disconnect_all(self) -> None:
         for client in self._clients.values():
             await client.disconnect()
         self._tools_cache = None
@@ -522,6 +252,9 @@ class MCPManager:
         disconnected; unchanged servers keep their connection. The tool cache is
         rebuilt.
         """
+        return await run_on(self._loop, self._reconcile(list(configs)))
+
+    async def _reconcile(self, configs: list[MCPServerConfig]) -> set[str]:
         wanted = {c.name: c for c in configs if c.enabled}
         changed: set[str] = set()
         for name in [n for n in self._clients if n not in wanted]:
@@ -538,7 +271,7 @@ class MCPManager:
                 logger.warning("MCP server %s did not connect after a settings change", name)
             changed.add(name)
         self._tools_cache = None
-        await self.list_all_tools()
+        await self._discover()
         if changed:
             logger.info("MCP servers reconnected after a settings change: %s", sorted(changed))
         return changed
@@ -572,7 +305,7 @@ class MCPManager:
 
     async def list_all_tools(self, *, permissions: Scope = UNSCOPED) -> list[dict[str, Any]]:
         """The tools of the connected servers a caller with ``permissions`` may use."""
-        tools = await self._discover()
+        tools = await run_on(self._loop, self._discover())
         return [t for t in tools if self._granted(str(t.get("server")), permissions)]
 
     async def call_tool(
@@ -591,6 +324,22 @@ class MCPManager:
         mode), ``RuntimeError`` when it is not connected and ``ValueError`` when
         no server has the tool. Every outcome is audited.
         """
+        return await run_on(
+            self._loop,
+            self._call_tool(
+                tool_name, arguments, server_name, permissions, user_guid, conversation_id
+            ),
+        )
+
+    async def _call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        server_name: str | None,
+        permissions: Scope,
+        user_guid: str | None,
+        conversation_id: Any,
+    ) -> dict[str, Any]:
 
         def report(result: str, server: str | None, refused: bool = False) -> None:
             _audit(
@@ -632,6 +381,56 @@ class MCPManager:
         report("error" if result.get("isError") else "success", server_name)
         return result
 
+    # -- Administration (the settings endpoints) ------------------------------------
+
+    async def connect_server(self, config: MCPServerConfig) -> bool:
+        """Register ``config`` in place of any server of that name and connect it."""
+        return await run_on(self._loop, self._connect_server(config))
+
+    async def _connect_server(self, config: MCPServerConfig) -> bool:
+        if config.name in self._clients:
+            await self._drop(config.name)
+        self.add_server(config)
+        client = self._clients.get(config.name)
+        connected = await client.connect() if client is not None else False
+        self._tools_cache = None
+        await self._discover()
+        return connected
+
+    async def set_enabled(self, name: str, enabled: bool) -> None:
+        """Connect or disconnect a registered server, keeping it registered."""
+        await run_on(self._loop, self._set_enabled(name, enabled))
+
+    async def _set_enabled(self, name: str, enabled: bool) -> None:
+        client = self._clients.get(name)
+        if client is None:
+            return
+        if enabled and not client.connected:
+            if await client.connect():
+                logger.info("MCP server '%s' re-enabled and connected", name)
+        elif not enabled and client.connected:
+            await client.disconnect()
+            logger.info("MCP server '%s' disabled and disconnected", name)
+        self._tools_cache = None
+        await self._discover()
+
+    async def remove_server(self, name: str) -> None:
+        """Disconnect and forget a server."""
+        await run_on(self._loop, self._remove_server(name))
+
+    async def _remove_server(self, name: str) -> None:
+        if name in self._clients:
+            await self._drop(name)
+        self._tools_cache = None
+
+    async def probe(self, client: ClientLike) -> list[dict[str, Any]] | None:
+        """Connect ``client`` (not registered), list its tools and disconnect it.
+
+        ``None`` when it does not connect. Runs on the manager's loop, as every
+        session does.
+        """
+        return await run_on(self._loop, _probe(client))
+
     def get_server_timeout(
         self, *, server_name: str | None = None, tool_name: str | None = None
     ) -> float:
@@ -653,7 +452,9 @@ class MCPManager:
         self._tools_cache = None
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> MCPManager:
+    def from_config(
+        cls, config: dict[str, Any], *, secrets: SecretResolver | None = None
+    ) -> MCPManager:
         """Create an MCPManager from a config dict (``config.yaml``; personal mode).
 
         Expected format::
@@ -677,7 +478,7 @@ class MCPManager:
         """
         from spark.mcp_integration.servers import to_config
 
-        manager = cls()
+        manager = cls(secrets=secrets)
         servers = config.get("mcp", {}).get("servers", [])
         if _server_mode():
             if servers:
@@ -692,3 +493,12 @@ class MCPManager:
             manager.add_server(to_config(srv, None))
 
         return manager
+
+
+async def _probe(client: ClientLike) -> list[dict[str, Any]] | None:
+    if not await client.connect():
+        return None
+    try:
+        return await client.list_tools()
+    finally:
+        await client.disconnect()

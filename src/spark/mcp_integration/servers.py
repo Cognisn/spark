@@ -6,6 +6,8 @@ transport, stdio included, and reads ``config.yaml``. Server mode:
 * allows HTTP and SSE only: a stdio server runs a command on the host, so it is
   refused when configured (:func:`validate_entry`) and an existing one is
   ignored with a warning (:func:`stored_entries`);
+* takes conduit's rule for the url: ``https``, or plain ``http`` on a loopback
+  host only;
 * names each server with lower-case letters, digits, ``-`` and ``_``, because the
   name is part of its permission, ``spark.mcp.<server>``;
 * grants each server to the roles listed in its ``roles``: a user holds
@@ -25,7 +27,10 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from spark.mcp_integration.manager import MCPServerConfig
+from conduit.mcp.settings import check_endpoint_url
+
+from spark.mcp_integration.client import MCPServerConfig
+from spark.tools.registry import MCP_PERMISSION_PREFIX, mcp_permission_name
 
 __all__ = [
     "PERMISSION_PREFIX",
@@ -50,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 TRANSPORTS: Final = ("stdio", "http", "sse")
 SERVER_TRANSPORTS: Final = ("http", "sse")
-PERMISSION_PREFIX: Final = "spark.mcp."
+PERMISSION_PREFIX: Final = MCP_PERMISSION_PREFIX
 SECRET_FIELDS: Final = ("auth_token", "basic_password", "custom_headers")
 STDIO_REFUSED: Final = (
     "stdio MCP servers run a command on the host and are not available in server mode: "
@@ -69,7 +74,7 @@ class ServerEntryError(ValueError):
 
 def permission_name(server: str) -> str:
     """The permission that grants ``server``: ``spark.mcp.<server>``."""
-    return PERMISSION_PREFIX + server
+    return mcp_permission_name(server)
 
 
 def is_granted(server: str, permissions: Iterable[str] | None) -> bool:
@@ -129,6 +134,10 @@ def validate_entry(entry: Mapping[str, Any], *, server: bool) -> dict[str, Any]:
     parts = urlsplit(url) if isinstance(url, str) else None
     if parts is None or parts.scheme not in ("http", "https") or not parts.netloc:
         raise ServerEntryError(f"server {name!r} needs an http or https url")
+    # conduit's rule for every MCP endpoint: https, or plain http on this machine only.
+    reason = check_endpoint_url(str(url))
+    if reason is not None:
+        raise ServerEntryError(f"server {name!r} url was refused: {reason}")
     if entry.get("auth_type", "none") not in _AUTH_TYPES:
         raise ServerEntryError(f"server {name!r} auth_type must be one of {', '.join(_AUTH_TYPES)}")
     carried = [f for f in SECRET_FIELDS if _has_value(entry.get(f))]

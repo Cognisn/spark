@@ -55,8 +55,8 @@ def started(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[MCPRuntime]]:
     monkeypatch.setattr(MCPRuntime, "connect_all", lambda self, timeout=60.0: {})
     real_start = MCPRuntime.start.__func__  # type: ignore[attr-defined]
 
-    def start(cls: type[MCPRuntime], manager: MCPManager) -> MCPRuntime:
-        runtime = real_start(cls, manager)
+    def start(cls: type[MCPRuntime], manager: MCPManager, conduit_loop: Any = None) -> MCPRuntime:
+        runtime = real_start(cls, manager, conduit_loop)
         runtimes.append(runtime)
         return runtime
 
