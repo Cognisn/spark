@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc7] - 2026-11-18
+
 ### Added
 - **Connections screens**: administrators manage model connections on a new Connections page (`/admin/connections`, server mode; in the Account menu and on the dashboard), and personal mode in a Connections section at the top of Settings. The list shows each connection's name, service, Region, residency policy, enabled models, last model discovery and status, and in server mode whether it is metered and how many assignments it has; a connection can be enabled, disabled, renamed and deleted. Deleting asks to confirm, and is refused while a scheduled action uses the connection, naming the actions
 - **Add connection**: a drop-down of the nine services (Amazon Bedrock, Claude through Amazon Bedrock (mantle), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft Foundry (OpenAI-compatible), Google Gemini, Ollama) opens a modal with that service's fields from conduit's settings for its kind, an authentication chooser where it has several (long-term Bedrock API keys only once their allow setting is ticked), the Region and the residency policy (each service's default, or chosen scopes and Regions). Saving validates through conduit's provider registry and shows its refusal. Edit uses the same modal. Several connections of one service may exist
