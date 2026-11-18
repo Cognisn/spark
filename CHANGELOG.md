@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc8] - 2026-11-18
+
 ### Changed
 - **MCP servers are reached through conduit's MCP client** (`cognisn-conduit[mcp]`, over the official MCP SDK): stdio (personal mode only, still refused on a server), streamable HTTP and SSE, with conduit's connection lifecycle, timeouts and clean shutdown. SPARK keeps its own policy above it: which servers a user may use (`spark.mcp.<server>`, now decided in the tool registry with the built-in tools), the audit event for every tool call, approvals, and the untrusted-content framing and inspection of every result, which happens once, in SPARK
 - **MCP sessions run on the process's conduit loop**, the one the model connections use; the separate MCP loop thread is gone. The MCP settings endpoints run their connections there too, so a server saved or tested in personal mode no longer connects on the request's loop
