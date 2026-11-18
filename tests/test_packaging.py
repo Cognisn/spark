@@ -44,7 +44,8 @@ def test_warden_declared_from_pypi() -> None:
 
 def test_conduit_declared_from_pypi_with_every_provider() -> None:
     """Every model is reached through cognisn-conduit from PyPI, with the extra of every
-    service a connection may use (M4, M13), and no provider SDK declared directly."""
+    service a connection may use (M4, M13) and its MCP client (M2), and no provider SDK
+    declared directly."""
     deps = _project()["dependencies"]
     [conduit] = [d for d in deps if d.startswith("cognisn-conduit")]
     extras = set(conduit[conduit.index("[") + 1 : conduit.index("]")].split(","))
@@ -54,10 +55,11 @@ def test_conduit_declared_from_pypi_with_every_provider() -> None:
         "bedrock-mantle",
         "gemini",
         "konfig",
+        "mcp",
         "ollama",
         "openai",
     }
-    assert conduit.endswith(">=0.1.0rc3")
+    assert conduit.endswith(">=0.1.0rc4")
     sdks = ("anthropic", "boto3", "botocore", "google-genai", "ollama", "openai")
     assert [d for d in deps if d.split(">")[0].split("=")[0].split("[")[0] in sdks] == []
 

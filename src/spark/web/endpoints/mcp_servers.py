@@ -9,11 +9,14 @@ server lists the roles it is granted to, and its credentials go to konfig's
 secrets store (A9), write-only. A change is saved to the setting, which
 reconnects the affected servers on every replica through the settings follower.
 Only a holder of ``spark.settings.instance`` may use these endpoints.
+
+Every connection, a test one included, is made through conduit's MCP client on
+the process's conduit loop (:class:`~spark.mcp_integration.manager.MCPManager`
+carries the work there from the request's loop).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -23,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from spark.mcp_integration import servers as mcp_servers
-from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig
+from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig, run_on
 from spark.mcp_integration.servers import STDIO_REFUSED, ServerEntryError
 
 logger = logging.getLogger(__name__)
@@ -359,59 +362,46 @@ async def test_connection(request: Request) -> JSONResponse:
             ssl_verify=data.get("ssl_verify", True),
         )
 
-    client = MCPClient(config)
-    try:
-        success = await client.connect()
-        if success:
-            tools = await client.list_tools()
-            await client.disconnect()
-            return JSONResponse(
-                {
-                    "status": "ok",
-                    "message": f"Connected successfully. {len(tools)} tools available.",
-                    "tools": [t["name"] for t in tools],
-                }
-            )
-        else:
-            transport = data.get("transport", "stdio")
-            return JSONResponse(
-                {
-                    "status": "error",
-                    "message": f"Connection to '{data.get('name', '')}' failed via {transport}. Check the server is running and the configuration is correct.",
-                },
-                status_code=400,
-            )
-    except asyncio.TimeoutError:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+    tools = await _probe(request, config)
+    if tools is not None:
         return JSONResponse(
             {
-                "status": "error",
-                "message": f"Connection timed out after {data.get('timeout', 10)}s. The server may not be running or the URL/command is incorrect.",
-            },
-            status_code=400,
+                "status": "ok",
+                "message": f"Connected successfully. {len(tools)} tools available.",
+                "tools": [t["name"] for t in tools],
+            }
         )
-    except Exception as e:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-        err_msg = str(e)
-        # Provide friendlier messages for common errors
-        if "Connection refused" in err_msg:
-            err_msg = "Connection refused. Ensure the server is running at the specified address."
-        elif "Name or service not known" in err_msg or "getaddrinfo" in err_msg:
-            err_msg = "Could not resolve hostname. Check the URL is correct."
-        elif "SSL" in err_msg or "certificate" in err_msg.lower():
-            err_msg = f"SSL/TLS error: {err_msg}. Try disabling SSL verification if using self-signed certificates."
-        elif "404" in err_msg:
-            err_msg = "Server returned 404 Not Found. Check the URL path is correct."
-        elif "401" in err_msg or "403" in err_msg:
-            err_msg = f"Authentication failed ({err_msg}). Check your credentials."
+    transport = data.get("transport", "stdio")
+    return JSONResponse(
+        {
+            "status": "error",
+            "message": (
+                f"Connection to '{data.get('name', '')}' failed via {transport}. Check the "
+                "server is running, the URL (https, or http on this machine only) or command "
+                "is correct, and the credentials are right."
+            ),
+        },
+        status_code=400,
+    )
 
-        return JSONResponse({"status": "error", "message": err_msg}, status_code=400)
+
+async def _probe(request: Request, config: MCPServerConfig) -> list[dict[str, Any]] | None:
+    """Connect ``config`` once, without registering it: its tools, or ``None``."""
+    manager = getattr(request.app.state, "mcp_manager", None)
+    if isinstance(manager, MCPManager):
+        return await manager.probe(manager.new_client(config))
+    client = MCPClient(config, secrets=getattr(request.app.state, "mcp_secrets", None))
+    loop = getattr(getattr(request.app.state, "mcp_runtime", None), "loop", None)
+
+    async def probe() -> list[dict[str, Any]] | None:
+        if not await client.connect():
+            return None
+        try:
+            return await client.list_tools()
+        finally:
+            await client.disconnect()
+
+    return await run_on(loop, probe())
 
 
 @router.get("/api/{server_name}/config")
@@ -475,25 +465,11 @@ async def toggle_server(request: Request) -> JSONResponse:
         config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
 
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
-    if mcp_mgr and name in mcp_mgr._clients:
-        client = mcp_mgr._clients[name]
-        if enabled and not client.connected:
-            # Re-connect
-            try:
-                await client.connect()
-                mcp_mgr.invalidate_cache()
-                await mcp_mgr.list_all_tools()
-                logger.info("MCP server '%s' re-enabled and connected", name)
-            except Exception as e:
-                logger.warning("Failed to reconnect '%s': %s", name, e)
-        elif not enabled and client.connected:
-            # Disconnect
-            try:
-                await client.disconnect()
-                mcp_mgr.invalidate_cache()
-                logger.info("MCP server '%s' disabled and disconnected", name)
-            except Exception as e:
-                logger.warning("Failed to disconnect '%s': %s", name, e)
+    if mcp_mgr and name in mcp_mgr.servers:
+        try:
+            await mcp_mgr.set_enabled(name, bool(enabled))
+        except Exception as e:
+            logger.warning("Failed to %s '%s': %s", "connect" if enabled else "disconnect", name, e)
 
     return JSONResponse({"status": "ok"})
 
@@ -520,11 +496,9 @@ async def delete_server(request: Request, server_name: str) -> JSONResponse:
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
     if mcp_mgr and server_name in mcp_mgr.servers:
         try:
-            await mcp_mgr.servers[server_name].disconnect()
-        except Exception:
-            pass
-        mcp_mgr._clients.pop(server_name, None)
-        mcp_mgr.invalidate_cache()
+            await mcp_mgr.remove_server(server_name)
+        except Exception as e:
+            logger.warning("Failed to disconnect '%s': %s", server_name, e)
 
     return JSONResponse({"status": "ok"})
 
@@ -589,31 +563,31 @@ def _remove_server_from_config(request: Request, server_name: str) -> None:
 
 
 async def _connect_server(request: Request, srv_config: dict[str, Any]) -> None:
-    """Connect an MCP server and add it to the manager."""
-    mcp_mgr = getattr(request.app.state, "mcp_manager", None)
+    """Connect an MCP server and add it to the manager (personal mode)."""
+    state = request.app.state
+    mcp_mgr = getattr(state, "mcp_manager", None)
     if mcp_mgr is None:
-        mcp_mgr = MCPManager()
-        request.app.state.mcp_manager = mcp_mgr
+        # No server was configured at start-up: bind a manager to conduit's loop now.
+        from spark.mcp_integration.runtime import MCPRuntime
+
+        connections = getattr(state, "connections", None)
+        runtime = MCPRuntime.start(
+            MCPManager(secrets=getattr(state, "mcp_secrets", None)),
+            getattr(connections, "loop", None),
+        )
+        state.mcp_runtime = runtime
+        state._mcp_loop = runtime.loop
+        state.mcp_manager = mcp_mgr = runtime.manager
+        conv_mgr = getattr(state, "conversation_manager", None)
+        if conv_mgr:
+            conv_mgr._mcp_loop = runtime.loop
 
     config = mcp_servers.to_config(srv_config, None)
-
-    # Remove existing client if any
-    if config.name in mcp_mgr._clients:
-        try:
-            await mcp_mgr._clients[config.name].disconnect()
-        except Exception:
-            pass
-
-    mcp_mgr.add_server(config)
-    await mcp_mgr._clients[config.name].connect()
-    mcp_mgr.invalidate_cache()
-
-    # Repopulate tool cache so tool counts are available immediately
-    tools = await mcp_mgr.list_all_tools()
-    logger.info("MCP tool cache refreshed: %d tools total", len(tools))
+    await mcp_mgr.connect_server(config)
+    logger.info("MCP tool cache refreshed: %d tools total", len(mcp_mgr.cached_tools()))
 
     # Update conversation manager's MCP reference
-    conv_mgr = getattr(request.app.state, "conversation_manager", None)
+    conv_mgr = getattr(state, "conversation_manager", None)
     if conv_mgr:
         conv_mgr._mcp_manager = mcp_mgr
 

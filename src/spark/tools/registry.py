@@ -13,6 +13,10 @@ permissions travel with the embedded tools configuration under
 :data:`PERMISSIONS_KEY`, as the user's guid does under ``_user_guid``; a
 configuration without them refuses every category in server mode (fail closed).
 Personal mode has one local operator, who may use every category.
+
+MCP tools are decided here too, by their server (:func:`is_mcp_server_available`):
+on a server a user may use a server's tools while their own permissions hold
+``spark.mcp.<server>``.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ __all__ = [
     "ANY_ROLE",
     "FILE_TOOL_REFUSALS",
     "LOCAL_ONLY_CATEGORIES",
+    "MCP_PERMISSION_PREFIX",
     "PERMISSIONS_KEY",
     "TOOL_CATEGORIES",
     "Permissions",
@@ -42,7 +47,9 @@ __all__ = [
     "execute_builtin_tool",
     "get_builtin_tools",
     "is_category_available",
+    "is_mcp_server_available",
     "is_tool_available",
+    "mcp_permission_name",
     "permission_name",
     "set_refusal_hook",
     "tool_category",
@@ -178,6 +185,35 @@ def is_tool_available(
     """Whether a tool may be offered and run; tools outside Spark's categories are not judged here."""
     category = tool_category(tool_name)
     return category is None or is_category_available(category, mode=mode, permissions=permissions)
+
+
+# The permission prefix of an MCP server: ``spark.mcp.<server>`` (A12).
+MCP_PERMISSION_PREFIX: Final = "spark.mcp."
+
+
+def mcp_permission_name(server: str) -> str:
+    """The permission that grants MCP server ``server``: ``spark.mcp.<server>``."""
+    return MCP_PERMISSION_PREFIX + server
+
+
+def is_mcp_server_available(
+    server: str, *, mode: Mode | None = None, permissions: object = None
+) -> bool:
+    """Whether the tools of MCP server ``server`` may be offered and run.
+
+    MCP tools are bridged into this decision point by their server, as built-in
+    tools are by their category. Personal mode offers every connected server. In
+    server mode a server is available only when the user's own permissions hold
+    :func:`mcp_permission_name` (granted to their roles in ``mcp.servers``, A12):
+    ``None`` (no signed-in user), :data:`ANY_ROLE` (which describes the
+    deployment, never a user) or any other value grants nothing (fail closed).
+    """
+    selected = mode if mode is not None else _current_mode()
+    if selected is not Mode.SERVER:
+        return True
+    if not isinstance(permissions, (set, frozenset, list, tuple)):
+        return False
+    return mcp_permission_name(server) in permissions
 
 
 @dataclass(frozen=True, slots=True)
