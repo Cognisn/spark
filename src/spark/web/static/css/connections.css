@@ -1,0 +1,24 @@
+/* Spark: the connections screens (connections.js). */
+.conn-table { font-size: 0.8125rem; }
+.conn-name { font-weight: 600; color: var(--app-text-primary); }
+.conn-id, .conn-muted { font-size: 0.75rem; color: var(--app-text-muted); }
+.conn-empty { font-size: 0.875rem; color: var(--app-text-secondary); margin-bottom: 0; }
+.conn-actions .btn { padding: 0.125rem 0.375rem; }
+.conn-discovery { max-width: 12rem; }
+.conn-required { color: var(--app-danger, #dc3545); }
+.conn-add { max-width: 16rem; }
+.conn-form .form-label { font-size: 0.8125rem; margin-bottom: 0.25rem; }
+.conn-residency { border: 1px solid var(--app-border); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+.conn-residency legend { font-size: 0.875rem; font-weight: 600; float: none; width: auto; padding: 0 0.25rem; margin-bottom: 0.25rem; }
+.conn-model { font-family: var(--app-font-mono, monospace); font-size: 0.8125rem; }
+.conn-refused td { opacity: 0.85; }
+.conn-refusal { font-size: 0.75rem; color: var(--app-warning, #b8860b); max-width: 22rem; }
+.conn-tier { min-width: 7rem; }
+.conn-undeclared { border-top: 1px solid var(--app-border); padding: 0.5rem 0; }
+.conn-declare { padding: 0.75rem 0 0.25rem; }
+.conn-example { font-size: 0.8125rem; }
+.conn-rules { font-size: 0.8125rem; color: var(--app-text-secondary); padding-left: 1.25rem; }
+.conn-list .app-table-responsive { overflow-x: auto; max-width: 100%; }
+.conn-actions { margin-top: 0.375rem; }
+.conn-table td { vertical-align: top; }
+.conn-table td:first-child { min-width: 13rem; }

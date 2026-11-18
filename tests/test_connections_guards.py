@@ -15,7 +15,7 @@ from spark.connections import Connection, ConnectionRuntime
 from spark.core.conversation_manager import ConnectionNotAssigned, ConversationManager
 from spark.database import conversations
 from spark.database.connections import Assignment
-from spark.identity.permissions import SETTINGS_INSTANCE
+from spark.identity.permissions import ADMIN_CONNECTIONS, SETTINGS_INSTANCE
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 from tests.model_helpers import stub_connection, stub_runtime
 
@@ -74,12 +74,22 @@ class TestTurnAssignment:
     def test_an_administrator_may_try_an_unassigned_connection_only(
         self, sync_db: Any, server_mode: None
     ) -> None:
-        admin = frozenset({SETTINGS_INSTANCE})
+        admin = frozenset({ADMIN_CONNECTIONS})
         runtime = _runtime(sync_db, [])
         try:
             assert _turn(sync_db, runtime, roles=set(), permissions=admin)["content"] == "hello"
             with pytest.raises(ConnectionNotAssigned):
                 _turn(sync_db, runtime, roles=set(), permissions=frozenset())
+        finally:
+            runtime.close()
+
+    def test_instance_settings_alone_do_not_make_an_administrator_of_connections(
+        self, sync_db: Any, server_mode: None
+    ) -> None:
+        runtime = _runtime(sync_db, [])
+        try:
+            with pytest.raises(ConnectionNotAssigned):
+                _turn(sync_db, runtime, roles=set(), permissions=frozenset({SETTINGS_INSTANCE}))
         finally:
             runtime.close()
 

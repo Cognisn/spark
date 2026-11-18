@@ -35,6 +35,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "auth",
     "bundles",
     "chat",
+    "connections",
     "conversations",
     "debate",
     "files",

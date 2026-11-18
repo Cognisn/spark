@@ -2,6 +2,8 @@
 
 {% block title %}Spark - Settings{% endblock %}
 
+{% block head %}{% if page == 'personal' %}<link href="/static/css/connections.css" rel="stylesheet">{% endif %}{% endblock %}
+
 {% block content %}
 <!-- Lock overlay -->
 {% if is_locked %}
@@ -70,8 +72,16 @@
             <div class="app-card mb-3">
                 <div class="card-body p-2">
                     <nav class="nav flex-column">
+                        {% if page == 'personal' %}
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded active"
+                           href="#section-connections"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi bi-plug"></i>
+                            Connections
+                        </a>
+                        {% endif %}
                         {% for section in sections %}
-                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded {% if loop.first %}active{% endif %}"
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded {% if loop.first and page != 'personal' %}active{% endif %}"
                            href="#section-{{ section.id }}"
                            style="font-size: 0.875rem; color: var(--app-text-secondary);">
                             <i class="bi {{ section.icon }}"></i>
@@ -120,6 +130,27 @@
 
         <!-- Section Content -->
         <div class="col-md-9">
+            {% if page == 'personal' %}
+            <!-- Connections: the model services this Spark uses (connections.js) -->
+            <div id="section-connections" class="mb-4">
+                <div class="app-card">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-plug"></i>
+                        Connections
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-3">
+                            The model services Spark uses, kept in <code>config.yaml</code>. Each offers the models you
+                            enable on it. Credentials go to the keychain and are never shown again.
+                            Connection changes save at once; the Save button below is for the other settings.
+                        </p>
+                        <div id="connections-app" data-server="false">
+                            <div class="app-spinner mx-auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             {% for section in sections %}
             <div id="section-{{ section.id }}" class="mb-4">
                 <div class="app-card">
@@ -1582,4 +1613,5 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 </script>
+{% if page == 'personal' %}<script src="/static/js/connections.js"></script>{% endif %}
 {% endblock %}

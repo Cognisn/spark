@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Spark - Connections{% endblock %}
+{% block head %}<link href="/static/css/connections.css" rel="stylesheet">{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1400px;">
+    <div class="mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Connections</h4>
+        <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+            The model services this Spark uses. Each connection offers the models you enable on it,
+            to the roles and users it is assigned to, metered in credits if you choose.
+            Credentials are kept in the secrets store and are never shown.
+        </p>
+    </div>
+    {% include "_page_messages.html" %}
+    <div class="app-card">
+        <div class="card-body">
+            <div id="connections-app" data-server="true">
+                <div class="app-spinner mx-auto"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/connections.js"></script>
+{% endblock %}

@@ -52,14 +52,14 @@ def user_scope(request: Request) -> Any:
         return None
     from spark.connections.runtime import UserScope
     from spark.identity.access import current_identity, current_user_guid, has_permission
-    from spark.identity.permissions import SETTINGS_INSTANCE
+    from spark.identity.permissions import ADMIN_CONNECTIONS
 
     identity = current_identity(request)
     roles = frozenset(identity.roles) if identity is not None else frozenset()
     return UserScope(
         current_user_guid(request),
         roles,
-        administrator=has_permission(request, SETTINGS_INSTANCE),
+        administrator=has_permission(request, ADMIN_CONNECTIONS),
     )
 
 
