@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc14] - 2026-11-19
+
 ### Fixed
 - **A model declared on one connection is offered on that connection only.** Catalogue overlay entries (a Foundry deployment, a model pulled into Ollama) belong to the connection that declared them, and each connection's catalogue is conduit's catalogue plus its own entries. Before, a declaration was offered on every connection of the same catalogue, such as a direct Anthropic connection beside a Foundry one, or a second Ollama. The 409 for an id conduit's catalogue already lists, and declaring an entry again to correct it, now apply per connection; two connections may declare the same id with their own Region and limits. Deleting a connection deletes its declarations
 
