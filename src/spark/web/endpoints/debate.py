@@ -168,8 +168,11 @@ async def debate_prompt(request: Request) -> JSONResponse:
 
     roles = request_roles(request)
     if cfg["state"] == "qa":
-        # A question in QA is a new request: refused at 100% of the budget, unstored.
-        standing = await budgets.status_for(db, user_guid, roles)
+        # A question in QA is a new request: refused at 100% of the allowance on the
+        # judge's connection, unstored.
+        standing = await budgets.status_for(
+            db, user_guid, roles, model=cfg["agents"]["judge"]["model_id"]
+        )
         if standing.state == "exceeded":
             return refused_response(budgets.BudgetExceeded(standing))
     turn_id = await asyncio.to_thread(orch.submit_user_prompt, cid, user_guid, message)

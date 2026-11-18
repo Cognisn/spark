@@ -225,8 +225,10 @@ class TestCompactorService:
         given.responses = [_text("Summary of the prior conversation: " + ("blah " * 60))]
         compactor = ContextCompactor(own, sync_db, FixedLimits(), threshold=0.01)  # type: ignore[arg-type]
         cid = sync_db.call(conversations.create_conversation, "Test", "stub-model", ADA)
+        # conduit's cut keeps the last assistant turn, so the conversation takes turns
         for i in range(4):
-            sync_db.call(messages.add_message, cid, "user", f"message {i}", 50, ADA)
+            role = "user" if i % 2 == 0 else "assistant"
+            sync_db.call(messages.add_message, cid, role, f"message {i}", 50, ADA)
         sync_db.call(conversations.update_conversation, cid, ADA, total_tokens=100_000)
 
         assert compactor.check_and_compact(cid, "stub-model", ADA, service=given) is True

@@ -217,8 +217,9 @@ class ActionExecutor:
 
         On a server a user without ``spark.actions`` is refused before anything
         runs, and the refusal is recorded as a run. So is a run of a user who has
-        used their monthly token budget (either mode); a run already started
-        always finishes. Every model call of the run is billed to its user.
+        used their monthly credits on the action's connection (server mode); a run
+        already started always finishes. Every model call of the run is billed to
+        its user.
         """
         from spark.database import autonomous_actions
 
@@ -228,7 +229,13 @@ class ActionExecutor:
             self.refuse(action_id, refusal)
             return
         try:
-            budgets.check(db, self._user_guid, self._roles)
+            planned = db.call(autonomous_actions.get_action, action_id, self._user_guid)
+            budgets.check(
+                db,
+                self._user_guid,
+                self._roles,
+                model=(planned or {}).get("model_id") or None,
+            )
         except BudgetExceeded as exceeded:
             self.refuse(action_id, str(exceeded))
             return

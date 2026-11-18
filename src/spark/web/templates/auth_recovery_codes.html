@@ -2,7 +2,11 @@
 {% block title %}Recovery Codes{% endblock %}
 {% block content %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    {% if password_change %}
+    Two-step verification is set up. Save your recovery codes, then choose a new password to finish signing in.
+    {% else %}
     Two-step verification is set up and you are signed in.
+    {% endif %}
 </p>
 {% include "_recovery_codes.html" %}
 <a class="btn btn-app-primary w-100" href="{{ next_path }}">

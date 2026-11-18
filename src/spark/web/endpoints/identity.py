@@ -8,6 +8,12 @@
   challenge (warden requires a second factor the user has not set up) starts
   an enrolment and shows its QR code and key, and ``POST /auth/challenge/enrol``
   confirms it, signs the user in and shows the recovery codes, once.
+* A ``change`` challenge: warden requires a new password before it issues the
+  session (an administrator asked, the password expired, no longer meets the
+  policy or is on a watch list). It follows a right password and any second
+  factor, in place of the session; ``POST /auth/challenge/change`` sets the new
+  password through warden and signs in. After a forced enrolment the recovery
+  codes are still shown first, without a session, and lead here.
 * ``GET/POST /auth/session/refresh``: rotates both cookies. The GET serves
   page loads (redirected here by the auth middleware, then back to ``next``);
   the POST serves ``csrf.js`` and is Origin and CSRF checked by the guard.
@@ -35,9 +41,18 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
-from warden.identity import AuthenticationRefused, ChallengeIssued, Principal, TokenPair
+from warden.identity import (
+    AuthenticationRefused,
+    ChallengeIssued,
+    PasswordChangeIssued,
+    PasswordRejected,
+    Principal,
+    SignInResult,
+    TokenPair,
+)
 
 from spark.identity.access import current_identity
+from spark.identity.passwords import PASSWORDS_DIFFER, change_reason_text, refusal_text
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import (
     ACCESS_COOKIE,
@@ -71,6 +86,8 @@ VERIFICATION_FAILED = (
 )
 CHALLENGE_VERIFY_PATH = CHALLENGE_PATH + "/verify"
 CHALLENGE_ENROL_PATH = CHALLENGE_PATH + "/enrol"
+CHALLENGE_CHANGE_PATH = CHALLENGE_PATH + "/change"
+_PURPOSES = ("verify", "enrol", "change")
 # Fixed notices the sign-in page may show (?notice=...); nothing from the URL is echoed.
 NOTICES = {
     "accepted": "Your invitation is accepted. Sign in to continue.",
@@ -202,41 +219,68 @@ async def sign_in(request: Request) -> Response:
         return await sign_in_page(
             request, error=SIGN_IN_FAILED, status_code=401, next_path=next_path
         )
-    response = signed_in_or_challenged(request, result.tokens, result.challenge, next_path)
+    response = signed_in_or_challenged(request, result, next_path)
     forget_form_token(response, SIGN_IN_PATH)
     return response
 
 
-def signed_in_or_challenged(
-    request: Request,
-    tokens: TokenPair | None,
-    challenge: ChallengeIssued | None,
-    next_path: str,
-) -> Response:
-    """The answer to a right password: a session, or the challenge screen."""
-    if challenge is not None:
-        return challenge_issued(request, challenge, next_path)
-    if tokens is None:  # warden returns exactly one of the two
+def signed_in_or_challenged(request: Request, result: SignInResult, next_path: str) -> Response:
+    """The answer to a right password: a session, a second-factor challenge, or a change."""
+    if result.challenge is not None:
+        return challenge_issued(request, result.challenge, next_path)
+    if result.password_change is not None:
+        return change_required(result.password_change, next_path)
+    if result.tokens is None:  # warden returns exactly one of the three
         raise HTTPException(status_code=500)
-    return signed_in_response(next_path, tokens)
+    return signed_in_response(next_path, result.tokens)
 
 
-def challenge_issued(request: Request, challenge: ChallengeIssued, next_path: str) -> Response:
-    """Keep a second-factor challenge in a cookie scoped to the challenge screens.
+def session_or_change(next_path: str, outcome: TokenPair | PasswordChangeIssued) -> Response:
+    """After a second factor: the session, or the password change warden requires first."""
+    if isinstance(outcome, PasswordChangeIssued):
+        return change_required(outcome, next_path)
+    response = signed_in_response(next_path, outcome)
+    _clear_challenge(response)
+    return response
 
-    The cookie holds ``<purpose>:<token>`` (purpose ``verify`` or ``enrol``),
-    so the token never appears in a URL; :func:`challenge_of` reads it.
+
+def _set_challenge(response: Response, purpose: str, token: str, expires_in: int) -> None:
+    """Keep a challenge in a cookie scoped to the challenge screens, replacing any other.
+
+    The cookie holds ``<purpose>:<token>`` (purpose ``verify``, ``enrol`` or
+    ``change``), so the token never appears in a URL; :func:`challenge_of`
+    reads it.
     """
-    response = redirect(with_next(CHALLENGE_PATH, next_path))
     response.set_cookie(
         CHALLENGE_COOKIE,
-        f"{challenge.purpose}:{challenge.token}",
-        max_age=challenge.expires_in,
+        f"{purpose}:{token}",
+        max_age=expires_in,
         path=CHALLENGE_PATH,
         secure=True,
         httponly=True,
         samesite="strict",
     )
+
+
+def challenge_issued(request: Request, challenge: ChallengeIssued, next_path: str) -> Response:
+    """Go to the second-factor screen, its challenge in this browser's cookie."""
+    response = redirect(with_next(CHALLENGE_PATH, next_path))
+    _set_challenge(response, challenge.purpose, challenge.token, challenge.expires_in)
+    return response
+
+
+def change_path(issued: PasswordChangeIssued, next_path: str) -> str:
+    """The change screen, naming warden's reason (only ever shown as a fixed message)."""
+    query = {"reason": str(issued.reason)}
+    if next_path != "/":
+        query["next"] = next_path
+    return f"{CHALLENGE_PATH}?{urlencode(query)}"
+
+
+def change_required(issued: PasswordChangeIssued, next_path: str) -> Response:
+    """Go to the change screen; no session exists until the new password is set."""
+    response = redirect(change_path(issued, next_path))
+    _set_challenge(response, "change", issued.token, issued.expires_in)
     return response
 
 
@@ -247,7 +291,7 @@ def challenge_of(request: Request) -> tuple[str, str] | None:
     """
     value = request.cookies.get(CHALLENGE_COOKIE, "")
     purpose, _, token = value.partition(":")
-    return (purpose, token) if purpose in ("verify", "enrol") and token else None
+    return (purpose, token) if purpose in _PURPOSES and token else None
 
 
 def _clear_challenge(response: Response) -> None:
@@ -263,6 +307,7 @@ def _challenge_page(
     status_code: int = 200,
     secret: str = "",
     uri: str = "",
+    reason: str = "",
 ) -> HTMLResponse:
     authenticator: WardenAuthenticator = request.app.state.authenticator
     response: HTMLResponse = request.app.state.templates.TemplateResponse(
@@ -276,11 +321,21 @@ def _challenge_page(
             "secret": secret,
             "uri": uri,
             "qr": qr_data_uri(uri) if uri else None,
+            # For a change: warden's reason, as one of the fixed messages only.
+            "reason": reason,
+            "reason_text": change_reason_text(reason),
+            "min_length": _min_length(request),
         },
         status_code=status_code,
     )
     private_headers(response)
     return response
+
+
+def _min_length(request: Request) -> int:
+    """warden's minimum password length, for the change form's hint."""
+    runtime = identity_runtime(request)
+    return int(runtime.config.identity.password_min_length)
 
 
 def _start_over(next_path: str) -> Response:
@@ -301,6 +356,9 @@ async def challenge_page(request: Request) -> Response:
     purpose, token = pending
     if purpose == "verify":
         return _challenge_page(request, purpose, next_path)
+    if purpose == "change":
+        reason = request.query_params.get("reason", "")
+        return _challenge_page(request, purpose, next_path, reason=reason)
     try:
         enrolment = await runtime.identity.begin_enrolment(
             challenge=token, source_ip=source_ip(runtime, request)
@@ -327,14 +385,12 @@ async def challenge_verify(request: Request) -> Response:
         else runtime.identity.verify_totp
     )
     try:
-        pair = await verify(pending[1], form.get("code"), source_ip=source_ip(runtime, request))
+        outcome = await verify(pending[1], form.get("code"), source_ip=source_ip(runtime, request))
     except AuthenticationRefused:
         return _challenge_page(
             request, "verify", next_path, error=VERIFICATION_FAILED, status_code=401
         )
-    response = signed_in_response(next_path, pair)
-    _clear_challenge(response)
-    return response
+    return session_or_change(next_path, outcome)
 
 
 def shown_back(form: Any) -> tuple[str, str]:
@@ -351,7 +407,7 @@ def shown_back(form: Any) -> tuple[str, str]:
 
 @router.post(CHALLENGE_ENROL_PATH)
 async def challenge_enrol(request: Request) -> Response:
-    """Confirm the enrolment, sign in, and show the recovery codes once."""
+    """Confirm the enrolment, sign in (or go on to a required change), show the codes once."""
     runtime = identity_runtime(request)
     form = await request.form()
     next_path = safe_next(form.get("next"))
@@ -359,7 +415,7 @@ async def challenge_enrol(request: Request) -> Response:
     if pending is None or pending[0] != "enrol":
         return _start_over(next_path)
     try:
-        codes, pair = await runtime.identity.confirm_enrolment(
+        codes, outcome = await runtime.identity.confirm_enrolment(
             form.get("code"), challenge=pending[1], source_ip=source_ip(runtime, request)
         )
     except AuthenticationRefused:
@@ -373,16 +429,56 @@ async def challenge_enrol(request: Request) -> Response:
             secret=secret,
             uri=uri,
         )
-    if pair is None:  # under a challenge warden always signs in
+    if outcome is None:  # under a challenge warden always signs in or asks for a change
         raise HTTPException(status_code=500)
+    change = outcome if isinstance(outcome, PasswordChangeIssued) else None
     response: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "auth_recovery_codes.html",
-        {"recovery_codes": codes, "next_path": next_path, "error": None},
+        {
+            "recovery_codes": codes,
+            # With a change still to make, the codes lead to the change screen.
+            "next_path": next_path if change is None else change_path(change, next_path),
+            "password_change": change is not None,
+            "error": None,
+        },
     )
     # Shown once: never cached, so neither Back nor the history shows them again.
     private_headers(response)
-    set_session_cookies(response, pair)
+    if isinstance(outcome, PasswordChangeIssued):
+        _set_challenge(response, "change", outcome.token, outcome.expires_in)
+    else:
+        set_session_cookies(response, outcome)
+        _clear_challenge(response)
+    return response
+
+
+@router.post(CHALLENGE_CHANGE_PATH)
+async def challenge_change(request: Request) -> Response:
+    """Set the new password warden requires, then sign in."""
+    runtime = identity_runtime(request)
+    form = await request.form()
+    next_path = safe_next(form.get("next"))
+    reason = str(form.get("reason") or "")
+    pending = challenge_of(request)
+    if pending is None or pending[0] != "change":
+        return _start_over(next_path)
+    password, confirm = form.get("password"), form.get("confirm")
+    if not isinstance(password, str) or password != confirm:
+        return _challenge_page(
+            request, "change", next_path, error=PASSWORDS_DIFFER, status_code=400, reason=reason
+        )
+    try:
+        pair = await runtime.identity.complete_password_change(
+            pending[1], password, source_ip=source_ip(runtime, request)
+        )
+    except PasswordRejected as exc:  # the challenge stays, less one attempt
+        return _challenge_page(
+            request, "change", next_path, error=refusal_text(exc), status_code=400, reason=reason
+        )
+    except AuthenticationRefused:
+        return _start_over(next_path)
+    response = signed_in_response(next_path, pair)
     _clear_challenge(response)
     return response
 

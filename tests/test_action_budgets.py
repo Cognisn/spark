@@ -1,7 +1,8 @@
-"""Scheduled actions: metered for their owner, refused at 100% of the owner's budget (A14).
+"""Scheduled actions: metered for their owner, refused at 100% of the owner's credits (M6).
 
-Personal mode here; the worker's server-mode runs, with owners and roles read
-from warden, are in ``test_worker_actions.py``. Stub models only.
+The executor here is given its owner's permissions and roles; the worker's runs,
+with owners and roles read from warden, are in ``test_worker_actions.py``. Stub
+models only.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import pytest
 
 from spark.database import autonomous_actions, usage
 from spark.scheduler.executor import ActionExecutor
+from tests.credit_helpers import allow, metered, server_mode, spent  # noqa: F401
 from tests.model_helpers import ScriptedModels
 
 OWNER = "local-owner"
@@ -52,7 +54,7 @@ def llm(sync_db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Any]]:
     made: list[Any] = []
 
     def _init(self: Any, model_id: str) -> Any:
-        models.responses[model_id].extend(_run_script())
+        models.responses["model-a"].extend(_run_script())
         service = models.factory(model_id)
         made.append(service)
         return service
@@ -63,20 +65,30 @@ def llm(sync_db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Any]]:
     models.close()
 
 
-def _action(sync_db: Any) -> int:
+def _action(sync_db: Any, model: str = "model-a") -> int:
     return sync_db.call(
         autonomous_actions.create_action,
         "nightly",
         "write the report",
-        "model-a",
+        model,
         OWNER,
         schedule_type="recurring",
         schedule_config='{"cron": "0 3 * * *"}',
     )
 
 
-def _execute(sync_db: Any, aid: int) -> None:
-    ActionExecutor(Ctx(), "daemon-1", sync_db, user_guid=OWNER).execute(aid)
+def _execute(sync_db: Any, aid: int, *, server: bool = False) -> None:
+    if server:
+        ActionExecutor(
+            Ctx(),
+            "daemon-1",
+            sync_db,
+            user_guid=OWNER,
+            permissions=frozenset({"spark.actions"}),
+            roles={"user"},
+        ).execute(aid)
+    else:
+        ActionExecutor(Ctx(), "daemon-1", sync_db, user_guid=OWNER).execute(aid)
 
 
 def _runs(sync_db: Any, aid: int) -> list[Any]:
@@ -118,26 +130,42 @@ class TestMetering:
 
 
 class TestBudget:
-    def test_no_budget_unless_set(self, sync_db, llm) -> None:
-        sync_db.call(usage.record_usage, None, "m", 10**9, 0, OWNER)
-        aid = _action(sync_db)
+    MODEL = "stub/model-a"
+
+    def test_personal_mode_never_refuses(self, sync_db, llm) -> None:
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=1)
+        sync_db.call(spent, OWNER, 10**9)
+        aid = _action(sync_db, self.MODEL)
         _execute(sync_db, aid)
         assert [r["status"] for r in _runs(sync_db, aid)] == ["completed"]
 
-    def test_at_100_percent_the_run_is_refused_and_recorded(self, sync_db, llm) -> None:
-        sync_db.call(usage.set_user_override, OWNER, 50)
-        sync_db.call(usage.record_usage, None, "m", 50, 0, OWNER)
-        aid = _action(sync_db)
-        _execute(sync_db, aid)
+    def test_unmetered_never_refuses(self, sync_db, llm, server_mode) -> None:
+        sync_db.call(metered, is_metered=False)
+        sync_db.call(allow, role="user", credits=1)
+        sync_db.call(spent, OWNER, 10**9)
+        aid = _action(sync_db, self.MODEL)
+        _execute(sync_db, aid, server=True)
+        assert [r["status"] for r in _runs(sync_db, aid)] == ["completed"]
+
+    def test_at_100_percent_the_run_is_refused_and_recorded(
+        self, sync_db, llm, server_mode
+    ) -> None:
+        sync_db.call(metered)
+        sync_db.call(allow, user=OWNER, credits=50)
+        sync_db.call(spent, OWNER, 50)
+        aid = _action(sync_db, self.MODEL)
+        _execute(sync_db, aid, server=True)
         [run] = _runs(sync_db, aid)
         assert run["status"] == "refused"
-        assert "monthly token budget" in (run["error_message"] or run["result_text"] or "")
+        assert "monthly credits on Stub stub" in (run["error_message"] or run["result_text"] or "")
         assert llm == []
 
-    def test_a_run_in_flight_finishes_past_the_budget(self, sync_db, llm) -> None:
-        sync_db.call(usage.set_user_override, OWNER, 12)
-        aid = _action(sync_db)
-        _execute(sync_db, aid)  # 10, then 5 more: past 12, but the run had started
+    def test_a_run_in_flight_finishes_past_the_allowance(self, sync_db, llm, server_mode) -> None:
+        sync_db.call(metered)
+        sync_db.call(allow, role="user", credits=12)
+        aid = _action(sync_db, self.MODEL)
+        _execute(sync_db, aid, server=True)  # 10, then 5 more: past 12, but the run had started
         assert [r["status"] for r in _runs(sync_db, aid)] == ["completed"]
-        _execute(sync_db, aid)
+        _execute(sync_db, aid, server=True)
         assert [r["status"] for r in _runs(sync_db, aid)] == ["refused", "completed"]

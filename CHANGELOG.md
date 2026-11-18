@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc6] - 2026-11-16
+
+### Added
+- **Credits** (`spark.usage.credits`): every model call on a connection is charged credits when it is recorded, as (input x input weight + output x output weight + cache read x cache read weight + cache write x cache write weight) / the connection's base rate x the model's tier multiplier (standard 1, higher and lower set per connection; weights 1, 5, 0.1 and 1.25 by default). Credits are exact to six decimal places, rounded half up once per call, and each usage row keeps the rates it was charged at, so changing a connection's rates never changes what earlier calls cost. `credits.estimate(connection, counts)` gives what sample token counts would cost at each tier
+- **Monthly credit allowances per metered connection** (server mode): a user's allowance on a metered connection is their own assignment's, otherwise the highest of their roles' assignments. Users are warned at 80%; at 100% new requests on that connection (chat turns on the stream and the send route, debate and panel turns and questions, scheduled actions and knowledge graph build chunks) are refused with a message naming the connection and the reset date, while a request already running finishes. Allowances reset at 00:00 UTC on the first of each month. Unmetered connections, and personal mode, have no limit
+- **Knowledge graph builds are metered**: every extraction call is billed to the build's user (usage source `knowledge`)
+- **The model picker** groups models by connection, shows each model's tier and, on a metered connection, the credits left this month, in a chat and when starting a conversation, debate or panel
+- **`/api/usage/me`** answers in credits, for one connection (`?connection=` or `?model=`) or the user's most used metered connection, with every metered connection of theirs under `connections`
+
+### Changed
+- **The usage view and its CSV export** (`/admin/usage`) show usage per user, connection and model with the four token counts (input, output, cache read, cache write) and credits, totals per connection, and each user's standing on each metered connection
+- **The credit banner** on the chat, debate and panel pages speaks of credits on a named connection instead of a token budget
+
+### Removed
+- **A14's token budgets**: role token budgets, per-user token budget overrides and their forms on the usage view (`/admin/usage/budgets/roles` and `/admin/usage/budgets/users`). Revision `credit_metering` drops `usage_role_budgets` and `usage_user_budgets` and adds `credits_micro` and `credit_inputs` to `usage_tracking`
+
+### Upgrade notes
+- **Server mode**: 0.3.0 was never released, so token budgets set on a release candidate are not migrated to credit allowances. Set allowances on each metered connection's assignments instead. Usage recorded before this revision costs no credits
+
+## [0.3.0rc5] - 2026-11-16
+
+### Changed
+- **Skills on conduit**: SPARK's bundled and user skills are listed and loaded through conduit's skill layer (`spark.skills.source.SparkSkillSource` over conduit's filesystem source), keeping the rule that a bundled skill wins its name and serving each user only the skills they have turned on, globally and for the conversation. In chat, `use_skill` is conduit's progressive disclosure: a loaded skill's instructions join the system prompt, before its cache breakpoint, instead of the tool result, and stay loaded in later turns of the conversation (restored in order from its stored messages, across a compaction too), so the cached prefix is the same from call to call. `read_skill_resource` reads a skill's files once it is loaded. Debates, panels, sub-agents and scheduled actions keep receiving a skill's instructions as the tool result
+- **SKILL.md validation is conduit's**: the skills page, import and skill authoring check every `SKILL.md` with conduit's parser, the one the model loads through. `version`, `license`, `compatibility`, `allowed-tools` (a list) and `metadata` are recorded; any other front matter key, a block value (`|` or `>`) or an empty body makes a skill invalid, with the reason shown. Authored skills write their description quoted, and their resource paths follow conduit's rule (letters, digits, `_`, `.` and `-` segments)
+- **Compaction on conduit's compaction layer**: `ContextCompactor` keeps SPARK's summary prompt, markers and rollup history, and lets conduit's compactor decide and cut. The latest assistant turn now stays as it was after the summary, and the model reads the summary first; while a conversation still fits the model's window, a compaction happens only when it brings it under the threshold; past the emergency threshold without a summary, the older turns give way to the truncation notice and the latest turn stays. The system prompt and loaded skills are never touched, so the cached prefix is unchanged by a compaction
+- **Compaction thresholds and prompt caching follow the instance settings at once** (server mode): `conversation.rollup_threshold`, `rollup_summary_ratio`, `emergency_rollup_threshold` and `prompt_caching` are read before each compaction check and model call, without a restart; a conversation's own prompt caching choice still applies
+
+### Upgrade notes
+- **Skills**: a user skill whose `SKILL.md` uses front matter keys other than conduit's, or block values, shows as invalid on the skills page until it is edited
+
+## [0.3.0rc4] - 2026-11-16
+
+### Added
+- **A forced password change at sign-in** (server mode): when warden requires a new password before it issues a session (an administrator asked for it, the password expired, it no longer meets the password policy, or it is on a watch list), the sign-in goes on to a new-password step on the challenge screen (`POST /auth/challenge/change`) after the password and any second factor, and signs in once warden accepts the new password. After a forced enrolment the recovery codes are shown first, then the new-password step. No session cookie is set until then
+
+### Changed
+- **warden 0.1.0**: SPARK depends on `cognisn-warden>=0.1.0`, warden's first release, in place of 0.1.0b8. `spark migrate` brings warden's chain from 0.1.0b8's head (`7b2e9d4c1f08`) to 0.1.0's (`a9e4c27f13d8`), adding warden's passkey and password policy tables. warden brings `fido2` (BSD-2-Clause) as a new runtime dependency
+- **Password refusals**: a password warden's policy refuses, on the account page, an invitation or a reset, shows warden's plain messages (for example "Use at least 12 characters. This password is too common.") instead of an error code list or, on the account page, an error page
+
+### Upgrade notes
+- **Server mode**: warden 0.1.0 enforces its default password policy, which refuses about 100,000 very common passwords wherever a password is set. A user whose current password is on that list is asked to choose a new one at their next password sign-in
+
 ## [0.3.0rc3] - 2026-11-16
 
 ### Added

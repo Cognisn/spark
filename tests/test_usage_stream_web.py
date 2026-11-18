@@ -1,4 +1,7 @@
-"""The turn endpoints and the budget: roles passed down, refusals sent clearly (personal mode).
+"""The turn endpoints and credits: roles passed down, refusals sent clearly (personal mode).
+
+Personal mode meters no credits, so the refusals here are made by stand-ins; the
+real refusals on a server are in ``test_usage_web_server.py`` and the turn tests.
 
 A refused chat turn streams a ``budget_exceeded`` event with the message and
 stores nothing; a finished turn's final response carries the user's standing;
@@ -9,13 +12,14 @@ answered 429 without being stored.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.database import debates, messages, usage
+from spark.database import debates, messages
 from spark.identity.permissions import ADMINISTRATOR
 from spark.usage.budgets import BudgetExceeded, BudgetStatus
 from spark.web.server import create_app
@@ -27,6 +31,7 @@ from tests.test_voice_endpoints import _mock_settings_get
 from tests.web_helpers import sign_in
 
 LOCAL = "u1"
+REFUSED = BudgetStatus("2026-11", Decimal(10), Decimal(10), "stub", "Stub stub")
 
 
 @pytest.fixture()
@@ -54,15 +59,23 @@ def _chat(client: TestClient) -> int:
 
 class TestChatStream:
     def test_a_refused_turn_streams_the_refusal_and_stores_nothing(
-        self, client: TestClient
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from spark.usage import budgets
+
         cid = _chat(client)
-        _call(client, usage.set_user_override, LOCAL, 10)
-        _call(client, usage.record_usage, None, "m", 10, 0, LOCAL)
+        seen: list[Any] = []
+
+        def refuse(db: Any, user: str, roles: Any, **kwargs: Any) -> BudgetStatus:
+            seen.append(kwargs.get("connection_id"))
+            raise BudgetExceeded(REFUSED)
+
+        monkeypatch.setattr(budgets, "check", refuse)
         resp = client.get(f"/stream/chat?message=hello&conversation_id={cid}")
         assert resp.status_code == 200
         assert "event: budget_exceeded" in resp.text
-        assert "monthly token budget" in resp.text
+        assert "monthly credits on Stub stub" in resp.text
+        assert seen == ["stub"]
         assert "event: error" not in resp.text
         assert _call(client, messages.get_messages, LOCAL, cid) == []
 
@@ -72,7 +85,7 @@ class TestChatStream:
         # The manager's own result is tested with it; here only the endpoint's relay.
         cid = _chat(client)
         mgr = client.app.state.conversation_manager  # type: ignore[attr-defined]
-        standing = BudgetStatus("2026-11", used=50, limit=60).as_dict()
+        standing = BudgetStatus("2026-11", Decimal(50), Decimal(60), "stub", "Stub stub").as_dict()
         monkeypatch.setattr(
             mgr,
             "send_message",
@@ -104,7 +117,7 @@ class _RefusingOrchestrator:
 
     def run(self, conversation_id: int, user_guid: str, **kwargs: Any) -> None:
         self.roles = kwargs.get("roles")
-        raise BudgetExceeded(BudgetStatus("2026-11", used=10, limit=10))
+        raise BudgetExceeded(REFUSED)
 
 
 @pytest.mark.parametrize("kind", ["debate", "panel"])
@@ -122,32 +135,50 @@ def test_a_refused_debate_or_panel_run_streams_the_refusal(
     cid = created.json()["id"]
     resp = client.get(f"/stream/{kind}?conversation_id={cid}")
     assert "event: budget_exceeded" in resp.text
-    assert "monthly token budget" in resp.text
+    assert "monthly credits on Stub stub" in resp.text
     assert fake.roles == frozenset({ADMINISTRATOR})
 
 
+def _refusing_standing(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Make every standing an exceeded one; the models asked about are recorded."""
+    from spark.usage import budgets
+
+    asked: list[Any] = []
+
+    async def exceeded(db: Any, user: str, roles: Any, **kwargs: Any) -> BudgetStatus:
+        asked.append(kwargs.get("model"))
+        return REFUSED
+
+    monkeypatch.setattr(budgets, "status_for", exceeded)
+    return asked
+
+
 class TestQaQuestion:
-    def test_refused_with_429_and_not_stored(self, client: TestClient) -> None:
+    def test_refused_with_429_and_not_stored(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         cid = client.post("/conversations/api/create", json=DEBATE_PAYLOAD).json()["id"]
         _call(client, debates.update_debate_state, LOCAL, cid, "qa")
-        _call(client, usage.set_user_override, LOCAL, 10)
-        _call(client, usage.record_usage, None, "m", 10, 0, LOCAL)
+        asked = _refusing_standing(monkeypatch)
         before = _call(client, debates.get_turns, LOCAL, cid)
         resp = client.post("/debate/api/prompt", json={"conversation_id": cid, "message": "Why?"})
         assert resp.status_code == 429
-        assert "monthly token budget" in resp.json()["error"]
+        assert "monthly credits on Stub stub" in resp.json()["error"]
         assert resp.json()["budget"]["state"] == "exceeded"
         assert _call(client, debates.get_turns, LOCAL, cid) == before
+        assert asked == ["stub-model"]  # the judge's model decides the connection
 
 
 class TestPanelQaQuestion:
-    def test_refused_with_429_and_not_stored(self, client: TestClient) -> None:
+    def test_refused_with_429_and_not_stored(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         cid = client.post("/conversations/api/create", json=PANEL_PAYLOAD).json()["id"]
         _call(client, debates.update_debate_state, LOCAL, cid, "qa")
-        _call(client, usage.set_user_override, LOCAL, 10)
-        _call(client, usage.record_usage, None, "m", 10, 0, LOCAL)
+        asked = _refusing_standing(monkeypatch)
         before = _call(client, debates.get_turns, LOCAL, cid)
         resp = client.post("/panel/api/prompt", json={"conversation_id": cid, "message": "Why?"})
         assert resp.status_code == 429
         assert resp.json()["budget"]["state"] == "exceeded"
         assert _call(client, debates.get_turns, LOCAL, cid) == before
+        assert asked == ["stub-model"]  # the moderator's model decides the connection

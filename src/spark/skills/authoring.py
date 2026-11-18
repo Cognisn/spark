@@ -1,4 +1,9 @@
-"""Approval-gated skill authoring: create_skill and update_skill."""
+"""Approval-gated skill authoring: create_skill and update_skill.
+
+Authoring stays SPARK's own, above conduit. What it writes is checked by conduit's
+``SKILL.md`` parser before anything reaches the disk, so an authored skill is always one
+the model can load; resource paths follow conduit's path rule.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,10 @@ import uuid
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-from spark.skills.manager import NAME_RE, get_skills_manager
+from conduit.skills import SkillInvalid, parse_skill_md
+from conduit.skills.format import resource_path_refusal
+
+from spark.skills.manager import NAME_RE, get_skills_manager, refusal_text
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +81,19 @@ def _escapes_skill(raw_path: str) -> bool:
     return bool(parsed.drive or parsed.root or ".." in parsed.parts)
 
 
+def _quoted(value: str) -> str:
+    """``value`` as a double-quoted front matter value (conduit's parser reads it back)."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def skill_md(name: str, description: str, instructions: str) -> str:
+    """The SKILL.md an authored skill is written as."""
+    return (
+        f"---\nname: {name}\ndescription: {_quoted(description.strip())}\n---\n\n"
+        f"{instructions.strip()}\n"
+    )
+
+
 def _validate(name: str, description: str, instructions: str, resources: list[dict]) -> str | None:
     """Return an error message, or None when the input is acceptable."""
     if not NAME_RE.match(name) or len(name) > 64:
@@ -81,12 +102,21 @@ def _validate(name: str, description: str, instructions: str, resources: list[di
         return "A description of 1 to 1024 characters is required"
     if not instructions.strip():
         return "Instructions must not be empty"
+    try:
+        parse_skill_md(skill_md(name, description, instructions), expected_name=name)
+    except SkillInvalid as refused:
+        return f"The skill is not valid: {refusal_text(refused, name)}"
     total = len(instructions.encode("utf-8"))
     for res in resources:
         raw_path = str(res.get("path", ""))
         path = Path(raw_path)
         if _escapes_skill(raw_path):
             return f"Resource path '{res.get('path')}' must be relative, inside the skill"
+        if resource_path_refusal(raw_path) is not None:
+            return (
+                f"Resource path '{res.get('path')}' must be a relative path of letters, "
+                "digits, '_', '.' and '-' segments separated by '/'"
+            )
         content = res.get("content")
         if not isinstance(content, str):
             return f"Resource '{path}' content must be text"
@@ -114,14 +144,12 @@ def write_skill(
     tmp.mkdir(parents=True)
     try:
         (tmp / "SKILL.md").write_text(
-            f"---\nname: {name}\ndescription: {description.strip()}\n---\n\n"
-            f"{instructions.strip()}\n",
-            encoding="utf-8",
+            skill_md(name, description, instructions), encoding="utf-8", newline="\n"
         )
         for res in resources:
             dest = tmp / Path(str(res["path"]))
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(res["content"], encoding="utf-8")
+            dest.write_text(res["content"], encoding="utf-8", newline="\n")
         backup = None
         if target.exists():
             if not overwrite:
