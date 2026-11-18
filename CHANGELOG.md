@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc9] - 2026-11-18
+
 ### Changed
 - **Connections guide** (`docs/connections.md`): adding a connection for each of the nine services, with its fields and authentication modes, the Region and residency policy and their defaults, several connections of one service, model discovery, the models view (enabling models, tiers, declaring a model the catalogue lacks), managing connections, personal mode, and upgrading from 0.2 (`config.yaml` providers converted on first start; `providers.*`, `models.offered` and `context_limits` no longer read)
 - **Metering guide** (`docs/metering.md`): metered and unmetered connections, the base rate, tier multipliers and token weights (defaults 1,000, 2 and 0.5, and 1, 5, 0.1 and 1.25) with a worked example from `spark.usage.credits.estimate`, precision, assignments and allowances (a user's own over their roles', the highest role), the 80% warning, the 100% stop, the monthly reset, the usage view and its CSV, and the end of token budgets
