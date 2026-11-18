@@ -45,6 +45,31 @@ RUN python scripts/check_no_nvidia.py \
 # No installers in the runtime environment.
 RUN pip uninstall --yes pip setuptools wheel
 
+# -- RDS certificate authority bundle -----------------------------------------
+# AWS's public certificate bundle for RDS, fetched at build time and checked
+# against a pinned SHA-256 so a changed or tampered download fails the build.
+# AWS republishes the bundle when it adds a certificate authority: refresh
+# RDS_CA_BUNDLE_SHA256 (build argument) after checking the new bundle.
+FROM ${PYTHON_IMAGE} AS rds-ca
+ARG RDS_CA_BUNDLE_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+ARG RDS_CA_BUNDLE_SHA256=90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b
+RUN python - <<'PY'
+import hashlib
+import os
+import urllib.request
+
+data = urllib.request.urlopen(os.environ["RDS_CA_BUNDLE_URL"], timeout=60).read()
+digest = hashlib.sha256(data).hexdigest()
+expected = os.environ["RDS_CA_BUNDLE_SHA256"]
+if digest != expected:
+    raise SystemExit(f"RDS certificate bundle checksum mismatch: {digest} != {expected}")
+if data.count(b"BEGIN CERTIFICATE") < 1 or b"PRIVATE KEY" in data:
+    raise SystemExit("RDS certificate bundle is not a certificate-only PEM file")
+with open("/rds-global-bundle.pem", "wb") as fh:
+    fh.write(data)
+os.chmod("/rds-global-bundle.pem", 0o644)
+PY
+
 # -- runtime ------------------------------------------------------------------
 FROM ${PYTHON_IMAGE}
 
@@ -72,6 +97,11 @@ RUN groupadd --system --gid 10001 spark \
 
 COPY --from=builder /opt/venv /opt/venv
 
+# The RDS certificate authority bundle (public certificates only), at the fixed
+# path tasks name in PGSSLROOTCERT so sslmode=verify-full works against RDS with
+# no sslrootcert in the database URL. Readable by the unprivileged user.
+COPY --from=rds-ca --chmod=0644 /rds-global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+
 # Configuration, data, logs and secrets live under /var/lib/spark (one volume,
 # shared by the web and worker containers); users' file areas live under
 # /var/lib/spark-files (server mode sets files.root to it); the embedding model
@@ -96,7 +126,7 @@ EXPOSE 8000
 
 # For the web role; the worker and migrate services disable it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('SPARK__INTERFACE__PORT', '8000') + '/loading/api/status', timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('SPARK__INTERFACE__PORT', '8000') + '/health', timeout=4)"]
 
 ENTRYPOINT ["spark"]
 CMD ["web"]

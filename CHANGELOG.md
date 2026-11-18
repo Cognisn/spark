@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`GET /health` and `GET /ready`** (`spark.web.endpoints.health`), for load balancers and container health checks, in personal and server mode, with no sign-in and outside warden's checks. `/health` answers 200 whenever the process serves and depends on nothing. `/ready` answers 200 only when the database answers, the schema is at both Alembic heads (Spark's and warden's) and the secrets store is readable, otherwise 503; its body names each check and Spark's version and never a secret, URL, host name or stack trace.
+- **Running on AWS** (`docs/deployment/aws.md`): ECS on Fargate task definitions for web, worker and the one-off migrate task, EFS access points, the konfig settings document and secrets bundle, a database URL per login through `SPARK__DATABASE__URL=secret://database_url_<login>`, TLS to RDS, load balancer health checks, Bedrock through the task role, and each task role's policy.
+- **The AWS RDS certificate authority bundle in the image** at `/etc/ssl/certs/rds-global-bundle.pem` (public certificates only, fetched at build time and checked against a pinned SHA-256), so `sslmode=verify-full` works against RDS with no `sslrootcert` in the URL when a task sets `PGSSLROOTCERT` to that path. `deploy/check-image.sh` checks the file is present, readable by the image's user and holds no private key.
+- Tests that run konfig's settings document and secrets bundle against a stubbed Secrets Manager (a server starts with no master key; `SPARK__DATABASE__URL` selects the owner, web or worker login for web, migrate and worker and wins over any other `database.url`; every settings document key is honoured with its precedence against `SPARK__` variables; `KONFIG_AWS_SEED=false` leaves a pre-filled bundle untouched), that every connection Spark opens honours `PGSSLROOTCERT` and never falls back to a weaker TLS mode, and that a Bedrock connection with `credential_chain` builds its client with no keys.
+
+### Changed
+- The image's health check requests `/health` instead of `/loading/api/status`, which is unchanged.
+
 ## [0.3.0rc12] - 2026-11-19
 
 ### Added

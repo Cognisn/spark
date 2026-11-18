@@ -27,6 +27,8 @@ from spark.mcp_integration import access as mcp_access
 from spark.mode import DatabaseSettings
 from spark.settings_values import setting_bool
 from spark.web.auth import AuthManager, GatingAuthenticator, LoginPolicy, PersonalAuthenticator
+from spark.web.endpoints.health import PROBE_PATHS
+from spark.web.endpoints.health import router as health_router
 from spark.web.security import OriginPolicy, RequestGuardMiddleware
 from spark.web.session import SessionManager
 
@@ -343,6 +345,8 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     from spark.web.endpoints import register_routes
 
     register_routes(app)
+    # Liveness and readiness probes: no session, outside warden's checks.
+    app.include_router(health_router)
 
     # -- Origin and CSRF checks (inside the auth middleware) ---------------------
     app.add_middleware(
@@ -356,6 +360,9 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     # -- Auth middleware -------------------------------------------------------
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        if request.url.path in PROBE_PATHS:
+            # /health and /ready answer a load balancer: no session, no warden.
+            return await call_next(request)
         authenticator = request.app.state.authenticator
         if isinstance(authenticator, GatingAuthenticator):
             # Server mode: warden decides, including which paths are public.

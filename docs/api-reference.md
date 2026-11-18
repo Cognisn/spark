@@ -416,6 +416,26 @@ Get the server initialisation status (available without authentication).
 }
 ```
 
+### GET /health
+
+Liveness probe for load balancers and container health checks. Answers 200 whenever the
+process serves, with no dependency and no sign-in (personal and server mode).
+
+```json
+{"status": "ok", "version": "0.3.0"}
+```
+
+### GET /ready
+
+Readiness probe. Answers 200 only when the database answers, the schema is at both Alembic
+heads (Spark's and warden's) and the secrets store is readable; otherwise 503. It needs no
+sign-in, and its body names each check as `ok` or `failed` and never carries a secret, URL,
+host name or stack trace.
+
+```json
+{"status": "ready", "version": "0.3.0", "checks": {"database": "ok", "schema": "ok", "secrets": "ok"}}
+```
+
 ### POST /api/heartbeat
 
 Browser heartbeat to keep the server alive.
