@@ -155,8 +155,8 @@ docker exec -it spark-web-1 spark identity create-admin --email admin@example.co
 
 It asks for the password twice (at least 12 characters) and prints `administrator
 <id>, created, administrator role assigned`. Sign in at your public address, set up
-two-step verification, then enable a provider, choose the models offered and set up
-mail on the instance settings page: [the checklist](index.md#checklist) gives the
+two-step verification, then add a model connection on **Account > Connections**,
+choose its models and assign it, and set up mail on the instance settings page: [the checklist](index.md#checklist) gives the
 order, and [Identity](identity.md) covers roles, invitations and single sign-on.
 
 ## Standby workers and web replicas

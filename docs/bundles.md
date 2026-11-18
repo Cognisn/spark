@@ -37,7 +37,7 @@ migration is not offered.
   like a well-known credential (provider and cloud keys, GitHub and Slack tokens,
   Spark API keys, private keys), replaced by `[redacted credential]`. A file or a
   binary skill file that holds one is left out and listed.
-- Instance configuration: providers and their models, MCP servers (only the transport
+- Instance configuration: model connections and their models, MCP servers (only the transport
   of each server the data mentions is written, so an import can tell stdio servers
   apart), tool policy, file storage, email and voice settings.
 - The instance's own records: usage and voice usage, prompt inspection violations and

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Connections guide** (`docs/connections.md`): adding a connection for each of the nine services, with its fields and authentication modes, the Region and residency policy and their defaults, several connections of one service, model discovery, the models view (enabling models, tiers, declaring a model the catalogue lacks), managing connections, personal mode, and upgrading from 0.2 (`config.yaml` providers converted on first start; `providers.*`, `models.offered` and `context_limits` no longer read)
+- **Metering guide** (`docs/metering.md`): metered and unmetered connections, the base rate, tier multipliers and token weights (defaults 1,000, 2 and 0.5, and 1, 5, 0.1 and 1.25) with a worked example from `spark.usage.credits.estimate`, precision, assignments and allowances (a user's own over their roles', the highest role), the 80% warning, the 100% stop, the monthly reset, the usage view and its CSV, and the end of token budgets
+- **Model services** (`docs/providers.md`) now covers getting an account and a credential from each service, linking to conduit's providers guide for how each is called; the 0.2 provider settings, model tables and `context_limits` are gone
+- **README**, getting started, configuration, security, architecture, development, containers and the server deployment pages describe connections, credits and allowances in place of providers and token budgets; the MCP guide gives the rule that plain `http` reaches loopback MCP servers only, conduit's failure classes and `secret://` resolution; the architecture describes MCP on the conduit loop (no MCP loop thread); conversations and tools describe compaction and skills on conduit; identity describes warden 0.1.0's password policy and forced password change
+
 ## [0.3.0rc8] - 2026-11-18
 
 ### Changed

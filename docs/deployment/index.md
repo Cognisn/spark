@@ -48,7 +48,7 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
   time. `spark migrate` brings the database to the current schema.
 - **PostgreSQL** holds every user's data, the instance settings, warden's users,
   sessions and audit trail, and the vector indexes (pgvector 0.8 or later).
-- **konfig** holds every secret (provider keys, warden's signing keys, the SMTP
+- **konfig** holds every secret (model connection credentials, warden's signing keys, the SMTP
   password): in its encrypted store keyed by `KONFIG_MASTER_KEY`, or in AWS Secrets
   Manager. The database holds no secret.
 - **warden** (`cognisn-warden`, installed with Spark) provides sign-in, two-step
@@ -68,8 +68,9 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
    `server.public_base_url` to its address.
 5. [Create the first administrator](identity.md#the-first-administrator), sign in
    and set up two-step verification.
-6. On the instance settings page: enable a provider, choose the models offered,
-   [set up mail](identity.md#mail), and optionally
+6. [Add a model connection](../connections.md), choose its models and assign it to
+   roles (and [meter it](../metering.md) if you want allowances); then, on the
+   instance settings page, [set up mail](identity.md#mail), and optionally
    [single sign-on](identity.md#single-sign-on).
 7. Invite users and give them roles.
 8. [Schedule backups](operations.md#backups).

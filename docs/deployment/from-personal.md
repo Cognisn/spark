@@ -69,8 +69,9 @@ everything is written in one transaction with its audit record
 - **Skills** are kept in their file area under `imports/<bundle id>/.../skills/` and
   listed, because a server's skills are shared by everyone. An administrator can
   install one for all users.
-- **Provider keys and MCP servers** do not travel. The server's administrator decides
-  which providers, models and MCP servers are offered.
+- **Connections, their keys, and MCP servers** do not travel. The server's
+  administrator decides which connections, models and MCP servers are offered, and
+  assigns connections to users and roles.
 
 A bundle is imported once per person: importing the same bundle again for the same
 account is refused and changes nothing.

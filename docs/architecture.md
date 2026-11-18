@@ -25,11 +25,11 @@ graph TB
 
         subgraph LLM
             LM[Connection runtime / conduit]
-            Anthropic[Anthropic Direct]
-            Bedrock[AWS Bedrock]
-            Ollama[Ollama]
+            Bedrock[Amazon Bedrock and mantle]
+            Anthropic[Anthropic and Claude in Foundry]
+            OpenAI[OpenAI, X.AI and Foundry]
             Gemini[Google Gemini]
-            XAI[X.AI / Grok]
+            Ollama[Ollama]
         end
 
         subgraph Tools
@@ -85,11 +85,11 @@ graph TB
     CM --> CC
     CM --> PI
     CM --> VI
-    LM --> Anthropic
     LM --> Bedrock
-    LM --> Ollama
+    LM --> Anthropic
+    LM --> OpenAI
     LM --> Gemini
-    LM --> XAI
+    LM --> Ollama
     TR --> FS
     TR --> Doc
     TR --> Arc
@@ -198,9 +198,9 @@ starts, under `spark.`:
 | `spark.file.downloaded` | info | `file`, the file id | a user downloads a file from their file area |
 | `spark.export.downloaded` | info | `conversation`, `memories`, `skill` or `usage` | a conversation export, memories export, skill download or usage export |
 | `spark.action.refused` | warning | `action`, the action id | a scheduled action is refused for its owner (outcome failure) |
-| `spark.usage.refused` | notice | `budget`, the month | a request is refused at 100% of the user's monthly token budget (outcome failure) |
+| `spark.usage.refused` | notice | `budget`, the month | a request is refused at 100% of the user's monthly credit allowance on a metered connection (outcome failure; the details name the connection, the credits used and the allowance) |
 | `spark.usage.viewed` | info | `usage`, the month | an administrator opens the usage view |
-| `spark.usage.budget_changed` | notice | `role` or `user`, its name or guid | an administrator sets or removes a budget |
+| `spark.usage.budget_changed` | notice | `role` or `user`, its name or guid | registered for the token budgets of earlier release candidates and no longer emitted: allowances are recorded as connection changes (`spark.settings.instance.changed`, resource `connection`) |
 
 - **Actor**: the warden user id, as in warden's own events, so one actor filter shows a person's whole trail; the SPARK guid is kept in the details as `user_guid`. A guid with no warden user (or `operator`, a change made outside the web) is recorded as given.
 - **Details** never carry a value or content: keys naming a value, secret, password, token, content, text, snippet, body, message or prompt are dropped at any depth (`scrub`).
@@ -212,9 +212,9 @@ starts, under `spark.`:
 ### Core
 
 - **ConversationManager** -- Central orchestrator connecting database, LLM, tools, MCP, memory, and compaction; synchronous, runs on a worker thread per turn and reaches the database through the bridge (see Data Layer)
-- **ContextCompactor** -- LLM-driven intelligent context summarisation with categorised preservation
+- **ContextCompactor** -- LLM-driven intelligent context summarisation with categorised preservation. It keeps SPARK's summary prompt, markers and rollup history and runs conduit's `Compactor`, which decides and cuts: the latest assistant turn always stays verbatim, a summary is applied only if it brings a conversation that still fits under the threshold, and emergency truncation is conduit's keep-last-turns. Compactions are persisted by SPARK (`messages.apply_compaction`); there is no conduit transcript store. In server mode the thresholds and prompt caching are read from the instance settings before each check and model call
 
-### Usage and budgets (A14)
+### Usage and credits (A14, M6 to M10)
 
 Every model call is metered from conduit's events: conduit emits one
 `model_call_finished` event per call, however it ends, with its four token counts
@@ -222,38 +222,53 @@ apart, and SPARK's event sink (`spark.connections.usage.UsageSink`) records each
 that was attributed as one `usage_tracking` row through the bridge: the user it is
 billed to (an action's owner for an action), the connection and the model it ran on,
 the source, which is the task (`chat`, `compaction`, `agent`, `debate`, `panel`,
-`action`), the conversation or action, the uncached input, output, cache read and
-cache write tokens, and the period, the UTC calendar month (`YYYY-MM`).
+`action`, `knowledge`), the conversation or action, the uncached input, output, cache
+read and cache write tokens, and the period, the UTC calendar month (`YYYY-MM`).
 `spark.usage.meter.meter` attributes the service a chat turn, a sub-agent, a
-compaction, a debate or panel agent, or a scheduled action uses; a call no one
-attributed (a knowledge graph build) is not recorded. A user's total counts all four
-token kinds. Rows are only inserted, so parallel turns for one user never lose
-tokens, and a failure to record is logged and never breaks the call. The
-per-conversation, debate and action run token counters are kept as before.
+compaction, a debate or panel agent, a scheduled action or a knowledge graph build
+uses; a call no one attributed is not recorded. Rows are only inserted, so parallel
+turns for one user never lose usage, and a failure to record is logged and never
+breaks the call. The per-conversation, debate and action run token counters are kept
+as before.
 
-`spark.usage.budgets` decides a user's monthly limit: their own override
-(`usage_user_budgets`, a number or explicitly unlimited) first; then, on a server, the
-most generous budget among their roles that set one (`usage_role_budgets`);
-otherwise none. Personal mode applies only the local user's own budget. `check` and
-`status_for` take the connection a request will use (`connection_id`), so credit
-metering per connection can decide there without changing their callers; token
-budgets apply across every connection. `check` runs
-as a turn starts, in `ConversationManager.send_message`, before each debate or panel
-speaker's turn and each QA answer, and in `ActionExecutor.execute`: at 100% it raises
-`BudgetExceeded` (audited as `spark.usage.refused`) with a message saying when the
-budget resets, at 00:00 UTC on the first of the next month. A turn already running
-always finishes, so parallel turns that each started under the budget can take the
-month past it; the next request is refused. Callers pass the user's roles: the
-request's identity for the web, and the owner's roles read from warden at run time
-for the worker (`spark.scheduler.owners`).
+**Credits** (`spark.usage.credits`) are charged on each row as it is recorded:
+weighted tokens (input x 1 + output x 5 + cache read x 0.1 + cache write x 1.25 by
+default) / the connection's base rate (1,000 by default) x the model's tier multiplier
+(standard 1; higher 2 and lower 0.5 by default), all from `connection_metering` and
+`connection_models`. Arithmetic is `decimal.Decimal`; a call's credits are rounded once,
+half up, to six places and stored as `credits_micro` (whole micro-credits, BIGINT), with
+the rates and tier in `credit_inputs` (JSON), so sums are exact on both engines and a
+rate change never rewrites history. `credits.estimate` prices sample counts at each
+tier for the connections screen's worked example. See [Metering](metering.md).
 
-On the web, `/api/usage/me` gives the signed-in user's standing, which the chat,
-debate and panel pages show as a banner from 80% (`static/js/budget.js`). A refused
-stream sends `budget_exceeded`; a refused QA question is answered 429. `/admin/usage`
-and `/admin/usage/export.csv` (`spark.usage.admin`, Administrators only) show and
-export usage by month, user and model and set the budgets; viewing, exporting and
-changing a budget are audited. The ElevenLabs character cap is separate and stays
-instance-wide.
+`spark.usage.budgets` decides a user's monthly allowance on a **metered** connection
+(`connection_assignments.monthly_credits`, whole credits, NULL for no limit): the
+user's own assignment first; otherwise the highest of their roles' assignments, no
+limit if one of them sets none; otherwise 0 when the connection is assigned to someone
+else, and no limit when it is assigned to no one (only administrators reach it).
+Unmetered connections and personal mode never limit. `check` and `status_for` take the
+connection a request will use (`connection_id`, or `model=` resolved through the
+process's runtime); without one, `status_for` answers the user's most used metered
+connection and `check` refuses nothing. `check` runs as a turn starts, in
+`ConversationManager.send_message` and the send route, before each debate or panel
+speaker's turn and each QA answer, in `ActionExecutor.execute` and before each
+knowledge graph build chunk: at 100% it raises `BudgetExceeded` (audited as
+`spark.usage.refused`) with a message naming the connection and the reset, at 00:00 UTC
+on the first of the next month. A turn already running always finishes, so parallel
+turns that each started under the allowance can take the month past it; the next
+request is refused. Callers pass the user's roles: the request's identity for the web,
+and the owner's roles read from warden at run time for the worker
+(`spark.scheduler.owners`).
+
+On the web, `/api/usage/me` gives the signed-in user's standing in credits, per
+connection, which the chat, debate and panel pages show as a banner from 80%
+(`static/js/budget.js`) and the model picker (`static/js/model_picker.js`) shows as
+credits left. A refused stream sends `budget_exceeded`; a refused QA question is
+answered 429. `/admin/usage` and `/admin/usage/export.csv` (`spark.usage.admin`,
+Administrators only) show and export usage by month, user, connection and model with
+the four token counts and credits, totals per connection and each user's standing;
+viewing and exporting are audited. Allowances are set on the connections screen. The
+ElevenLabs character cap is separate and stays instance-wide.
 - **UserGUID** -- Persistent user identifier stored in the OS keychain
 - **Updater** -- GitHub release checker with PyApp/pip update support
 
@@ -311,6 +326,17 @@ residency checks and events), reached only through `spark.connections`:
   caller's callback. conduit's refusals (an undeclared model, residency, an output
   budget above the model's limit) surface with conduit's reason; a provider that is
   unavailable is retried twice before any output reached the caller
+- **Discovery** (`spark.connections.discovery`, M16) -- Asks conduit's
+  `ProviderRegistry.discover` what a connection reaches, on a worker thread through the
+  conduit loop; failures are kept as conduit's failure class only. The latest result per
+  connection is kept in the process's memory (not stored), and `models_view` joins it
+  to the catalogue, the residency refusals and the stored model rows for the screens
+- **Screens** (`spark.web.endpoints.connections`) -- `/admin/connections` (server) and
+  the Connections section of personal Settings, over `/api/connections`: the nine
+  services' forms (fields from conduit's settings for each kind), write-only credentials
+  in konfig as `connections.<id>.<field path>`, the models view, overlays, and on a
+  server metering and assignments. Every route needs `spark.admin.connections`; changes
+  are audited under the instance settings actions with field names only
 - **Upgrade** (M12) -- Personal mode converts `config.yaml`'s 0.2 `providers` into named
   connections on first start, once, keeping each keychain secret; a server ignores the
   retired `providers.*` and `models.offered` settings and lists them once at start-up
@@ -343,8 +369,8 @@ Every service answers in the common format the orchestrators and transcripts use
 ### MCP Integration
 
 - **MCPManager** -- Manages multiple MCP server connections with tool caching. Its listings and calls take the caller's permissions: in server mode it offers only the servers those permissions grant (`spark.mcp.<server>`) and fails closed without them; every call, failure and refusal is audited (`spark.mcp.tool.called`, `spark.mcp.tool.refused`). `reconcile()` brings the connections in line with a new server list
-- **MCPClient** -- Client for a single server supporting stdio, HTTP, and SSE transports (MCP SDK 1.x and 2.x). Each connection is owned by one task from opening to closing, as the SDK's anyio transports require
-- **MCPRuntime** (`spark.mcp_integration.runtime`) -- The persistent event loop the sessions live on, on its own thread; turn threads dispatch onto it and the settings follower applies changes there
+- **MCPClient** (`spark.mcp_integration.client`) -- One server, over conduit's `McpConnection` (stdio, streamable HTTP and SSE, its lifecycle, timeouts and failure classes). Results come back unframed in SPARK's `{content, isError}` shape, so SPARK's `guard_tool_result` frames each exactly once; conduit's `McpToolBridge` is not used, and tool names are SPARK's. conduit is given a derived server name (`my-server` becomes `my_server`). Credentials reach conduit only as `secret://` references, resolved by a per-connection SPARK resolver over konfig; basic credentials, custom headers and `ssl_verify: false` are added by a SPARK transport wrapper. Plain `http` is accepted to a loopback host only
+- **MCPRuntime** (`spark.mcp_integration.runtime`) -- Binds the manager to the connection runtime's conduit loop (`conduit.LoopThread`); there is no separate MCP loop thread. Every manager coroutine carries itself onto that loop when awaited from another, so settings endpoints never open sessions on the request loop. Turn threads, sub-agents and the debate and panel orchestrators dispatch onto it; MCP shuts down before the connection runtime closes the loop. A process without a connection runtime gets a loop owned by the MCP runtime. The scheduled-action executor in personal mode still runs its own MCP loop
 - **Server policy** (`spark.mcp_integration.servers`) -- What a server allows (HTTP and SSE only, permission-safe names, roles from `ROLES`, no credentials in the setting), the grants of a set of roles, and the configuration of an entry with its credentials from the secrets store
 - **Grants** (`spark.mcp_integration.access`) -- warden defines roles at start-up, and MCP servers are run-time settings, so each server's `roles` live in `mcp.servers` and the auth middleware adds the granted `spark.mcp.<server>` permissions to each signed-in request (not to API key requests)
 - In server mode the web process builds its servers from `mcp.servers` (instance settings, credentials from konfig's secrets store), never `config.yaml`, and the `SettingsFollower` reconnects the servers whose entry or credentials changed, on every replica
@@ -723,9 +749,12 @@ erDiagram
 | `conversation_mcp_servers` | Per-conversation MCP server enable/disable |
 | `conversation_embedded_tools` | Per-conversation tool enable/disable |
 | `conversation_tool_permissions` | Tool approval status per conversation |
-| `usage_tracking` | Token usage per model call: user, model, source, conversation or action, UTC month |
-| `usage_role_budgets` | Monthly token budget per role |
-| `usage_user_budgets` | Per-user budget override (NULL: unlimited) |
+| `usage_tracking` | Usage per model call: user, connection, model, source, conversation or action, the four token counts, credits (`credits_micro`) and the rates charged (`credit_inputs`), UTC month |
+| `connections` | Named model connections (server mode): settings with `secret://` references, residency, enabled |
+| `connection_models` | Models a connection offers: enabled and tier |
+| `catalogue_overlays` | Models SPARK declares beyond conduit's catalogue |
+| `connection_metering` | Per-connection metering: metered, base rate, tier multipliers, token weights |
+| `connection_assignments` | A connection assigned to a role or a user, with its monthly credit allowance (NULL: no limit) |
 | `prompt_inspection_violations` | Security violation records |
 | `context_index_elements` | Vector index for RAG retrieval |
 | `user_memories` | Persistent memories with embeddings |

@@ -2,6 +2,8 @@
 
 Spark supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for connecting external tool servers. MCP tools appear alongside built-in tools and can be used in any conversation.
 
+Spark reaches MCP servers through conduit's MCP client (`cognisn-conduit[mcp]`, over the official MCP SDK), on the same conduit loop the model connections use. Spark keeps its own policy above it: which servers a user may use, approvals, the audit trail, and the untrusted-content framing and inspection of every result.
+
 ## Overview
 
 ```mermaid
@@ -37,6 +39,8 @@ mcp:
 
 The server runs as an HTTP service. Spark connects to the URL and uses the streamable HTTP transport.
 
+The URL must use `https`, except for a server on this machine: plain `http` is accepted only to a loopback host (`127.0.0.1`, `::1` or `localhost`). The same rule applies to SSE.
+
 ```yaml
 mcp:
   servers:
@@ -65,6 +69,7 @@ A multi-user server (`mode: server`) treats MCP servers as administrator configu
 
 - **HTTP and SSE only.** A stdio server runs a command on the host, so a server refuses one wherever it is configured: the instance page, the `/settings/mcp/*` API and the `mcp.servers` instance setting itself. A stdio entry already stored is ignored with a warning in the log, and the other servers are kept.
 - **Instance settings, not `config.yaml`.** The servers are the `mcp.servers` instance setting, edited by an administrator (`spark.settings.instance`) in the **MCP Servers** section of the instance settings page. `config.yaml`'s `mcp` section is ignored on a server, with a warning. A change reconnects the servers whose entry or credentials changed, on every web replica, without a restart.
+- **https off this machine.** An entry whose URL is plain `http` to any host but loopback is refused when saved (`url was refused: plain http is accepted on a loopback host only`); one already stored is ignored, with a warning in the log, and the other servers are kept.
 - **Names.** Each server name is lower-case letters, digits, `-` and `_` (at most 63 characters), because it is part of the server's permission.
 - **Grants by role.** Each server lists the roles it is granted to. A signed-in user holds the `spark.mcp.<server>` permission while one of their roles is listed, sees only those servers (tool panel, main menu, action tool lists) and the model is offered only their tools; calling any other server's tool is refused. A server granted to no role is offered to no one, administrators included. Requests made with an API key are granted no MCP server. Scheduled actions run by `spark worker` do not use MCP servers in this release.
 - **Credentials.** A bearer token or API key, a basic password and custom headers are written to konfig's secrets store (`mcp_server_<name>_<field>`), never to the database. The page shows only whether each is set; leaving a field empty keeps the stored value. A server's credentials are removed with the server.
@@ -132,6 +137,8 @@ MCP servers can require authentication. Spark supports multiple auth methods:
 | `basic` | HTTP Basic Authentication | `basic_username`, `basic_password` |
 | `custom` | Custom headers | `custom_headers` (dict) |
 
+Any credential field (and, for stdio, any environment variable) may be a `secret://` reference: it is resolved from the secrets store when the server connects, and conduit itself only ever holds references. A reference that cannot be resolved fails that server's connection, which is logged.
+
 Example with API key authentication:
 
 ```yaml
@@ -179,14 +186,15 @@ When the AI calls an MCP tool:
 4. Returns the result to the AI
 5. Records the transaction in the `mcp_transactions` table
 
-MCP tool execution respects the server's configured timeout. If a tool call exceeds the timeout, it returns an error.
+MCP tool execution respects the server's configured timeout, which applies to connecting, listing and calling. A failed call is reported to the model as `MCP server '<name>' could not complete the call (<class>)`, with conduit's failure class (`timeout`, `closed`, `rejected` or `protocol`), never the server's own error text. A server that cannot be reached at start-up is logged by name and left disconnected while the others connect; it is tried again when its settings change.
 
 ## Troubleshooting
 
 ### Server fails to connect
 
 - **stdio:** Verify the command is installed and accessible (`which npx`, `which node`, etc.)
-- **HTTP/SSE:** Verify the URL is reachable and the server is running
+- **HTTP/SSE:** Verify the URL is reachable and the server is running. A server on another host needs `https`: plain `http` is accepted only on loopback
+- **Test Connection** reports a failure class (timeout, closed, rejected, protocol), not the server's text: check the server's own log for the detail
 - Check the Spark log files for detailed error messages
 - Ensure environment variables are correctly set (especially for secret:// URIs)
 
