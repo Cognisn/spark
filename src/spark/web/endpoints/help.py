@@ -19,16 +19,16 @@ Spark is a secure personal AI research kit that lets you interact with multiple 
 
 ### First Launch
 1. When Spark starts for the first time, it creates a default configuration and opens your browser
-2. You'll see a welcome page directing you to **Settings** to configure an LLM provider
-3. Enable at least one provider (Anthropic, AWS Bedrock, Ollama, Google Gemini, or X.AI) and provide its API key
-4. Once configured, create your first conversation from the **Conversations** page
+2. You'll see a welcome page directing you to **Settings**, where **Connections** is the first section
+3. Add at least one connection: choose **Add connection**, pick a service (Amazon Bedrock, Claude through Amazon Bedrock (mantle), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft Foundry, Google Gemini or Ollama), give it a name and enter its credentials
+4. Open the connection's **Models** to choose the models it offers, then create your first conversation from the **Conversations** page
 
 ### Navigation
-- **Home** — Dashboard with recent conversations, provider status, and tool overview
+- **Home** — Dashboard with recent conversations, your model connections, and tool overview
 - **Conversations** — List, search, create, and manage conversations
 - **Memories** — View and manage persistent memories the AI stores
 - **Actions** — Configure autonomous scheduled AI tasks
-- **Settings** — Application configuration (providers, database, tools, security)
+- **Settings** — Application configuration (connections, tools, security and more)
 
 ### Keyboard Shortcuts
 - **Ctrl/Cmd + K** — Go to Conversations
@@ -62,49 +62,47 @@ Click **New Conversation** and choose a name and model. If a default model is co
 ### Managing Conversations
 - **Star** — Mark as favourite (appears at top of list and on dashboard)
 - **Rename** — Click the conversation name in the chat header
-- **Change Model** — Click the model name to switch models
+- **Change Model** — Click the model name to switch models; models are grouped by connection
 - **Delete** — Trash icon in chat header or conversation list
 - **Search** — Search bar on the Conversations page searches by name and content
 """,
     },
     {
         "id": "providers",
-        "title": "LLM Providers",
+        "title": "Connections",
         "category": "Configuration",
-        "content": """## LLM Providers
+        "content": """## Connections
 
-Spark supports multiple AI model providers. Each provider has a detailed setup guide to walk you through account creation, API key generation, and configuration.
+Spark reaches models through **connections**. A connection is one named service with its own settings, credentials, Region and residency policy, and the models you choose to offer. You can add several, even several of one service (a work and a personal key, or one Bedrock connection per Region).
 
-### Anthropic (Direct API)
-- Models: Claude Opus 4, Sonnet 4, 3.7 Sonnet, 3.5 Sonnet/Haiku
-- Requires an API key from anthropic.com
-- Supports streaming and tool use
-- [View Anthropic Setup Guide](/help/provider/anthropic)
+### Adding a connection
+1. Personal mode: open **Settings → Connections**. A server: an administrator opens **Account → Connections**
+2. Choose **Add connection** and pick one of nine services: Amazon Bedrock, Claude through Amazon Bedrock (mantle), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft Foundry (OpenAI-compatible), Google Gemini or Ollama
+3. Give it a name and fill in the service's fields (an API key, or a Region and an authentication mode for Bedrock, or a base URL for Ollama)
+4. Save. Spark checks the settings, then which models the connection can reach
 
-### AWS Bedrock
-- Access Claude and other models via AWS
-- Requires AWS credentials (SSO, IAM, or session)
-- Supports region selection
-- [View AWS Bedrock Setup Guide](/help/provider/aws_bedrock)
+### Models
+- **Models** on a connection lists the models Spark's catalogue has for the service and Region, each marked reachable or not by the last check
+- Every model the residency policy allows is offered until you turn some off; a model outside the policy is shown as refused, with the reason
+- Each model has a tier (lower, standard or higher), shown in the model picker
+- A reachable model the catalogue lacks (most Ollama models) is listed apart, with a form to declare it
 
-### Ollama (Local)
-- Run models locally on your machine
-- No API key needed — just the Ollama server URL
-- Models: Llama, Mistral, Qwen, Gemma, etc.
-- [View Ollama Setup Guide](/help/provider/ollama)
+### Residency
+Each connection says where its models may process requests. By default Bedrock, mantle and Microsoft Foundry connections stay in their own Region, the direct APIs allow global processing, and Ollama is local only. Change it in the connection's form.
 
-### Google Gemini
-- Models: Gemini 2.5 Pro/Flash, 2.0 Flash, 1.5 Pro/Flash
-- Requires an API key from Google AI Studio
-- [View Google Gemini Setup Guide](/help/provider/google_gemini)
+### Credits (server mode)
+On a server, an administrator assigns each connection to roles or named users, and may meter it: each call then costs credits, and you have a monthly allowance on it. The model picker shows the credits you have left, a warning appears at 80%, and new requests on that connection stop at 100% until the allowance resets on the first of the month (UTC). Personal mode has no credits or limits.
 
-### X.AI (Grok)
-- Models: Grok 4.1, Grok 4, Grok 3
-- Requires an API key from x.ai
-- [View X.AI Setup Guide](/help/provider/xai)
+### Setup guides
+Each guide walks through creating an account and getting a key:
+- [Anthropic](/help/provider/anthropic)
+- [Amazon Bedrock](/help/provider/aws_bedrock)
+- [Ollama](/help/provider/ollama)
+- [Google Gemini](/help/provider/google_gemini)
+- [X.AI](/help/provider/xai)
 
-### API Key Security
-API keys entered in Settings are stored in your OS keychain (macOS Keychain, Windows Credential Locker) — never in plain text config files.
+### Credential security
+A key you type into a connection goes straight to your OS keychain (macOS Keychain, Windows Credential Locker), or a server's secrets store, and is never shown again. It is never written to a config file in plain text.
 """,
     },
     {

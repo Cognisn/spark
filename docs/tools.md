@@ -294,6 +294,25 @@ get_tool_documentation(tool_name="read_file") # Specific tool docs
 
 Documentation files are stored in `src/spark/resources/tool_docs/` as markdown files. Available documentation covers all built-in tools with parameters, return values, examples, and best practices.
 
+## Skills
+
+A skill is a folder holding a `SKILL.md` (front matter and instructions) and any
+resource files, bundled with Spark or added by a user on the skills page. Skills are
+listed and loaded through conduit's skill layer; a bundled skill wins its name, and each
+user is offered only the skills they have turned on, globally and for the conversation.
+
+- **`use_skill`** loads a skill. In chat, the skill's instructions join the system
+  prompt (before its cache breakpoint) and stay loaded for the rest of the conversation,
+  across compactions too; the tool result only says the skill is loaded. Debates,
+  panels, sub-agents and scheduled actions receive the instructions as the tool result.
+- **`read_skill_resource`** reads one of a loaded skill's files. In chat the skill must
+  be loaded first.
+- **Validation** is conduit's, on the skills page, on import and when a skill is
+  authored. The front matter may hold `name`, `description`, `version`, `license`,
+  `compatibility`, `allowed-tools` (a list) and `metadata`. Any other key, a block value
+  (`|` or `>`) or an empty body makes the skill invalid, with the reason shown. A skill
+  written for 0.2 that uses other keys shows as invalid until it is edited.
+
 ## Tool Permissions
 
 When the AI first uses a tool in a conversation, Spark prompts for permission with four options:

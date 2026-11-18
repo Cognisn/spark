@@ -12,7 +12,9 @@ Spark is a secure personal AI research kit -- a multi-provider LLM web interface
 
 - [Getting Started](getting-started.md) -- Installation, first run, initial configuration
 - [Configuration](configuration.md) -- Complete config.yaml reference, environment variables, secrets
-- [Providers](providers.md) -- Setting up each LLM provider (Anthropic, AWS Bedrock, Ollama, Google Gemini, X.AI)
+- [Connections](connections.md) -- Adding model connections: each service's fields and authentication, Region and residency, discovery, declaring models, tiers; personal mode; upgrading from 0.2
+- [Model Services](providers.md) -- Getting an account and a credential from each service
+- [Metering](metering.md) -- Credits, metered connections, assignments and monthly allowances (server mode)
 - [Containers](container.md) -- The container image, the web and worker roles, Compose and upgrades
 - [Server Deployment](deployment/index.md) -- Running a multi-user Spark server: Compose, secrets, TLS, identity, backups and upgrades
 - [User Bundles](bundles.md) -- Exporting a personal user's data and importing it into a server
@@ -45,7 +47,7 @@ pip install cognisn-spark
 spark
 ```
 
-On first launch Spark creates a default `config.yaml`, starts a local web server, and opens your browser. Navigate to **Settings** to enable at least one LLM provider, then create your first conversation.
+On first launch Spark creates a default `config.yaml`, starts a local web server, and opens your browser. Add at least one model connection in **Settings > Connections**, then create your first conversation.
 
 ## Links
 

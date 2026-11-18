@@ -59,15 +59,18 @@ spark/
 │   │       ├── css/                  # base.css, cognisn.css
 │   │       ├── js/                   # ui.js, chat.js, sse-client.js
 │   │       └── fonts/                # Syne, DM Sans, Nesobrite
-│   ├── llm/
-│   │   ├── base.py                   # LLMService abstract base
-│   │   ├── manager.py                # Multi-provider router
-│   │   ├── context_limits.py         # Context window resolver
-│   │   ├── anthropic_direct.py       # Anthropic SDK provider
-│   │   ├── bedrock.py                # AWS Bedrock provider
-│   │   ├── ollama.py                 # Ollama local provider
-│   │   ├── google_gemini.py          # Google Gemini provider
-│   │   └── xai.py                    # X.AI / Grok provider
+│   ├── connections/
+│   │   ├── model.py                  # Connection, the nine services, residency defaults
+│   │   ├── store.py                  # Database (server) and config.yaml (personal) stores
+│   │   ├── runtime.py                # One per process: conduit loop and providers
+│   │   ├── service.py                # A model on a connection, through conduit's sync facade
+│   │   ├── catalogue.py              # conduit's catalogue plus SPARK's overlay rows
+│   │   ├── discovery.py              # Model discovery and the models view
+│   │   ├── usage.py                  # Event sink: usage rows from conduit's events
+│   │   └── upgrade.py                # 0.2 providers to connections
+│   ├── usage/
+│   │   ├── credits.py                # Credits per call (weights, base rate, tiers)
+│   │   └── budgets.py                # Monthly allowances, the 80% warning, the 100% stop
 │   ├── tools/
 │   │   ├── registry.py               # Tool assembly and dispatch
 │   │   ├── filesystem.py             # File read/write/search tools
@@ -171,20 +174,21 @@ Test configuration is in `pyproject.toml`:
 - Timeout: 60 seconds per test
 - Output: verbose with short tracebacks
 
-## Adding a New LLM Provider
+## Adding a Model Service
 
-1. Create `src/spark/llm/your_provider.py`
-2. Implement the `LLMService` abstract base class:
-   - `get_provider_name()` -- Human-readable name
-   - `get_access_info()` -- Authentication description
-   - `list_available_models()` -- Available models list
-   - `set_model()` -- Set active model
-   - `invoke_model()` -- Send messages, return normalised response
-   - `supports_streaming()` -- Whether streaming is supported
-   - `count_tokens()` -- Token estimation
-3. Register in `server.py::_init_providers()` with settings loading
-4. Add config section in `config.yaml.template`
-5. Add context limits in `context_limits.py`
+Model services are conduit's, reached only through `spark.connections`; no provider SDK
+is imported anywhere else in Spark. A new service needs:
+
+1. An adapter in conduit (a provider kind and its settings model), or one already
+   there (see conduit's [providers guide](https://github.com/Cognisn/conduit/blob/release/v0.1.0/docs/guides/providers.md)).
+2. A `Service` entry in `spark.connections.model.SERVICES` mapping it onto the conduit
+   kind, with its default residency.
+3. Its form fields in `FORMS` in `spark.web.endpoints.connections`, at the dotted paths
+   of conduit's settings for the kind.
+4. Its conduit extra in the `cognisn-conduit` dependency in `pyproject.toml`.
+
+Tests use conduit's stub provider (`tests/model_helpers.py`); the default suite makes no
+live model call.
 
 ## Adding a New Built-in Tool
 
@@ -232,15 +236,11 @@ twine check dist/*
 | tiktoken | Token counting |
 | cryptography | SSL certificate generation |
 
-### LLM Providers
+### Model Services
 
-| Package | Provider |
+| Package | Provides |
 |---------|----------|
-| anthropic | Anthropic Direct API |
-| boto3, botocore | AWS Bedrock |
-| google-genai | Google Gemini |
-| ollama | Ollama local models |
-| openai | X.AI (OpenAI-compatible) |
+| cognisn-conduit, with its `anthropic`, `bedrock`, `bedrock-mantle`, `gemini`, `konfig`, `mcp`, `ollama` and `openai` extras | Every model service, the catalogue, residency checks, usage events, MCP client, skills and compaction layers; the extras bring each service's SDK |
 
 ### Tools and Features
 

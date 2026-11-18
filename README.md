@@ -11,12 +11,12 @@
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=vulnerabilities)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Cognisn_spark&metric=bugs)](https://sonarcloud.io/summary/overall?id=Cognisn_spark)
 
-**Spark** is a secure, multi-provider AI research kit with a modern web interface. It connects to AI models from Anthropic, AWS Bedrock, Google Gemini, Ollama, and X.AI, with features like MCP tool integration, intelligent context management, persistent memory, and autonomous scheduled actions.
+**Spark** is a secure, multi-provider AI research kit with a modern web interface. It connects to AI models through [conduit](https://pypi.org/project/cognisn-conduit/): Amazon Bedrock (including Claude through Bedrock's mantle endpoint), Anthropic, Claude in Microsoft Foundry, OpenAI, X.AI, Microsoft Foundry, Google Gemini and Ollama, with features like MCP tool integration, intelligent context management, persistent memory, and autonomous scheduled actions.
 
 ## Features
 
 ### Conversations
-- **Multi-Provider LLM Support** -- Claude, Gemini, Grok, Llama, Mistral, and more
+- **Named Model Connections** -- Nine services through conduit, several connections of one service side by side, each with its own Region, residency policy and chosen models
 - **Real-Time Streaming** -- Server-Sent Events for token-by-token responses
 - **Dark/Light Theme** -- Cognisn design system with theme persistence
 - **Context Compaction** -- LLM-driven summarisation when approaching context limits
@@ -55,13 +55,13 @@
 - **Run History** -- Track execution status, results, tool activity log, and token usage
 
 ### Dashboard
-- **Provider Models Modal** -- Click any provider on the dashboard to view its available models
+- **Your Connections** -- The model connections you may use, with their model counts
 - **MCP Tools View** -- View tools provided by each MCP server directly from the dashboard
-- **Provider Setup Guides** -- In-app step-by-step setup guides for all LLM providers
+- **Provider Setup Guides** -- In-app step-by-step guides to getting an account and a key from each service
 
 ### Security
 - **Prompt Inspection** -- Pattern and keyword-based threat detection
-- **Secret Management** -- API keys stored in OS keychain, never in config files
+- **Secret Management** -- API keys stored in the OS keychain (or konfig's encrypted store on a server), write-only in the UI, never in config files or the database
 - **Settings Lock** -- Password-protect the settings page
 - **Tool Permissions** -- Per-conversation, per-tool approval system
 
@@ -132,7 +132,21 @@ are no longer supported.
 spark
 ```
 
-On first launch, Spark creates a configuration file, starts the web server on a random port, and opens your browser. Follow the welcome page to configure an LLM provider and start chatting.
+On first launch, Spark creates a configuration file, starts the web server on a random port, and opens your browser. Add a model connection in **Settings > Connections** and start chatting.
+
+### Connections
+
+Every model is reached through a **connection**: one named service with its own
+settings, credentials, Region and residency policy (in-Region for Bedrock and Microsoft
+Foundry, global for the direct APIs, local for Ollama, by default). Add as many as you
+like, several of one service included; each lists conduit's catalogue models for its
+service and Region, marked reachable or not by a live discovery, and offers the ones
+you enable. A model is chosen as `connection/model`, and the model picker groups models
+by connection. On a server, administrators assign connections to roles and users, and
+can meter a connection in credits with a monthly allowance per assignment. See
+[Connections](https://github.com/Cognisn/spark/blob/main/docs/connections.md) and
+[Metering](https://github.com/Cognisn/spark/blob/main/docs/metering.md). Upgrading from 0.2
+converts `config.yaml`'s providers into connections on the first start.
 
 ### Configuration
 
@@ -180,12 +194,12 @@ graph TB
         CM["Context Compaction / Memory / RAG / Tool Routing"]
     end
 
-    subgraph Providers ["LLM Providers"]
-        Bedrock["AWS Bedrock"]
-        Anthropic["Anthropic"]
-        Ollama["Ollama"]
+    subgraph Providers ["Model connections (conduit)"]
+        Bedrock["Amazon Bedrock and mantle"]
+        Anthropic["Anthropic and Claude in Foundry"]
+        OpenAI["OpenAI, X.AI and Foundry"]
         Gemini["Google Gemini"]
-        XAI["X.AI"]
+        Ollama["Ollama"]
     end
 
     subgraph Tools ["Tools"]

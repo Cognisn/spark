@@ -6,7 +6,7 @@ Conversations are the core interaction unit in Spark. Each conversation maintain
 
 1. Navigate to **Conversations** from the main menu
 2. Click **New Conversation**
-3. Enter a name and select a model from the available providers
+3. Enter a name and select a model; models are grouped by connection, with each model's tier (and, on a metered server connection, the credits you have left)
 4. Optionally add custom instructions (system prompt for this conversation)
 5. Click **Create**
 
@@ -77,11 +77,15 @@ As conversations grow, they can approach the model's context window limit. Spark
 
 ### How It Works
 
+Spark keeps its own summary prompt, markers and rollup history, and lets conduit's compaction layer decide when and where to cut.
+
 1. **Threshold check:** After each exchange, Spark checks if total tokens exceed `rollup_threshold` (default: 30% of context window)
-2. **LLM summarisation:** The entire conversation is sent to the model with a structured summarisation prompt
+2. **LLM summarisation:** The conversation before the latest assistant turn is sent to the model with a structured summarisation prompt. The latest assistant turn (with its tool calls and results) always stays as it was, after the summary, and the model reads the summary first
 3. **Categorised output:** The summary preserves critical decisions, unresolved issues, and implementation details while compressing resolved topics
-4. **Message replacement:** Original messages are marked as "rolled up" and replaced with the compact summary
-5. **Emergency fallback:** If tokens reach `emergency_rollup_threshold` (95%), a simpler truncation is used as a last resort
+4. **Message replacement:** Original messages are marked as "rolled up" and replaced with the compact summary. While the conversation still fits the model's window, a compaction is applied only if it brings the conversation under the threshold, so no summary is paid for that could not help
+5. **Emergency fallback:** If tokens reach `emergency_rollup_threshold` (95%) and no usable summary is made, the older turns give way to a truncation notice and the latest assistant turn stays
+
+A conversation with no assistant turn yet is never compacted. The system prompt and any skills loaded in the conversation are never touched, so the cached prompt prefix is the same before and after a compaction. On a server, changes to the three thresholds and to prompt caching in the instance settings apply at the next check, without a restart.
 
 ### Compaction Categories
 

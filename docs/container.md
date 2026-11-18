@@ -75,7 +75,7 @@ Configuration comes through konfig, as on the desktop:
 - **File**: `config.yaml` in the data volume at
   `/var/lib/spark/config/spark/config.yaml` (created from the template on first
   start). Environment values override the file.
-- **Secrets**: provider keys and other secrets entered in Spark are kept in
+- **Secrets**: connection credentials and other secrets entered in Spark are kept in
   konfig's encrypted secrets file in the data volume
   (`SPARK__SECRETS__BACKEND=encrypted_file`, at
   `SPARK__SECRETS__FILE_PATH=/var/lib/spark/data/spark/secrets.enc`), keyed by
@@ -86,11 +86,12 @@ Configuration comes through konfig, as on the desktop:
   a few seconds, without a restart: the replica that saved it sends a settings
   notification naming the secret (never its value), and each replica has konfig
   re-read its store, the shared file or the Secrets Manager bundle, and rebuilds
-  the providers, voice and web search keys that use it. konfig locks the shared
+  the model connections, voice and web search keys that use it. konfig locks the shared
   file for each save, so secrets saved on different replicas at the same time
   are all kept. This needs cognisn-konfig 0.5.0rc1 or later.
-- **Instance settings** (providers, models offered, tools, tool result actions)
-  are kept in PostgreSQL. A change an administrator saves on one web replica
+- **Instance settings** (tools, tool result actions, MCP servers and the rest)
+  and **model connections** (their models, metering and assignments) are kept in
+  PostgreSQL. A change an administrator saves on one web replica
   reaches every replica within a few seconds, without a restart.
 
 ## Roles
@@ -158,15 +159,19 @@ in `spark worker`.
 - **Roles**: `administrator` (everything), `auditor` (the audit trail at `/audit`
   and its export, nothing else), `power_user` and `user`. Users create their own
   API keys at `/account/api-keys`, limited to their own permissions.
-- **Usage and token budgets**: an administrator sees usage by month, user and
-  model at **Account > Usage and budgets** (`/admin/usage`), exports it as CSV,
-  and sets an optional monthly token budget per role and an own budget per user
-  (a number, `unlimited`, or empty to let their roles decide). A user's own budget
-  wins; otherwise the most generous budget among their roles applies. Users are
-  warned from 80%; at 100% new chats, debate and panel turns and scheduled action
-  runs are refused, while a request already running finishes. Budgets reset at
-  00:00 UTC on the first of each month. The ElevenLabs character cap is separate
-  and instance-wide.
+- **Model connections, credits and allowances**: an administrator adds model
+  connections on **Account > Connections** (`/admin/connections`), chooses the
+  models each offers and assigns each connection to roles or named users; a user
+  sees only the connections assigned to them or their roles. A metered connection
+  charges credits per call (weighted tokens / base rate x tier multiplier) and
+  each assignment carries a monthly credit allowance: a user's own assignment
+  wins, otherwise the highest of their roles' allowances applies. Users are warned
+  from 80%; at 100% new requests on that connection are refused, while a request
+  already running finishes. Allowances reset at 00:00 UTC on the first of each
+  month. Usage, with tokens and credits, is at **Account > Usage and budgets**
+  (`/admin/usage`) and its CSV export. See [Connections](connections.md) and
+  [Metering](metering.md). The ElevenLabs character cap is separate and
+  instance-wide.
 
 ### Worker
 

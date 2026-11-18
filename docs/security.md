@@ -137,12 +137,15 @@ Each Spark installation generates a unique user GUID stored in the OS keychain. 
 All sensitive values (API keys, passwords, database credentials) should use `secret://` URIs:
 
 ```yaml
-providers:
-  anthropic:
-    api_key: secret://anthropic_api_key
+connections:
+  - id: work-claude
+    name: Work Claude
+    settings:
+      kind: anthropic
+      api_key: secret://connections.work-claude.api_key
 ```
 
-Secrets are stored in the OS keychain and resolved at runtime. The config file never contains plaintext secrets.
+Secrets are stored in the OS keychain and resolved at runtime. The config file never contains plaintext secrets. A model connection's credential is write-only: typed into the Connections form, it goes straight to the keychain (konfig's store on a server) and is shown afterwards only as set or not set. conduit refuses a connection whose credential is not a `secret://` reference.
 
 ## SSL/TLS
 
