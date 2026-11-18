@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc11] - 2026-11-19
+
 ### Changed
 - **The live end-to-end suite runs on connections and credits** (`tests/live`, `deploy/live`; integration-marked, never in the default suite): the rc1 checklist now chats through a `stub-ollama` connection on conduit's Ollama adapter, checks a connection's key changed on one replica against the other, and stops the send route at 100% of a role's credit allowance. New checks cover two connections of one service and one of another with discovery, an overlay declaration and a residency refusal; assignment and the allowance that applies; the 80% warning, the 100% stop with a turn in flight finishing and the usage CSV; MCP over HTTP with its audit event; a skill loaded with `use_skill`; a forced compaction; and personal mode's one-time upgrade of a 0.2 `config.yaml`. The scripted model server reports Ollama token counts and lists models over https for an Anthropic connection, an MCP server joins the stack, and the live chat uses a connection whose key is stored straight into the stack's secrets store. `deploy/live/RUNBOOK.md` is the runbook
 
