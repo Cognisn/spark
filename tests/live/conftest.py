@@ -195,14 +195,108 @@ def admin(stack: Stack) -> Iterator[Person]:
     browser.close()
 
 
+#: The connection every scripted chat uses: Ollama's API on the model stub (D69).
+STUB_CONNECTION = "stub-ollama"
+#: The stub's chat model, declared as a catalogue overlay (Ollama models are not shipped).
+STUB_MODEL = "llama3-stub"
+#: A stub model with a small context window, for compaction.
+TINY_MODEL = "tiny-stub"
+#: Every role a stub connection is assigned to, so every invited user may use it.
+ALL_ROLES = ("administrator", "auditor", "power_user", "user")
+
+
+def connection(
+    admin: Person,
+    connection_id: str,
+    service: str,
+    name: str,
+    values: dict[str, Any],
+    *,
+    secrets: dict[str, str] | None = None,
+    residency: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Add a connection through the connections API (as the modal does), unless it exists."""
+    found = admin.browser.get(f"/api/connections/{connection_id}")
+    if found.status_code == 200:
+        existing: dict[str, Any] = found.json()
+        return existing
+    body: dict[str, Any] = {
+        "id": connection_id,
+        "service": service,
+        "name": name,
+        "values": values,
+        "secrets": secrets or {},
+    }
+    if residency is not None:
+        body["residency"] = {"default": False, **residency}
+    resp = admin.browser.post("/api/connections", json=body)
+    assert resp.status_code == 201, resp.text
+    got = admin.browser.get(f"/api/connections/{connection_id}")
+    assert got.status_code == 200, got.text
+    created: dict[str, Any] = got.json()
+    return created
+
+
+def declare(
+    admin: Person,
+    connection_id: str,
+    model_id: str,
+    *,
+    context_window: int = 131072,
+    output_limit: int = 8192,
+    scope: str = "local",
+) -> dict[str, Any]:
+    """Declare a model the catalogue lacks as a SPARK overlay row (the models view's form)."""
+    resp = admin.browser.post(
+        f"/api/connections/{connection_id}/overlays",
+        json={
+            "model_id": model_id,
+            "kind": "chat",
+            "context_window": context_window,
+            "output_limit": output_limit,
+            "tools": True,
+            "residency_scope": scope,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    view: dict[str, Any] = resp.json()
+    return view
+
+
+def assign(
+    admin: Person,
+    connection_id: str,
+    *,
+    role: str | None = None,
+    user_guid: str | None = None,
+    monthly_credits: int | None = None,
+) -> dict[str, Any]:
+    """Assign a connection to a role or a user, with an allowance (None: no limit)."""
+    body: dict[str, Any] = {"role": role, "user_guid": user_guid}
+    if monthly_credits is None:
+        body["no_limit"] = True
+    else:
+        body["monthly_credits"] = monthly_credits
+    resp = admin.browser.put(f"/api/connections/{connection_id}/assignments", json=body)
+    assert resp.status_code == 200, resp.text
+    found: dict[str, Any] = resp.json()
+    return found
+
+
+def offered(person: Person, base_url: str | None = None) -> list[dict[str, Any]]:
+    """The models the person's picker lists (``/conversations/api/models``)."""
+    browser = person.browser.on(base_url) if base_url else person.browser
+    models: list[dict[str, Any]] = browser.get("/conversations/api/models").json()["models"]
+    return models
+
+
 @pytest.fixture(scope="session")
 def configured(stack: Stack, admin: Person) -> None:
-    """Instance settings every check relies on: the model stub, the mail catcher, tools."""
+    """What every check relies on: the stub connection and its models, the mail catcher,
+    tools. Idempotent, so the suite can run again on the same stack."""
     resp = admin.browser.post(
         "/settings/api/instance",
         json={
-            "providers.ollama.enabled": True,
-            "providers.ollama.base_url": "http://model-stub:11434",
             "tool_permissions.auto_approve": True,
             "embedded_tools.agents.enabled": True,
             "embedded_tools.documents.enabled": True,
@@ -217,6 +311,28 @@ def configured(stack: Stack, admin: Person) -> None:
         },
     )
     assert resp.status_code == 200, resp.text
+
+    stub = {"base_url": stack.state.get("stub_internal", "http://model-stub:11434")}
+    if admin.browser.get(f"/api/connections/{STUB_CONNECTION}").status_code == 404:
+        # The overlays are declared before the stub connection exists, so every process
+        # builds its provider with them: a provider built earlier keeps the catalogue it
+        # was built with (Skuld question 54). They are declared through a connection of
+        # the same service, which is then removed (an overlay is per catalogue provider).
+        bootstrap = f"{STUB_CONNECTION}-overlays"
+        connection(admin, bootstrap, "ollama", "Overlay set-up", stub)
+        declare(admin, bootstrap, STUB_MODEL)
+        declare(admin, bootstrap, TINY_MODEL, context_window=4096, output_limit=1024)
+        assert admin.browser.delete(f"/api/connections/{bootstrap}").status_code == 200
+    connection(admin, STUB_CONNECTION, "ollama", "Model stub (Ollama)", stub)
+    held = {
+        a["role"]
+        for a in admin.browser.get(f"/api/connections/{STUB_CONNECTION}/assignments").json()[
+            "assignments"
+        ]
+    }
+    for role in ALL_ROLES:
+        if role not in held:
+            assign(admin, STUB_CONNECTION, role=role)
 
 
 def invite_and_accept(
@@ -270,10 +386,15 @@ def bob(stack: Stack, admin: Person, configured: None) -> Iterator[Person]:
 
 
 @pytest.fixture(scope="session")
-def model_id(admin: Person, configured: None) -> str:
-    def listed() -> str | None:
-        models = admin.browser.get("/conversations/api/models").json()["models"]
-        return next((m["id"] for m in models if m["id"] == "llama3-stub:latest"), None)
+def model_id(stack: Stack, admin: Person, configured: None) -> str:
+    """``stub-ollama/llama3-stub``, once both replicas offer it."""
+    wanted = f"{STUB_CONNECTION}/{STUB_MODEL}"
 
-    found: str = wait_for(listed, 30, "the model stub listed")
-    return found
+    def listed() -> bool:
+        return all(
+            any(m["id"] == wanted for m in offered(admin, url))
+            for url in (stack.base_url, stack.web2_url)
+        )
+
+    wait_for(listed, 60, "the model stub offered on both replicas")
+    return wanted

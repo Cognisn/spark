@@ -3,11 +3,11 @@
     python /opt/spark-live/set_secret.py NAME [--announce KEY]
 
 NAME is the konfig secret name (for example ``warden.sso.client-secret``, or
-``providers_anthropic_api_key`` for the setting ``providers.anthropic.api_key``).
+``connections.live.api_key`` for the API key of the connection ``live``).
 The value is read from standard input (asked for without echo at a terminal)
 and is never printed. ``--announce KEY`` then tells every running replica that
-the secret behind the setting KEY changed, as the settings page does, so they
-reload it without a restart.
+the secret KEY changed, as the connections screen does, so they rebuild the
+connection without a restart.
 
 It opens konfig exactly as SPARK's worker does, so it writes the same store
 (``secrets.backend`` and ``KONFIG_MASTER_KEY`` from the container's environment).

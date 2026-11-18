@@ -2,14 +2,16 @@
 # deploy/live/stack.py, never used on its own and never for a real deployment.
 #
 # Adds a second web replica, a standby worker, an OIDC provider
-# (mock-oauth2-server) and a mail catcher (Mailpit) behind a throwaway CA, and
-# a scripted model server. Every value below comes from the env file that
-# stack.py writes into the sandbox; the CA, keys and passwords live only there.
-# Every published port binds to 127.0.0.1.
+# (mock-oauth2-server) and a mail catcher (Mailpit) behind a throwaway CA, a
+# scripted model server (Ollama on http, Anthropic on https with the same CA)
+# and an MCP server in the first web replica's network namespace. Every value
+# below comes from the env file that stack.py writes into the sandbox; the CA,
+# keys and passwords live only there. Every published port binds to 127.0.0.1.
 
 x-live-environment: &live-environment
-  # The throwaway CA plus the public CAs: SPARK reaches the OIDC provider
-  # and the mail catcher over verified TLS, as it does in production.
+  # The throwaway CA plus the public CAs: SPARK reaches the OIDC provider, the
+  # mail catcher and the model stub's https API over verified TLS, as it does in
+  # production.
   SSL_CERT_FILE: /etc/spark-live/ca-bundle.pem
   # The second replica answers on its own origin.
   SPARK__INTERFACE__ALLOWED_ORIGINS: "http://127.0.0.1:${LIVE_WEB2_PORT}"
@@ -103,8 +105,26 @@ services:
   model-stub:
     image: python:${LIVE_PYTHON_VERSION}
     command: ["python", "-I", "/opt/spark-live/model_stub.py"]
+    environment:
+      LIVE_STUB_CERTS: /etc/spark-live
     volumes:
       - ${LIVE_TOOLS}:/opt/spark-live:ro
+      - ${LIVE_CERTS}:/etc/spark-live:ro
     ports:
       - "127.0.0.1:${LIVE_STUB_PORT}:11434"
     restart: unless-stopped
+
+  # A streamable-HTTP MCP server sharing the first web replica's network
+  # namespace, so web reaches it on loopback (conduit allows plain http only
+  # there). Only web connects to it; web2 and the workers cannot reach it.
+  mcp:
+    image: ${SPARK_IMAGE}
+    entrypoint: ["python", "-I", "/opt/spark-live/mcp_server.py"]
+    command: []
+    network_mode: "service:web"
+    volumes:
+      - ${LIVE_TOOLS}:/opt/spark-live:ro
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
