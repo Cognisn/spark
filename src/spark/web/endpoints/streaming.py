@@ -25,11 +25,125 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stream")
 
 
-def _with_inspection(payload: dict, event_data: dict) -> dict:
+def _with_inspection(payload: dict[str, Any], event_data: dict[str, Any]) -> dict[str, Any]:
     """Carry a tool result's inspection hit (if any) through to the chat sidecar."""
     if event_data.get("inspection"):
         payload["inspection"] = event_data["inspection"]
     return payload
+
+
+def _sse_event(evt: dict[str, Any]) -> dict[str, Any] | None:
+    """Map one event queued by the turn to the SSE event the page receives.
+
+    The polling loop and the drain after the turn both use it, so an event of
+    any kind is sent the same way whichever of them finds it. Returns None for
+    a kind the page does not take.
+    """
+    event_type = evt["event"]
+    event_data = evt["data"]
+
+    if event_type == "tool_call":
+        return {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "tool_use_id": event_data.get("tool_use_id", ""),
+                    "tool_name": event_data.get("tool_name", ""),
+                    "params": event_data.get("params", {}),
+                }
+            ),
+        }
+    elif event_type == "tool_result":
+        return {
+            "event": "tool_complete",
+            "data": json.dumps(
+                _with_inspection(
+                    {
+                        "tool_use_id": event_data.get("tool_use_id", ""),
+                        "tool_name": event_data.get("tool_name", ""),
+                        "result": event_data.get("result", ""),
+                        "status": event_data.get("status", "success"),
+                    },
+                    event_data,
+                )
+            ),
+        }
+    elif event_type == "permission_request":
+        return {
+            "event": "permission_request",
+            "data": json.dumps(event_data),
+        }
+    elif event_type == "compaction_start":
+        return {
+            "event": "compaction_status",
+            "data": json.dumps({"status": "start", **event_data}),
+        }
+    elif event_type == "compaction_complete":
+        return {
+            "event": "compaction_status",
+            "data": json.dumps({"status": "complete", **event_data}),
+        }
+    elif event_type == "tool_iteration_complete":
+        return {"event": "progress", "data": json.dumps(event_data)}
+    elif event_type == "agent_start":
+        return {
+            "event": "agent_start",
+            "data": json.dumps(
+                {
+                    "agent_id": event_data.get("agent_id", ""),
+                    "agent_name": event_data.get("agent_name", ""),
+                    "task": event_data.get("task", ""),
+                    "model_id": event_data.get("model_id", ""),
+                    "mode": event_data.get("mode", ""),
+                }
+            ),
+        }
+    elif event_type == "agent_tool_call":
+        return {
+            "event": "agent_tool_call",
+            "data": json.dumps(
+                {
+                    "agent_id": event_data.get("agent_id", ""),
+                    "tool_name": event_data.get("tool_name", ""),
+                    "params": event_data.get("params", {}),
+                }
+            ),
+        }
+    elif event_type == "agent_tool_result":
+        return {
+            "event": "agent_tool_result",
+            "data": json.dumps(
+                _with_inspection(
+                    {
+                        "agent_id": event_data.get("agent_id", ""),
+                        "tool_name": event_data.get("tool_name", ""),
+                        "result": event_data.get("result", ""),
+                        "status": event_data.get("status", "success"),
+                    },
+                    event_data,
+                )
+            ),
+        }
+    elif event_type == "agent_complete":
+        return {
+            "event": "agent_complete",
+            "data": json.dumps(
+                {
+                    "agent_id": event_data.get("agent_id", ""),
+                    "agent_name": event_data.get("agent_name", ""),
+                    "status": event_data.get("status", "completed"),
+                    "result": event_data.get("result", ""),
+                    "input_tokens": event_data.get("input_tokens", 0),
+                    "output_tokens": event_data.get("output_tokens", 0),
+                }
+            ),
+        }
+    elif event_type == "agent_model_approval":
+        return {
+            "event": "agent_model_approval",
+            "data": json.dumps(event_data),
+        }
+    return None
 
 
 @router.get("/chat")
@@ -41,7 +155,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
 
-        async def error_gen() -> AsyncGenerator[dict, None]:
+        async def error_gen() -> AsyncGenerator[dict[str, Any], None]:
             yield {"event": "error", "data": json.dumps({"message": "Not initialised"})}
 
         return EventSourceResponse(error_gen())
@@ -103,16 +217,16 @@ async def stream_chat(request: Request) -> EventSourceResponse:
     if not hasattr(request.app.state, "agent_model_responses"):
         request.app.state.agent_model_responses = {}
 
-    async def event_generator() -> AsyncGenerator[dict, None]:
+    async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         yield {
             "event": "status",
             "data": json.dumps({"status": "processing", "stream_id": stream_id}),
         }
 
-        tool_events: list[dict] = []
+        tool_events: list[dict[str, Any]] = []
         final_content = ""
 
-        def status_callback(event_type: str, data: dict) -> None:
+        def status_callback(event_type: str, data: dict[str, Any]) -> None:
             """Collect tool events from the conversation manager."""
             tool_events.append({"event": event_type, "data": data})
 
@@ -120,7 +234,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             nonlocal final_content
             final_content += text
 
-        def permission_callback(tool_name: str, tool_input: dict) -> str:
+        def permission_callback(tool_name: str, tool_input: dict[str, Any]) -> str:
             """Called from the tool execution thread when permission is needed.
 
             Emits a permission request event and blocks until the user responds
@@ -165,13 +279,13 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             interactions.release(request.app, interactions.PERMISSION, request_id)
 
             logger.info("Permission for %s: %s", tool_name, decision)
-            return decision
+            return str(decision)
 
         def agent_model_callback(
             agent_name: str,
             task: str,
             suggested_model: str,
-            available_models: list[dict],
+            available_models: list[dict[str, Any]],
             justification: str = "",
         ) -> str:
             """Called from the agent spawn thread when auto_select model approval is needed.
@@ -224,7 +338,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             interactions.release(request.app, interactions.AGENT_MODEL, request_id)
 
             logger.info("Agent model approved: %s", approved)
-            return approved
+            return str(approved)
 
         def register_agent_cancel(agent_id: str) -> CancellationToken:
             """Allocate a cancellation token for a spawned agent.
@@ -277,111 +391,9 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             # Poll for events while waiting for completion
             while not result_future.done():
                 while tool_events:
-                    evt = tool_events.pop(0)
-                    event_type = evt["event"]
-                    event_data = evt["data"]
-
-                    if event_type == "tool_call":
-                        yield {
-                            "event": "tool_start",
-                            "data": json.dumps(
-                                {
-                                    "tool_use_id": event_data.get("tool_use_id", ""),
-                                    "tool_name": event_data.get("tool_name", ""),
-                                    "params": event_data.get("params", {}),
-                                }
-                            ),
-                        }
-                    elif event_type == "tool_result":
-                        yield {
-                            "event": "tool_complete",
-                            "data": json.dumps(
-                                _with_inspection(
-                                    {
-                                        "tool_use_id": event_data.get("tool_use_id", ""),
-                                        "tool_name": event_data.get("tool_name", ""),
-                                        "result": event_data.get("result", ""),
-                                        "status": event_data.get("status", "success"),
-                                    },
-                                    event_data,
-                                )
-                            ),
-                        }
-                    elif event_type == "permission_request":
-                        yield {
-                            "event": "permission_request",
-                            "data": json.dumps(event_data),
-                        }
-                    elif event_type == "compaction_start":
-                        yield {
-                            "event": "compaction_status",
-                            "data": json.dumps({"status": "start", **event_data}),
-                        }
-                    elif event_type == "compaction_complete":
-                        yield {
-                            "event": "compaction_status",
-                            "data": json.dumps({"status": "complete", **event_data}),
-                        }
-                    elif event_type == "tool_iteration_complete":
-                        yield {"event": "progress", "data": json.dumps(event_data)}
-                    elif event_type == "agent_start":
-                        yield {
-                            "event": "agent_start",
-                            "data": json.dumps(
-                                {
-                                    "agent_id": event_data.get("agent_id", ""),
-                                    "agent_name": event_data.get("agent_name", ""),
-                                    "task": event_data.get("task", ""),
-                                    "model_id": event_data.get("model_id", ""),
-                                    "mode": event_data.get("mode", ""),
-                                }
-                            ),
-                        }
-                    elif event_type == "agent_tool_call":
-                        yield {
-                            "event": "agent_tool_call",
-                            "data": json.dumps(
-                                {
-                                    "agent_id": event_data.get("agent_id", ""),
-                                    "tool_name": event_data.get("tool_name", ""),
-                                    "params": event_data.get("params", {}),
-                                }
-                            ),
-                        }
-                    elif event_type == "agent_tool_result":
-                        yield {
-                            "event": "agent_tool_result",
-                            "data": json.dumps(
-                                _with_inspection(
-                                    {
-                                        "agent_id": event_data.get("agent_id", ""),
-                                        "tool_name": event_data.get("tool_name", ""),
-                                        "result": event_data.get("result", ""),
-                                        "status": event_data.get("status", "success"),
-                                    },
-                                    event_data,
-                                )
-                            ),
-                        }
-                    elif event_type == "agent_complete":
-                        yield {
-                            "event": "agent_complete",
-                            "data": json.dumps(
-                                {
-                                    "agent_id": event_data.get("agent_id", ""),
-                                    "agent_name": event_data.get("agent_name", ""),
-                                    "status": event_data.get("status", "completed"),
-                                    "result": event_data.get("result", ""),
-                                    "input_tokens": event_data.get("input_tokens", 0),
-                                    "output_tokens": event_data.get("output_tokens", 0),
-                                }
-                            ),
-                        }
-                    elif event_type == "agent_model_approval":
-                        yield {
-                            "event": "agent_model_approval",
-                            "data": json.dumps(event_data),
-                        }
+                    mapped = _sse_event(tool_events.pop(0))
+                    if mapped is not None:
+                        yield mapped
 
                 if final_content:
                     yield {
@@ -396,13 +408,13 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             try:
                 result = result_future.result()
 
-                for evt in tool_events:
-                    event_type = evt["event"]
-                    event_data = evt["data"]
-                    if event_type == "tool_call":
-                        yield {"event": "tool_start", "data": json.dumps(event_data)}
-                    elif event_type == "tool_result":
-                        yield {"event": "tool_complete", "data": json.dumps(event_data)}
+                # The turn can queue events after the polling loop's last look (the
+                # compactor reports at the end of a turn): forward every one still
+                # queued, of every kind, in order, before the final event.
+                while tool_events:
+                    mapped = _sse_event(tool_events.pop(0))
+                    if mapped is not None:
+                        yield mapped
 
                 if result.get("status") == "cancelled":
                     yield {
