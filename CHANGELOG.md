@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc10] - 2026-11-18
+
 ### Changed
 - **The wave gate**: the full suite now runs locally on the release branch tip at the end of each wave (`bash scripts/wave-gate.sh`), and the CI workflow (`ci.yml`) runs only when started by hand (`workflow_dispatch`), no longer on every push and pull request. The gate covers black and isort at their pinned versions, the blocking strict mypy list, the licence audit, the SQLite suite, the PostgreSQL suites (testcontainers), the uv smoke test, and the container image build with its checks. The macOS and Windows runs, Python 3.13 and the live end-to-end suites are not part of it. Publishing on a version tag is unchanged
 
