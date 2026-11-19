@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The deploy-test job copies the image to ECR with the digest unchanged.** The first real run (0.3.0rc21) used `docker buildx imagetools create`, which writes a new manifest, so ECR held a different digest from the published image and the job's own check stopped it before any AWS change. The copy is now `scripts/copy-image.sh`, which uses `crane copy` (a pinned, checksummed release installed by the job): it succeeds when ECR already holds the tag at the same digest, fails with a new-release-candidate message when it holds another digest (tags are immutable), and otherwise copies and requires the ECR digest to equal the published one. Stub tests cover each case and the masking of every identifier; `docs/deployment/aws.md` explains the copy. The next release candidate tag is the first real run of the fixed copy
+
 ## [0.3.0rc21] - 2026-11-19
 
 ### Changed

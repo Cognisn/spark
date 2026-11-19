@@ -401,7 +401,8 @@ CloudFormation execution role the change sets run as).
 ### What it does
 
 1. Copies `ghcr.io/cognisn/spark:<version>` to the ECR repository by version tag, without a
-   rebuild. The same digest already in ECR is success; a different digest fails.
+   rebuild, with `scripts/copy-image.sh <version>` (see [The image copy](#the-image-copy)).
+   The same digest already in ECR is success; a different digest fails.
 2. `scripts/deploy-test.sh <version>` reads the service stack, which must be in
    `CREATE_COMPLETE`, `UPDATE_COMPLETE` or `UPDATE_ROLLBACK_COMPLETE`. If `RunningImageTag`
    already equals the version (a re-run), it goes straight to the checks.
@@ -426,6 +427,27 @@ Both change sets reuse the stack's current template (`--use-previous-template`),
 `UsePreviousValue`. Each change is checked before execution, and a change set with anything
 else, or any removal, is deleted and the deploy fails. The job never registers a task
 definition, updates a service or updates the stack without a change set.
+
+### The image copy
+
+The job installs `crane` (go-containerregistry) from a pinned release, checked against its
+published sha256 before it is unpacked, and `scripts/copy-image.sh` uses it to copy the image.
+`crane copy` moves the manifest and every blob exactly as they are, so the digest in ECR equals
+the digest in ghcr.io. The digest must match because it is the image's identity: the digest
+that was built, checked and published is the one that runs in the test environment, and a
+different digest would mean the tested image is not the deployed one. (`docker buildx imagetools
+create` is not used: it writes a new manifest, so the digest changes.) The script:
+
+1. reads the digest of the published image;
+2. if ECR already holds the tag at that digest, succeeds and copies nothing (a re-run);
+3. if ECR holds the tag at a different digest, fails;
+4. otherwise copies the image and requires the digest ECR then reports to equal the published
+   digest.
+
+The ECR repository has immutable tags, so a tag that exists at another digest cannot be
+overwritten, and re-running the job does not help. Publish a new release candidate (the next
+`rcN`) instead; the old tag stays in ECR until its lifecycle policy removes it. The messages
+the script prints carry no AWS identifier.
 
 ### What it never changes
 
