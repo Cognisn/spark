@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The deployment guides describe `spark bootstrap` as the first run.** The deployment index, Docker Desktop and Portainer guides, the AWS guide's first-run lines, the README and the architecture notes now give `spark migrate` then `spark bootstrap` (with the bootstrap settings, the first administrator invited by mail and the mail catcher) as server mode's first run, and `spark identity create-admin` only as recovery, linking to the identity guide. `deploy/live/RUNBOOK.md` records what the live suite has run (the live provider step included) and what bootstrap changes for its stack
+- **The Docker Desktop and Portainer stacks come up headless.** Their `migrate` service now runs `spark migrate && spark bootstrap`, web and worker start after it (the worker no longer waits for web), and a local mail catcher (`mailpit`) shares its network namespace with Spark's containers as in `deploy/compose.yaml`, so the first administrator's invitation arrives in its inbox with no `spark identity create-admin` step. The first administrator and the mail settings come from `SPARK__BOOTSTRAP__ADMIN__*` and `SPARK__MAIL__SMTP__*` variables (a placeholder administrator at `example.com` in the example environment); the web port is published by the catcher, and the Desktop `https` profile now proxies to it. Ports, volumes and image tags are unchanged. `tests/test_deploy_stacks.py` checks the new shape
+
 ## [0.3.0rc18] - 2026-11-19
 
 ### Changed

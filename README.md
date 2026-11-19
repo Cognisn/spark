@@ -172,8 +172,11 @@ encrypted store or AWS Secrets Manager.
 ```bash
 cp deploy/spark.env.example deploy/spark.env   # then set real values
 docker compose -p spark -f deploy/compose.yaml up -d
-docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admin --email admin@example.com
 ```
+
+The stack runs `spark migrate` and `spark bootstrap` first, which invites the first
+administrator (named in `spark.env`) by mail; `spark identity create-admin` is only for
+recovery.
 
 A server needs a TLS reverse proxy in front and `server.public_base_url` set to its
 address. The [server deployment guide](https://github.com/Cognisn/spark/blob/main/docs/deployment/index.md) covers the Compose

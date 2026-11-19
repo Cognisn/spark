@@ -1,6 +1,7 @@
 # Spark in server mode on Docker Desktop (Windows, macOS or Linux), for trying a
 # multi-user Spark on one machine: PostgreSQL with pgvector, a one-shot
-# migration, the web role and the worker role. See docs/deployment/docker-desktop.md.
+# migration and first-run bootstrap, the web role, the worker role and a local
+# mail catcher. See docs/deployment/docker-desktop.md.
 #
 #   cp spark.env.example spark.env                  # then set real credentials
 #   docker compose --env-file spark.env -f compose.yaml up -d
@@ -28,10 +29,25 @@ x-spark: &spark
     # Users' file areas (uploads and documents Spark creates), on their own volume.
     SPARK__FILES__ROOT: /var/lib/spark-files
     SPARK__LOGGING__LEVEL: ${SPARK_LOG_LEVEL:-INFO}
+    # The first administrator, invited by spark bootstrap on the first start
+    # (docs/deployment/identity.md).
+    SPARK__BOOTSTRAP__ADMIN__EMAIL: ${SPARK__BOOTSTRAP__ADMIN__EMAIL:?set SPARK__BOOTSTRAP__ADMIN__EMAIL in the env file}
+    SPARK__BOOTSTRAP__ADMIN__FIRST_NAME: ${SPARK__BOOTSTRAP__ADMIN__FIRST_NAME:?set SPARK__BOOTSTRAP__ADMIN__FIRST_NAME in the env file}
+    SPARK__BOOTSTRAP__ADMIN__LAST_NAME: ${SPARK__BOOTSTRAP__ADMIN__LAST_NAME:?set SPARK__BOOTSTRAP__ADMIN__LAST_NAME in the env file}
+    # Mail for the invitation, stored as the instance's mail settings on the first
+    # start. The defaults send to the mail catcher below.
+    SPARK__MAIL__SMTP__HOST: ${SPARK__MAIL__SMTP__HOST:-127.0.0.1}
+    SPARK__MAIL__SMTP__PORT: ${SPARK__MAIL__SMTP__PORT:-1025}
+    SPARK__MAIL__SMTP__TLS: ${SPARK__MAIL__SMTP__TLS:-none}
+    SPARK__MAIL__SMTP__SENDER_ADDRESS: ${SPARK__MAIL__SMTP__SENDER_ADDRESS:-spark@example.com}
+    SPARK__MAIL__SMTP__SENDER_NAME: ${SPARK__MAIL__SMTP__SENDER_NAME:-Spark}
   volumes:
     - spark-data:/var/lib/spark
     - spark-files:/var/lib/spark-files
     - spark-models:/var/cache/spark/huggingface
+  # Spark's containers share the mail catcher's network namespace, so its SMTP
+  # port is on loopback: Spark sends plain text only to a loopback host.
+  network_mode: "service:mailpit"
   restart: unless-stopped
 
 services:
@@ -50,28 +66,41 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # Brings the schema to the current version, then exits. Web and worker start
-  # only after it succeeds.
+  # A local mail catcher for the invitation and password resets: open its inbox
+  # at http://127.0.0.1:8025. It also publishes the web port, since Spark's
+  # containers share its network namespace.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:${SPARK_WEB_PORT:-8000}:8000"
+      - "127.0.0.1:${SPARK_MAIL_PORT:-8025}:8025"
+    restart: unless-stopped
+
+  # Brings the schema to the current version, then runs the first-run steps
+  # (the instance identity, the first administrator's invitation; safe to run
+  # again), then exits. Web and worker start only after it succeeds.
   migrate:
     <<: *spark
-    command: ["migrate"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["spark migrate && spark bootstrap"]
     restart: "no"
     healthcheck:
       disable: true
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   web:
     <<: *spark
     command: ["web"]
-    ports:
-      - "127.0.0.1:${SPARK_WEB_PORT:-8000}:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
 
-  # Scheduled actions, knowledge graph builds and warden's pruning.
+  # Scheduled actions, knowledge graph builds and warden's pruning. bootstrap has
+  # created the instance's identity before it starts.
   worker:
     <<: *spark
     command: ["worker"]
@@ -80,10 +109,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      # The web role creates the instance's identity in the shared secrets file
-      # on first start; the worker reads it.
-      web:
-        condition: service_healthy
 
   # Optional https on https://localhost:8443 with a certificate from Caddy's own
   # local authority, for browsers that keep Secure cookies only over https
@@ -98,7 +123,8 @@ services:
       - --from
       - https://localhost:8443
       - --to
-      - web:8000
+      # Spark's containers share the mail catcher's network namespace.
+      - mailpit:8000
       - --internal-certs
       - --disable-redirects
     ports:
