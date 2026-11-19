@@ -4,13 +4,14 @@ The live suite drives a running server-mode stack over HTTP, as browsers on the 
 
 ## What it is
 
-- `deploy/compose.yaml` in server mode, with the overlay `deploy/live/compose.live.yaml`:
-  - `web` and `web2`, a second replica on its own origin;
-  - two workers, one active and one on standby;
+- `deploy/compose.yaml` in server mode, with the overlay `deploy/live/compose.live.yaml`. The base file's shape is kept: `migrate` runs `spark migrate && spark bootstrap`, and `migrate` and `web` share the network namespace of its mail catcher `mailpit`, which publishes web's port and its inbox. The overlay adds:
+  - STARTTLS on `mailpit` (Mailpit v1.27, the base file's) with a certificate for `mailpit` from the throwaway CA. It is the stack's one mail catcher: every Spark container sends to `mailpit:1025` over verified TLS, whether or not it shares the namespace;
+  - `web2`, a second replica on its own origin and its own network namespace;
+  - two workers, one active and one on standby, each in its own network namespace (`network_mode: !reset null`), so the suite can tell them apart by address and host name;
   - `oidc`: mock-oauth2-server 6.1.3 with TLS from the throwaway CA;
-  - `mail`: Mailpit v1.21 with STARTTLS from the same CA;
   - `model-stub`: `model_stub.py`, a scripted Ollama API on http (11434) and Anthropic models listing on https (11443, the throwaway CA);
-  - `mcp`: `mcp_server.py`, a streamable-HTTP MCP server in `web`'s network namespace on `127.0.0.1:8765`, so `web` reaches it on loopback (conduit allows plain http only there).
+  - `mcp`: `mcp_server.py`, a streamable-HTTP MCP server in the `mailpit` namespace that `web` shares, on `127.0.0.1:8765`, so `web` reaches it on loopback (conduit allows plain http only there).
+- The first administrator (`admin@example.com`, "Live Administrator") is invited by `spark bootstrap`; the suite accepts the invitation from the catcher's inbox on its first run against a stack (see "The first run" below).
 - The public base URL is loopback http. The suite's client sends SPARK's `Secure` cookies itself.
 - Every model call goes through conduit's own adapters on ordinary SPARK connections that name the stub (`http://model-stub:11434` for Ollama, `https://model-stub:11443` for Anthropic). SPARK's runtime does not offer conduit's in-process stub provider, so no connection uses it.
 - Every test in `tests/live` is marked `integration` and skipped unless `SPARK_LIVE_STACK` is set. CI's `-m "not integration"` deselects them.
@@ -30,7 +31,7 @@ Written in the user's message:
 - `[[sleep S]]`: wait S seconds before replying (a turn kept in flight).
 - `[[call NAME {json}]]`: call the tool NAME once; the next request, carrying its result, is answered `TOOL RESULT SEEN: <result>`.
 
-`GET /_stub/requests` lists what was received (keys only as a SHA-256 prefix); `POST /_stub/reset` clears it. The stub lists `llama3-stub`, `tiny-stub` and `extra-stub`, none of which conduit's catalogue declares; the suite declares the first two as overlays (`tiny-stub` with a 4,096-token window, for compaction) before it creates the `stub-ollama` connection.
+`GET /_stub/requests` lists what was received (keys only as a SHA-256 prefix); `POST /_stub/reset` clears it. The stub lists `llama3-stub`, `tiny-stub` and `extra-stub`, none of which conduit's catalogue declares. The suite creates the `stub-ollama` connection first and then declares the first two as overlays on it (`tiny-stub` with a 4,096-token window, for compaction), as an administrator would; since 0.3.0rc17 a declaration rebuilds that connection's provider, so the models are usable at once.
 
 ## Before starting
 
@@ -43,11 +44,11 @@ Written in the user's message:
 
 | Service | Port |
 |---|---|
-| web | N |
+| web (published by `mailpit`) | N |
 | web2 | N+1 |
 | OIDC | N+10 |
 | model stub (Ollama API) | N+11 |
-| Mailpit API | N+25 |
+| Mailpit inbox and API (published by `mailpit`) | N+25 |
 | PostgreSQL | N+32 |
 | personal-mode check (host process) | N+50 |
 
@@ -62,13 +63,25 @@ python -m pytest tests/live -p no:cacheprovider --timeout=900 -rA
 ```
 
 - **Build:** about a minute with a warm cache, about 6 minutes cold.
-- **`up`:** migrates (`spark migrate`, then `spark bootstrap` where the stack's `migrate` service runs it; see the first run below), writes the SSO client secret into the konfig store, starts every service, waits until both replicas report ready, then runs `spark identity create-admin --email admin@example.com`. It is idempotent.
-- **The run:** 22 tests in about 5 minutes on a fresh stack (the personal-mode check starts SPARK twice on the host). On 0.3.0rc9 (2026-11-18, full run `full-20261118-233424`, 309 s) 19 passed, the live chat was skipped, and the two known failures below failed.
-- **Known failures at rc9, since fixed:** `test_conduit.py::test_a_model_declared_on_a_running_connection_can_be_used_at_once` failed because a model declared on a running connection was offered but its provider still held the old catalogue (Skuld question 54; fixed in 0.3.0rc17, which rebuilds that connection's provider), and `test_conduit.py::test_the_stream_reports_a_compaction_after_the_reply` because the stream dropped the compaction status queued at the end of a turn (question 55; fixed in 0.3.0rc13). Neither fix has been run against the live stack yet, so expect 21 passes and the skip on the next full run.
+- **`prepare`:** writes the CA and certificates, the OIDC configuration, `live.env` (ports, image, paths) and the Spark services' `spark.env`: the database, the konfig key, SSO, the bootstrap settings and the start-up mail settings. It keeps an existing `spark.env` (above all its konfig key) and adds only the settings it lacks, so a sandbox from an older stack gains the bootstrap settings.
+- **`up`:** starts `postgres`, `mailpit`, `oidc` and `model-stub`; writes the SSO client secret and the mail password into the konfig store; then `compose up -d`, where Compose runs `migrate` (`spark migrate && spark bootstrap`) and starts `web`, `web2` and the workers only once it has succeeded (a failed bootstrap fails `up` and prints the `migrate` log); then waits until both replicas report ready. It no longer runs `spark identity create-admin`. It is idempotent: bootstrap run again changes nothing and sends no second invitation.
+- **The run:** 22 tests in about 5 minutes on a fresh stack (the personal-mode check starts SPARK twice on the host); `test_rc1.py` and `test_conduit.py` hold 21 of them, and the live chat (`test_live_provider.py`) is skipped unless `SPARK_LIVE_CONNECTION` is set. On 0.3.0rc20 all 21 pass (see below).
+- **Known failures at rc9, since fixed:** `test_conduit.py::test_a_model_declared_on_a_running_connection_can_be_used_at_once` failed because a model declared on a running connection was offered but its provider still held the old catalogue (Skuld question 54; fixed in 0.3.0rc17, which rebuilds that connection's provider), and `test_conduit.py::test_the_stream_reports_a_compaction_after_the_reply` because the stream dropped the compaction status queued at the end of a turn (question 55; fixed in 0.3.0rc13). Both pass on 0.3.0rc20.
 
 ## What the live suite has run
 
-All against the stub stack on 0.3.0rc9 (2026-11-18), with synthetic users and `example.com` addresses:
+### On 0.3.0rc20, the bootstrap first run (2026-11-19)
+
+The image built from the worktree at 0.3.0rc20, the stack brought up with `stack.py up` on a fresh sandbox, and `python -m pytest tests/live/test_rc1.py tests/live/test_conduit.py -p no:cacheprovider --timeout=900 -rA`:
+
+- `up` ran `spark migrate && spark bootstrap` in `migrate`: the identity keys were created, the start-up mail settings stored, and the first administrator's invitation sent to `mailpit` over STARTTLS. Both replicas reported ready; every published port was on 127.0.0.1.
+- First run: 17 passed, 4 failed. The four failures (the send route's allowance stop, two connections of one service, assignment, credits) each created an Ollama connection of their own and expected the stub's model, declared on `stub-ollama`, to be offered on it. Since 0.3.0rc14 a declaration belongs to its connection (Skuld question 53), so each test now declares the model on the connection it creates (Skuld decision 126); the four then passed.
+- Full run on a stack recreated from nothing (`down`, `up`): **21 passed, 0 failed, 0 skipped, in 311 s**, including the administrator taken through bootstrap's invitation, the two tests that failed at rc9, the worker failover and the MCP sidecar in the catcher's namespace.
+- `up` run again on the running stack: bootstrap reported "already complete, nothing sent", and the catcher held one invitation to the administrator.
+
+### On 0.3.0rc9 (2026-11-18)
+
+All against the stub stack, with synthetic users and `example.com` addresses:
 
 - The rc1 checklist (12 tests) passed, including the send route's stop at 100% of a role's credit allowance (429, no model call).
 - Connections passed: two Ollama connections and one Anthropic connection added through `/api/connections`, discovery through conduit, an overlay declared and then offered, a second Ollama connection with its own `num_ctx`, and the Anthropic connection discovered over https behind the stack's CA (with a local-only residency policy every catalogue model was refused and none was offered).
@@ -78,11 +91,20 @@ All against the stub stack on 0.3.0rc9 (2026-11-18), with synthetic users and `e
 - Personal mode's one-time upgrade of a 0.2 `config.yaml` to connections passed: the key moved to the keychain, the file and the log hold none, and the second start left the file unchanged.
 - One live chat through a real service passed (Anthropic, `claude-haiku-5-5`, in 4 s, one usage row recorded). The first attempt failed because the key had not reached the store and discovery got 401; it passed after the key was stored again, and the connection, with its key, was deleted afterwards.
 
-Not run: the live SSO test against a real provider (below), and the stack on the bootstrap first run (below).
+Not run: the live SSO test against a real provider (below), and the live chat on 0.3.0rc20.
 
 ## The first run (spark bootstrap)
 
-`deploy/compose.yaml`'s `migrate` service now runs `spark migrate && spark bootstrap`, which needs the bootstrap settings (`SPARK__BOOTSTRAP__ADMIN__EMAIL`, `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME`, `SPARK__BOOTSTRAP__ADMIN__LAST_NAME`) and a mail host (`SPARK__MAIL__SMTP__HOST` and `SPARK__MAIL__SMTP__SENDER_ADDRESS`, or `mail.smtp` already stored), and refuses to run without them (see [Identity](../../docs/deployment/identity.md#bootstrap)). The live overlay and `stack.py` were written before bootstrap existed: the sandbox's `spark.env` (written by `stack.py prepare`) and the overlay set none of these, and `up` still runs `spark identity create-admin` as its last step. Until `stack.py` is adapted, add the three bootstrap settings to the sandbox's `spark.env` and the stack's own Mailpit (`mail`, port 1025 with starttls from the throwaway CA), and treat `create-admin` as the recovery path it now is. Bootstrap's invitation then goes to Mailpit, where the suite can read it, and web and worker wait for it rather than racing it. The overlay also predates the catcher that `deploy/compose.yaml` now puts the Spark services in the network namespace of, so its published ports, the `web2` replica and the MCP sidecar's shared namespace need checking against it; none of this has been run, and `stack.py` and the overlay are not changed here.
+`deploy/compose.yaml`'s `migrate` service runs `spark migrate && spark bootstrap`, which needs the bootstrap settings and a mail host and refuses to run without them (see [Identity](../../docs/deployment/identity.md#bootstrap)). `stack.py prepare` writes them into the sandbox's `spark.env`:
+
+- `SPARK__BOOTSTRAP__ADMIN__EMAIL=admin@example.com`, `__FIRST_NAME=Live`, `__LAST_NAME=Administrator`;
+- `SPARK__MAIL__SMTP__HOST=mailpit`, `__PORT=1025`, `__TLS=starttls`, `__SENDER_ADDRESS=spark@example.com`, `__SENDER_NAME`, `__USERNAME=spark`, with the password stored by `up` as the konfig secret `mail_smtp_password` (Mailpit accepts any sign-in). Bootstrap stores these as the `mail.smtp` instance settings while the database holds none.
+
+No `bootstrap.database.*` URLs are set, so the stack keeps the one-owner arrangement.
+
+Bootstrap then creates the instance's identity keys and mails the first administrator's invitation to `mailpit`; `web`, `web2` and the workers wait for it. On the suite's first run against a stack, the `admin` fixture finds that invitation in the catcher's inbox, accepts it with the password `prepare` chose (`admin_password` in `live.json`), enrols a TOTP key and keeps both in `people.json`; later runs sign in with them. `spark identity create-admin` is not run: it is the recovery path. If `people.json` is lost after the invitation was accepted, the administrator's TOTP key is lost with it: bring the stack down and up again. While the invitation is still pending, it can be sent again with `python deploy/live/stack.py --sandbox <sandbox> compose run --rm -T migrate "spark bootstrap --resend-invitation"`.
+
+STARTTLS stays: SPARK sends plain text only to a loopback host, and `web2` and the workers do not share the catcher's namespace, so the catcher keeps a certificate from the throwaway CA (the `SSL_CERT_FILE` bundle every Spark container trusts) and is reached by its service name.
 
 ## Live provider (only when Matthew names the service)
 
@@ -114,10 +136,10 @@ It uses a fresh database in the stack's PostgreSQL, so it adds no heavy workload
 ## Gotchas
 
 - **TOTP:** warden accepts each 30-second step once. The client waits for a fresh step within one process, but two processes signing the administrator in within one step fail the second; wait 30 seconds between runs.
-- **Overlays before connections (Q54):** a provider keeps the catalogue it was built with, so the suite declares its overlays before creating `stub-ollama`. On a stack where `stub-ollama` was built before its overlays, delete the connection and run again.
-- **Overlays are per catalogue provider:** an overlay declared on one Ollama connection is offered on every uncurated Ollama connection (Q53).
+- **Overlays are per connection:** since 0.3.0rc14 an overlay belongs to the connection it was declared on (Q53), and since 0.3.0rc17 declaring one rebuilds that connection's provider (Q54), so the suite declares after creating.
 - **Discovery results are per process:** a discovery run on `web` is not seen by `web2`.
-- **MCP reaches only `web`:** the MCP server shares `web`'s network namespace; `web2` and the workers cannot connect to it, and log that they cannot.
+- **MCP reaches only `web`:** the MCP server shares the `mailpit` namespace with `web`; `web2` and the workers cannot connect to it, and log that they cannot.
+- **One namespace, many services:** `mailpit`, `migrate`, `web` and `mcp` share one network namespace (and so one address and host name). Anything that tells containers apart by address must not look at those; the workers have their own for that reason.
 - **Password reset:** completing a reset ends the user's sessions; the suite signs the user in again.
 - **Keep-alive:** uvicorn closes idle connections after 5 seconds, so the client disables keep-alive.
 - **Logs:** `docker logs` writes to stderr, so read both streams.
