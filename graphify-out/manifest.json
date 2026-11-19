@@ -60,9 +60,9 @@
     "semantic_hash": "c8af884d09c65c8dbc4f310f11a4889f"
   },
   "pyproject.toml": {
-    "mtime": 1794993679.6341724,
-    "seen": 1794993833.7491727,
-    "ast_hash": "4ce806db7483475578b5fe212f4bdddd",
+    "mtime": 1795065121.8156312,
+    "seen": 1795068990.942599,
+    "ast_hash": "cd2672c28a2062c5e2392bcba49f4117",
     "semantic_hash": ""
   },
   "scripts/check_no_nvidia.py": {
@@ -162,9 +162,9 @@
     "semantic_hash": "1f70693ee180edf9303220773b18bdbb"
   },
   "src/spark/connections/runtime.py": {
-    "mtime": 1795045124.400692,
-    "seen": 1795058750.3828697,
-    "ast_hash": "afd217c9e9cc6a1314cbe112a7e784fc",
+    "mtime": 1795064855.8211534,
+    "seen": 1795068990.942599,
+    "ast_hash": "384da7a80f33a495930f827940f8f607",
     "semantic_hash": ""
   },
   "src/spark/connections/service.py": {
@@ -1482,9 +1482,9 @@
     "semantic_hash": ""
   },
   "tests/live/conftest.py": {
-    "mtime": 1795034688.581134,
-    "seen": 1795040012.2242208,
-    "ast_hash": "2e5771f54667122274edd95359bd5875",
+    "mtime": 1795064855.82177,
+    "seen": 1795068990.9436326,
+    "ast_hash": "1dbce5ffb5272f584cfeba36c5401a06",
     "semantic_hash": ""
   },
   "tests/live/personal_export.py": {
@@ -1848,10 +1848,10 @@
     "semantic_hash": ""
   },
   "tests/test_deploy_stacks.py": {
-    "mtime": 1793831473.950599,
-    "seen": 1794786212.600967,
-    "ast_hash": "1d263bb071f0469e1d05f84c6864e378",
-    "semantic_hash": "1d263bb071f0469e1d05f84c6864e378"
+    "mtime": 1795065728.1440804,
+    "seen": 1795068990.9436326,
+    "ast_hash": "57f013041a2662d65ec60d18fad0d854",
+    "semantic_hash": ""
   },
   "tests/test_embedding_model.py": {
     "mtime": 1793591649.3932846,
@@ -2766,10 +2766,10 @@
     "semantic_hash": ""
   },
   ".github/workflows/container-publish.yml": {
-    "mtime": 1793317634.8734543,
-    "seen": 1794786212.600967,
-    "ast_hash": "1bc816cfa16740aaf02aa7a13893af74",
-    "semantic_hash": "1bc816cfa16740aaf02aa7a13893af74"
+    "mtime": 1795066775.5310705,
+    "seen": 1795068990.9436326,
+    "ast_hash": "c760d8469f9716f192e50b2eea370e12",
+    "semantic_hash": ""
   },
   ".github/workflows/container.yml": {
     "mtime": 1793317634.8755343,
@@ -2778,9 +2778,9 @@
     "semantic_hash": "4b1922d8809cb904f598875a6e9714e2"
   },
   "CHANGELOG.md": {
-    "mtime": 1795053621.513964,
-    "seen": 1795058750.3832536,
-    "ast_hash": "721cb9aa3111ce4d3206844f4c45dace",
+    "mtime": 1795066940.522165,
+    "seen": 1795068990.9436326,
+    "ast_hash": "3f2d0468330675e74445f5a95a20a509",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2790,9 +2790,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1794998740.2472982,
-    "seen": 1795040012.2248287,
-    "ast_hash": "0d0f464f76c375261a591efcc68a4114",
+    "mtime": 1795065728.1359231,
+    "seen": 1795068990.9436326,
+    "ast_hash": "024cbbade8e694dc5d38430c1b1eca69",
     "semantic_hash": ""
   },
   "deploy/compose.yaml": {
@@ -2802,10 +2802,10 @@
     "semantic_hash": ""
   },
   "deploy/docker-desktop/compose.yaml": {
-    "mtime": 1793831433.3689132,
-    "seen": 1794786212.600967,
-    "ast_hash": "19dd26dd2349ef625368680e65669260",
-    "semantic_hash": "19dd26dd2349ef625368680e65669260"
+    "mtime": 1795065728.1366928,
+    "seen": 1795068990.9436326,
+    "ast_hash": "8c9b06c5080c0e8a2e7ebc27986f7d57",
+    "semantic_hash": ""
   },
   "deploy/live/compose.live.yaml": {
     "mtime": 1795034688.5763247,
@@ -2814,10 +2814,10 @@
     "semantic_hash": ""
   },
   "deploy/portainer/stack.yaml": {
-    "mtime": 1793831434.0704916,
-    "seen": 1794786212.600967,
-    "ast_hash": "b8d96551585a3b458c4acfdfddba8e45",
-    "semantic_hash": "b8d96551585a3b458c4acfdfddba8e45"
+    "mtime": 1795065728.138734,
+    "seen": 1795068990.9436326,
+    "ast_hash": "26b2e2f9b155a6a7090858539e114d89",
+    "semantic_hash": ""
   },
   "dev/worktree-compose.yml": {
     "mtime": 1793244038.3665512,
@@ -2832,9 +2832,9 @@
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1794998740.2482712,
-    "seen": 1795040012.2248287,
-    "ast_hash": "564610986cf86e8830bddea065dae416",
+    "mtime": 1795065728.1392,
+    "seen": 1795068990.9436326,
+    "ast_hash": "62ef2484fc3a292723c15c5ba6d152fd",
     "semantic_hash": ""
   },
   "docs/auto-update.md": {
@@ -2886,9 +2886,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/docker-desktop.md": {
-    "mtime": 1794998740.2539175,
-    "seen": 1795040012.2248287,
-    "ast_hash": "c0bd4bfa18bc9ea72083354ec7b6e39b",
+    "mtime": 1795065728.1412616,
+    "seen": 1795068990.9436326,
+    "ast_hash": "1da7668f4e571b583858b0be8695904b",
     "semantic_hash": ""
   },
   "docs/deployment/from-personal.md": {
@@ -2904,9 +2904,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/index.md": {
-    "mtime": 1795051395.394126,
-    "seen": 1795058750.3832536,
-    "ast_hash": "2d74047a36ff4b6d088b67020b7566c6",
+    "mtime": 1795065728.1412616,
+    "seen": 1795068990.9436326,
+    "ast_hash": "8a7e35d72cabebad2b12c7b420c0149d",
     "semantic_hash": ""
   },
   "docs/deployment/operations.md": {
@@ -2916,9 +2916,9 @@
     "semantic_hash": "5f9af93edf02764c5c9da32082623af2"
   },
   "docs/deployment/portainer.md": {
-    "mtime": 1794998740.256459,
-    "seen": 1795040012.2248287,
-    "ast_hash": "716e8f62f76d6cee7351ea4648df584e",
+    "mtime": 1795065728.143316,
+    "seen": 1795068990.9436326,
+    "ast_hash": "8c2ac4a0e2af2672925d42898f8a13ff",
     "semantic_hash": ""
   },
   "docs/deployment/reverse-proxy.md": {
@@ -2994,9 +2994,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795053621.513964,
-    "seen": 1795058750.3832536,
-    "ast_hash": "2b89485bf5604f44f9a683e92fc171bb",
+    "mtime": 1795066940.5216923,
+    "seen": 1795068990.9436326,
+    "ast_hash": "6e7c7f3c45adb20358b6faff94f1b187",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3696,9 +3696,9 @@
     "semantic_hash": ""
   },
   "deploy/live/RUNBOOK.md": {
-    "mtime": 1795034688.5763247,
-    "seen": 1795040012.2248287,
-    "ast_hash": "ef9b2204e905161f96489e129e93b0ea",
+    "mtime": 1795065728.1379745,
+    "seen": 1795068990.9436326,
+    "ast_hash": "e5c2c9fc47e120621a1c62dbd50aba2e",
     "semantic_hash": ""
   },
   "docs/connections.md": {
@@ -3846,9 +3846,39 @@
     "semantic_hash": ""
   },
   "docs/deployment/aws.md": {
-    "mtime": 1795051395.392451,
-    "seen": 1795058750.3832536,
-    "ast_hash": "f5c0ebe99f749f16a166c22c78784852",
+    "mtime": 1795066775.5331554,
+    "seen": 1795068990.9436326,
+    "ast_hash": "4ea59f7cc182c4eca3d2ba302e756806",
+    "semantic_hash": ""
+  },
+  "scripts/deploy-test.sh": {
+    "mtime": 1795066775.5331554,
+    "seen": 1795068990.942599,
+    "ast_hash": "43ad5a4d36bac39ee3464ea016e169dd",
+    "semantic_hash": ""
+  },
+  "tests/scripts/__init__.py": {
+    "mtime": 1795066775.5349143,
+    "seen": 1795068990.9436326,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "tests/scripts/aws_stub.py": {
+    "mtime": 1795066775.5349143,
+    "seen": 1795068990.9436326,
+    "ast_hash": "84c35f2e986c53710ad13ba99febda3b",
+    "semantic_hash": ""
+  },
+  "tests/scripts/test_deploy_test_script.py": {
+    "mtime": 1795066775.5349143,
+    "seen": 1795068990.9436326,
+    "ast_hash": "212aca4e2153732bec78e6e81143b948",
+    "semantic_hash": ""
+  },
+  "tests/test_connections_runtime_overlays.py": {
+    "mtime": 1795064855.8222215,
+    "seen": 1795068990.9436326,
+    "ast_hash": "d6e9d5fc938104a7852374e4fe4ee5e6",
     "semantic_hash": ""
   }
 }
