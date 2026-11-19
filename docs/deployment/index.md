@@ -14,12 +14,12 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 | Page | Covers |
 |---|---|
 | [Compose deployment](compose.md) | The services, roles, volumes and replicas in `deploy/compose.yaml`, the env file, the migrate step, the files volume and pgvector |
-| [Portainer](portainer.md) | The same server as a Portainer stack (`deploy/portainer/stack.yaml`): its variables, the web editor and Git deployments, a proxy container, the first administrator, backups and upgrades |
+| [Portainer](portainer.md) | The same server as a Portainer stack (`deploy/portainer/stack.yaml`): its variables, the web editor and Git deployments, a proxy container, the first administrator invited by `spark bootstrap`, backups and upgrades |
 | [Docker Desktop](docker-desktop.md) | Trying server mode on your own computer (`deploy/docker-desktop/compose.yaml`), on `http://localhost` or with Caddy on `https://localhost:8443` |
 | [Secrets](secrets.md) | konfig's encrypted store and `KONFIG_MASTER_KEY` off AWS, AWS Secrets Manager and its IAM policy on AWS, and how a saved secret reaches every replica |
 | [Running on AWS](aws.md) | ECS on Fargate with RDS, EFS, Secrets Manager and Bedrock: task definitions, the settings document and bundle, TLS to RDS, `/health` and `/ready`, and each task role's policy |
 | [Reverse proxy and TLS](reverse-proxy.md) | `server.public_base_url`, what the Origin check and the sign-in cookies need from the proxy, with Caddy and nginx examples |
-| [Identity](identity.md) | The first administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings, and identity mail (`mail.smtp`) |
+| [Identity](identity.md) | The first run (`spark bootstrap` and its settings), restoring an administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings, and identity mail (`mail.smtp`) |
 | [Database](database.md) | An external PostgreSQL, database roles, and the grants warden's audit purge needs on `warden.audit_events` |
 | [Backups and upgrades](operations.md) | What to back up, restoring, upgrading with `spark migrate`, and rolling back |
 | [Moving from personal mode](from-personal.md) | Exporting a personal user's bundle and importing it on the server as an administrator |
@@ -46,7 +46,9 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 - **One image, two roles** (`ghcr.io/cognisn/spark:<version>`): `spark web` serves
   the interface and may run as several replicas; `spark worker` runs scheduled
   actions, knowledge graph builds and warden's pruning, with one worker active at a
-  time. `spark migrate` brings the database to the current schema.
+  time. `spark migrate` brings the database to the current schema, and `spark bootstrap`
+  then runs the first-run steps once (the instance identity and the first administrator's
+  invitation).
 - **PostgreSQL** holds every user's data, the instance settings, warden's users,
   sessions and audit trail, and the vector indexes (pgvector 0.8 or later).
 - **konfig** holds every secret (model connection credentials, warden's signing keys, the SMTP
@@ -67,8 +69,12 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
    [use AWS Secrets Manager](secrets.md#on-aws-secrets-manager).
 4. [Put the reverse proxy in front](reverse-proxy.md) and set
    `server.public_base_url` to its address.
-5. [Create the first administrator](identity.md#the-first-administrator), sign in
-   and set up two-step verification.
+5. The first run is `spark migrate` then `spark bootstrap`, which the stacks run for you
+   with the [bootstrap settings](identity.md#bootstrap) from the env file: it invites the
+   [first administrator](identity.md#the-first-administrator) by mail. Follow the
+   invitation, sign in and set up two-step verification.
+   (`spark identity create-admin` is only for
+   [restoring an administrator](identity.md#restoring-an-administrator).)
 6. [Add a model connection](../connections.md), choose its models and assign it to
    roles (and [meter it](../metering.md) if you want allowances); then, on the
    instance settings page, [set up mail](identity.md#mail), and optionally
@@ -91,7 +97,7 @@ project name, on loopback ports, with `server.public_base_url` on a loopback htt
 address served by Caddy's internal certificate:
 
 - first start, `ps`, the logs, the pgvector check (0.8.7), `identity create-admin`
-  (twice), standby workers, `run --rm migrate`;
+  (twice; before bootstrap existed), standby workers, `run --rm migrate`;
 - the replicas override with Caddy (port and site name changed to loopback) in front
   of two web replicas and two workers, a GET of the sign-in page through it, a
   password sign-in through to the second factor, and the Origin and Host refusals;

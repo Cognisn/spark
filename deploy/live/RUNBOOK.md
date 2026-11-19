@@ -62,13 +62,31 @@ python -m pytest tests/live -p no:cacheprovider --timeout=900 -rA
 ```
 
 - **Build:** about a minute with a warm cache, about 6 minutes cold.
-- **`up`:** migrates, writes the SSO client secret into the konfig store, starts every service, waits until both replicas report ready, then runs `spark identity create-admin --email admin@example.com`. It is idempotent.
-- **The run:** 22 tests in about 5 minutes on a fresh stack (the personal-mode check starts SPARK twice on the host); 19 pass, the live chat is skipped, and the two known failures below fail.
-- **Known failures:** `test_conduit.py::test_a_model_declared_on_a_running_connection_can_be_used_at_once` fails until Skuld question 54 is fixed (a model declared on a running connection is offered but its provider still holds the old catalogue), and `test_conduit.py::test_the_stream_reports_a_compaction_after_the_reply` until question 55 is fixed (the stream drops the compaction status queued at the end of a turn).
+- **`up`:** migrates (`spark migrate`, then `spark bootstrap` where the stack's `migrate` service runs it; see the first run below), writes the SSO client secret into the konfig store, starts every service, waits until both replicas report ready, then runs `spark identity create-admin --email admin@example.com`. It is idempotent.
+- **The run:** 22 tests in about 5 minutes on a fresh stack (the personal-mode check starts SPARK twice on the host). On 0.3.0rc9 (2026-11-18, full run `full-20261118-233424`, 309 s) 19 passed, the live chat was skipped, and the two known failures below failed.
+- **Known failures at rc9, since fixed:** `test_conduit.py::test_a_model_declared_on_a_running_connection_can_be_used_at_once` failed because a model declared on a running connection was offered but its provider still held the old catalogue (Skuld question 54; fixed in 0.3.0rc17, which rebuilds that connection's provider), and `test_conduit.py::test_the_stream_reports_a_compaction_after_the_reply` because the stream dropped the compaction status queued at the end of a turn (question 55; fixed in 0.3.0rc13). Neither fix has been run against the live stack yet, so expect 21 passes and the skip on the next full run.
+
+## What the live suite has run
+
+All against the stub stack on 0.3.0rc9 (2026-11-18), with synthetic users and `example.com` addresses:
+
+- The rc1 checklist (12 tests) passed, including the send route's stop at 100% of a role's credit allowance (429, no model call).
+- Connections passed: two Ollama connections and one Anthropic connection added through `/api/connections`, discovery through conduit, an overlay declared and then offered, a second Ollama connection with its own `num_ctx`, and the Anthropic connection discovered over https behind the stack's CA (with a local-only residency policy every catalogue model was refused and none was offered).
+- Assignment passed: a user without the role does not see the connection and gets 409 on a new conversation, and the limits resolve to the higher of two roles and a user's own over the role's.
+- Credits passed: the picker's standing, the warning at 80%, a turn in flight finishing while another passes 100%, `budget_exceeded` with no model call, and the usage CSV row.
+- MCP over streamable HTTP (a once-only permission, the answer reaching the model, `spark.mcp.tool.called` audited with no arguments), a skill loaded with `use_skill`, and a forced compaction passed.
+- Personal mode's one-time upgrade of a 0.2 `config.yaml` to connections passed: the key moved to the keychain, the file and the log hold none, and the second start left the file unchanged.
+- One live chat through a real service passed (Anthropic, `claude-haiku-5-5`, in 4 s, one usage row recorded). The first attempt failed because the key had not reached the store and discovery got 401; it passed after the key was stored again, and the connection, with its key, was deleted afterwards.
+
+Not run: the live SSO test against a real provider (below), and the stack on the bootstrap first run (below).
+
+## The first run (spark bootstrap)
+
+`deploy/compose.yaml`'s `migrate` service now runs `spark migrate && spark bootstrap`, which needs the bootstrap settings (`SPARK__BOOTSTRAP__ADMIN__EMAIL`, `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME`, `SPARK__BOOTSTRAP__ADMIN__LAST_NAME`) and a mail host (`SPARK__MAIL__SMTP__HOST` and `SPARK__MAIL__SMTP__SENDER_ADDRESS`, or `mail.smtp` already stored), and refuses to run without them (see [Identity](../../docs/deployment/identity.md#bootstrap)). The live overlay and `stack.py` were written before bootstrap existed: the sandbox's `spark.env` (written by `stack.py prepare`) and the overlay set none of these, and `up` still runs `spark identity create-admin` as its last step. Until `stack.py` is adapted, add the three bootstrap settings to the sandbox's `spark.env` and the stack's own Mailpit (`mail`, port 1025 with starttls from the throwaway CA), and treat `create-admin` as the recovery path it now is. Bootstrap's invitation then goes to Mailpit, where the suite can read it, and web and worker wait for it rather than racing it. The overlay also predates the catcher that `deploy/compose.yaml` now puts the Spark services in the network namespace of, so its published ports, the `web2` replica and the MCP sidecar's shared namespace need checking against it; none of this has been run, and `stack.py` and the overlay are not changed here.
 
 ## Live provider (only when Matthew names the service)
 
-Step 1 was run on 2026-11-18 against the stub stack; steps 2 to 4 wait for Matthew's word and his own terminal.
+All four steps were run on 2026-11-18 against the stub stack, on Matthew's word and with the key stored in his own terminal (Anthropic, `claude-haiku-5-5`; see "What the live suite has run"). Repeat them only when Matthew names a service.
 
 1. Add the connection with a placeholder key: `python -m tests.live.live_connection --service anthropic` (or `gemini`, `openai`, `xai`). It prints the next command.
 2. Matthew stores the real key in his own terminal. It needs a real TTY, so not Claude Code's `!`, and is never echoed: `python deploy/live/stack.py --sandbox <sandbox> secret connections.live.api_key --announce connections.live.api_key` (for `openai` and `xai` the name ends `service.api_key`).
@@ -77,7 +95,7 @@ Step 1 was run on 2026-11-18 against the stub stack; steps 2 to 4 wait for Matth
 
 ## Live SSO test (on Matthew's go-ahead)
 
-Not run on 2026-11-18: it needs Matthew's go-ahead, and the scripted SSO sign-in in `test_rc1.py` passed against the same provider. With the stack up:
+Not run to date: it needs Matthew's go-ahead, and the scripted SSO sign-in in `test_rc1.py` passed against the same provider. With the stack up:
 
 ```
 $env:SPARK_TEST_SSO_ISSUER = "https://127.0.0.1:<N+10>/default"

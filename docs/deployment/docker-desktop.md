@@ -2,7 +2,8 @@
 
 `deploy/docker-desktop/compose.yaml` runs a complete Spark server on your own
 computer with Docker Desktop (Windows, macOS or Linux): PostgreSQL with pgvector, a
-one-shot migration, the web role and the worker role. It is for trying server mode
+one-shot migration and first-run bootstrap, the web role, the worker role and a local
+mail catcher. It is for trying server mode
 (users, roles, connections and credit allowances, the worker) on one machine. Every port binds to `127.0.0.1`,
 so nothing is reachable from another computer.
 
@@ -66,6 +67,10 @@ ending in `-dev-only`:
 | `KONFIG_MASTER_KEY` | The key to konfig's encrypted secrets file, which holds the connection credentials you enter and warden's signing keys |
 | `SPARK_PUBLIC_BASE_URL` | The address you open in the browser, exactly (default `http://localhost:8000`) |
 | `SPARK_WEB_PORT` | The port Spark is published on, on `127.0.0.1` (default `8000`) |
+| `SPARK__BOOTSTRAP__ADMIN__EMAIL` | The first administrator's address: `spark bootstrap` invites them by mail on the first start. Use your own address |
+| `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME`, `SPARK__BOOTSTRAP__ADMIN__LAST_NAME` | Their name, as the invitation shows it |
+| `SPARK_MAIL_PORT` | The port of the mail catcher's inbox, on `127.0.0.1` (default `8025`) |
+| `SPARK__MAIL__SMTP__HOST`, `PORT`, `TLS`, `SENDER_ADDRESS`, `SENDER_NAME` | Optional: where the invitation is sent. They default to the mail catcher, so leave them unset to try Spark |
 
 Generate the master key with the image itself:
 
@@ -88,27 +93,30 @@ docker compose --env-file spark.env -f compose.yaml ps -a
 ```
 
 The project is named `spark-desktop`, and Docker Desktop's Containers view shows it
-under that name. When the stack is up, `migrate` shows `Exited (0)` (it brings the
-database to the current schema at each start, then exits), `postgres` and `web`
-show `healthy`, and `worker` shows `Up`. On a first start this takes under a
+under that name. When the stack is up, `migrate` shows `Exited (0)` (it runs
+`spark migrate && spark bootstrap` at each start, then exits), `postgres` and `web`
+show `healthy`, and `mailpit` and `worker` show `Up`. On a first start this takes under a
 minute once the images are pulled. If a variable is missing, Compose refuses to start and
 names it.
 
 ## The first administrator
 
-A new server has no users. Create the first administrator; it asks for a password
-twice (at least 12 characters):
+A new server has no users, and you do not create one by hand: `migrate` runs
+`spark bootstrap` after `spark migrate`, which invites the administrator named by
+`SPARK__BOOTSTRAP__ADMIN__EMAIL` and its two name variables. [Identity](identity.md#bootstrap)
+lists the bootstrap settings and what the step does; it is safe to run again.
 
-```bash
-docker compose --env-file spark.env -f compose.yaml exec web spark identity create-admin --email admin@example.com
-```
+The invitation is mail, and the stack's mail catcher receives it. Open its inbox at
+`http://127.0.0.1:8025` (or your `SPARK_MAIL_PORT`), follow the invitation's link, and
+set a password. Then open `http://localhost:8000` (or your `SPARK_PUBLIC_BASE_URL`),
+sign in, and scan the QR code with your authenticator app to finish two-step
+verification. Keep the recovery codes it shows. The invitation expires after seven
+days; if it has, or `migrate` exited non-zero, see [Identity](identity.md#bootstrap) for
+sending it again.
 
-It prints `administrator <id>, created, administrator role assigned`. Use your own
-address: it is the account's sign-in name, and the address password resets go to.
-
-Open `http://localhost:8000` (or your `SPARK_PUBLIC_BASE_URL`), sign in, and scan
-the QR code with your authenticator app to finish two-step verification. Keep the
-recovery codes it shows.
+If every administrator is lost, `spark identity create-admin` restores one: see
+[Restoring an administrator](identity.md#restoring-an-administrator), and run it as
+`docker compose --env-file spark.env -f compose.yaml exec web spark identity create-admin ...`.
 
 Then, on the instance settings page:
 
@@ -117,9 +125,9 @@ Then, on the instance settings page:
 2. Choose the models the connection offers, and assign it to the `user` role (or to
    named users). See [Connections](../connections.md) and
    [Metering](../metering.md).
-3. Optionally set up mail (`mail.smtp`). Without it, Spark shows an administrator
-   each invitation and password reset link once, to pass on yourself; see
-   [Identity](identity.md#mail).
+3. Optionally set up a real mail server (`mail.smtp`) on the instance settings page, in
+   place of the catcher; see [Identity](identity.md#mail). Until then, every invitation
+   and password reset lands in the catcher's inbox.
 
 [Identity](identity.md) covers roles, invitations and single sign-on. To
 try a second user on the same computer, invite one from the administration screens
@@ -207,18 +215,16 @@ and give the restore command the path (`pg_restore ... /tmp/spark-db.dump`,
 | "Request refused: it did not come from this Spark instance's own pages (Origin check failed)" | The address in the browser differs from `SPARK_PUBLIC_BASE_URL`. `http://127.0.0.1:8000` and `http://localhost:8000` are different addresses: open exactly the configured one. The web log's `serving ...` line shows the address the container has; after changing the env file, run the `up -d` command again, because restarting a container (Docker Desktop's restart button, or `docker compose restart`) keeps its old settings. |
 | Signing in at `http://localhost` fails or returns to the sign-in page | The browser refused the `Secure` sign-in cookies over plain http (Safari does). Use [the https profile](#https-on-localhost). |
 | `required variable ... is missing a value` | `spark.env` lacks that variable, or the command was run without `--env-file spark.env`. |
-| `migrate` shows `Exited (1)` | `docker compose --env-file spark.env -f compose.yaml logs migrate` names the problem; web and worker wait for it. |
+| `migrate` shows `Exited (1)` | `docker compose --env-file spark.env -f compose.yaml logs migrate` names the problem (a bootstrap setting that is incomplete, or an invitation that could not be sent); web and worker wait for it. |
 | `web` never becomes healthy | `docker compose --env-file spark.env -f compose.yaml logs web`. A setting Spark cannot read stops it at start-up with a message naming the setting. |
 | "port is already allocated" | Another program uses the port: change `SPARK_WEB_PORT` and `SPARK_PUBLIC_BASE_URL` together. |
 | Everything is slow or containers restart | Give Docker Desktop more memory (Settings > Resources). |
 
-> Checked for this guide: the Compose file run as written with Docker Compose
-> 5.5.1 against an image built from this repository, with an env file saved with
-> Windows line endings and the master key generated by the command above. Then:
-> first start, the first administrator from `exec`, a password sign-in at
-> `http://localhost` through two-step enrolment, the Origin refusal for
-> `http://127.0.0.1`, the worker holding its lock, the https profile with Caddy's
-> root certificate (the sign-in page and a password sign-in through to the
-> second-factor step) and the backup commands. The project name and ports were
-> changed to fit the test machine. Not run: Docker Desktop's own interface, Safari,
-> and trusting the root certificate in a system store.
+> Checked for this guide: the stack's structure is tested (`tests/test_deploy_stacks.py`)
+> and its Compose model rendered with `docker compose config`. The earlier stack, before
+> bootstrap, was run as written with Docker Compose 5.5.1 against an image built from this
+> repository, with an env file saved with Windows line endings: first start, a password
+> sign-in at `http://localhost` through two-step enrolment, the Origin refusal for
+> `http://127.0.0.1`, the worker holding its lock, the https profile with Caddy's root
+> certificate and the backup commands. Not run: the bootstrap stack end to end, Docker
+> Desktop's own interface, Safari, and trusting the root certificate in a system store.

@@ -154,7 +154,7 @@ sequenceDiagram
 - API keys: `Authorization: Bearer wdn_...` authenticates through warden (the key's scopes intersected with its user's permissions) and needs no CSRF token, having no ambient credential; Origin and Referer are still checked when present, and a bearer together with a session cookie is refused.
 - Event streams cannot read a 401, so the chat, debate and panel pages call `SparkSession.ensure()` (in `csrf.js`) before opening one.
 - `/auth/sign-out` (and the menu's `/logout`) revokes the warden session and clears both cookies.
-- `spark identity create-admin --email EMAIL [--link-user-guid GUID]` creates the first administrator (idempotent) and can bind the interim single-user guid to them.
+- The first administrator is invited by `spark bootstrap`, which runs once after `spark migrate` (see `docs/deployment/identity.md`). `spark identity create-admin --email EMAIL [--link-user-guid GUID]` is for recovery: it restores an administrator (idempotent) and can bind the interim single-user guid to them.
 - **Static files** served from `web/static/` (CSS, JS, fonts)
 
 ### Identity screens (server mode)

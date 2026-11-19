@@ -104,7 +104,8 @@ those in [Database](database.md#restricted-roles); the headless bootstrap create
 Fill in both secrets before the first start. With `KONFIG_AWS_SEED=false` an empty bundle
 stays empty and Spark refuses to start with "database.url refers to the secret ... which is
 not set in the secrets store" (the message names the secret, never a value). Spark adds
-warden's signing keys and its other generated secrets to the bundle on the first web start.
+warden's signing keys and its other generated secrets to the bundle when `spark bootstrap` first runs
+([Identity](identity.md#bootstrap)).
 
 ## TLS to RDS
 
@@ -220,8 +221,9 @@ The same as the web task with these differences: family `spark-worker`, task rol
 container `command` set to `["worker"]` (the image's entry point is `spark`), no port
 mapping and no `healthCheck`. Run one task or more: one is active at a time (it holds a
 PostgreSQL advisory lock) and the others stand by. Start the worker service after the web
-service is healthy: the worker's role cannot write the bundle, and the first web start
-creates warden's signing keys in it.
+service is healthy, or at least after the migrate and bootstrap task: the worker's role cannot
+write the bundle, and bootstrap creates warden's signing keys in it (a worker started earlier
+waits for them).
 
 ### Migrate and bootstrap (one-off)
 
@@ -368,8 +370,10 @@ only if your log group or registry needs it.
    model).
 4. Call `/ready` from inside the network (or read the task's log): all three checks `ok`.
 5. Scale `spark-worker` up.
-6. [Create the first administrator](identity.md#the-first-administrator) if the bootstrap did
-   not, sign in, and [add a Bedrock connection](../connections.md).
+6. Follow the invitation that `spark bootstrap` mailed to `bootstrap.admin.email`
+   ([the first administrator](identity.md#the-first-administrator)), sign in, and
+   [add a Bedrock connection](../connections.md). `spark identity create-admin` is only
+   for [recovery](identity.md#restoring-an-administrator).
 
 ## Upgrades
 
