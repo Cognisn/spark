@@ -181,6 +181,8 @@ class TestServeRegistersPruning:
 
         monkeypatch.setattr(worker, "Worker", FakeWorker)
         monkeypatch.setattr(worker, "_with_app", with_app)
+        # The wait for bootstrap is tested in tests/test_bootstrap.py.
+        monkeypatch.setattr(worker, "_wait_for_bootstrap", _bootstrapped)
         runtime = RuntimeSettings(
             Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y")
         )
@@ -188,3 +190,8 @@ class TestServeRegistersPruning:
         assert pruning.IDENTITY_PRUNING in [s.name for s in captured["services"]]
         names = [job.name for job in captured["periodic"]]
         assert pruning.SSO_PRUNING in names and pruning.AUDIT_PURGE in names
+
+
+async def _bootstrapped(runtime: Any, app: Any) -> None:
+    """Stands in for the worker's wait for ``spark bootstrap``."""
+    return None
