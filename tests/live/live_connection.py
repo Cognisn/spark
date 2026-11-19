@@ -41,9 +41,14 @@ def main(argv: list[str] | None = None) -> int:
     stack = Stack(json.loads(Path(os.environ[STATE_ENV]).read_text("utf-8")))
     email = stack.state["admin_email"]
     known = stack.remembered().get(email, {})
+    if not known:
+        raise SystemExit(
+            "the first administrator has not accepted bootstrap's invitation yet: run the "
+            "live suite (tests/live/test_rc1.py) once first"
+        )
     secret = base64.b32decode(known["totp"]) if known.get("totp") else None
     browser = Browser(stack.base_url)
-    browser.sign_in(email, known.get("password") or stack.state["admin_password"], secret)
+    browser.sign_in(email, known["password"], secret)
     field = KEY_FIELDS[args.service]
     if browser.get(f"/api/connections/{args.id}").status_code == 404:
         made = browser.post(

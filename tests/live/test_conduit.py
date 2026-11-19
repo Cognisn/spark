@@ -130,6 +130,10 @@ def test_connections_of_two_services_discover_declare_and_refuse(
     connection(
         admin, second, "ollama", f"Ollama B {run}", {"base_url": _stub_url(stack), "num_ctx": 8192}
     )
+    # Since 0.3.0rc14 a declaration belongs to its connection (Skuld question 53), so
+    # each new Ollama connection declares the stub's chat model itself.
+    for cid in (first, second):
+        declare(admin, cid, STUB_MODEL)
     created = connection(
         admin,
         other,
@@ -149,8 +153,9 @@ def test_connections_of_two_services_discover_declare_and_refuse(
         for cid in (first, second, other):
             assert listed[cid]["status"] == "running", listed[cid]
 
-        # Discovery: the stub lists three models the catalogue does not declare; two
-        # were declared by the suite's set-up, so one is left undeclared.
+        # Discovery: the stub lists three models the catalogue does not declare; this
+        # connection declared one and the other connections' declarations are not its
+        # own, so two are left undeclared here.
         view = _view(admin, first, discover=True)
         assert view["discovery"]["ok"], view["discovery"]
         rows = _rows(view)
@@ -199,11 +204,11 @@ def test_a_model_declared_on_a_running_connection_can_be_used_at_once(
     """Scope 2 (Skuld question 54): a model declared as an overlay on a connection that
     is already running is offered at once, and a turn on it reaches the model.
 
-    Fails on 0.3.0rc9: the connection's provider was built with the catalogue of the
-    moment, the declaration changes neither the connection's settings nor its secrets,
-    so the runtime keeps that provider, and conduit refuses the call (``model ... is not
-    declared in the catalogue for 'ollama'``) until the process restarts or the
-    connection is changed.
+    Failed on 0.3.0rc9, when the runtime kept the provider built with the catalogue of
+    the moment and conduit refused the call (``model ... is not declared in the
+    catalogue for 'ollama'``) until a restart. Since 0.3.0rc17 the connection's own
+    overlay entries are part of its provider's fingerprint, so the declaration rebuilds
+    that provider; passes on 0.3.0rc20.
     """
     run = stack.run
     cid = f"declare-late-{run}"
@@ -237,6 +242,7 @@ def test_assignment_hides_a_connection_and_decides_each_allowance(
     run = stack.run
     cid = f"assigned-{run}"
     connection(admin, cid, "ollama", f"Assigned {run}", {"base_url": _stub_url(stack)})
+    declare(admin, cid, STUB_MODEL)  # a declaration belongs to its connection (Q53)
     _metered(admin, cid)
     assign(admin, cid, role="power_user", monthly_credits=5)
     assign(admin, cid, role="auditor", monthly_credits=20)
@@ -289,6 +295,7 @@ def test_credits_warn_at_80_stop_at_100_and_the_turn_in_flight_finishes(
     run = stack.run
     cid = f"credits-{run}"
     connection(admin, cid, "ollama", f"Credits {run}", {"base_url": _stub_url(stack)})
+    declare(admin, cid, STUB_MODEL)  # a declaration belongs to its connection (Q53)
     _metered(admin, cid)
     grace = invite_and_accept(stack, admin, f"grace-{run}@example.com", "user")
     slow_browser: Browser | None = None
@@ -542,10 +549,11 @@ def test_the_stream_reports_a_compaction_after_the_reply(
     """Scope 5 (Skuld question 55): the turn whose end triggers a compaction tells the
     chat page (``compaction_status``), which shows "Compaction complete".
 
-    Fails on 0.3.0rc9 whenever the compaction finishes within one 0.2-second poll of the
-    stream: the compactor runs after the reply, at the end of ``send_message``, and once
-    the turn's future is done ``streaming.py`` forwards only the queued tool events, so
-    the queued ``compaction_start`` and ``compaction_complete`` are dropped.
+    Failed on 0.3.0rc9 whenever the compaction finished within one 0.2-second poll of
+    the stream: the compactor runs after the reply, at the end of ``send_message``, and
+    once the turn's future was done ``streaming.py`` forwarded only the queued tool
+    events, dropping ``compaction_start`` and ``compaction_complete``. Since 0.3.0rc13
+    every queued event is forwarded; passes on 0.3.0rc20.
     """
     _conv, statuses = _drive_to_compaction(stack, alice, "Compaction status")
     assert any(isinstance(s, dict) and s.get("status") == "complete" for s in statuses), statuses

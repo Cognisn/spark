@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The live end-to-end stack comes up through `spark bootstrap`** (`deploy/live`, `tests/live`; test only). `stack.py prepare` writes the bootstrap settings (a synthetic first administrator at `example.com`) and the start-up mail settings into the sandbox's env file, keeping an existing file's konfig key and adding only what it lacks; `up` stores the SSO client secret and the mail password, lets the `migrate` service run `spark migrate && spark bootstrap` and starts the rest only once it succeeds, and no longer runs `spark identity create-admin`. The suite accepts the first administrator's invitation from the mail catcher's inbox on its first run against a stack. The overlay keeps `deploy/compose.yaml`'s shape and its one mail catcher, `mailpit`, now with STARTTLS from the stack's throwaway CA so `web2` and the workers, which keep network namespaces of their own, can send to it; the MCP sidecar joins the catcher's namespace, which `web` shares, and every published port stays on 127.0.0.1. Tests that create their own stub connection now declare the stub's model on it, as overlays belong to one connection since 0.3.0rc14
+- **The live suite's runbook describes the bootstrap first run** (`deploy/live/RUNBOOK.md`): the settings `prepare` writes, what `up` does now, the stack's shape around the one mail catcher, how the first administrator is taken through bootstrap's invitation, the model stub's models declared after its connection is created, and the 0.3.0rc20 results (21 passed on a fresh stack, including the two tests that failed at rc9)
+
 ## [0.3.0rc20] - 2026-11-19
 
 ### Added
