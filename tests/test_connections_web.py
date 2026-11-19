@@ -35,11 +35,11 @@ from conduit.integrations.konfig import KonfigSecretResolver
 from conduit.providers.stub import StubFactory
 from fastapi.testclient import TestClient
 
-from spark.connections import ConnectionRuntime, discovery
+from spark.connections import ConnectionRuntime, ModelRef, discovery
 from spark.connections.runtime import production_factories
 from spark.connections.store import FileConnectionStore
 from spark.database import autonomous_actions
-from spark.database.connections import OverlayRow, list_overlays, save_overlay
+from spark.database.connections import OverlayRow, list_overlays
 from spark.web.security import CSRF_HEADER
 from spark.web.server import create_app
 from tests.db_helpers import app_client
@@ -124,6 +124,18 @@ def _stub(client: TestClient, connection_id: str = "lab") -> None:
     """A stub connection in config.yaml (the modal offers only M4's services)."""
     FileConnectionStore(_config_of(client)).write_connections([stub_connection(connection_id)])
     _refresh(client)
+
+
+def _declare(client: TestClient, row: OverlayRow) -> None:
+    """An overlay entry stored for its connection in config.yaml, then applied."""
+    FileConnectionStore(_config_of(client)).write_overlays([row])
+    _refresh(client)
+
+
+def _stored_overlays(client: TestClient) -> list[OverlayRow]:
+    """Every overlay entry stored anywhere: config.yaml (personal mode) and the database."""
+    stored = FileConnectionStore(_config_of(client)).read_overlays()
+    return stored + list(_call(client, list_overlays))
 
 
 def _anthropic(client: TestClient, name: str = "Claude direct", **extra: Any) -> Any:
@@ -369,8 +381,10 @@ class TestModels:
 
     def test_the_first_choice_curates_without_dropping_models(self, client: TestClient) -> None:
         _stub(client)
-        _call(client, save_overlay, OverlayRow("stub", "model-b", 8192, "local", output_limit=1024))
-        _refresh(client)
+        _declare(
+            client,
+            OverlayRow("stub", "model-b", 8192, "local", output_limit=1024, connection_id="lab"),
+        )
         resp = client.put(f"{API}/lab/models", json={"model_id": "model-b", "tier": "higher"})
         assert resp.status_code == 200, resp.text
         rows = {m["model_id"]: m for m in resp.json()["models"]}
@@ -384,8 +398,10 @@ class TestModels:
 
     def test_residency_refusal_is_shown_with_conduits_reason(self, client: TestClient) -> None:
         _stub(client)
-        _call(client, save_overlay, OverlayRow("stub", "far", 8192, "global", output_limit=1024))
-        _refresh(client)
+        _declare(
+            client,
+            OverlayRow("stub", "far", 8192, "global", output_limit=1024, connection_id="lab"),
+        )
         rows = {m["model_id"]: m for m in client.get(f"{API}/lab/models").json()["models"]}
         assert "scope global is not allowed" in rows["far"]["refused"]
         assert rows["stub-echo"]["refused"] is None
@@ -562,7 +578,7 @@ class TestDeclaringByID:
         assert resp.status_code == 409, resp.text
         error = resp.json()["error"]
         assert model_id in error and "already" in error
-        assert _call(client, list_overlays) == []
+        assert _stored_overlays(client) == []
 
     def test_an_id_the_catalogue_ships_is_refused_for_any_service(self, client: TestClient) -> None:
         _stub(client)
@@ -570,7 +586,7 @@ class TestDeclaringByID:
         resp = client.post(f"{API}/lab/overlays", json=body)
         assert resp.status_code == 409
         assert "stub-echo" in resp.json()["error"]
-        assert _call(client, list_overlays) == []
+        assert _stored_overlays(client) == []
 
     def test_sparks_own_declaration_can_be_declared_again_to_correct_it(
         self, client: TestClient
@@ -595,7 +611,7 @@ class TestDeclaringByID:
             resp = client.post(f"{API}/{cid}/overlays", json=body)
             assert resp.status_code == 400, body
             assert words in resp.json()["error"], (words, resp.json()["error"])
-        assert _call(client, list_overlays) == []
+        assert _stored_overlays(client) == []
 
     def test_declaring_needs_the_csrf_token_and_the_instances_origin(
         self, client: TestClient
@@ -609,8 +625,109 @@ class TestDeclaringByID:
         elsewhere = {"Origin": "https://elsewhere.example.com"}
         resp = client.post(f"{API}/{cid}/overlays", json=DEPLOYMENT, headers=elsewhere)
         assert resp.status_code == 403
-        assert _call(client, list_overlays) == []
+        assert _stored_overlays(client) == []
 
     def test_the_screen_has_the_declare_action(self, client: TestClient) -> None:
         script = client.get("/static/js/connections.js").text
         assert "Declare a model" in script and "'data-act': 'declare-typed'" in script
+
+
+# -- Each declaration stays on its own connection (wave 10 Q53) ------------------------
+
+OLLAMA_MODEL: dict[str, Any] = {
+    "model_id": "qwen3:32b",
+    "kind": "chat",
+    "context_window": 32768,
+    "output_limit": 8192,
+    "tools": True,
+    "residency_scope": "local",
+    "regions": "",
+}
+
+
+def _ollama(client: TestClient, name: str) -> str:
+    resp = client.post(API, json={"service": "ollama", "name": name, "values": {}})
+    assert resp.status_code == 201, resp.text
+    return str(resp.json()["id"])
+
+
+def _view_ids(client: TestClient, connection_id: str) -> set[str]:
+    resp = client.get(f"{API}/{connection_id}/models")
+    assert resp.status_code == 200, resp.text
+    return {m["model_id"] for m in resp.json()["models"]}
+
+
+class TestDeclarationsStayOnTheirConnection:
+    def test_a_foundry_deployment_is_offered_on_its_own_connection_only(
+        self, client: TestClient
+    ) -> None:
+        au, us = _foundry(client, "Foundry AU"), _foundry(client, "Foundry US")
+        direct = _anthropic(client).json()["id"]
+        assert client.post(f"{API}/{au}/overlays", json=DEPLOYMENT).status_code == 200
+        assert _listed(client, au) == {f"{au}/sonnet-au-prod"}
+        assert _listed(client, us) == set()
+        assert not any(m.endswith("/sonnet-au-prod") for m in _listed(client, direct))
+        assert "sonnet-au-prod" not in _view_ids(client, us) | _view_ids(client, direct)
+        runtime: Any = client.app.state.connections  # type: ignore[attr-defined]
+        assert runtime.resolve("sonnet-au-prod").connection_id == au
+        assert "not declared" in runtime.refusal(ModelRef(direct, "sonnet-au-prod"))
+        assert "not declared" in runtime.refusal(ModelRef(us, "sonnet-au-prod"))
+        assert [(o.model_id, o.connection_id) for o in _stored_overlays(client)] == [
+            ("sonnet-au-prod", au)
+        ]
+
+    def test_a_declared_ollama_model_is_offered_on_its_own_connection_only(
+        self, client: TestClient
+    ) -> None:
+        home, lab = _ollama(client, "Home box"), _ollama(client, "Lab box")
+        resp = client.post(f"{API}/{home}/overlays", json=OLLAMA_MODEL)
+        assert resp.status_code == 200, resp.text
+        assert f"{home}/qwen3:32b" in _listed(client, home)
+        assert f"{lab}/qwen3:32b" not in _listed(client, lab)
+        assert "qwen3:32b" not in _view_ids(client, lab)
+
+    def test_each_connection_declares_and_corrects_its_own_entry(self, client: TestClient) -> None:
+        au, us = _foundry(client, "Foundry AU"), _foundry(client, "Foundry US")
+        assert client.post(f"{API}/{au}/overlays", json=DEPLOYMENT).status_code == 200
+        # Another connection's declaration does not make the id taken here.
+        us_body = {**DEPLOYMENT, "regions": "eastus", "context_window": 100000}
+        resp = client.post(f"{API}/{us}/overlays", json=us_body)
+        assert resp.status_code == 200, resp.text
+        # Correcting one connection's entry leaves the other's as it was.
+        again = client.post(f"{API}/{au}/overlays", json={**DEPLOYMENT, "context_window": 150000})
+        assert again.status_code == 200, again.text
+        windows = {o.connection_id: o.context_window for o in _stored_overlays(client)}
+        assert windows == {au: 150000, us: 100000}
+        # A shipped id is refused on every connection, whatever the others declared.
+        for cid in (au, us):
+            shipped = client.post(
+                f"{API}/{cid}/overlays", json={**DEPLOYMENT, "model_id": "claude-sonnet-5"}
+            )
+            assert shipped.status_code == 409, cid
+
+    def test_a_shipped_id_one_connection_holds_is_still_refused_on_another(
+        self, client: TestClient
+    ) -> None:
+        au, us = _foundry(client, "Foundry AU"), _foundry(client, "Foundry US")
+        # An entry on a shipped id (as an earlier build could store) belongs to au alone.
+        held = OverlayRow(
+            "anthropic",
+            "claude-sonnet-5",
+            100_000,
+            "in_region",
+            output_limit=8_192,
+            regions=("australiaeast",),
+            connection_id=au,
+        )
+        _declare(client, held)
+        body = {**DEPLOYMENT, "model_id": "claude-sonnet-5"}
+        assert client.post(f"{API}/{us}/overlays", json=body).status_code == 409
+        assert client.post(f"{API}/{au}/overlays", json=body).status_code == 200
+        assert [o.connection_id for o in _stored_overlays(client)] == [au]
+
+    def test_deleting_the_connection_removes_its_declarations(self, client: TestClient) -> None:
+        au, us = _foundry(client, "Foundry AU"), _foundry(client, "Foundry US")
+        client.post(f"{API}/{au}/overlays", json=DEPLOYMENT)
+        client.post(f"{API}/{us}/overlays", json={**DEPLOYMENT, "regions": "eastus"})
+        assert client.delete(f"{API}/{au}").status_code == 200
+        assert [o.connection_id for o in _stored_overlays(client)] == [us]

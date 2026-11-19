@@ -14,7 +14,10 @@ transaction, so their connection runtimes refresh.
 
 Connections and the catalogue overlay are instance-wide and deliberately not
 scoped by user: only an administrator's endpoint and the connection runtime reach
-them. Assignments name users; :func:`connections_for` answers for one user and
+them. Each overlay entry belongs to the connection that declared it
+(``connection_id``) and is applied to that connection's catalogue only; an entry
+with no connection is one stored before entries were scoped that no connection
+offered when they were (it applies to none). Assignments name users; :func:`connections_for` answers for one user and
 their roles.
 """
 
@@ -181,7 +184,12 @@ async def save_connection(db: Executor, connection: ConnectionRow) -> None:
 async def delete_connection(db: Executor, connection_id: str) -> bool:
     """Remove a connection with its models, metering and assignments. True if it existed."""
     async with db.transaction() as conn:
-        for table in ("connection_assignments", "connection_metering", "connection_models"):
+        for table in (
+            "catalogue_overlays",
+            "connection_assignments",
+            "connection_metering",
+            "connection_models",
+        ):
             await conn.execute(f"DELETE FROM {table} WHERE connection_id = ?", (connection_id,))
         removed = await conn.execute("DELETE FROM connections WHERE id = ?", (connection_id,))
         await _notify(conn)
@@ -260,7 +268,9 @@ async def delete_model(db: Executor, connection_id: str, model_id: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class OverlayRow:
-    """One overlay entry on conduit's catalogue: the fields of a conduit ``ModelEntry``."""
+    """One overlay entry on conduit's catalogue: the fields of a conduit ``ModelEntry``,
+    and the connection whose catalogue it belongs to (None only for an entry stored
+    before entries were scoped, which applies to no connection)."""
 
     provider: str
     model_id: str
@@ -274,26 +284,13 @@ class OverlayRow:
     prompt_caching: bool = False
     structured_output: bool = False
     regions: tuple[str, ...] = ()
+    connection_id: str | None = None
 
 
-_SAVE_OVERLAY = upsert(
-    "catalogue_overlays",
-    [
-        "provider",
-        "model_id",
-        "kind",
-        "context_window",
-        "output_limit",
-        "embedding_dimensions",
-        "tools",
-        "vision",
-        "prompt_caching",
-        "structured_output",
-        "residency_scope",
-        "regions",
-        "updated_at",
-    ],
-    ["provider", "model_id"],
+_OVERLAY_COLUMNS: Final = (
+    "provider, model_id, kind, context_window, output_limit, embedding_dimensions, "
+    "tools, vision, prompt_caching, structured_output, residency_scope, regions, "
+    "connection_id"
 )
 
 
@@ -315,26 +312,39 @@ def _overlay(row: Row) -> OverlayRow:
         structured_output=bool(row["structured_output"]),
         residency_scope=str(row["residency_scope"]),
         regions=tuple(str(r) for r in json.loads(str(row["regions"]))),
+        connection_id=None if row["connection_id"] is None else str(row["connection_id"]),
     )
 
 
-async def list_overlays(db: Executor) -> list[OverlayRow]:
-    """SPARK's overlay entries, by provider and model. Deliberately unscoped."""
+async def list_overlays(db: Executor, connection_id: str | None = None) -> list[OverlayRow]:
+    """The overlay entries of one connection, or every entry (with those of no
+    connection), by provider, model and connection. Deliberately unscoped by user:
+    instance-wide configuration."""
+    where, params = ("WHERE connection_id = ?", (connection_id,)) if connection_id else ("", ())
     rows = await db.fetch_all(
-        "SELECT provider, model_id, kind, context_window, output_limit, embedding_dimensions, "
-        "tools, vision, prompt_caching, structured_output, residency_scope, regions "
-        "FROM catalogue_overlays ORDER BY provider, model_id"
+        f"SELECT {_OVERLAY_COLUMNS} FROM catalogue_overlays {where} "
+        "ORDER BY provider, model_id, COALESCE(connection_id, '')",
+        params,
     )
     return [_overlay(r) for r in rows]
 
 
 async def save_overlay(db: Executor, entry: OverlayRow) -> None:
-    """Insert or replace an overlay entry (validate it with conduit's ModelEntry first)."""
+    """Insert or replace a connection's overlay entry (validate it with conduit's
+    ModelEntry first). Only that connection's entry for the model is replaced."""
+    if not entry.connection_id:
+        raise ValueError("an overlay entry belongs to a connection: give its connection_id")
     if entry.residency_scope not in _SCOPES:
         raise ValueError("a residency scope is local, in_region, cross_region or global")
     async with db.transaction() as conn:
         await conn.execute(
-            _SAVE_OVERLAY,
+            "DELETE FROM catalogue_overlays "
+            "WHERE connection_id = ? AND provider = ? AND model_id = ?",
+            (entry.connection_id, entry.provider, entry.model_id),
+        )
+        await conn.execute(
+            f"INSERT INTO catalogue_overlays ({_OVERLAY_COLUMNS}, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.provider,
                 entry.model_id,
@@ -348,18 +358,26 @@ async def save_overlay(db: Executor, entry: OverlayRow) -> None:
                 int(entry.structured_output),
                 entry.residency_scope,
                 json.dumps(sorted(entry.regions)),
+                entry.connection_id,
                 _now(),
             ),
         )
         await _notify(conn)
 
 
-async def delete_overlay(db: Executor, provider: str, model_id: str) -> bool:
-    """Remove an overlay entry. True if it existed."""
+async def delete_overlay(
+    db: Executor, provider: str, model_id: str, *, connection_id: str | None
+) -> bool:
+    """Remove a connection's overlay entry (``connection_id`` None: an entry of no
+    connection). True if it existed."""
+    scope = "connection_id = ?" if connection_id is not None else "connection_id IS NULL"
+    params: tuple[str, ...] = (provider, model_id)
+    if connection_id is not None:
+        params += (connection_id,)
     async with db.transaction() as conn:
         removed = await conn.execute(
-            "DELETE FROM catalogue_overlays WHERE provider = ? AND model_id = ?",
-            (provider, model_id),
+            f"DELETE FROM catalogue_overlays WHERE provider = ? AND model_id = ? AND {scope}",
+            params,
         )
         await _notify(conn)
     return removed > 0

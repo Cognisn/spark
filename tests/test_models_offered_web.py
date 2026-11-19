@@ -75,7 +75,15 @@ def offered_runtime(sync_db: Any, answers: Answers) -> ConnectionRuntime:
         scripts={"answers": answers},
         assignments=[Assignment("stub", role=role) for role in ROLES],
         overlays=[
-            OverlayRow("stub", model, 200_000, "local", output_limit=8_192, tools=True)
+            OverlayRow(
+                "stub",
+                model,
+                200_000,
+                "local",
+                output_limit=8_192,
+                tools=True,
+                connection_id="stub",
+            )
             for model in ("model-a", "model-b", "model-old")
         ],
         models=[
@@ -297,7 +305,16 @@ class TestAssignment:
                 snapshot_connections,
                 [ConnectionModel("stub", "model-a")],
                 [Assignment("stub", role="administrator")],
-                [OverlayRow("stub", "model-a", 200_000, "local", output_limit=8_192)],
+                [
+                    OverlayRow(
+                        "stub",
+                        "model-a",
+                        200_000,
+                        "local",
+                        output_limit=8_192,
+                        connection_id="stub",
+                    )
+                ],
             )
         )
         ada, guid = _signed_in(client, ADA, POWER_USER)

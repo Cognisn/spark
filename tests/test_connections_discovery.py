@@ -65,6 +65,32 @@ def test_listed_models_are_reachable_and_unknown_ones_undeclared(
     assert record.summary() == "1 model reachable, 1 not in the catalogue"
 
 
+def test_a_model_declared_on_another_connection_is_undeclared_here(
+    results: discovery.DiscoveryResults,
+) -> None:
+    factory = StubFactory(models=["stub-echo", DiscoveredModel("pulled:7b", label="local")])
+    declared = OverlayRow(
+        "stub", "pulled:7b", 8_192, "local", output_limit=1_024, connection_id="other"
+    )
+    runtime = ConnectionRuntime(
+        secrets=LiteralSecretResolver({}), factories=[factory], drain_s=0.01
+    )
+    try:
+        runtime.apply(
+            snapshot_of(
+                [stub_connection("lab"), stub_connection("other")],
+                overlays=[declared],
+            )
+        )
+        here = discovery.discover(runtime, stub_connection("lab"), results)
+        there = discovery.discover(runtime, stub_connection("other"), results)
+    finally:
+        runtime.close()
+    assert here.undeclared == (discovery.Undeclared("pulled:7b", "local"),)
+    assert there.undeclared == ()
+    assert "pulled:7b" in there.reachable
+
+
 def test_a_failed_listing_is_recorded_with_the_failure_class_only(
     results: discovery.DiscoveryResults,
 ) -> None:
@@ -91,7 +117,9 @@ def test_invalid_settings_are_recorded_with_conduits_refusal(
 
 
 def _overlay(model: str, scope: str = "local", regions: tuple[str, ...] = ()) -> OverlayRow:
-    return OverlayRow("stub", model, 100_000, scope, output_limit=4_096, regions=regions)
+    return OverlayRow(
+        "stub", model, 100_000, scope, output_limit=4_096, regions=regions, connection_id="lab"
+    )
 
 
 class TestModelsView:
@@ -112,7 +140,12 @@ class TestModelsView:
         )
         try:
             return discovery.models_view(
-                connection, runtime.catalogue, "stub", stored, record, {("stub", "model-a")}
+                connection,
+                runtime.catalogue_for("lab"),
+                "stub",
+                stored,
+                record,
+                {("stub", "model-a")},
             )
         finally:
             runtime.close()

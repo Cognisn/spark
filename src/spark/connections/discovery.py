@@ -11,11 +11,11 @@ failure class only, never provider text.
 
 The latest result per connection is kept in this process (:data:`RESULTS`), with
 the time it ran. Nothing here makes a model usable: a model is offered only
-through the catalogue (with SPARK's overlay rows) and the connection's model rows.
+through the connection's catalogue (with its own overlay entries) and its model rows.
 
 :func:`models_view` is what the connections screens show for one connection:
-every chat model conduit's catalogue (with SPARK's overlay) declares for the
-connection's catalogue provider and offers in its Region, each with whether the
+every chat model the connection's catalogue (conduit's, with the connection's own
+overlay entries) declares for its catalogue provider and offers in its Region, each with whether the
 last discovery reached it, conduit's reason where the residency policy refuses
 it, whether it is enabled and its tier; and, apart, the discovered models the
 catalogue does not declare (Ollama's always arrive this way), which an
@@ -76,7 +76,9 @@ class DiscoveryHost(Protocol):
     @property
     def timeout(self) -> float: ...
 
-    def registry(self, residency: Any = None) -> ProviderRegistry: ...
+    def registry(
+        self, residency: Any = None, *, connection_id: str | None = None
+    ) -> ProviderRegistry: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,7 +183,8 @@ def discover(
     Blocks on the conduit loop: call it from a worker thread. A failure is
     recorded (conduit's failure class or refusal, never provider text), not raised.
     """
-    registry = host.registry(connection.residency)
+    # The connection's own catalogue: a model declared on another connection is undeclared here.
+    registry = host.registry(connection.residency, connection_id=connection.id)
     record: DiscoveryRecord
     try:
         result = host.loop.run(
@@ -262,8 +265,9 @@ def models_view(
     """The models view of one connection (see the module docstring).
 
     ``stored`` is the connection's model rows, or None when none are stored (every
-    catalogue model is then enabled at the standard tier). ``overlay_keys`` are the
-    (provider, model id) pairs SPARK's overlay declares.
+    catalogue model is then enabled at the standard tier). ``catalogue`` is the
+    connection's own; ``overlay_keys`` are the (provider, model id) pairs of the
+    overlay entries the connection declared.
     """
     rows_by_id = {m.model_id: m for m in stored} if stored is not None else None
     view = _View()
