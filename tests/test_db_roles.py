@@ -520,8 +520,13 @@ class TestThePurgeUrlSetting:
             app.secrets.set("purge_url", purger.url or "")
             return None, asyncio.run(body(app))
 
+        async def bootstrapped(runtime: Any, app: Any) -> None:
+            # The wait for bootstrap is tested in tests/test_bootstrap.py.
+            return None
+
         monkeypatch.setattr(worker, "Worker", FakeWorker)
         monkeypatch.setattr(worker, "_with_app", with_app)
+        monkeypatch.setattr(worker, "_wait_for_bootstrap", bootstrapped)
         runtime = RuntimeSettings(
             Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y")
         )

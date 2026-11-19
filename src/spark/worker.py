@@ -560,7 +560,8 @@ def _serve(runtime: RuntimeSettings) -> None:
 
     Before the worker starts, ``worker.audit_purge_database_url`` is read
     (:func:`audit_purge_database`); a value that is not usable raises
-    :class:`WorkerRefused` before any duty runs.
+    :class:`WorkerRefused` before any duty runs. It then waits for what
+    ``spark bootstrap`` creates (:func:`_wait_for_bootstrap`).
     """
 
     async def _body(app: Any) -> None:
@@ -577,6 +578,7 @@ def _serve(runtime: RuntimeSettings) -> None:
             purge_database = audit_purge_database(settings, getattr(app, "secrets", None))
             pruning.register(settings, purge_database=purge_database)
             build_jobs.register(settings)
+            await _wait_for_bootstrap(runtime, app)
         services, periodic = default_duties()
         worker = Worker(
             runtime.database,
@@ -590,6 +592,22 @@ def _serve(runtime: RuntimeSettings) -> None:
         await worker.run(stop)
 
     _with_app(_body)
+
+
+async def _wait_for_bootstrap(runtime: RuntimeSettings, app: Any) -> None:
+    """Wait for what ``spark bootstrap`` creates (:mod:`spark.bootstrap.wait`) before any duty.
+
+    The instance identity always (the worker may only read the secrets store), and
+    the bootstrap record when the installation names a first administrator. Past
+    ``bootstrap.wait_seconds`` it refuses with :class:`WorkerRefused` naming what
+    is missing.
+    """
+    from spark.bootstrap.wait import BootstrapNotReady, before_worker
+
+    try:
+        await before_worker(runtime.database, app.settings, getattr(app, "secrets", None))
+    except BootstrapNotReady as exc:
+        raise WorkerRefused(str(exc)) from None
 
 
 def _setting(settings: Any, key: str, default: float) -> float:

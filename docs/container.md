@@ -72,8 +72,8 @@ Configuration comes through konfig, as on the desktop:
 - **warden**: identity settings are the `warden` section, for example
   `SPARK__WARDEN__IDENTITY__REQUIRE_MFA=true` (the default) or
   `SPARK__WARDEN__AUDIT__TRUSTED_PROXIES=10.0.0.0/8` so warden believes the
-  proxy's `X-Forwarded-For`. The web role creates warden's signing key and its
-  TOTP and CSRF keys in the secrets file on first start.
+  proxy's `X-Forwarded-For`. `spark bootstrap` creates warden's signing key and
+  its TOTP and CSRF keys in the secrets store before web and worker start.
 - **File**: `config.yaml` in the data volume at
   `/var/lib/spark/config/spark/config.yaml` (created from the template on first
   start). Environment values override the file.
@@ -103,16 +103,11 @@ Configuration comes through konfig, as on the desktop:
 `spark web` serves the interface on port 8000. Users sign in through warden with
 their email address and password at `/auth/sign-in`; sessions live in warden's
 tables, so any number of web replicas can serve one database without sticky
-sessions. Create the first administrator once the stack is up:
-
-```bash
-docker compose -p spark -f deploy/compose.yaml run --rm -T web \
-    identity create-admin --email admin@example.com < password.txt
-```
-
-(or without `-T` and the redirect, to be asked for the password twice). It is
-safe to run again. `--link-user-guid GUID` gives the administrator the data made
-by the interim single user before warden. A server no longer uses that interim
+sessions. The first administrator is invited by `spark bootstrap` from the
+`bootstrap.admin` settings ([Identity](deployment/identity.md#bootstrap)).
+`spark identity create-admin` stays for recovery: it restores an administrator,
+with a password on standard input, and `--link-user-guid GUID` gives them the data
+made by the interim single user before warden. A server no longer uses that interim
 guid for anyone: every request acts for its signed-in user and every scheduled
 action for its owner, so data made under it (scheduled actions included) belongs
 to nobody until it is linked this way.
@@ -122,8 +117,8 @@ in `spark worker`.
 
 #### Users, two-step verification and single sign-on
 
-- **First administrator**: run `identity create-admin` as above, then sign in at
-  `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
+- **First administrator**: follow the invitation `spark bootstrap` sent, set a
+  password, then sign in at `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
   sign-in asks the administrator to set up an authenticator app (a QR code, or the
   key typed in) and shows ten recovery codes once: keep them somewhere safe.
 - **Mail**: set `mail.smtp` on the instance page (**Settings**, as an
@@ -230,9 +225,10 @@ start, with a message pointing to `spark worker`.
 | Service | What it does |
 |---|---|
 | `postgres` | `pgvector/pgvector:pg16` with the `postgres-data` volume. Not published. |
-| `migrate` | Runs `spark migrate` once, after PostgreSQL is healthy. |
+| `mailpit` | A local mail catcher, inbox on `127.0.0.1:8025`; the Spark services share its network namespace, so it publishes the web port. |
+| `migrate` | Runs `spark migrate && spark bootstrap` once, after PostgreSQL is healthy. |
 | `web` | `spark web`, after `migrate` succeeds. Published on `127.0.0.1:8000` by default. |
-| `worker` | `spark worker`, after `migrate` succeeds and the web role is healthy. |
+| `worker` | `spark worker`, after `migrate` succeeds. |
 
 Spark's vector search needs **pgvector 0.8 or later** (it uses the iterative
 index scan added in 0.8). `pgvector/pgvector:pg16` ships a recent 0.8 release; an
@@ -242,10 +238,12 @@ Credentials come only from an env file you write:
 
 ```bash
 cp deploy/spark.env.example deploy/spark.env
-# edit deploy/spark.env: replace every value ending in -dev-only
+# edit deploy/spark.env: replace every value ending in -dev-only or CHANGEME
 docker compose -p spark -f deploy/compose.yaml up -d
-docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admin --email admin@example.com
 ```
+
+The first administrator's invitation is then in the mail catcher at
+`http://127.0.0.1:8025` ([Compose](deployment/compose.md#first-start)).
 
 `deploy/spark.env` is ignored by git. Compose variables:
 
@@ -253,24 +251,26 @@ docker compose -p spark -f deploy/compose.yaml run --rm web identity create-admi
 |---|---|---|
 | `SPARK_IMAGE` | `ghcr.io/cognisn/spark:0.3.0` | The image to run (for example a local build). |
 | `SPARK_ENV_FILE` | `spark.env` (next to the Compose file) | The env file with credentials. |
-| `SPARK_BIND` | `127.0.0.1` | The address the web port is published on. |
+| `SPARK_BIND` | `127.0.0.1` | The address the web port and the mail catcher are published on. |
 | `SPARK_WEB_PORT` | `8000` | The published web port. |
+| `SPARK_MAIL_PORT` | `8025` | The mail catcher's published inbox. |
 
 Standby workers: `docker compose -p spark -f deploy/compose.yaml up -d --scale worker=2`.
 
 The web and worker containers share the `spark-data` volume, so they share the
 configuration and the secrets file (`SPARK__SECRETS__FILE_PATH`), and the
-`spark-files` volume, where users' file areas live (`SPARK__FILES__ROOT`). The web
-role creates the instance's identity in the secrets file on first start, and the
-worker waits for the web role to be healthy before starting.
+`spark-files` volume, where users' file areas live (`SPARK__FILES__ROOT`).
+`spark bootstrap`, in the `migrate` service, creates the instance's identity in the
+secrets file before web and worker start.
 
 ## Upgrade
 
 1. Pull or build the new image and set `SPARK_IMAGE` to it.
 2. `docker compose -p spark -f deploy/compose.yaml up -d`
 
-The `migrate` service runs `spark migrate` against the new schema before the new
-web and worker containers start; both refuse to start on a database behind the
+The `migrate` service runs `spark migrate` against the new schema, then
+`spark bootstrap` (which sends nothing again), before the new web and worker
+containers start; both refuse to start on a database behind the
 schema. To migrate by hand:
 
 ```bash

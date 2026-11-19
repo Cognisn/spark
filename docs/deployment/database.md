@@ -71,100 +71,65 @@ but nothing prevents it.
 ### Restricted roles
 
 For an append-only audit trail at the database level, keep the owner for `migrate`
-only and give web and worker their own login roles, which own nothing and need no
-`CREATE` on the database: start-up only reads the schema, and only `spark migrate`
-creates it. As the owner, with the stack already migrated:
+and `bootstrap` only and give web and worker their own login roles, which own nothing
+and need no `CREATE` on the database: start-up only reads the schema, and only
+`spark migrate` creates it. `spark bootstrap` makes them for you, from the URLs web and
+worker will connect with.
 
-**1. Create the roles.** Save as `roles.sql`, with your own passwords:
+**1. Name the URLs** in the env file (or the settings document, at the same dotted
+paths), each with its own login name and password:
 
-```sql
--- Login roles for the web and worker containers; migrate keeps the owner.
-CREATE ROLE spark_web LOGIN PASSWORD 'replace-with-a-web-password';
-CREATE ROLE spark_worker LOGIN PASSWORD 'replace-with-a-worker-password';
-GRANT CONNECT ON DATABASE spark TO spark_web, spark_worker;
+```
+SPARK__BOOTSTRAP__DATABASE__WEB_URL=postgresql://spark_web:CHANGEME-web@postgres:5432/spark
+SPARK__BOOTSTRAP__DATABASE__WORKER_URL=postgresql://spark_worker:CHANGEME-worker@postgres:5432/spark
 ```
 
-If you will set an audit retention, add the purge's own role to the same file (see
+Set both or neither. Either may instead be a `secret://<name>` reference to the secrets
+store, so the password stays out of the env file (on AWS, `secret://database_url_web`
+and `secret://database_url_worker`). Each URL must name the same host, port and
+database as `database.url`, and a login other than the owner. If you will set an audit
+retention, also name the purge's own login (see
 [the purge](#wardens-audit-trail-and-its-purge)):
 
-```sql
--- Only the audit purge connects as this role.
-CREATE ROLE spark_purger LOGIN PASSWORD 'replace-with-a-purger-password';
-GRANT CONNECT ON DATABASE spark TO spark_purger;
+```
+SPARK__WORKER__AUDIT_PURGE_DATABASE_URL=postgresql://spark_purger:CHANGEME-purger@postgres:5432/spark
 ```
 
-**2. Grant Spark's schema.** Save as `grants.sql`:
+With a retention and restricted logins, bootstrap refuses to run without it.
 
-```sql
--- Spark's own schema: read and write every table, use every sequence.
-GRANT USAGE ON SCHEMA spark TO spark_web, spark_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA spark TO spark_web, spark_worker;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA spark TO spark_web, spark_worker;
--- Spark's migration version table: read only.
-REVOKE INSERT, UPDATE, DELETE ON spark.alembic_version FROM spark_web, spark_worker;
--- Tables and sequences that later migrations create (as the owner, spark).
-ALTER DEFAULT PRIVILEGES FOR ROLE spark IN SCHEMA spark
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO spark_web, spark_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE spark IN SCHEMA spark
-    GRANT USAGE, SELECT ON SEQUENCES TO spark_web, spark_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE spark IN SCHEMA warden
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO spark_web, spark_worker;
-ALTER DEFAULT PRIVILEGES FOR ROLE spark IN SCHEMA warden
-    GRANT USAGE ON SEQUENCES TO spark_web, spark_worker;
-```
+**2. Run bootstrap** (Compose's `migrate` service runs `spark migrate && spark
+bootstrap` on every start). As the owner, which needs `CREATEROLE`, it:
 
-Replace `spark` in `ON DATABASE spark` and `FOR ROLE spark` if your database or owner
-is named differently. The purger role gets nothing in Spark's schema.
+- creates each login, or changes its password when its URL no longer signs in, so a
+  changed password applies on the next run. The password is sent to PostgreSQL only
+  as a SCRAM verifier, never in a statement;
+- grants Spark's schema to web and worker: `CONNECT` on the database, read and write
+  on every table and sequence, and its migration version table read only, with default
+  privileges for tables later migrations add;
+- applies warden's own grants (`warden.audit.grants`, as `warden audit grants` prints
+  them): every warden table except that `audit_events` is insert and read only, and
+  the version table read only. With the purge's login, it gets read, append and delete
+  on `audit_events` and read on the signing keys, and nothing in Spark's schema;
+- checks the result: no login is a superuser, owns a table or may create schemas; web
+  and worker may not change or delete audit rows; the purger may delete them and may
+  not use Spark's schema. Any difference stops bootstrap with the reason.
 
-**3. Let warden write its own grants**, which allow every warden table except that
-`audit_events` is insert and read only and the version table read only:
+It does all of this on every run, so warden's grants cover any table a new version
+adds.
 
-```bash
-docker compose -p spark -f deploy/compose.yaml run --rm --no-deps -T --entrypoint warden web \
-    audit grants --app-role spark_web > warden-web.sql
-docker compose -p spark -f deploy/compose.yaml run --rm --no-deps -T --entrypoint warden web \
-    audit grants --app-role spark_worker > warden-worker.sql
-```
-
-With the purger role, write the worker's file with it instead, so the one file also
-gives `spark_purger` what the purge needs (read and append to `audit_events`, delete
-from it, and read the signing keys) and nothing else:
-
-```bash
-docker compose -p spark -f deploy/compose.yaml run --rm --no-deps -T --entrypoint warden web \
-    audit grants --app-role spark_worker --purger-role spark_purger > warden-worker.sql
-```
-
-`warden audit grants` only prints SQL; read the files before running them.
-
-**4. Run the four files as the owner:**
-
-```bash
-for f in roles.sql grants.sql warden-web.sql warden-worker.sql; do
-    docker compose -p spark -f deploy/compose.yaml exec -T postgres \
-        sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' < "$f"
-done
-```
-
-**5. Give web and worker their own URLs.** Two env files beside `spark.env`, ignored
+**3. Give web and worker their own URLs.** Two env files beside `spark.env`, ignored
 by git like it:
 
 `deploy/web.env`:
 
 ```
-SPARK__DATABASE__URL=postgresql://spark_web:replace-with-a-web-password@postgres:5432/spark
+SPARK__DATABASE__URL=postgresql://spark_web:CHANGEME-web@postgres:5432/spark
 ```
 
 `deploy/worker.env`:
 
 ```
-SPARK__DATABASE__URL=postgresql://spark_worker:replace-with-a-worker-password@postgres:5432/spark
-```
-
-With the purger role, `deploy/worker.env` also names the purge's connection:
-
-```
-SPARK__WORKER__AUDIT_PURGE_DATABASE_URL=postgresql://spark_purger:replace-with-a-purger-password@postgres:5432/spark
+SPARK__DATABASE__URL=postgresql://spark_worker:CHANGEME-worker@postgres:5432/spark
 ```
 
 and an override, `deploy/compose.roles.yaml`:
@@ -188,10 +153,7 @@ docker compose -p spark -f deploy/compose.yaml -f deploy/compose.roles.yaml up -
 From now on, pass both files on every command. `migrate` still connects as the owner
 from `spark.env`.
 
-**6. Re-run step 3's SQL after every upgrade**, as warden asks, so its grants cover any
-table a new version adds.
-
-To check, as the owner:
+To check by hand, as the owner:
 
 ```sql
 SELECT has_table_privilege('spark_web', 'warden.audit_events', 'DELETE'),
@@ -211,9 +173,10 @@ SELECT has_table_privilege('spark_purger', 'warden.audit_events', 'DELETE'),
 
 answers `t | f`.
 
-Earlier 0.3.0 builds needed `GRANT CREATE ON DATABASE spark` for web and worker,
-because start-up created the schema if it was missing. That is no longer needed; if
-you granted it, take it back with
+Earlier 0.3.0 builds needed the roles made by hand with SQL and `warden audit grants`
+output, and some needed `GRANT CREATE ON DATABASE spark` for web and worker. Roles made
+that way keep working: name their URLs as above and bootstrap takes them over. Take
+back a `CREATE` grant with
 `REVOKE CREATE ON DATABASE spark FROM spark_web, spark_worker;`.
 
 ## warden's audit trail and its purge
@@ -249,8 +212,8 @@ password: a failed purge is logged by its kind only (for example
 `Worker job warden-audit-purge failed (PoolTimeout)`), and the connection pool's own
 warnings name the database host and user, never the password.
 
-> Checked for this guide on the Compose stack, with an image built from this
-> repository: steps 1 to 5 with the purger role (the second form of step 3 for the
+> Checked for an earlier build of this guide, with the roles made by hand: steps 1 to
+> 5 of that build with the purger role (the second form of step 3 for the
 > worker) and no `CREATE` on the database for any role, then web healthy, the
 > worker active and its first purge connecting as `spark_purger` (seen in
 > PostgreSQL's connection log), and both privilege checks answering as above. With a

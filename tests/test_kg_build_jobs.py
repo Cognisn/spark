@@ -402,6 +402,8 @@ class TestRegistration:
 
         monkeypatch.setattr(worker, "Worker", FakeWorker)
         monkeypatch.setattr(worker, "_with_app", with_app)
+        # The wait for bootstrap is tested in tests/test_bootstrap.py.
+        monkeypatch.setattr(worker, "_wait_for_bootstrap", _bootstrapped)
         runtime = RuntimeSettings(
             Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="postgresql://x/y")
         )
@@ -444,3 +446,8 @@ class TestTheWorkerRunsThem:
         found = await _job(stack, ada, job.id)
         assert found.status == jobs.COMPLETE, found
         assert found.claimed_by == "worker-kg-live"
+
+
+async def _bootstrapped(runtime: Any, app: Any) -> None:
+    """Stands in for the worker's wait for ``spark bootstrap``."""
+    return None

@@ -1,7 +1,9 @@
 # Compose Deployment
 
 `deploy/compose.yaml` runs a complete Spark server on one Docker host: PostgreSQL
-with pgvector, a one-shot migration, the web role and the worker role. This page
+with pgvector, a one-shot migration and bootstrap, the web role, the worker role and a
+local mail catcher. It comes up with nobody at a keyboard: the first administrator is
+invited by email from the env file's settings. This page
 describes what each part does and how to start it. Commands are run from a checkout
 of the repository (or a copy of its `deploy/` folder) and use the Compose project
 name `spark`; keep that name, or your own, the same on every command.
@@ -11,24 +13,31 @@ name `spark`; keep that name, or your own, the same on every command.
 | Service | Command | What it does |
 |---|---|---|
 | `postgres` | the image's own | `pgvector/pgvector:pg16`, with its data in the `postgres-data` volume. Not published on the host. |
-| `migrate` | `spark migrate` | Brings the database to the current schema (Spark's chain, then warden's), then exits. Runs once each time the stack starts, after PostgreSQL is healthy. |
+| `mailpit` | the image's own | A mail catcher (`axllent/mailpit`): every invitation and password reset lands in its inbox at `http://127.0.0.1:8025`. It also publishes the web port, because the Spark services share its network namespace (below). |
+| `migrate` | `spark migrate && spark bootstrap` | Brings the database to the current schema (Spark's chain, then warden's), then runs [bootstrap](identity.md#bootstrap): the restricted database logins if configured, the instance identity, and the first administrator's invitation. Runs once each time the stack starts, after PostgreSQL is healthy; a later run sends nothing. |
 | `web` | `spark web` | The web interface on port 8000, published on `127.0.0.1:8000` by default. Starts only after `migrate` succeeds. |
-| `worker` | `spark worker` | Scheduled actions, knowledge graph builds, warden's pruning and, with a retention, its audit purge. Starts after `migrate` succeeds and `web` is healthy. |
+| `worker` | `spark worker` | Scheduled actions, knowledge graph builds, warden's pruning and, with a retention, its audit purge. Starts after `migrate` succeeds. |
 
-All four share one image (`SPARK_IMAGE`, default `ghcr.io/cognisn/spark:0.3.0`), and
-the three Spark services share one definition: the env file, `SPARK__MODE=server`,
+The three Spark services share one image (`SPARK_IMAGE`, default
+`ghcr.io/cognisn/spark:0.3.0`) and one definition: the env file, `SPARK__MODE=server`,
 konfig's encrypted secrets file on the data volume, and `SPARK__FILES__ROOT`.
+
+Spark sends plain-text SMTP only to a loopback host, so the Spark services share the
+mail catcher's network namespace (`network_mode: service:mailpit`): the catcher's SMTP
+port is `127.0.0.1:1025` inside every Spark container, and the web port is published
+by `mailpit`. To send real mail instead, see [a real mail server](#a-real-mail-server).
 
 Web and worker refuse to start on a database behind the current schema, and the
 worker also refuses personal mode and SQLite. A schema problem therefore shows as
 `migrate` failing (`docker compose -p spark -f deploy/compose.yaml logs migrate`)
 rather than as a half-working server.
 
-Every Spark service connects as `POSTGRES_USER`, the owner of both schemas. Only
-`migrate` needs to: web and worker only read the schema at start-up, so they can run
-as login roles that own nothing and hold no `CREATE` on the database, with the audit
-purge on a role of its own. [Database roles](database.md#restricted-roles) gives the
-grants, the env files and the override.
+By default every Spark service connects as `POSTGRES_USER`, the owner of both
+schemas. Only `migrate` needs to: with `SPARK__BOOTSTRAP__DATABASE__WEB_URL` and
+`SPARK__BOOTSTRAP__DATABASE__WORKER_URL` set, bootstrap creates login roles for web
+and worker that own nothing, with exactly their grants, and the audit purge gets a
+role of its own. [Database roles](database.md#restricted-roles) gives the settings and
+the override that gives web and worker their own URLs.
 
 ## Volumes
 
@@ -68,6 +77,8 @@ The second command prints a new key for `KONFIG_MASTER_KEY` (any Python with the
 | `SPARK__DATABASE__URL` | Spark | `postgresql://USER:PASSWORD@postgres:5432/DB`, the same credentials; percent-encode special characters in the password |
 | `SPARK__SERVER__PUBLIC_BASE_URL` | Spark | The https address users reach Spark on; see [Reverse proxy and TLS](reverse-proxy.md) |
 | `KONFIG_MASTER_KEY` | Spark | The key to konfig's encrypted secrets file; see [Secrets](secrets.md) |
+| `SPARK__BOOTSTRAP__ADMIN__EMAIL`, `..._FIRST_NAME`, `..._LAST_NAME` | `migrate` | The first administrator, invited on the first start; see [Identity](identity.md#bootstrap) |
+| `SPARK__MAIL__SMTP__HOST`, `..._PORT`, `..._TLS`, `..._SENDER_ADDRESS`, `..._SENDER_NAME` | `migrate` | Mail, stored as the instance's mail settings on the first start; the example sends to the mail catcher |
 | any `SPARK__<SECTION>__<KEY>` | Spark | Any other start-up setting, for example `SPARK__LOGGING__LEVEL=INFO` or `SPARK__WARDEN__SSO__ENABLED=true` |
 
 `deploy/spark.env` is ignored by git. Keep it readable only by the account that runs
@@ -78,15 +89,16 @@ with the URL kept in the secrets store under `database_url` (see
 [placing a secret](secrets.md#placing-a-secret-in-the-store)). Compose still needs the
 password in `POSTGRES_PASSWORD` for the bundled database.
 
-Compose itself reads four variables, from the shell or from a `.env` file next to
+Compose itself reads five variables, from the shell or from a `.env` file next to
 `compose.yaml`:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `SPARK_IMAGE` | `ghcr.io/cognisn/spark:0.3.0` | The image, pinned to a version (there is no `latest` tag) |
 | `SPARK_ENV_FILE` | `spark.env` next to the Compose file | The env file above |
-| `SPARK_BIND` | `127.0.0.1` | The host address the web port is published on |
+| `SPARK_BIND` | `127.0.0.1` | The host address the web port and the mail catcher's inbox are published on |
 | `SPARK_WEB_PORT` | `8000` | The published web port |
+| `SPARK_MAIL_PORT` | `8025` | The published port of the mail catcher's inbox |
 
 Leave `SPARK_BIND` at `127.0.0.1` with the reverse proxy on the same host. Spark
 must never be reached except through the proxy: the sign-in cookies need https, and
@@ -99,19 +111,54 @@ docker compose -p spark -f deploy/compose.yaml up -d
 docker compose -p spark -f deploy/compose.yaml ps -a
 ```
 
-`migrate` should show `Exited (0)`, `web` `healthy` and `worker` `Up`. On first start:
+`migrate` should show `Exited (0)`, `mailpit` `Up`, `web` `healthy` and `worker` `Up`.
+On first start:
 
 - `migrate` creates the `spark` and `warden` schemas and the `vector` extension, and
   prints the head revision of each chain (`spark: ...`, `warden: ...`).
-- `web` creates warden's signing key, its TOTP key and Spark's CSRF key in the
-  secrets file. This is why the worker waits for `web` to be healthy.
+- Then bootstrap creates warden's signing key, its TOTP key and Spark's CSRF key in the
+  secrets file, stores the mail settings, invites the first administrator and prints
+  what it did, ending `bootstrap: complete`. Web and worker never race to create the
+  identity, so the worker no longer waits for web.
 - `worker` logs `is active (holds the worker lock)`.
 
 ```bash
-docker compose -p spark -f deploy/compose.yaml logs worker
+docker compose -p spark -f deploy/compose.yaml logs migrate worker
 ```
 
-Then [create the first administrator](identity.md#the-first-administrator).
+Open the mail catcher at `http://127.0.0.1:8025`, follow the invitation to set the
+first administrator's password and two-step verification, and sign in.
+
+A setting that is missing or invalid stops `migrate` with every problem listed by
+name (for example `bootstrap.admin.last_name (SPARK__BOOTSTRAP__ADMIN__LAST_NAME) is
+not set`), and web and worker do not start. Fix the env file and run `up -d` again.
+
+### A real mail server
+
+Set the `SPARK__MAIL__SMTP__...` values to your mail server (port 587 with `starttls`
+or 465 with `implicit`; plain text is refused to anything but loopback), place its
+password as `mail_smtp_password` ([placing a secret](secrets.md#placing-a-secret-in-the-store)),
+and drop the catcher with an override, `deploy/compose.real-mail.yaml`:
+
+```yaml
+services:
+  mailpit:
+    profiles: ["mail-catcher"]
+  migrate:
+    network_mode: !reset null
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+  web:
+    network_mode: !reset null
+    ports:
+      - "${SPARK_BIND:-127.0.0.1}:${SPARK_WEB_PORT:-8000}:8000"
+  worker:
+    network_mode: !reset null
+```
+
+The mail settings are stored on the first start only; after that change them on the
+instance settings page. (This override was not run for this guide.)
 
 The first chat or memory search on a new `spark-models` volume downloads the
 embedding model (`all-MiniLM-L6-v2`, about 90 MB, from Hugging Face), so the host needs outbound https
@@ -138,6 +185,9 @@ Two replicas cannot both publish the same host port, so run them behind a revers
 proxy on the Compose network, with the published port removed. A
 `deploy/compose.override.yaml` (your own file, beside the repository's) can do both:
 
+This needs [a real mail server](#a-real-mail-server) and its override first: web
+replicas cannot share one network namespace.
+
 ```yaml
 services:
   web:
@@ -163,7 +213,8 @@ volumes:
 ```
 
 ```bash
-docker compose -p spark -f deploy/compose.yaml -f deploy/compose.override.yaml up -d
+docker compose -p spark -f deploy/compose.yaml -f deploy/compose.real-mail.yaml \
+    -f deploy/compose.override.yaml up -d
 ```
 
 The proxy reaches the replicas as `web:8000`, which Docker resolves to each of them
