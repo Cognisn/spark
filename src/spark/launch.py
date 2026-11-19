@@ -6,8 +6,11 @@
   one active worker per database);
 * ``spark migrate`` brings the database to the current schema (SPARK's
   migration chain, then any registered chain) and exits;
-* ``spark identity create-admin --email EMAIL`` creates the first
-  administrator of a server (warden) and exits;
+* ``spark bootstrap [--resend-invitation]`` runs a server's first-run steps
+  after ``spark migrate`` (restricted logins, instance identity, the first
+  administrator's invitation) and exits;
+* ``spark identity create-admin --email EMAIL`` restores an administrator of a
+  server (warden recovery) and exits;
 * ``spark export [--output PATH]`` writes the personal user's bundle (personal
   mode only) and exits.
 """
@@ -18,7 +21,8 @@ import sys
 from collections.abc import Sequence
 
 _USAGE = (
-    "usage: spark [web | worker | migrate | identity create-admin --email EMAIL"
+    "usage: spark [web | worker | migrate | bootstrap [--resend-invitation]"
+    " | identity create-admin --email EMAIL"
     " | export [--output PATH]]"
 )
 
@@ -37,6 +41,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(worker.main())
     if args == ["migrate"]:
         raise SystemExit(application.run_migrate())
+    if args and args[0] == "bootstrap":
+        from spark.bootstrap import cli as bootstrap_cli
+
+        raise SystemExit(bootstrap_cli.main(args[1:]))
     if args and args[0] == "identity":
         raise SystemExit(application.run_identity(args[1:]))
     if args and args[0] == "export":

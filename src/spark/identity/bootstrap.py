@@ -1,7 +1,12 @@
-"""The first administrator of a server: ``spark identity create-admin``.
+"""Administrator recovery on a server: ``spark identity create-admin``.
 
-warden has no command that creates a user, so SPARK's own does: it creates the
-user through warden with a password and gives them the ``administrator`` role.
+A new server's first administrator is invited by ``spark bootstrap``
+(:mod:`spark.bootstrap.run`) from the ``bootstrap.admin`` settings. This command
+stays for recovery: it restores an administrator after the last one is lost,
+and binds the interim single-user guid of a server that ran a 0.3.0 pre-release
+before identity existed. warden has no command that creates a user, so SPARK's
+own does: it creates the user through warden with a password and gives them the
+``administrator`` role.
 It is safe to run again: an existing user (matched by email, ignoring case)
 keeps their password, and is only given the role if they lack it.
 

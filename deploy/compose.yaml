@@ -1,5 +1,6 @@
-# Spark in server mode: PostgreSQL with pgvector, a one-shot migration, the web
-# role and the worker role. See docs/container.md.
+# Spark in server mode: PostgreSQL with pgvector, a one-shot migration and
+# bootstrap, the web role, the worker role and a local mail catcher. See
+# docs/container.md and docs/deployment/compose.md.
 #
 #   cp deploy/spark.env.example deploy/spark.env    # then set real credentials
 #   docker compose -p spark -f deploy/compose.yaml up -d
@@ -27,6 +28,10 @@ x-spark: &spark
     - spark-data:/var/lib/spark
     - spark-files:/var/lib/spark-files
     - spark-models:/var/cache/spark/huggingface
+  # Spark's containers share the mail catcher's network namespace, so its SMTP
+  # port is on loopback: Spark sends plain text only to a loopback host. A real
+  # mail server needs none of this (docs/deployment/compose.md).
+  network_mode: "service:mailpit"
   restart: unless-stopped
 
 services:
@@ -44,33 +49,45 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # Brings the schema to the current version, then exits (A3). Web and worker
-  # start only after it succeeds; both refuse a database behind the schema.
+  # A local mail catcher for invitations and password resets: open its inbox at
+  # http://127.0.0.1:8025. It also publishes the web port, since Spark's
+  # containers share its network namespace.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "${SPARK_BIND:-127.0.0.1}:${SPARK_WEB_PORT:-8000}:8000"
+      - "${SPARK_BIND:-127.0.0.1}:${SPARK_MAIL_PORT:-8025}:8025"
+    restart: unless-stopped
+
+  # Brings the schema to the current version, then runs the first-run steps
+  # (restricted logins, the instance identity, the first administrator's
+  # invitation; safe to run again), then exits. Web and worker start only after
+  # it succeeds; both refuse a database behind the schema.
   migrate:
     <<: *spark
-    command: ["migrate"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["spark migrate && spark bootstrap"]
     restart: "no"
     healthcheck:
       disable: true
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   web:
     <<: *spark
     command: ["web"]
-    ports:
-      - "${SPARK_BIND:-127.0.0.1}:${SPARK_WEB_PORT:-8000}:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
 
   # Runs scheduled actions. Scale it for standby workers: one holds the
   # PostgreSQL advisory lock and is active, the others wait to take over.
-  # With restricted database roles and an audit retention, give the worker its
-  # own env file with SPARK__WORKER__AUDIT_PURGE_DATABASE_URL, so the purge alone
-  # connects as warden's purger role (docs/deployment/database.md). Unset, the
-  # purge uses the worker's own database.url.
+  # bootstrap has created the instance's identity before it starts. With
+  # restricted database roles, give web and worker their own URLs
+  # (docs/deployment/database.md).
   worker:
     <<: *spark
     command: ["worker"]
@@ -79,10 +96,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      # The web role creates the instance's identity in the shared secrets
-      # file on first start; the worker reads it.
-      web:
-        condition: service_healthy
 
 volumes:
   postgres-data:
