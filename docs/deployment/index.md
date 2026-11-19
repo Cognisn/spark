@@ -17,6 +17,7 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 | [Portainer](portainer.md) | The same server as a Portainer stack (`deploy/portainer/stack.yaml`): its variables, the web editor and Git deployments, a proxy container, the first administrator, backups and upgrades |
 | [Docker Desktop](docker-desktop.md) | Trying server mode on your own computer (`deploy/docker-desktop/compose.yaml`), on `http://localhost` or with Caddy on `https://localhost:8443` |
 | [Secrets](secrets.md) | konfig's encrypted store and `KONFIG_MASTER_KEY` off AWS, AWS Secrets Manager and its IAM policy on AWS, and how a saved secret reaches every replica |
+| [Running on AWS](aws.md) | ECS on Fargate with RDS, EFS, Secrets Manager and Bedrock: task definitions, the settings document and bundle, TLS to RDS, `/health` and `/ready`, and each task role's policy |
 | [Reverse proxy and TLS](reverse-proxy.md) | `server.public_base_url`, what the Origin check and the sign-in cookies need from the proxy, with Caddy and nginx examples |
 | [Identity](identity.md) | The first administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings, and identity mail (`mail.smtp`) |
 | [Database](database.md) | An external PostgreSQL, database roles, and the grants warden's audit purge needs on `warden.audit_events` |
@@ -101,7 +102,8 @@ address served by Caddy's internal certificate:
 - the backup and restore commands, with the restricted grants surviving the restore;
 - `spark export --output` in personal mode in the image.
 
-Not run, each said so on its page: AWS Secrets Manager (no AWS account), a real
+Not run, each said so on its page: AWS (the [AWS guide](aws.md) is tested against stubs,
+not an AWS account), a real
 single sign-on provider, delivery to a real mail server, the administrator's bundle
 import page (a browser step), the nginx example, an upgrade between two published
 images (none is published yet), an external PostgreSQL, and an audit purge.
