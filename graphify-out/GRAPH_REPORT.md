@@ -1,51 +1,51 @@
-# Graph Report - spark  (2026-11-19)
+# Graph Report - spark  (2026-11-20)
 
 ## Corpus Check
-- 584 files · ~531,727 words
+- 586 files · ~533,418 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 13184 nodes · 32755 edges · 426 communities (388 shown, 27 thin omitted)
+- 13209 nodes · 32811 edges · 451 communities (412 shown, 28 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 2865 edges (avg confidence: 0.92)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2520211b`
+- Built from commit: `44c272dd`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - Executor
-- Dialect
-- db/__init__.py
+- DatabaseSettings
+- warden_database
 - deploy
 - ConnectionRuntime
 - MemorySecrets
 - test_identity_screens_audit.py
-- spark/__init__.py
+- consumers.py
 - identity/access.py
-- database/usage.py
-- setting_bool
-- current_user_guid
-- SyncDatabase
-- get_user_guid
-- identity/audit.py
-- FileArea
+- _Row
+- server.py
+- database
+- BudgetExceeded
+- ._reload_all
+- db/engine.py
+- ToolScope
 - instance_settings/registry.py
 - bundles.py
 - Database
-- Bundle
+- OriginPolicy
 - StubModel
 - chat.js
 - FakeModels
 - mcp_servers.py
 - identity.py
-- tools/registry.py
+- conversation_manager.py
 - ConversationManager
 - endpoints/settings.py
 - vector_store
 - exporter.py
-- endpoints/files.py
+- PathRefused
 - main_menu.py
 - MountedVolumeStore
 - FakeClock
@@ -61,30 +61,30 @@
 - TestClient
 - TestClient
 - database/connections.py
-- SparkIdentity
-- Any
-- ToolScope
-- test_secret_propagation.py
+- IdentityRuntime
+- StubServer
+- Path
+- _server_app
 - make_user
 - identity/web.py
 - test_worker_actions.py
 - SkillsManager
-- test_db_roles.py
+- .open
 - open_bundle
-- database
+- importer.py
 - ConversationVectorIndex
 - MCPManager
 - test_bundles_web.py
 - Any
 - AgentExecutor
 - test_connections_runtime_overlays.py
-- test_bundles_export.py
+- Limits
 - Source
-- database/__init__.py
+- ScriptedService
 - TestClient
 - jobs.py
-- PgVectorStore
-- PathRefused
+- _ColumnStore
+- Path
 - streaming.py
 - BundleRefused
 - TokenCounts
@@ -100,7 +100,7 @@
 - test_identity_migrations.py
 - _validate
 - context_compaction.py
-- spent
+- metered
 - ActionExecutor
 - Any
 - PanelOrchestrator
@@ -108,42 +108,42 @@
 - knowledge.py
 - test_conduit.py
 - _auth
-- allow
-- source_ip
+- _manager
+- database/__init__.py
 - _konfig
 - _manager
 - _Run
 - test_kg_build_jobs.py
 - migrate.py
 - ConnectionService
-- LoopThread
+- SyncDatabase
 - connections/runtime.py
-- create_app
+- test_server_wiring.py
 - endpoints/auth.py
-- endpoints/conversations.py
+- models.py
 - FakeSmtp
 - Path
 - _http
-- test_conduit_compaction.py
+- run.py
 - identity_screen_helpers.py
 - TestCoerce
-- _konfig
+- setting_bool
 - mail.py
 - endpoints/connections.py
-- instance_settings/startup.py
+- DirectionalEmbedder
 - MCPServerConfig
 - TestClient
-- mode.py
+- _resolve
 - FakeClock
 - test_tls_rds.py
 - test_server_gates_web.py
 - base.html (base layout)
-- _Row
-- build_panel_transcript
-- permissions.py
+- to_driver_sql
+- debate/history.py
+- test_spark_audit_web.py
 - PatternMatcher
 - tests/conftest.py
-- test_identity_access.py
+- TestClient
 - test_usage_web.py
 - export.py
 - available_scopes
@@ -156,7 +156,7 @@
 - test_chat_attachments_server.py
 - FakeEngine
 - Any
-- role_permissions
+- baseline.py
 - BundleWriter
 - test_aws_settings.py
 - PromptInspector
@@ -168,18 +168,18 @@
 - _connection
 - TestWrapperUnderNode
 - _enqueue
-- run.py
+- bootstrap/settings.py
 - deployment/identity.md
 - MemoryIndex
 - test_deploy_stacks.py
-- load_config
+- voice/engine.py
 - test_overlay_scope_migration.py
 - add_connection
-- test_instance_settings_web.py
+- Holder
 - test_panel_endpoints.py
-- test_process_startup.py
+- _Context
 - ServerSettings
-- wait.py
+- mode.py
 - servers.py
 - test_chat_send_budget.py
 - Path
@@ -200,43 +200,43 @@
 - execute
 - ElevenLabsClient
 - VoiceEngine
-- discovery.py
-- test_identity_screens_account.py
+- ConnectionModel
+- TestClient
 - test_connections_web_server.py
-- IdentityRuntime
+- endpoints/audit.py
 - test_stream_drain.py
-- TestRefused
+- role_permissions
 - connections.js
 - _get_embedded_tool_summary
-- stub_connection
+- stub_runtime
 - _conv
-- server.py
+- sign_in
 - test_worker_pruning.py
-- security.py
-- updater.py
-- voice_usage.py
-- VoiceUnavailable
+- _client
+- _init
+- over_cap
+- .__call__
 - endpoints/skills.py
 - endpoints/usage.py
 - test_action_budgets.py
 - test_aws_bedrock.py
 - test_mcp_settings_follower.py
-- Any
+- test_result_policy.py
 - FakeConnection
-- DatabaseSettings
+- TestSqlite
 - test_identity_db.py
 - _new
 - SmtpSender
 - filesystem.py
-- test_tools.py
+- tools/web.py
 - TestUnderNode
-- test_turn_models_web.py
+- .test_a_default_no_longer_offered_is_not_named
 - meter
 - document_creation.py
 - mcp_integration/manager.py
 - test_skills_conduit.py
 - DaemonManager
-- main
+- TestPostgres
 - ToolSelector
 - AudioCache
 - provider_guides.py
@@ -249,10 +249,10 @@
 - voice.py
 - endpoints/memories.py
 - voice.js
-- test_user_scoping_web.py
+- _call
 - Connection
 - SparkSkillSource
-- ScriptedModels
+- model_helpers.py
 - stack.py
 - docs/index.md
 - licence_audit.py
@@ -261,35 +261,35 @@
 - _should_open_browser
 - test_deploy_compose.py
 - builder.py
-- DirectionalEmbedder
+- execute
 - model_stub.py
 - email_tool.py
-- identity/runtime.py
+- test_identity_mail_smtp.py
 - test_health.py
 - knowledge/store.py
 - SettingsListener
-- PersonalAuthenticator
+- web/auth.py
 - command_policy.py
 - _request
 - Any
-- fake_smtp.py
+- test_instance_settings_web.py
 - test_daemon_server_mode.py
 - test_action_names_migration.py
 - pid_alive
 - test_models_offered.py
 - attachments.js
 - Auth layout template
-- .execute
+- build_skills_block
 - _Session
 - TestTags
 - budgets.py
 - get_skills_manager
 - stamp_version.py
 - _Splitter
-- test_sqlite_export_imported_into_postgresql_row_for_row
+- personal_bundle
 - test_bundles_cli.py
 - archives.py
-- _call
+- _signed_in
 - parametrize
 - test_usage_migration.py
 - SparkTrayDaemon
@@ -302,29 +302,29 @@
 - vector_store_2_kg_skill_uniqueness.py
 - get_tools
 - test_database.py
-- .menu
-- upsert
+- tool_scope
+- tool_permissions.py
 - TestRefresh
 - test_migration_vector_store.py
 - test_packaging.py
 - Architecture document
 - _default_settings
 - getting-started.md
-- build_registry
-- SessionManager
+- test_orchestrator_budgets.py
+- HashEmbedding
 - classify_error
 - test_credits_warn_at_80_stop_at_100_and_the_turn_in_flight_finishes
 - model_picker.js
 - test_kg_store.py
-- test_kg_surfaces.py
+- _make_manager
 - application.py
 - CI workflow
 - Server-mode Compose stack
-- FakeClock
+- tools.md
 - test_daemon.py
-- TestInterface
+- LoginPolicy
 - _build_tool_categories
-- CompactionSettings
+- _add_memory
 - AppDataTable
 - _HeaderTransport
 - test_skills_db.py
@@ -332,7 +332,7 @@
 - panel/prompts.py
 - PatternMatch
 - create_agent_run
-- TestDecision
+- test_copy_image_script.py
 - test_mcp_conversation.py
 - test_check_no_nvidia.py
 - health.py
@@ -340,8 +340,8 @@
 - instance_settings/access.py
 - Runbook: the SPARK live end-to-end suite
 - Metering and allowances
-- .__init__
-- _get_data_path
+- TestPostgres
+- _start_daemon_if_enabled
 - test_identity_passwords.py
 - AuthManager
 - csrf.js
@@ -355,16 +355,16 @@
 - check_command
 - overlay_connection_scope.py
 - TestRoles
-- attachments.py
-- ._emb
+- Chain
+- .compute_similarity
 - test_skills_endpoints.py
-- _with
-- repository.py
+- db_helpers.py
+- Scope
 - FakeSentenceTransformer
 - wait_for
-- Recorder
-- TestThePurgeUrlSetting
-- Any
+- announce
+- skills_manager
+- skill_transcript
 - mcp_stdio_stub.py
 - endpoints/__init__.py
 - mcp_server.py
@@ -376,11 +376,11 @@
 - budget.js
 - sse-client.js
 - _set_nested
-- _tool_result
-- _get_tool_category_siblings
-- test_tool_availability.py
+- TestServerMode
+- AdvisoryLock
+- TestCategories
 - Windows Code Signing Setup
-- database/user_identities.py
+- test_user_identities_migration.py
 - .test_an_unassigned_connection_is_not_offered
 - .inspect
 - trigger.py
@@ -388,14 +388,14 @@
 - set_audit_hook
 - vector_store_1_pgvector_tables.py
 - spawn_agent tool doc
-- MemorySecrets
-- TestTransactions
+- test_secret_propagation.py
+- build_panel_transcript
 - FakeSecretsManager
 - db
-- _signed_in
+- TestClient
 - skill-creator skill
 - _next_notify
-- identity_web_helpers.py
+- server_app
 - Bug report issue template
 - launcher.sh
 - env.py
@@ -408,28 +408,53 @@
 - cognisn-spark
 - Spark version 0.3.0rc3
 - .transaction
-- is_offered
+- _touches_unavailable_tools
 - test_conversation_links.py
-- _CatalogueLimits
-- _Konfig
-- TestCatalogue
+- _fake_pystray
+- TestPostgres
+- Built
 - execute_write
-- metered
-- TestNames
-- TestExecutorTransactions
-- SkillValidationError
-- Path
+- test_usage_db.py
+- database/conversations.py
+- EmbeddingDimensionMismatch
+- test_files_migration.py
+- voice_usage.py
 - test_web_fetch.py
-- _clean_state
-- _open_browser_delayed
+- OwnerAccess
+- get_builtin_tools
+- test_index.py
+- .build_scope
+- test_bootstrap_migration.py
+- open_standalone
+- help_page
+- chat.html (conversation chat page)
 - TestClient
-- SettingChange
+- Path
+- get_user_guid
+- ._run
+- TestApiKeys
+- accessor.py
 - settings_values.py
+- _Request
 - no_build_in_the_web_process
 - test_repositories.py
 - autonomous_actions.py
+- test_kg_e2e.py
+- violations.py
+- .save
 - .__exit__
 - Tests index
+- TestInstall
+- TestActions
+- add_index_element
+- TestDatetime
+- copy-image.sh
+- execute
+- TestChainShape
+- TestRegistry
+- load_runtime
+- _csrf_exempt
+- _template_csrf_token
 
 ## God Nodes (most connected - your core abstractions)
 1. `DatabaseSettings` - 353 edges
@@ -448,19 +473,19 @@
   README.md → docs/architecture.md
 - `_behind()` --calls--> `MigrationRequired`  [INFERRED]
   tests/test_worker.py → src/spark/db/migrate.py
+- `test_voice_unavailable_carries_reason()` --uses--> `VoiceUnavailable`  [INFERRED]
+  tests/test_voice_errors.py → src/spark/voice/errors.py
 - `CI server-mode PostgreSQL job` --semantically_similar_to--> `PostgreSQL with pgvector service`  [INFERRED] [semantically similar]
   .github/workflows/ci.yml → deploy/compose.yaml
 - `Worktree sandbox Compose template` --semantically_similar_to--> `PostgreSQL with pgvector service`  [INFERRED] [semantically similar]
   dev/worktree-compose.yml → deploy/compose.yaml
-- `_run()` --indirect_call--> `config_path()`  [INFERRED]
-  src/spark/bootstrap/cli.py → tests/test_connections_web.py
 
 ## Import Cycles
-- 3-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/secrets.py -> src/spark/instance_settings/__init__.py`
-- 3-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
 - 3-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/accessor.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
-- 4-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/secrets.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
+- 3-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
+- 3-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/secrets.py -> src/spark/instance_settings/__init__.py`
 - 4-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/accessor.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
+- 4-file cycle: `src/spark/instance_settings/__init__.py -> src/spark/instance_settings/listener.py -> src/spark/instance_settings/secrets.py -> src/spark/instance_settings/repository.py -> src/spark/instance_settings/__init__.py`
 
 ## Hyperedges (group relationships)
 - **Document reader tool family** — src_spark_resources_tool_docs_read_excel, src_spark_resources_tool_docs_read_pdf, src_spark_resources_tool_docs_read_powerpoint, src_spark_resources_tool_docs_read_word, src_spark_resources_tool_docs_read_my_file [EXTRACTED 0.90]
@@ -475,19 +500,19 @@
 - **Equivalent server-mode deployment stacks** — deploy_compose, deploy_docker_desktop_compose, deploy_portainer_stack [INFERRED 0.85]
 - **Server identity features** — docs_deployment_identity_first_administrator, docs_deployment_identity_single_sign_on, docs_deployment_identity_mail_smtp, docs_deployment_identity_two_step_verification, docs_deployment_identity_audit_trail [INFERRED 0.85]
 
-## Communities (426 total, 27 thin omitted)
+## Communities (451 total, 28 thin omitted)
 
 ### Community 0 - "Executor"
-Cohesion: 0.02
-Nodes (143): Conversation Manager — core orchestration layer for Spark., Agent run tracking, scoped through the parent conversation's user., delete_index_elements(), get_index_stats(), Vector embedding storage for conversation context search., Delete all index elements of one of the user's conversations., Element count by type for one of the user's conversations., add_link() (+135 more)
+Cohesion: 0.03
+Nodes (87): Agent run tracking, scoped through the parent conversation's user., Update per-model token usage for one of the user's conversations (nothing…, Recalculate one of the user's conversations' total tokens from its active…, recalculate_total_tokens(), update_token_usage(), add_turn(), Record a turn of a debate on one of the user's conversations. Returns the turn…, add_file() (+79 more)
 
-### Community 1 - "Dialect"
-Cohesion: 0.04
-Nodes (99): configure(), Dialect, Mode, StrEnum, Set the process-wide runtime settings (called once at start-up)., Clear the runtime settings (tests only)., reset(), RuntimeSettings (+91 more)
+### Community 1 - "DatabaseSettings"
+Cohesion: 0.06
+Nodes (84): configure(), DatabaseSettings, Dialect, Mode, StrEnum, Set the process-wide runtime settings (called once at start-up)., Clear the runtime settings (tests only)., reset() (+76 more)
 
-### Community 2 - "db/__init__.py"
-Cohesion: 0.04
-Nodes (53): AuditQuery, Barrier, check_event_loop(), DatabaseError, Path, RuntimeError, A fixed set of aiosqlite connections to one WAL-mode database file., The data layer cannot do what was asked (closed, unsupported, misconfigured). (+45 more)
+### Community 2 - "warden_database"
+Cohesion: 0.08
+Nodes (32): ActionRegistry, AuditQuery, PurgeResult, Register every SPARK action on warden's registry (idempotent)., register_actions(), warden's handle on ``database``'s pool; PostgreSQL (server mode) only., warden_database(), AuditPurge (+24 more)
 
 ### Community 3 - "deploy"
 Cohesion: 0.11
@@ -495,67 +520,67 @@ Nodes (46): cloudformation(), curl(), ecs(), finish_update(), initial_state(), m
 
 ### Community 4 - "ConnectionRuntime"
 Cohesion: 0.04
-Nodes (44): ModelRef, A model on a connection., The pair ``text`` names, or None when it is a bare model id., _Built, ConnectionRuntime, ModelSource, Any, Catalogue (+36 more)
+Nodes (40): ModelRef, A model on a connection., The pair ``text`` names, or None when it is a bare model id., ConnectionRuntime, ModelSource, Any, Catalogue, MeteredProvider (+32 more)
 
 ### Community 5 - "MemorySecrets"
 Cohesion: 0.05
-Nodes (42): ActionRegistry, KeyStore, Register every SPARK action on warden's registry (idempotent)., register_actions(), _bootstrap(), _ensure_secret(), Any, MailSender (+34 more)
+Nodes (39): Identity, KeyStore, _bootstrap(), Any, MailSender, Protocol, warden's configuration for this server, validated; :class:`StartupConfigError`…, Build the runtime over ``database`` (PostgreSQL) and konfig's settings and… (+31 more)
 
 ### Community 6 - "test_identity_screens_audit.py"
-Cohesion: 0.18
-Nodes (11): _audit(), auditor(), Any, fixture, parametrize, TestClient, The audit viewer and export in server mode (``spark.audit.read``,…, _rows() (+3 more)
+Cohesion: 0.23
+Nodes (8): _audit(), Any, TestClient, The audit viewer and export in server mode (``spark.audit.read``,…, _rows(), TestAccess, TestExport, TestFilters
 
-### Community 7 - "spark/__init__.py"
-Cohesion: 0.04
-Nodes (60): _live_setting(), A server's current instance setting ``key`` (the administrator's, kept current…, Spark - Secure Personal AI Research Kit., configure(), current(), _from_konfig(), get(), KonfigLike (+52 more)
+### Community 7 - "consumers.py"
+Cohesion: 0.09
+Nodes (26): SettingsSource, ConnectionsTarget, ConversationTarget, embedded_tools_config(), follow(), InstanceView, mcp_server_configs(), _mcp_snapshot() (+18 more)
 
 ### Community 8 - "identity/access.py"
-Cohesion: 0.04
-Nodes (94): Cooperative cancellation token used by the agent executor and conversation…, get_debate(), get_exhibits(), get_turns(), The debate config with its agents, or None (including another user's debate)., All turns of one of the user's conversations, oldest first., Exhibits for all turns of one of the user's conversations, keyed by turn ID., get_skill_states() (+86 more)
-
-### Community 9 - "database/usage.py"
 Cohesion: 0.06
-Nodes (41): allowance_rows(), AllowanceRow, cleanup_old_usage(), connection_has_assignments(), connection_totals(), _counts(), credits_in_period(), get_token_usage_in_window() (+33 more)
+Nodes (56): get_skill_states(), Global enable states keyed by skill name (absent means default on)., current_identity(), has_permission(), install(), _local_operator(), optional_user_guid(), Any (+48 more)
 
-### Community 10 - "setting_bool"
-Cohesion: 0.09
-Nodes (30): The boolean setting ``key`` from ``settings``, or ``default`` when it is not…, setting_bool(), _background_init(), _init(), _conduit_loop(), create_and_serve(), _extra_origins(), _initial_origin_policy() (+22 more)
+### Community 9 - "_Row"
+Cohesion: 0.05
+Nodes (51): _Row, add_link(), get_linkable_conversations(), get_links(), Conversation link operations: one-directional cross-conversation context…, Link one of the user's conversations to another of theirs (one-directional).…, Remove a conversation link., The user's conversations linked from the source (never another user's). (+43 more)
 
-### Community 11 - "current_user_guid"
-Cohesion: 0.09
-Nodes (53): ConnectionNotAssigned, PermissionError, A server user's turn on a connection that is not (or no longer) assigned to…, current_user_guid(), The request's user guid; 401 in server mode when no one is signed in. Personal…, add_link(), approve_agent_model(), cancel_agent() (+45 more)
+### Community 10 - "server.py"
+Cohesion: 0.06
+Nodes (52): attach(), detach(), Any, Install the settings source for the mode on ``app.state`` and the accessor.…, Stop the listener (server mode) before the database closes., current(), current_mode(), is_server() (+44 more)
 
-### Community 12 - "SyncDatabase"
+### Community 11 - "database"
+Cohesion: 0.06
+Nodes (101): Any, Update conversation fields (column names are checked against the schema)., update_conversation(), current_user_guid(), The request's user guid; 401 in server mode when no one is signed in. Personal…, database(), The async database, opened by the app's lifespan on this event loop., _actions_enabled() (+93 more)
+
+### Community 12 - "BudgetExceeded"
+Cohesion: 0.05
+Nodes (57): add_agent_tokens(), add_exhibits(), _allow(), create_debate(), get_debate(), get_exhibits(), get_turns(), _parse_allow() (+49 more)
+
+### Community 13 - "._reload_all"
 Cohesion: 0.11
-Nodes (16): args, kwargs, P, BridgeError, Any, Params, RuntimeError, T (+8 more)
+Nodes (12): Poll for action changes., Personal mode's single local user (never asked for on a server)., The enabled actions to schedule, each with its owner in ``user_guid``., Reload all enabled actions from the database., Schedule a single action, to run as ``user_guid`` (its owner)., Clear action locks older than 30 minutes to prevent stuck actions., The owner's standing now, from warden (server mode); refused when unknown., Whether this process serves many users (a process with no mode is personal). (+4 more)
 
-### Community 13 - "get_user_guid"
-Cohesion: 0.06
-Nodes (28): get_user_guid(), User GUID management — generates and persists a unique user identifier., Get the persistent user GUID, generating one on first use. The GUID is stored…, Reset the cached GUID (used in testing)., reset_cache(), OwnerAccess, OwnerResolver, Protocol (+20 more)
+### Community 14 - "db/engine.py"
+Cohesion: 0.03
+Nodes (77): Outcome, What one run did, for the command's output., The mapping of SPARK user guids onto warden users (``user_identities``).…, The one sanctioned route from synchronous code to the async database. Spark's…, check_event_loop(), Connection, DatabaseError, Path (+69 more)
 
-### Community 14 - "identity/audit.py"
-Cohesion: 0.06
-Nodes (36): Outcome, What one run did, for the command's output., ActionDef, current(), emit(), installed(), Any, Future (+28 more)
-
-### Community 15 - "FileArea"
-Cohesion: 0.04
-Nodes (44): FileArea, charge(), BinaryIO, Path, Store an upload under the upload limit and the user's quota; return its id.…, A private directory inside the user's area for work in progress., Have ``writer`` produce a file, charge it, then move it to ``key``. ``writer``…, Produce several files, charge them in one transaction, then move them in. Each… (+36 more)
+### Community 15 - "ToolScope"
+Cohesion: 0.05
+Nodes (37): FileArea, Path, A private directory inside the user's area for work in progress., Have ``writer`` produce a file, charge it, then move it to ``key``. ``writer``…, Produce several files, charge them in one transaction, then move them in. Each…, Raise :class:`QuotaExceeded` if ``nbytes`` more would exceed the quota now. An…, Per-user files: a store, the bridge for metadata, and live limits., Path (+29 more)
 
 ### Community 16 - "instance_settings/registry.py"
-Cohesion: 0.10
-Nodes (41): embedded_tools_config(), The conversation manager's embedded tools configuration from the instance…, _bool(), _bounded(), _choice(), coerce(), _float(), _int() (+33 more)
+Cohesion: 0.15
+Nodes (31): _bool(), _bounded(), _choice(), coerce(), _float(), _int(), _int_spec(), InvalidSettingError (+23 more)
 
 ### Community 17 - "bundles.py"
-Cohesion: 0.06
-Nodes (54): AlreadyImported, _Files, import_bundle(), ImportRefused, ImportReport, ImportTarget, OverQuota, Exception (+46 more)
+Cohesion: 0.12
+Nodes (29): The guid mapped to ``warden_user_id``, created on first use, in one…, user_guid_for(), _capped(), export(), import_form(), import_upload(), _iterate(), _mcp_servers() (+21 more)
 
 ### Community 18 - "Database"
 Cohesion: 0.04
-Nodes (16): Database, The connection pool for one database, bound to the loop that opened it., Run statements in one transaction; with ``conn``, join the caller's., The constraint itself is per user, whatever the repository checks first., TestNamesPerUser, TestRefusedRun, TestWorkerListing, TestConversationLinks (+8 more)
+Nodes (20): Database, The connection pool for one database, bound to the loop that opened it., The constraint itself is per user, whatever the repository checks first., TestNamesPerUser, TestRefusedRun, TestWorkerListing, TestConversationLinks, total_tokens is maintained by message inserts, not token-usage updates. (+12 more)
 
-### Community 19 - "Bundle"
-Cohesion: 0.15
-Nodes (9): Bundle, Any, BaseException, TracebackType, ``table``'s rows, values decoded; refuses a row that is not one the format…, The content of a file, by its sha256; refused when the bundle lacks it., Every skill file as ``(skill, path inside the skill, content)``, sorted., An opened, checked bundle. Use as a context manager; it holds the archive open. (+1 more)
+### Community 19 - "OriginPolicy"
+Cohesion: 0.11
+Nodes (25): _normalise(), _origin(), OriginPolicy, Exactly the origin of ``base_url`` (a public address), plus ``extra``. Never…, Whether a Host header names this instance. The scheme is not compared: a proxy…, Which origins count as the instance's own. ``allowed`` origins are always…, Accept the origin named by each request's own Host header., Ctx (+17 more)
 
 ### Community 20 - "StubModel"
 Cohesion: 0.08
@@ -567,75 +592,75 @@ Nodes (51): _addAgentPanelItem(), addToolCallsToPanel(), _addToolPanelItem(), _a
 
 ### Community 22 - "FakeModels"
 Cohesion: 0.04
-Nodes (29): FakeModels, FixedLimits, Nothing to close (the app's shutdown closes its runtime)., Context limits for a model the catalogue does not know (the runtime's fallback)., A ModelSource over one fake connection whose every model answers with…, llm_manager(), manager(), Any (+21 more)
+Nodes (33): ContextCompactor, Compacts a conversation after a turn, with conduit's compactor., The model every compaction uses, when one is locked (the caller resolves its…, Use ``settings`` from the next compaction check on (a settings change)., FakeModels, FixedLimits, Nothing to close (the app's shutdown closes its runtime)., Context limits for a model the catalogue does not know (the runtime's fallback). (+25 more)
 
 ### Community 23 - "mcp_servers.py"
 Cohesion: 0.08
-Nodes (57): _get_config_path(), Return the platform-conventional config file path., The loop the sessions live on, once bound., _actor(), _admin_tool_count(), _connect_server(), delete_server(), _entries() (+49 more)
+Nodes (59): _get_config_path(), Return the platform-conventional config file path., The loop the sessions live on, once bound., _actor(), _admin_tool_count(), _connect_server(), delete_server(), _entries() (+51 more)
 
 ### Community 24 - "identity.py"
-Cohesion: 0.08
-Nodes (68): ChallengeIssued, PasswordChangeIssued, SignInResult, change_reason_text(), The fixed message for why a new password is needed; the general one otherwise., clear_session_cookies(), TokenPair, A same-origin path to return to, or ``/``. Only a path starting with a single… (+60 more)
+Cohesion: 0.05
+Nodes (119): ChallengeIssued, PasswordChangeIssued, SignInResult, change_reason_text(), warden's password refusals and forced changes, worded for SPARK's screens.…, The line a screen shows for a password warden refused (or another user error)., The fixed message for why a new password is needed; the general one otherwise., refusal_text() (+111 more)
 
-### Community 25 - "tools/registry.py"
-Cohesion: 0.04
-Nodes (53): RefusalHook, Execute a tool, reusing the parent's tool infrastructure., execute(), Any, DateTime tool — get current date and time., Execute the get_current_datetime tool., execute(), Any (+45 more)
+### Community 25 - "conversation_manager.py"
+Cohesion: 0.06
+Nodes (32): Execute a tool, reusing the parent's tool infrastructure., _CatalogueLimits, ConnectionNotAssigned, _get_tool_category_siblings(), PermissionError, Conversation Manager — core orchestration layer for Spark., Return all tool names in the same category as the given tool. When a user…, Build a standard tool_result block. (+24 more)
 
 ### Community 26 - "ConversationManager"
 Cohesion: 0.03
-Nodes (54): ConversationManager, Any, Permissions, This turn's skills (:class:`spark.skills.session.TurnSkills`): the skills the…, ``base`` with the skills listing and loaded skills after it., The user's budget standing after a turn, for the UI's warning (None if…, Build additional system prompt context for enabled tools (``model_id``: the…, Assemble system instructions from all sources. (+46 more)
+Nodes (60): ConversationManager, ratio(), _live_setting(), Any, Permissions, This turn's skills (:class:`spark.skills.session.TurnSkills`): the skills the…, ``base`` with the skills listing and loaded skills after it., The user's budget standing after a turn, for the UI's warning (None if… (+52 more)
 
 ### Community 27 - "endpoints/settings.py"
-Cohesion: 0.09
-Nodes (37): The ``secret://`` reference ``config.yaml`` holds for a secret key., reference(), _appearance_section(), _audit_policy_changes(), _build_sections(), _ensure_list(), _filter_sections(), _get_val() (+29 more)
+Cohesion: 0.11
+Nodes (31): The ``secret://`` reference ``config.yaml`` holds for a secret key., reference(), _appearance_section(), _audit_policy_changes(), _build_sections(), _ensure_list(), _get_val(), _mail_section() (+23 more)
 
 ### Community 28 - "vector_store"
-Cohesion: 0.14
-Nodes (42): EmbeddingDimensionMismatch, ValueError, The store for a collection on this engine., A vector's dimension differs from the dimension of the user's stored vectors., vector_store(), add_element(), add_memory(), _pg_only() (+34 more)
+Cohesion: 0.15
+Nodes (41): PgVectorStore, Server mode: pgvector, HNSW cosine search in the database filtered to the user., The store for a collection on this engine., vector_store(), add_element(), add_memory(), _pg_only(), ndarray (+33 more)
 
 ### Community 29 - "exporter.py"
 Cohesion: 0.08
-Nodes (41): _load_personal(), load(), Loaded, _parse(), Path, ``spark export [--output PATH]``: write the personal user's bundle to a file.…, ``spark export``; returns an exit code., What an export needs from the configuration. (+33 more)
+Nodes (42): _load_personal(), load(), Loaded, _parse(), Path, ``spark export [--output PATH]``: write the personal user's bundle to a file.…, ``spark export``; returns an exit code., What an export needs from the configuration. (+34 more)
 
-### Community 30 - "endpoints/files.py"
-Cohesion: 0.08
-Nodes (45): get_user_file(), One of the user's files by id, or None (including another user's file)., FileAreaNotConfigured, FileLimits, _megabytes(), Protocol, RuntimeError, The file area service: storage, limits, quota and metadata together.… (+37 more)
+### Community 30 - "PathRefused"
+Cohesion: 0.05
+Nodes (62): get_user_file(), One of the user's files by id, or None (including another user's file)., FileAreaNotConfigured, _megabytes(), RuntimeError, The file area service: storage, limits, quota and metadata together.…, No file storage is configured for this process., A size setting in MB as bytes; 0 means no limit; unusable values give the… (+54 more)
 
 ### Community 31 - "main_menu.py"
 Cohesion: 0.07
-Nodes (48): check_update(), dismiss_update(), _get_favourite_conversations(), _get_mcp_server_list(), _get_mcp_stats(), _get_recent_conversations(), get_theme(), heartbeat() (+40 more)
+Nodes (51): check_update(), dismiss_update(), _get_favourite_conversations(), _get_mcp_server_list(), _get_mcp_stats(), _get_recent_conversations(), get_theme(), heartbeat() (+43 more)
 
 ### Community 32 - "MountedVolumeStore"
 Cohesion: 0.06
-Nodes (27): _chunks(), FileStore, MountedVolumeStore, BinaryIO, Path, Protocol, ValueError, The contained local path for ``key`` (for tools that need a real file). (+19 more)
+Nodes (24): _chunks(), MountedVolumeStore, BinaryIO, Path, ValueError, The contained local path for ``key`` (for tools that need a real file)., The content is larger than the maximum upload size., A file in a user's area. (+16 more)
 
 ### Community 33 - "FakeClock"
 Cohesion: 0.08
 Nodes (19): The result of presenting a login code., RedeemOutcome, clock(), FakeClock, _manager(), fixture, LogCaptureFixture, MonkeyPatch (+11 more)
 
 ### Community 35 - "panel/orchestrator.py"
-Cohesion: 0.07
-Nodes (27): Enum, Debate Mode: orchestrator, state machine, prompts, and history builders., Debate orchestrator: drives the persisted state machine turn by turn., assert_transition(), DebateState, DebateStateError, Exception, Debate state machine. Pause is a runtime condition, never persisted. (+19 more)
+Cohesion: 0.06
+Nodes (28): Enum, Debate Mode: orchestrator, state machine, prompts, and history builders., Debate orchestrator: drives the persisted state machine turn by turn., assert_transition(), DebateState, DebateStateError, Exception, Debate state machine. Pause is a runtime condition, never persisted. (+20 more)
 
 ### Community 36 - "another_client"
-Cohesion: 0.10
-Nodes (25): another_client(), A second browser on the same running app (sharing its event loop)., write_config(), admin(), client(), _configure(), Any, AuditRow (+17 more)
+Cohesion: 0.07
+Nodes (41): another_client(), app_of(), client_options(), Ctx, FastAPI, MemorySecrets, Path, UUID (+33 more)
 
 ### Community 37 - "post_form"
-Cohesion: 0.08
-Nodes (37): LoginStart, field(), invite(), create(), link_from(), message_of(), post_form(), SignInMethod (+29 more)
+Cohesion: 0.09
+Nodes (31): LoginStart, field(), invite(), create(), link_from(), message_of(), post_form(), SignInMethod (+23 more)
 
 ### Community 38 - "SecretsWriter"
-Cohesion: 0.08
-Nodes (14): ``{key: set or not}`` for every secret key (or those given); never a value., The secret's value, for server-side use only. Never send it to the browser., Writes secrets through konfig and reports set or not set. ``server`` selects…, SecretsWriter, Konfig, MemorySecrets, Any, Path (+6 more)
+Cohesion: 0.07
+Nodes (15): ``{key: set or not}`` for every secret key (or those given); never a value., The secret's value, for server-side use only. Never send it to the browser., Writes secrets through konfig and reports set or not set. ``server`` selects…, _secret_key(), SecretsWriter, Konfig, MemorySecrets, Any (+7 more)
 
 ### Community 39 - "executor.py"
 Cohesion: 0.05
 Nodes (48): Agent executor — runs a sub-agent tool-use loop within a conversation., audit(), _explain(), guard_tool_result(), InspectionOutcome, _neutralise(), new_turn_id(), process_result() (+40 more)
 
 ### Community 40 - "test_bundles_import.py"
-Cohesion: 0.18
-Nodes (34): Seeded, _count(), exported(), _import(), _open(), Any, fixture, MonkeyPatch (+26 more)
+Cohesion: 0.17
+Nodes (36): A fixed, L2-normalised float32 vector as bytes., Seeded, vector(), _count(), exported(), _import(), _open(), Any (+28 more)
 
 ### Community 41 - "test_chat_attachments.py"
 Cohesion: 0.09
@@ -650,64 +675,64 @@ Cohesion: 0.12
 Nodes (18): app(), client(), _post_code(), FastAPI, fixture, LogCaptureFixture, parametrize, Response (+10 more)
 
 ### Community 44 - "TestClient"
-Cohesion: 0.08
-Nodes (18): Deny, _no_secret(), _page_keys(), Any, Path, postgres, TestClient, Saving the page must never be refused for a key the page itself sent. (+10 more)
+Cohesion: 0.09
+Nodes (13): _no_secret(), _page_keys(), Path, TestClient, Saving the page must never be refused for a key the page itself sent., A 0.2 config could hold the web search keys as plain text., Every value in SPARK's settings tables, as text., A server does not offer the local-only tools (A6), so an administrator cannot… (+5 more)
 
 ### Community 45 - "database/connections.py"
 Cohesion: 0.08
-Nodes (39): assignments(), _connection(), ConnectionRow, _credential_name(), delete_assignment(), delete_connection(), delete_model(), delete_overlay() (+31 more)
+Nodes (38): _connection(), ConnectionRow, _credential_name(), delete_assignment(), delete_connection(), delete_model(), delete_overlay(), get_connection() (+30 more)
 
-### Community 46 - "SparkIdentity"
-Cohesion: 0.13
-Nodes (51): The user behind a request: their SPARK guid, warden user, roles and permissions., SparkIdentity, link_in(), The link to ``base_url`` + ``path`` in the last captured message, or None., warden's runtime, once the lifespan has started it., _actor(), assign_role(), create_user() (+43 more)
+### Community 46 - "IdentityRuntime"
+Cohesion: 0.11
+Nodes (57): SourceIp, The user behind a request: their SPARK guid, warden user, roles and permissions., SparkIdentity, captured(), link_in(), The link to ``base_url`` + ``path`` in the last captured message, or None., Keep the messages warden sends during the block (this task only) in the list…, IdentityRuntime (+49 more)
 
-### Community 47 - "Any"
-Cohesion: 0.16
-Nodes (6): Any, MonkeyPatch, _Source, _stdio(), TestDecisionPoint, TestStdio
-
-### Community 48 - "ToolScope"
+### Community 47 - "StubServer"
 Cohesion: 0.07
-Nodes (36): Path, Writer, Refuse early when ``nbytes`` more would exceed the user's quota (server mode)., Produce each contained target with its writer, all or nothing. Server mode…, The permitted area for one tool call., How to name ``path`` to the model: the key in server mode (never the volume…, A private scratch directory on the same volume as the targets., ToolScope (+28 more)
+Nodes (27): Bind ``manager`` to ``conduit_loop`` (nothing is connected yet).…, Starlette, _app(), build(), _free_port(), A local stub MCP server for tests: HTTP (streamable) and SSE on 127.0.0.1. Run…, Serve the stub in a background thread for the duration of the block., serving() (+19 more)
 
-### Community 49 - "test_secret_propagation.py"
-Cohesion: 0.09
-Nodes (38): needs_konfig_reload, _aws_store(), Built, _clean(), _clear(), _client_options(), Ctx, _encrypted_store() (+30 more)
+### Community 48 - "Path"
+Cohesion: 0.08
+Nodes (28): _config(), _expected_reason(), _files_under(), outside(), Any, fixture, MonkeyPatch, parametrize (+20 more)
+
+### Community 49 - "_server_app"
+Cohesion: 0.18
+Nodes (17): _aws_store(), _clear(), Ctx, _encrypted_store(), _lab(), Path, Secrets, TestClient (+9 more)
 
 ### Community 50 - "make_user"
-Cohesion: 0.16
-Nodes (19): The TOTP key an enrolment page shows, decoded., secret_on(), make_user(), Sign in through the form, as a browser on the public origin would. Afterwards…, A synthetic active user with a password and ``roles`` (USER by default)., sign_in(), _challenge_purpose(), _change() (+11 more)
+Cohesion: 0.11
+Nodes (27): make_user(), TestClient, Sign in through the form, as a browser on the public origin would. Afterwards…, A synthetic active user with a password and ``roles`` (USER by default)., sign_in(), sign_in_form_token(), admin(), fixture (+19 more)
 
 ### Community 51 - "identity/web.py"
-Cohesion: 0.08
-Nodes (33): identity_from_principal(), Principal, The identity of a warden ``Principal`` whose SPARK guid is ``user_guid``.…, _bearer(), csrf_token_for(), _decode(), _expires_within(), is_navigation() (+25 more)
+Cohesion: 0.07
+Nodes (41): identity_from_principal(), Principal, The identity of a warden ``Principal`` whose SPARK guid is ``user_guid``.…, _bearer(), csrf_token_for(), _decode(), _expires_within(), is_navigation() (+33 more)
 
 ### Community 52 - "test_worker_actions.py"
 Cohesion: 0.09
-Nodes (32): _action(), Ctx, _execute(), narrow_role(), no_process_guid(), _owner(), Any, fixture (+24 more)
+Nodes (31): _action(), Ctx, _execute(), narrow_role(), no_process_guid(), _owner(), Any, fixture (+23 more)
 
 ### Community 53 - "SkillsManager"
-Cohesion: 0.05
-Nodes (35): Any, Path, Discovers skills from the bundled and user directories., Each valid skill's folder, by name., Rescan both sources. Bundled wins name collisions; user duplicate is invalid., Inject a manager (server wiring and tests)., Raised on resource jail, size, or type violations., set_skills_manager() (+27 more)
+Cohesion: 0.07
+Nodes (29): Any, Path, Discovers skills from the bundled and user directories., Each valid skill's folder, by name., Rescan both sources. Bundled wins name collisions; user duplicate is invalid., Inject a manager (server wiring and tests)., Raised on resource jail, size, or type violations., set_skills_manager() (+21 more)
 
-### Community 54 - "test_db_roles.py"
-Cohesion: 0.08
-Nodes (28): App, _as_role(), _clean_state(), _create_roles(), _database_name(), _drop_roles(), empty_with_roles(), _konfig() (+20 more)
+### Community 54 - ".open"
+Cohesion: 0.05
+Nodes (41): _sqlite_version_info(), db(), _ddl(), fixture, FixtureRequest, Path, postgres, TestOpen (+33 more)
 
 ### Community 55 - "open_bundle"
-Cohesion: 0.07
-Nodes (41): User bundles: a personal-mode export of one user's data, imported into a server…, _amount(), BundleTooLarge, _check_infos(), _Hashing, Limits, _manifest(), open_bundle() (+33 more)
+Cohesion: 0.05
+Nodes (42): _amount(), Bundle, BundleTooLarge, _check_infos(), _Hashing, _manifest(), open_bundle(), Any (+34 more)
 
-### Community 56 - "database"
-Cohesion: 0.19
-Nodes (30): database(), The async database, opened by the app's lifespan on this event loop., _actions_enabled(), actions_page(), ai_create_message(), create_action(), delete_action(), get_action_tools() (+22 more)
+### Community 56 - "importer.py"
+Cohesion: 0.09
+Nodes (27): AlreadyImported, _Files, import_bundle(), ImportRefused, ImportReport, ImportTarget, OverQuota, Exception (+19 more)
 
 ### Community 57 - "ConversationVectorIndex"
-Cohesion: 0.05
-Nodes (25): ConversationVectorIndex, Any, float32, NDArray, Index a content element. Returns ID or None if duplicate., Index a message. Returns list of element IDs., Index system instructions, chunking if long., Search this conversation's index. (+17 more)
+Cohesion: 0.07
+Nodes (19): _add_element(), ConversationVectorIndex, Any, float32, NDArray, Vector, Index a content element. Returns ID or None if duplicate., Index a message. Returns list of element IDs. (+11 more)
 
 ### Community 58 - "MCPManager"
 Cohesion: 0.04
-Nodes (39): _audit(), ClientLike, MCPManager, report(), _probe(), AbstractEventLoop, Any, Protocol (+31 more)
+Nodes (38): _audit(), ClientLike, MCPManager, report(), _probe(), AbstractEventLoop, Any, Protocol (+30 more)
 
 ### Community 59 - "test_bundles_web.py"
 Cohesion: 0.12
@@ -718,44 +743,44 @@ Cohesion: 0.18
 Nodes (9): _http(), Any, parametrize, postgres, _stored(), TestServerAccess, TestServerSave, TestServerTransports (+1 more)
 
 ### Community 61 - "AgentExecutor"
-Cohesion: 0.10
-Nodes (16): AgentExecutor, Executes a sub-agent task with its own message context and tool-use loop., executor(), fixture, Tests for the AgentExecutor sub-agent tool-use loop., Create an AgentExecutor with mocked dependencies., Tests for system_override, exclude_tools, extra_tools, terminal_tool., Tests for AgentExecutor._build_system(). (+8 more)
+Cohesion: 0.06
+Nodes (23): AgentExecutor, Any, Executes a sub-agent task with its own message context and tool-use loop., Build the agent's system prompt with environment context., Get available tools, excluding spawn_agent to prevent recursive spawning., Run the agent's tool-use loop. Returns a dict with: content, input_tokens,…, executor(), fixture (+15 more)
 
 ### Community 62 - "test_connections_runtime_overlays.py"
 Cohesion: 0.15
 Nodes (21): ask(), declared(), _discard(), make_runtime(), other(), Any, Connection, fixture (+13 more)
 
-### Community 63 - "test_bundles_export.py"
-Cohesion: 0.14
-Nodes (36): ExportSources, What an export reads besides the database., ins(), personal_bundle(), Any, Path, Test-only: a synthetic personal-mode user with a row in every table a bundle…, A fixed, L2-normalised float32 vector as bytes. (+28 more)
+### Community 63 - "Limits"
+Cohesion: 0.30
+Nodes (22): Limits, What an import accepts (the size limit, A17)., db(), _export(), Any, fixture, Path, Exporting a personal-mode user's bundle (A15): what it holds, and what it never… (+14 more)
 
 ### Community 64 - "Source"
 Cohesion: 0.10
 Nodes (15): calls(), Connections, Conversations, Any, Settings consumers in server mode: model connections and embedded tools. The…, The connection runtime's refresher: counts refreshes, may fail once., The listener calls observers on the event loop: the work runs on a thread., A settings source with registry defaults and overrides, and change observers. (+7 more)
 
-### Community 65 - "database/__init__.py"
+### Community 65 - "ScriptedService"
 Cohesion: 0.07
-Nodes (41): ScriptedService, SPARK's repositories: async functions over the data layer in :mod:`spark.db`.…, End-to-end debate: 2 rounds, judge-decides, ruling, QA, export., _setup_debate(), test_two_round_judge_decides_debate(), make_orchestrator(), Orchestrator tests with scripted stub services (no real LLM)., Stub LLM service returning queued responses. (+33 more)
+Nodes (38): ScriptedService, End-to-end debate: 2 rounds, judge-decides, ruling, QA, export., _setup_debate(), test_two_round_judge_decides_debate(), make_orchestrator(), Orchestrator tests with scripted stub services (no real LLM)., Stub LLM service returning queued responses., ScriptedService (+30 more)
 
 ### Community 66 - "TestClient"
 Cohesion: 0.06
-Nodes (31): runtime(), skipif, TestClient, test_single_sign_on_against_a_live_provider(), ada(), _api_key(), client(), _conversations() (+23 more)
+Nodes (37): attributes(), claims(), cookie_header(), Any, A Set-Cookie header's attributes, lower-cased names (flags map to "")., The (unverified) claims of a warden access token., runtime(), set_cookie_headers() (+29 more)
 
 ### Community 67 - "jobs.py"
-Cohesion: 0.08
-Nodes (40): CancelOutcome, RetryOutcome, active(), BuildJob, claim_next(), enqueue(), fail_stale(), finish() (+32 more)
+Cohesion: 0.06
+Nodes (45): CancelOutcome, RetryOutcome, Why the job's owner may not have this build now, or None., _refusal(), active(), BuildJob, claim_next(), enqueue() (+37 more)
 
-### Community 68 - "PgVectorStore"
-Cohesion: 0.09
-Nodes (20): Filters, LookupError, _as_vector(), _ColumnStore, _marks(), PgVectorStore, Any, float32 (+12 more)
+### Community 68 - "_ColumnStore"
+Cohesion: 0.10
+Nodes (17): Filters, LookupError, _as_vector(), _ColumnStore, _marks(), Any, float32, NDArray (+9 more)
 
-### Community 69 - "PathRefused"
-Cohesion: 0.09
-Nodes (27): _check_text(), contain(), contain_any(), PathRefused, Path, ValueError, Path containment: the one resolved-path check used by every file tool. A path…, A path that is not, or might not be, inside the permitted root. (+19 more)
+### Community 69 - "Path"
+Cohesion: 0.15
+Nodes (11): contain_any(), Resolve ``path`` inside one of ``roots``, or raise :class:`PathRefused`. An…, fixture, parametrize, Path, skipif, Personal mode: absolute paths are allowed when they lie inside a configured…, Each form is caught by the rule written for it, not only by a later one. (+3 more)
 
 ### Community 70 - "streaming.py"
-Cohesion: 0.07
-Nodes (30): Any, Failure-safe wrapper used by the streaming endpoints., resolve_trigger_for_conversation(), cancel_stream(), Any, EventSourceResponse, get, JSONResponse (+22 more)
+Cohesion: 0.06
+Nodes (42): Cooperative cancellation token used by the agent executor and conversation…, attach(), AttachmentError, _name(), _one_id(), parse_ids(), Any, JSONResponse (+34 more)
 
 ### Community 71 - "BundleRefused"
 Cohesion: 0.17
@@ -766,20 +791,20 @@ Cohesion: 0.06
 Nodes (37): _count(), credits(), _decimal(), Estimate, from_micro(), Any, Tier, Rates (+29 more)
 
 ### Community 73 - "test_files_area.py"
-Cohesion: 0.10
-Nodes (16): Read ``files.max_upload_mb`` and ``files.quota_mb`` (per user). Without a quota…, _area(), bridge(), Any, fixture, MonkeyPatch, parametrize, Path (+8 more)
+Cohesion: 0.09
+Nodes (18): FileLimits, Administrator limits; None means no limit., Read ``files.max_upload_mb`` and ``files.quota_mb`` (per user). Without a quota…, _area(), bridge(), Any, fixture, MonkeyPatch (+10 more)
 
 ### Community 74 - "FileConnectionStore"
 Cohesion: 0.04
-Nodes (68): build_catalogue(), Candidate, catalogue_provider(), connection_catalogue(), entry_of(), load_catalogue(), offering_connections(), own_entries() (+60 more)
+Nodes (55): build_catalogue(), Candidate, catalogue_provider(), connection_catalogue(), entry_of(), load_catalogue(), offering_connections(), own_entries() (+47 more)
 
 ### Community 75 - "worker.py"
-Cohesion: 0.02
-Nodes (111): ClientFactory, ClientsFor, Identity, PeriodicFn, PurgeResult, BootstrapNotReady, Bootstrap had not finished within the wait; the message names what is missing., AuditPurge (+103 more)
+Cohesion: 0.04
+Nodes (75): ClientFactory, ClientsFor, PeriodicFn, _CancelToken, _embedder(), GraphBuilds, instance_clients(), Any (+67 more)
 
 ### Community 76 - "test_conversation_manager_users.py"
 Cohesion: 0.08
-Nodes (31): executors(), Any, fixture, MonkeyPatch, usefixtures, Spawning a sub-agent needs ``spark.agents`` on a server, wherever the spawn…, _spawn(), test_personal_mode_spawns_as_before() (+23 more)
+Nodes (30): executors(), Any, fixture, MonkeyPatch, usefixtures, _spawn(), test_personal_mode_spawns_as_before(), TestServer (+22 more)
 
 ### Community 77 - "test_identity_screens_admin.py"
 Cohesion: 0.13
@@ -787,39 +812,39 @@ Nodes (24): admin(), _call(), _identity(), _identity_id(), get(), _link_on(), _p
 
 ### Community 78 - "Stack"
 Cohesion: 0.07
-Nodes (18): guid(), _in_thread(), Any, fixture, LogCaptureFixture, Server mode: SPARK's own actions in warden's audit trail (A9, A12, A16). A real…, Without a warden runtime (personal mode) no hook is installed and emit is a no-…, A synthetic warden user: (their SPARK guid, their warden user id). (+10 more)
+Nodes (13): _in_thread(), Any, AuditRow, fixture, LogCaptureFixture, A synthetic warden user: (their SPARK guid, their warden user id)., Stack, TestCatalogue (+5 more)
 
 ### Community 79 - "MCPRuntime"
-Cohesion: 0.05
-Nodes (39): SimpleNamespace, MCPRuntime, T, An MCP manager whose sessions live on a conduit loop., Bind ``manager`` to ``conduit_loop`` (nothing is connected yet).…, Run ``coro`` on the conduit loop through conduit's sync facade and wait for it., Connect every registered server and fill the tool cache. A server that cannot…, Make the connected servers match ``configs`` (the follower calls this). (+31 more)
+Cohesion: 0.06
+Nodes (33): SimpleNamespace, MCPRuntime, AbstractEventLoop, T, The MCP manager on the process's conduit loop (M2, F1). An MCP session is bound…, An MCP manager whose sessions live on a conduit loop., Run ``coro`` on the conduit loop through conduit's sync facade and wait for it., Connect every registered server and fill the tool cache. A server that cannot… (+25 more)
 
 ### Community 80 - "upgrade.py"
 Cohesion: 0.09
 Nodes (33): _anthropic(), _bedrock(), connection_secret(), convert_providers(), _Credentials, _enabled(), _gemini(), _ollama() (+25 more)
 
 ### Community 81 - "SentenceTransformerEmbedding"
-Cohesion: 0.04
-Nodes (54): Any, float32, NDArray, The local embedding model: sentence-transformers on the CPU, loaded lazily and…, Compute cosine similarities between a query and corpus embeddings. Assumes…, Generates text embeddings using sentence-transformers. Uses lazy loading: the…, Load or retrieve the cached model (thread-safe)., L2-normalised embeddings, one row per text: shape ``(len(texts), dimension)``. (+46 more)
+Cohesion: 0.06
+Nodes (37): delete_index_elements(), get_index_stats(), Vector embedding storage for conversation context search., Delete all index elements of one of the user's conversations., Element count by type for one of the user's conversations., The local embedding model: sentence-transformers on the CPU, loaded lazily and…, Generates text embeddings using sentence-transformers. Uses lazy loading: the…, SentenceTransformerEmbedding (+29 more)
 
 ### Community 82 - "test_identity_migrations.py"
-Cohesion: 0.09
-Nodes (20): _fake_cli(), _FakeContext, _lifespan_app(), _pg(), _pg_tables(), Any, CaptureFixture, MonkeyPatch (+12 more)
+Cohesion: 0.13
+Nodes (14): _fake_cli(), _FakeContext, _lifespan_app(), Any, CaptureFixture, MonkeyPatch, Path, warden's migration chain in SPARK: registration, ``spark migrate``, head checks… (+6 more)
 
 ### Community 83 - "_validate"
-Cohesion: 0.10
-Nodes (13): Konfig, Any, parametrize, Start-up configuration through konfig, validated with clear messages., The flat ``prefix.*`` keys as a nested dict, as konfig returns them., _server(), Store, TestDatabaseUrl (+5 more)
+Cohesion: 0.08
+Nodes (14): Konfig, Any, parametrize, Start-up configuration through konfig, validated with clear messages., The flat ``prefix.*`` keys as a nested dict, as konfig returns them., _server(), Store, TestDatabaseUrl (+6 more)
 
 ### Community 84 - "context_compaction.py"
 Cohesion: 0.04
-Nodes (52): ResolvedAssignment, SkillUse, _blocks(), _loaded_name(), Any, Transcript, conduit transcripts read from SPARK's stored conversations. SPARK keeps its own…, A stored message's content as SPARK sends it: its JSON blocks when it holds… (+44 more)
+Nodes (50): ResolvedAssignment, _assignment(), CompactionSettings, ContextLimits, _Conversation, _find_in_flight_tool_messages(), is_compaction_marker(), ordered_for_model() (+42 more)
 
-### Community 85 - "spent"
-Cohesion: 0.13
-Nodes (22): Any, datetime, Test helpers for credit metering: a metered connection, allowances and…, Record a call of ``tokens`` input tokens on the connection for ``user_guid``., spent(), unassign(), admin(), _call() (+14 more)
+### Community 85 - "metered"
+Cohesion: 0.10
+Nodes (26): allow(), metered(), Any, datetime, Test helpers for credit metering: a metered connection, allowances and…, Store ``connection_id`` (if need be) and its metering (tokens as credits by…, Assign the connection to a role or a user with a monthly allowance (None: no…, Record a call of ``tokens`` input tokens on the connection for ``user_guid``. (+18 more)
 
 ### Community 86 - "ActionExecutor"
 Cohesion: 0.08
-Nodes (23): ActionExecutor, Any, Permissions, Initialise independent MCP connections for this executor., Disconnect MCP servers and stop the event loop., Execute an action by ID, as this executor's user. On a server a user without…, Whether this process serves many users (a process with no mode is personal)., Assemble the autonomous action's system prompt. (+15 more)
+Nodes (22): ActionExecutor, Any, Permissions, Disconnect MCP servers and stop the event loop., Execute an action by ID, as this executor's user. On a server a user without…, Whether this process serves many users (a process with no mode is personal)., Assemble the autonomous action's system prompt., Executes a single autonomous action. (+14 more)
 
 ### Community 87 - "Any"
 Cohesion: 0.16
@@ -830,12 +855,12 @@ Cohesion: 0.10
 Nodes (20): _panellist_roles(), PanelOrchestrator, Any, A service for ``model_id`` whose model calls are billed to the panel's user., Refuse a new request on ``model_id``'s connection at 100% of the user's…, At 100% on any connection one of the panel's agents uses, nothing starts., Whether the panel's user has used their monthly credits on ``model_id``'s…, Drive the panel until QA, cancellation, a failed turn, or a human pause. (+12 more)
 
 ### Community 89 - "test_mcp_servers_web.py"
-Cohesion: 0.08
-Nodes (20): AsIdentity, ASGIApp, Receive, Send, Set ``request.state.identity`` from a :class:`Holder` on every HTTP request., Applied, _clean(), config_file() (+12 more)
+Cohesion: 0.09
+Nodes (18): AsIdentity, Test-only helpers: sign a request in as a given SPARK identity. Production sets…, Set ``request.state.identity`` from a :class:`Holder` on every HTTP request., The request's identity and its permissions (A5, D32). Server mode: the signed-…, Applied, _clean(), config_file(), Ctx (+10 more)
 
 ### Community 90 - "knowledge.py"
 Cohesion: 0.11
-Nodes (40): _get_embedder(), Module-cached embedding model (shared with the builder)., Request, Database access for endpoints. Endpoints run on the event loop: they await…, The bridge for synchronous code running on worker threads., sync_database(), _already_building(), _build_in_process() (+32 more)
+Nodes (43): _get_embedder(), Module-cached embedding model (shared with the builder)., Request, The bridge for synchronous code running on worker threads., sync_database(), _already_building(), _build_in_process(), run() (+35 more)
 
 ### Community 91 - "test_conduit.py"
 Cohesion: 0.14
@@ -845,17 +870,17 @@ Nodes (29): _chats_since(), _compacted(), _credits(), _drive_to_compaction(), _m
 Cohesion: 0.11
 Nodes (17): _auth(), client(), every_conversation_owned(), mock_ctx(), _mock_settings_get(), fixture, MonkeyPatch, TestClient (+9 more)
 
-### Community 93 - "allow"
-Cohesion: 0.11
-Nodes (23): allow(), Assign the connection to a role or a user with a monthly allowance (None: no…, bridge(), made(), _manager(), Any, fixture, ModelRequest (+15 more)
+### Community 93 - "_manager"
+Cohesion: 0.12
+Nodes (20): bridge(), made(), _manager(), Any, fixture, ModelRequest, parametrize, StubTurn (+12 more)
 
-### Community 94 - "source_ip"
-Cohesion: 0.09
-Nodes (48): SourceIp, warden's password refusals and forced changes, worded for SPARK's screens.…, The line a screen shows for a password warden refused (or another user error)., refusal_text(), form_csrf_cookie(), The cookie holding the form token of a page used before a session exists, or…, The client address warden records, believing only the configured proxies., source_ip() (+40 more)
+### Community 94 - "database/__init__.py"
+Cohesion: 0.12
+Nodes (22): SPARK's repositories: async functions over the data layer in :mod:`spark.db`.…, Server mode: the knowledge endpoint queues builds as jobs and reads status from…, Server mode, signed in through warden: users see only the MCP servers granted…, Answers, offered_runtime(), fixture, ModelRequest, StubTurn (+14 more)
 
 ### Community 95 - "_konfig"
-Cohesion: 0.13
-Nodes (13): _collect(), _complete(), _konfig(), _problems(), Any, MemorySecrets, Path, The bootstrap settings, the waits' timing and the command's wording, without… (+5 more)
+Cohesion: 0.07
+Nodes (20): Headless first run of a Spark server: ``spark bootstrap`` and the waits that…, _collect(), _complete(), FakeClock, _konfig(), _problems(), Any, LogCaptureFixture (+12 more)
 
 ### Community 96 - "_manager"
 Cohesion: 0.11
@@ -866,88 +891,88 @@ Cohesion: 0.18
 Nodes (8): Any, Why a server cannot honour a setting for ``tool``, or None when it can., One import's state: the id maps, the report and the connection., ``row`` with its references mapped, or None when a required one is missing., A knowledge graph scope with its conversation mapped (None: not in the bundle)., The new id of the last row a build had seen (ids keep their order on import)., _Run, _tool_drop_reason()
 
 ### Community 98 - "test_kg_build_jobs.py"
-Cohesion: 0.17
-Nodes (23): _builds(), clean_registrations(), Clients, _conversation(), fake_embedder(), _job(), Model, _owner() (+15 more)
+Cohesion: 0.13
+Nodes (28): _bootstrapped(), _builds(), clean_registrations(), Clients, make(), _conversation(), fake_embedder(), _job() (+20 more)
 
 ### Community 99 - "migrate.py"
-Cohesion: 0.05
-Nodes (80): _ColumnSpec, ScriptDirectory, Connection, One connection, held for a transaction or a single statement., check_at_head(), _check_known(), clear_chains(), _config() (+72 more)
+Cohesion: 0.09
+Nodes (44): ScriptDirectory, check_at_head(), _check_known(), _config(), _connect(), current(), _current(), DatabaseTooNew (+36 more)
 
 ### Community 100 - "ConnectionService"
 Cohesion: 0.04
-Nodes (43): ImageBlock, ProviderFailure, _alias(), _b64(), _blocks(), _Collected, ConnectionService, _estimate() (+35 more)
+Nodes (42): ImageBlock, ProviderFailure, _alias(), _b64(), _blocks(), _Collected, ConnectionService, _estimate() (+34 more)
 
-### Community 101 - "LoopThread"
-Cohesion: 0.05
-Nodes (45): LoopThread, _run(), new_event_loop(), AbstractEventLoop, Any, T, Event loops for the data layer. :func:`new_event_loop` returns a loop psycopg…, An event loop running for ever in a daemon thread, until :meth:`stop`. (+37 more)
+### Community 101 - "SyncDatabase"
+Cohesion: 0.04
+Nodes (52): args, kwargs, P, BridgeError, Any, Params, RuntimeError, T (+44 more)
 
 ### Community 102 - "connections/runtime.py"
-Cohesion: 0.05
-Nodes (43): Recorder, Named model connections on conduit (M1 to M16). SPARK reaches every model…, A chosen model is a pair: a connection and a model id on it. Everywhere SPARK…, The connection runtime: one conduit provider per enabled connection, kept…, The connection configuration as stored, read in one go., Snapshot, _Bridge, current() (+35 more)
+Cohesion: 0.04
+Nodes (54): Recorder, Named model connections on conduit (M1 to M16). SPARK reaches every model…, A chosen model is a pair: a connection and a model id on it. Everywhere SPARK…, _Built, _overlay_digest(), The connection runtime: one conduit provider per enabled connection, kept…, The connection configuration as stored, read in one go., A digest of ``connection_id``'s own overlay entries, every field, in a fixed… (+46 more)
 
-### Community 103 - "create_app"
-Cohesion: 0.05
-Nodes (53): attach_database(), attach_identity(), _attach_settings(), create_app(), _lifespan(), FastAPI, Have the app's lifespan open this database (migrating first when…, Sign users in through warden (server mode): call before serving, after… (+45 more)
+### Community 103 - "test_server_wiring.py"
+Cohesion: 0.07
+Nodes (37): attach_database(), Have the app's lifespan open this database (migrating first when…, _ctx(), Path, The web app opens its database in the lifespan, on the loop that serves it., test_lifespan_opens_and_closes_the_database(), test_no_database_attached_leaves_state_empty(), test_personal_mode_upgrades_a_0_2_0_database_at_start() (+29 more)
 
 ### Community 104 - "endpoints/auth.py"
 Cohesion: 0.19
 Nodes (22): authenticate(), auto_login(), _client(), _codes(), _login_page(), logout(), _minutes(), get (+14 more)
 
-### Community 105 - "endpoints/conversations.py"
-Cohesion: 0.06
-Nodes (67): Any, Update conversation fields (column names are checked against the schema)., update_conversation(), change_model(), conversations_page(), create_conversation(), delete_conversation(), list_conversations() (+59 more)
+### Community 105 - "models.py"
+Cohesion: 0.10
+Nodes (38): get_info(), API: get conversation info and settings., list_models(), API: list available models, respecting default_model settings., _get_provider_summary(), A summary of the model connections the signed-in user may use, with model…, _as_ref(), _config() (+30 more)
 
 ### Community 106 - "FakeSmtp"
-Cohesion: 0.14
-Nodes (22): FakeSmtp, A threaded SMTP server on 127.0.0.1 (a context manager; ``port`` once entered).…, _as_login(), _free_port(), _get(), _invited(), _one(), Any (+14 more)
+Cohesion: 0.12
+Nodes (26): _open_browser_delayed(), FakeSmtp, A threaded SMTP server on 127.0.0.1 (a context manager; ``port`` once entered).…, _as_login(), _clean_state(), _free_port(), _get(), _invited() (+18 more)
 
 ### Community 107 - "Path"
-Cohesion: 0.08
-Nodes (26): Path, Chain, A further migration chain run by ``spark migrate`` after SPARK's own.…, SPARK's Alembic migration chain (see spark.db.migrate)., _alembic_version(), _copy_fixture(), _has_table(), _pg() (+18 more)
+Cohesion: 0.18
+Nodes (13): SPARK's Alembic migration chain (see spark.db.migrate)., _alembic_version(), _copy_fixture(), _has_table(), Path, Tests for the Alembic chain, the baseline, the legacy SQLite upgrade and the…, Tables, columns (in order, with types, NOT NULL, defaults, keys), FKs and…, _sqlite() (+5 more)
 
 ### Community 108 - "_http"
-Cohesion: 0.08
-Nodes (10): MCP (Model Context Protocol) integration., _http(), Any, LogCaptureFixture, parametrize, MCP servers in server mode: transports, names, grants and credentials (A12,…, TestCredentials, TestGrants (+2 more)
+Cohesion: 0.09
+Nodes (9): _http(), Any, LogCaptureFixture, parametrize, MCP servers in server mode: transports, names, grants and credentials (A12,…, TestCredentials, TestGrants, TestNames (+1 more)
 
-### Community 109 - "test_conduit_compaction.py"
-Cohesion: 0.16
-Nodes (13): _compactor(), _conversation(), _manager(), _ok(), Any, Compaction on conduit's compaction layer, live settings, and the restore path's…, A model service whose every answer is ``text``., _Settings (+5 more)
+### Community 109 - "run.py"
+Cohesion: 0.15
+Nodes (25): administrator_present(), BootstrapError, completed(), _connect(), connect_reason(), _encryption_problem(), _invite(), _logins() (+17 more)
 
 ### Community 110 - "identity_screen_helpers.py"
-Cohesion: 0.08
-Nodes (41): adopt_session(), code(), enrol_under_challenge(), form_token(), mfa_client(), outbox(), plain_client(), Any (+33 more)
+Cohesion: 0.07
+Nodes (48): Origin and CSRF checks for the web interface. ``RequestGuardMiddleware``…, adopt_session(), code(), enrol_under_challenge(), form_token(), mfa_client(), outbox(), plain_client() (+40 more)
 
 ### Community 111 - "TestCoerce"
 Cohesion: 0.05
 Nodes (5): The typed registry of settings: keys, scopes, defaults and validation., TestCoerce, TestDefaults, TestLookup, TestSecrets
 
-### Community 112 - "_konfig"
-Cohesion: 0.17
-Nodes (19): Settings, _heartbeat_config(), The browser heartbeat's (interval in seconds, missed beats allowed), or None.…, _ctx(), _konfig(), _personal(), Any, fixture (+11 more)
+### Community 112 - "setting_bool"
+Cohesion: 0.16
+Nodes (19): Settings, The boolean setting ``key`` from ``settings``, or ``default`` when it is not…, setting_bool(), _heartbeat_config(), The browser heartbeat's (interval in seconds, missed beats allowed), or None.…, _ctx(), _konfig(), _personal() (+11 more)
 
 ### Community 113 - "mail.py"
 Cohesion: 0.06
-Nodes (41): build_test_mail(), _deliver(), _domain(), _email_of(), _envelope(), _has_line_break(), is_loopback(), MailNotConfigured (+33 more)
+Nodes (42): build_test_mail(), _deliver(), _domain(), _email_of(), _envelope(), _has_line_break(), is_loopback(), MailNotConfigured (+34 more)
 
 ### Community 114 - "endpoints/connections.py"
-Cohesion: 0.06
-Nodes (114): _put(), get_metering(), A connection's metering settings (the defaults when none are saved)., _actions_using(), _allowance(), _api_key(), _assignments_payload(), _audit() (+106 more)
+Cohesion: 0.05
+Nodes (119): _put(), assignments(), The assignments of one connection, or of every connection. Deliberately…, _actions_using(), _allowance(), _api_key(), _assignments_payload(), _audit() (+111 more)
 
-### Community 115 - "instance_settings/startup.py"
-Cohesion: 0.10
-Nodes (25): KonfigLike, Protocol, The part of konfig's ``Secrets`` SPARK uses., SecretsLike, _checked(), database_view(), _DatabaseView, KonfigLike (+17 more)
+### Community 115 - "DirectionalEmbedder"
+Cohesion: 0.11
+Nodes (20): Knowledge graphs: extraction, storage, resolution, and query., db(), DirectionalEmbedder, fixture, Knowledge graph query tests., The bridge (SyncDatabase) to a fresh migrated SQLite database., Maps known words to distinct unit vectors so similarity is controllable., _seed_graph() (+12 more)
 
 ### Community 116 - "MCPServerConfig"
 Cohesion: 0.07
-Nodes (21): MCPClient, MCPServerConfig, Any, Client for a single MCP server, over :class:`conduit.mcp.McpConnection`.…, Every authentication header the configuration describes, as values., The headers SPARK adds itself: basic credentials and custom headers., List tools available on this server., Call a tool on this server; its result as text, unframed (see the module). (+13 more)
+Nodes (20): MCPClient, MCPServerConfig, Any, Client for a single MCP server, over :class:`conduit.mcp.McpConnection`.…, Every authentication header the configuration describes, as values., The headers SPARK adds itself: basic credentials and custom headers., List tools available on this server., Call a tool on this server; its result as text, unframed (see the module). (+12 more)
 
 ### Community 117 - "TestClient"
 Cohesion: 0.13
 Nodes (17): _as(), client(), file_settings(), _mock_settings_get(), Any, fixture, MonkeyPatch, Path (+9 more)
 
-### Community 118 - "mode.py"
-Cohesion: 0.07
-Nodes (26): current(), current_mode(), ModeConfigError, Any, Path, Protocol, ValueError, Deployment mode: personal (SQLite, one local user) or server (PostgreSQL,… (+18 more)
+### Community 118 - "_resolve"
+Cohesion: 0.10
+Nodes (13): Any, fixture, parametrize, Tests for the deployment mode setting and its start-up validation., Minimal stand-in for konfig settings: dotted-key ``get`` over a nested dict., _reset_mode(), _resolve(), _Settings (+5 more)
 
 ### Community 119 - "FakeClock"
 Cohesion: 0.12
@@ -963,19 +988,19 @@ Nodes (17): _action(), _PromptingManager, Any, fixture, MonkeyPatch, Path, TestC
 
 ### Community 122 - "base.html (base layout)"
 Cohesion: 0.07
-Nodes (39): admin_bundles.html (Import a user bundle), Bundle import form (POST /admin/bundles), admin_invitations.html (Invitations), Invite a user form (POST /admin/invitations), admin_usage.html (Usage and token budgets), Token budgets (per user and per role), admin_user.html (User detail), admin_users.html (Users) (+31 more)
+Nodes (36): admin_bundles.html (Import a user bundle), Bundle import form (POST /admin/bundles), admin_invitations.html (Invitations), Invite a user form (POST /admin/invitations), admin_usage.html (Usage and token budgets), Token budgets (per user and per role), admin_user.html (User detail), admin_users.html (Users) (+28 more)
 
-### Community 123 - "_Row"
+### Community 123 - "to_driver_sql"
 Cohesion: 0.08
-Nodes (22): _Row, add_index_element(), Any, ndarray, Add a context element with embedding to one of the user's conversations.…, Search context elements by cosine similarity across the user's conversations.…, search_context(), Convert ``?`` placeholders for the driver. SQLite (aiosqlite) takes ``?`` as… (+14 more)
+Nodes (18): AsyncConnectionPool, Convert ``?`` placeholders for the driver. SQLite (aiosqlite) takes ``?`` as…, to_driver_sql(), _params(), _pg_row(), AbstractEventLoop, Any, AsyncConnection (+10 more)
 
-### Community 124 - "build_panel_transcript"
-Cohesion: 0.11
-Nodes (23): _build(), build_debater_transcript(), build_judge_transcript(), Any, Per-agent visible-history builders. Isolation is achieved here by construction:…, Everything a debater may see: announcements, interim remarks, both sides'…, Everything the judge may see. Never includes briefs or tool activity., _render_exhibits() (+15 more)
+### Community 124 - "debate/history.py"
+Cohesion: 0.17
+Nodes (12): _build(), build_debater_transcript(), build_judge_transcript(), Any, Per-agent visible-history builders. Isolation is achieved here by construction:…, Everything a debater may see: announcements, interim remarks, both sides'…, Everything the judge may see. Never includes briefs or tool activity., _render_exhibits() (+4 more)
 
-### Community 125 - "permissions.py"
-Cohesion: 0.11
-Nodes (21): Identity, permissions and audit in server mode, built on warden. warden…, SPARK's permissions and roles, declared to warden (A5). Both are data.…, SPARK's permissions and roles for warden (A5). The catalogue is data: every…, _call(), client(), Any, AuditRow, fixture (+13 more)
+### Community 125 - "test_spark_audit_web.py"
+Cohesion: 0.16
+Nodes (16): _call(), client(), Any, AuditRow, Path, TestClient, Server mode, through the real app: settings, downloads and exports reach…, Personal mode: the lifespan starts no warden runtime, so no hook is installed. (+8 more)
 
 ### Community 126 - "PatternMatcher"
 Cohesion: 0.18
@@ -983,43 +1008,43 @@ Nodes (4): PatternMatcher, Fast regex-based pattern matching for prompt inspecti
 
 ### Community 127 - "tests/conftest.py"
 Cohesion: 0.07
-Nodes (39): _new_loop(), pg_server(), _pg_template(), pg_url(), _postgres_required(), AbstractEventLoop, Any, Config (+31 more)
+Nodes (42): Barrier, _new_loop(), pg_server(), _pg_template(), pg_url(), _postgres_required(), AbstractEventLoop, Any (+34 more)
 
-### Community 128 - "test_identity_access.py"
+### Community 128 - "TestClient"
 Cohesion: 0.14
-Nodes (10): client(), holder(), fixture, parametrize, TestClient, The request's identity and its permissions (A5, D32). Server mode: the signed-…, The one helper endpoints use for the request's user guid., TestPersonalMode (+2 more)
+Nodes (9): client(), holder(), fixture, parametrize, TestClient, The one helper endpoints use for the request's user guid., TestPersonalMode, TestRequestUserGuid (+1 more)
 
 ### Community 129 - "test_usage_web.py"
 Cohesion: 0.13
 Nodes (15): _call(), client(), Any, fixture, parametrize, TestClient, The usage view, its export and a user's own standing on the web: personal mode.…, A connection at the default rates: 1 credit per 1,000 input tokens. (+7 more)
 
 ### Community 130 - "export.py"
-Cohesion: 0.12
-Nodes (24): export_debate_html(), esc(), md(), export_debate_json(), export_debate_markdown(), _is_panel(), _load(), _markdown_to_html() (+16 more)
+Cohesion: 0.11
+Nodes (27): export_debate_html(), esc(), md(), export_debate_json(), export_debate_markdown(), _is_panel(), _load(), _markdown_to_html() (+19 more)
 
 ### Community 131 - "available_scopes"
-Cohesion: 0.19
-Nodes (11): get_links(), The user's conversations linked from the source (never another user's)., available_scopes(), conversation_kg_settings(), The three knowledge graph flags for a conversation (defaults when missing)., Scopes visible to a conversation: local, linked locals, then global., _conv(), Scope resolution truth table. (+3 more)
+Cohesion: 0.20
+Nodes (10): available_scopes(), conversation_kg_settings(), Query-time scope resolution: which graphs a conversation can see. Pooling and…, The three knowledge graph flags for a conversation (defaults when missing)., Scopes visible to a conversation: local, linked locals, then global., _conv(), Scope resolution truth table., _seed() (+2 more)
 
 ### Community 132 - "account.py"
-Cohesion: 0.11
-Nodes (38): via_api_key(), _account_page(), begin_mfa(), change_password(), confirm_mfa(), create_key(), _expiry(), _key_id() (+30 more)
+Cohesion: 0.12
+Nodes (36): _account_page(), begin_mfa(), change_password(), confirm_mfa(), create_key(), _expiry(), _key_id(), _keys_page() (+28 more)
 
 ### Community 133 - "KnowledgeGraphBuilder"
-Cohesion: 0.10
-Nodes (25): KnowledgeGraphBuilder, Builds one scope's graph from its pending sources., extract_fragment(), Extract one fragment from a chunk. One stricter retry, then None., _conv_with_messages(), db(), FakeEmbedder, fixture (+17 more)
+Cohesion: 0.19
+Nodes (12): KnowledgeGraphBuilder, Builds one scope's graph from its pending sources., _conv_with_messages(), db(), FakeEmbedder, fixture, Tests for the knowledge graph builder., The bridge (SyncDatabase) to a fresh migrated SQLite database. (+4 more)
 
 ### Community 134 - "panel.js"
 Cohesion: 0.18
 Nodes (29): addCard(), addExhibits(), addHistoryToolGroup(), addMuted(), addToolCall(), buildRail(), closeToolGroup(), completeToolCall() (+21 more)
 
 ### Community 135 - "test_user_scoping_db.py"
-Cohesion: 0.08
-Nodes (17): _conversation(), _count(), Any, Every repository read and write that takes a parent id is scoped to the…, _Skills, TestActions, TestAgentRuns, TestContextIndex (+9 more)
+Cohesion: 0.10
+Nodes (16): _conversation(), _count(), Any, Every repository read and write that takes a parent id is scoped to the…, _Skills, TestAgentRuns, TestContextIndex, TestConversationFiles (+8 more)
 
 ### Community 136 - "test_worker.py"
 Cohesion: 0.06
-Nodes (25): clean_registry(), _make_event(), _must_not_serve(), _noop(), _noop_service(), _personal(), Any, CaptureFixture (+17 more)
+Nodes (22): clean_registry(), _make_event(), _must_not_serve(), _noop(), _noop_service(), Any, CaptureFixture, fixture (+14 more)
 
 ### Community 137 - "DebateOrchestrator"
 Cohesion: 0.12
@@ -1030,20 +1055,20 @@ Cohesion: 0.19
 Nodes (17): ada(), app_client(), _conversation(), grace(), _manager(), Any, fixture, MonkeyPatch (+9 more)
 
 ### Community 139 - "FakeEngine"
-Cohesion: 0.11
-Nodes (7): Any, Path, VoiceConfig, FakeEngine, TestConfig, TestSpeak, TestVoices
+Cohesion: 0.13
+Nodes (4): FakeEngine, TestConfig, TestSpeak, TestVoices
 
 ### Community 140 - "Any"
 Cohesion: 0.16
 Nodes (5): Any, _tables(), TestInstanceSettings, TestMigration, TestPreferences
 
-### Community 141 - "role_permissions"
-Cohesion: 0.20
-Nodes (6): The permissions ``role`` holds in the catalogue (none for a role it does not…, role_permissions(), permission_name(), The permission that governs a category, for example ``spark.tools.web``., parametrize, TestRoles
+### Community 141 - "baseline.py"
+Cohesion: 0.13
+Nodes (24): _ColumnSpec, _describe(), _differences(), _expected_spec(), _legacy_upgrade(), Any, Path, 0.2.0's statements and ALTERs, then the baseline check, in one transaction. (+16 more)
 
 ### Community 142 - "BundleWriter"
 Cohesion: 0.09
-Nodes (18): BundleWriter, data_member(), decode_value(), encode_value(), _now(), Any, BaseException, IO (+10 more)
+Nodes (21): BundleWriter, data_member(), decode_value(), encode_value(), _now(), Any, BaseException, IO (+13 more)
 
 ### Community 143 - "test_aws_settings.py"
 Cohesion: 0.13
@@ -1054,24 +1079,24 @@ Cohesion: 0.18
 Nodes (4): PromptInspector, Multi-level prompt inspection for security threats. Levels: - basic: Fast…, TestPromptInspection, TestPromptInspector
 
 ### Community 145 - "test_usage_stream_web.py"
-Cohesion: 0.14
-Nodes (19): _call(), _chat(), client(), Any, fixture, MonkeyPatch, parametrize, TestClient (+11 more)
+Cohesion: 0.16
+Nodes (16): _call(), _chat(), Any, MonkeyPatch, parametrize, TestClient, The turn endpoints and credits: roles passed down, refusals sent clearly…, Make every standing an exceeded one; the models asked about are recorded. (+8 more)
 
 ### Community 146 - "_auth"
 Cohesion: 0.13
 Nodes (15): _auth(), client(), every_conversation_owned(), _mock_settings_get(), fixture, MonkeyPatch, TestClient, Tests for the new chat settings, memories, and actions endpoints. (+7 more)
 
 ### Community 147 - "TestClient"
-Cohesion: 0.09
-Nodes (14): guarded(), _guarded_app(), _headers(), FastAPI, fixture, MonkeyPatch, parametrize, TestClient (+6 more)
+Cohesion: 0.07
+Nodes (16): The origins of an instance served at ``scheme://host:port``. A loopback host…, guarded(), _guarded_app(), _headers(), FastAPI, fixture, MonkeyPatch, parametrize (+8 more)
 
 ### Community 148 - "Browser"
 Cohesion: 0.14
 Nodes (13): Browser, form_token(), Any, Response, GET ``path`` as a page navigation, following redirects on this origin., Post a form from ``page`` (its token), as the browser would., After a sign-in, read the session and send its CSRF token from now on., Answer a second-factor challenge after a sign-in step: enrol, or verify with… (+5 more)
 
 ### Community 149 - "test_comprehensive.py"
-Cohesion: 0.15
-Nodes (15): _auth(), client(), _conversation(), _mock_settings_get(), fixture, TestClient, Comprehensive tests for new features — batch coverage., A conversation of the local user (ids of no conversation answer 404). (+7 more)
+Cohesion: 0.12
+Nodes (18): _auth(), client(), _conversation(), _mock_settings_get(), fixture, MonkeyPatch, Path, TestClient (+10 more)
 
 ### Community 150 - "_connection"
 Cohesion: 0.14
@@ -1085,57 +1110,57 @@ Nodes (13): fixture, parametrize, Path, skipif, TempPathFactory, The front end s
 Cohesion: 0.16
 Nodes (10): _enqueue(), Any, parametrize, Knowledge graph build jobs (``spark.knowledge.jobs``) on SQLite and PostgreSQL.…, test_finish_refuses_a_status_that_is_not_an_outcome(), TestCancel, TestEnqueue, TestRetry (+2 more)
 
-### Community 153 - "run.py"
-Cohesion: 0.08
-Nodes (52): ``spark bootstrap [--resend-invitation]``: run the server's first-run steps and…, administrator_present(), BootstrapError, _connect(), connect_reason(), _encryption_problem(), _invite(), _logins() (+44 more)
+### Community 153 - "bootstrap/settings.py"
+Cohesion: 0.11
+Nodes (32): Administrator, collect(), configured(), _effective_mail(), env_name(), KonfigLike, _login(), Logins (+24 more)
 
 ### Community 154 - "deployment/identity.md"
-Cohesion: 0.11
-Nodes (33): CHANGELOG, SPARK__ environment variable overrides, Spark container image (web, worker, migrate), spark migrate command, Cross-replica secret and settings propagation, Web role, Worker role with advisory lock, Env file and KONFIG_MASTER_KEY (+25 more)
+Cohesion: 0.12
+Nodes (29): CHANGELOG, SPARK__ environment variable overrides, Spark container image (web, worker, migrate), spark migrate command, Cross-replica secret and settings propagation, Web role, Worker role with advisory lock, Env file and KONFIG_MASTER_KEY (+21 more)
 
 ### Community 155 - "MemoryIndex"
-Cohesion: 0.06
-Nodes (20): MemoryIndex, float32, NDArray, The mode's store, chosen from the database's dialect on first use., Store a memory. Returns ID or None if duplicate., Search memories by semantic similarity., Auto-retrieve relevant memories for a user message. Returns a formatted context…, Update an existing memory. (+12 more)
+Cohesion: 0.11
+Nodes (7): MemoryIndex, The mode's store, chosen from the database's dialect on first use., Delete all memories for this user., Re-embed every memory of this user with the current model; returns how many.…, Manages persistent user memories with vector-based semantic search., TestMemoryIndexOverTheStore, TestMemoryIndex
 
 ### Community 156 - "test_deploy_stacks.py"
 Cohesion: 0.18
 Nodes (17): _load(), Any, fixture, FixtureRequest, Path, Static checks of the Docker Desktop and Portainer stacks beside…, _services(), stack() (+9 more)
 
-### Community 157 - "load_config"
-Cohesion: 0.12
-Nodes (9): load_config(), Read the voice settings. Any failure yields a disabled config., Any, Voice settings registration, plus the merged bool-key regression., _Secrets, _Settings, TestBoolKeysRegression, TestIntKeys (+1 more)
+### Community 157 - "voice/engine.py"
+Cohesion: 0.10
+Nodes (13): load_config(), Any, Path, Voice synthesis orchestration: cache, cap, API, billing., Read the voice settings. Any failure yields a disabled config., VoiceConfig, Any, Voice settings registration, plus the merged bool-key regression. (+5 more)
 
 ### Community 158 - "test_overlay_scope_migration.py"
 Cohesion: 0.10
 Nodes (20): Exec, Query, _connection(), _model(), _module(), _overlay(), Any, BaseException (+12 more)
 
 ### Community 159 - "add_connection"
-Cohesion: 0.13
-Nodes (11): add_connection(), assign(), Any, The synchronous check a turn makes before it starts., A stored connection (credits: 1 per 1,000 weighted tokens by default)., Record a call costing ``credits`` at the default rates (1,000 input tokens…, spend(), TestAllowance (+3 more)
+Cohesion: 0.11
+Nodes (17): Metering, A connection's credit settings (M6 to M8). The defaults apply until one is…, add_connection(), assign(), db(), Any, datetime, fixture (+9 more)
 
-### Community 160 - "test_instance_settings_web.py"
-Cohesion: 0.13
-Nodes (20): Holder, identity_for(), Test-only helpers: sign a request in as a given SPARK identity. Production sets…, An identity holding ``roles`` with their catalogue permissions., The identity requests carry; None means not signed in., _clean(), config_file(), fixture (+12 more)
+### Community 160 - "Holder"
+Cohesion: 0.24
+Nodes (8): Holder, identity_for(), ASGIApp, An identity holding ``roles`` with their catalogue permissions., The identity requests carry; None means not signed in., parametrize, With warden's access check installed, only spark.settings.instance administers…, TestServerRoles
 
 ### Community 161 - "test_panel_endpoints.py"
 Cohesion: 0.16
 Nodes (11): _auth(), client(), _mock_settings_get(), fixture, TestClient, Endpoint tests for panel creation, state, prompt routing, and page., App with a MagicMock manager backed by a real SQLite database., TestPanelCreate (+3 more)
 
-### Community 162 - "test_process_startup.py"
-Cohesion: 0.07
-Nodes (20): replay(), _isolated_chains(), fixture, Tests for the ``spark migrate`` command., TestLaunch, _Context, Any, fixture (+12 more)
+### Community 162 - "_Context"
+Cohesion: 0.09
+Nodes (15): replay(), _Context, Any, fixture, MonkeyPatch, Path, konfig's AppContext with a real settings file and an encrypted secrets store., A server configuration whose database.url is ``secret://database_url``. (+7 more)
 
 ### Community 163 - "ServerSettings"
-Cohesion: 0.09
-Nodes (16): FileSettings, Call ``observer`` after every reload or change (for caches built from settings)., Store an instance setting; its audit event joins the write's transaction if it…, Personal mode: every setting from konfig (``config.yaml``, environment,…, Server mode: instance settings cached from the database, start-up keys from…, ServerSettings, _App, FakeKonfig (+8 more)
+Cohesion: 0.16
+Nodes (10): FileSettings, Call ``observer`` after every reload or change (for caches built from settings)., Personal mode: every setting from konfig (``config.yaml``, environment,…, Server mode: instance settings cached from the database, start-up keys from…, ServerSettings, FakeKonfig, Any, The part of konfig's Settings the accessor reads. (+2 more)
 
-### Community 164 - "wait.py"
-Cohesion: 0.10
-Nodes (34): Check, Clock, Sleep, Headless first run of a Spark server: ``spark bootstrap`` and the waits that…, completed(), Whether the bootstrap record exists., configured(), Whether this installation names a first administrator (it runs ``spark… (+26 more)
+### Community 164 - "mode.py"
+Cohesion: 0.02
+Nodes (116): Check, Clock, RefusalHook, Sleep, before_web_serves(), check(), later(), before_worker() (+108 more)
 
 ### Community 165 - "servers.py"
-Cohesion: 0.08
-Nodes (39): mcp_server_configs(), The MCP servers of ``mcp.servers`` (HTTP and SSE), credentials from the secrets…, apply_grants(), Any, HTTPConnection, Server mode: a signed-in request holds ``spark.mcp.<server>`` for the servers…, Add the MCP grants of the request's roles to its identity (server mode only)., _server() (+31 more)
+Cohesion: 0.12
+Nodes (28): _has_value(), _headers(), is_granted(), _known_roles(), permission_name(), public_entry(), Any, SecretLookup (+20 more)
 
 ### Community 166 - "test_chat_send_budget.py"
 Cohesion: 0.22
@@ -1146,31 +1171,31 @@ Cohesion: 0.13
 Nodes (10): CaptureFixture, parametrize, Path, Tests for scripts/stamp_version.py., _read(), _repo(), TestCheckFollows, TestMain (+2 more)
 
 ### Community 168 - "test_turn_model_service.py"
-Cohesion: 0.17
-Nodes (18): _answer(), script(), _conversation(), _manager(), Any, ModelRequest, StubTurn, Each chat turn answers through a model service of its own, on its… (+10 more)
+Cohesion: 0.19
+Nodes (17): _answer(), script(), _conversation(), _manager(), Any, ModelRequest, StubTurn, Each chat turn answers through a model service of its own, on its… (+9 more)
 
 ### Community 169 - "test_csrf_routes.py"
 Cohesion: 0.14
 Nodes (21): APIRoute, _app(), _concrete(), _ctx(), FastAPI, fixture, parametrize, TestClient (+13 more)
 
 ### Community 170 - "bootstrap.py"
-Cohesion: 0.12
-Nodes (15): AdminResult, create_admin(), describe(), parse_create_admin(), Namespace, Administrator recovery on a server: ``spark identity create-admin``. A new…, Create (or find) the administrator ``email``; ``password`` is asked for only…, The new administrator's password: one line of stdin, or asked twice at a… (+7 more)
+Cohesion: 0.09
+Nodes (20): IdentityConflict, link(), Exception, The guid or the warden user is already mapped to someone else., Bind an existing guid to a warden user; refuse if either is already mapped…, AdminResult, create_admin(), describe() (+12 more)
 
 ### Community 171 - "test_instance_settings_listener.py"
-Cohesion: 0.14
+Cohesion: 0.12
 Nodes (14): _close(), _eventually(), NoKonfig, pg_settings(), Any, fixture, Propagation between web replicas over PostgreSQL LISTEN/NOTIFY (A8). Each…, A change made while the listener is down is picked up by the reload on… (+6 more)
 
 ### Community 172 - "Request"
-Cohesion: 0.08
-Nodes (60): The app's :class:`ServerSettings`, loaded on first use when :func:`attach` has…, server_settings(), is_known(), announce(), Tell every replica the secret ``key`` changed; the payload is the key, never a…, _actor(), browse_directory(), _checked() (+52 more)
+Cohesion: 0.07
+Nodes (64): The app's :class:`ServerSettings`, loaded on first use when :func:`attach` has…, server_settings(), is_known(), _actor(), browse_directory(), _checked(), clear_secret(), _filter_sections() (+56 more)
 
 ### Community 173 - "debate.js"
 Cohesion: 0.19
 Nodes (22): addBlock(), addExhibits(), addHistoryToolGroup(), addToolCall(), autoScrollEnabled(), closeToolGroup(), completeToolCall(), connect() (+14 more)
 
 ### Community 174 - "test_debate_endpoints.py"
-Cohesion: 0.18
+Cohesion: 0.16
 Nodes (11): _auth(), client(), _mock_settings_get(), fixture, TestClient, Endpoint tests for debate creation, state, prompt queueing, and page., App with a MagicMock manager backed by a real SQLite database., TestDebateCreate (+3 more)
 
 ### Community 175 - "test_kg_endpoints.py"
@@ -1178,8 +1203,8 @@ Cohesion: 0.13
 Nodes (14): _auth(), client(), db(), fake_embedder(), _mock_settings_get(), fixture, TestClient, Knowledge endpoint tests: build lifecycle, status, graph JSON, clear. (+6 more)
 
 ### Community 176 - "test_kg_uniqueness.py"
-Cohesion: 0.12
-Nodes (19): _all_at_once(), Any, Path, Unique natural keys on kg_nodes, kg_edges, skills and conversation_skills…, Plain driver access, independent of the code under test., Duplicates as concurrent 0.2.x or 0.3.0a1 inserts could leave them., Run ``work`` n times concurrently, released together by a barrier., _Raw (+11 more)
+Cohesion: 0.10
+Nodes (24): _all_at_once(), empty_settings(), Any, fixture, FixtureRequest, Path, Unique natural keys on kg_nodes, kg_edges, skills and conversation_skills…, Plain driver access, independent of the code under test. (+16 more)
 
 ### Community 177 - "generate_installer_assets.py"
 Cohesion: 0.15
@@ -1190,16 +1215,16 @@ Cohesion: 0.08
 Nodes (24): Amazon Bedrock, Anthropic, Claude in Microsoft Foundry, Claude through Amazon Bedrock (mantle), Connections, Declaring a Microsoft Foundry deployment, Declaring a model by its id, Declaring a model the catalogue lacks (+16 more)
 
 ### Community 179 - "my_files.py"
-Cohesion: 0.22
-Nodes (16): BridgeLike, Any, _describe(), execute(), _file_id(), get_tools(), _int(), _list() (+8 more)
+Cohesion: 0.17
+Nodes (20): BridgeLike, Any, Protocol, RuntimeError, The tool has nowhere it may read or write., ToolScopeUnavailable, _describe(), execute() (+12 more)
 
 ### Community 180 - ".personal"
-Cohesion: 0.18
-Nodes (3): Path, TestArchives, TestFilesystem
+Cohesion: 0.16
+Nodes (4): Path, TestArchives, TestDocuments, TestFilesystem
 
 ### Community 181 - "CancellationToken"
-Cohesion: 0.14
-Nodes (7): CancellationToken, Thread-safe flag for cooperative cancellation. Holders check `is_cancelled()`…, Tests for cooperative cancellation in AgentExecutor.execute()., TestCancellation, fake_invoke(), Tests for the CancellationToken primitive., TestCancellationToken
+Cohesion: 0.25
+Nodes (4): CancellationToken, Thread-safe flag for cooperative cancellation. Holders check `is_cancelled()`…, Tests for the CancellationToken primitive., TestCancellationToken
 
 ### Community 182 - "execute"
 Cohesion: 0.12
@@ -1210,32 +1235,32 @@ Cohesion: 0.12
 Nodes (11): ElevenLabsClient, Any, Premade voices, cached for the process. Never raises: [] on failure., Synthesises speech and lists voices. Raises VoiceUnavailable on failure., Render text as MP3 audio. Retries once on transient failures., FakeHttp, FakeResponse, ElevenLabs HTTP client: request shape, retries, and failure mapping. (+3 more)
 
 ### Community 184 - "VoiceEngine"
-Cohesion: 0.20
-Nodes (8): Turns text into audio, or explains why it cannot., VoiceEngine, _config(), FakeClient, Voice engine: cache/cap/API ordering, billing, and failure propagation., TestAvailability, TestCap, TestSynthesise
+Cohesion: 0.17
+Nodes (11): Turns text into audio, or explains why it cannot., VoiceEngine, Exception, Raised when ElevenLabs cannot serve an utterance. Callers fall back., VoiceUnavailable, _config(), FakeClient, Voice engine: cache/cap/API ordering, billing, and failure propagation. (+3 more)
 
-### Community 185 - "discovery.py"
-Cohesion: 0.08
-Nodes (25): DiscoveryResult, discover(), DiscoveryHost, DiscoveryRecord, models_view(), _now(), offered_in(), Any (+17 more)
+### Community 185 - "ConnectionModel"
+Cohesion: 0.05
+Nodes (44): DiscoveryResult, discover(), DiscoveryHost, DiscoveryRecord, DiscoveryResults, models_view(), _now(), offered_in() (+36 more)
 
-### Community 186 - "test_identity_screens_account.py"
-Cohesion: 0.14
-Nodes (15): ada(), _create_key(), _key_on(), _page(), _post(), Any, fixture, parametrize (+7 more)
+### Community 186 - "TestClient"
+Cohesion: 0.18
+Nodes (11): _create_key(), _key_on(), _page(), _post(), Any, parametrize, TestClient, TestChangePassword (+3 more)
 
 ### Community 187 - "test_connections_web_server.py"
-Cohesion: 0.10
-Nodes (29): connection_runtime(), conduit's production adapters (for validation) and its stub (for discovery)., admin(), _declared(), _events(), _foundry(), _guid(), _offered() (+21 more)
+Cohesion: 0.11
+Nodes (27): connection_runtime(), conduit's production adapters (for validation) and its stub (for discovery)., _declared(), _events(), _foundry(), _guid(), _offered(), _ollama() (+19 more)
 
-### Community 188 - "IdentityRuntime"
-Cohesion: 0.12
-Nodes (25): date, IdentityRuntime, warden inside one SPARK web process., Put back the audit recorder that was installed before this runtime., Run warden's background work for a block (the app's lifespan), then close., _actor(), audit_export(), audit_page() (+17 more)
+### Community 188 - "endpoints/audit.py"
+Cohesion: 0.15
+Nodes (21): date, _actor(), audit_export(), audit_page(), _day(), _details(), _emails(), FilterError (+13 more)
 
 ### Community 189 - "test_stream_drain.py"
 Cohesion: 0.13
 Nodes (21): _client(), _compacting_turn(), done_first(), _DoneFirstLoop, _events(), AbstractEventLoop, Any, fixture (+13 more)
 
-### Community 190 - "TestRefused"
-Cohesion: 0.16
-Nodes (5): web(), Any, MonkeyPatch, TestRefused, web_never_runs()
+### Community 190 - "role_permissions"
+Cohesion: 0.04
+Nodes (24): PermissionRegistry, build_registry(), The permissions ``role`` holds in the catalogue (none for a role it does not…, A warden registry holding every permission and role in the catalogue., A role: the permissions it holds, and whether it is an administrator role.…, role_permissions(), RoleSpec, permission_name() (+16 more)
 
 ### Community 191 - "connections.js"
 Cohesion: 0.22
@@ -1245,45 +1270,45 @@ Nodes (34): actionsFor(), alertBox(), call(), declareForm(), declareRow(), decla
 Cohesion: 0.14
 Nodes (15): execute(), get_tools(), Any, Path, Document tools — read Word, Excel, PowerPoint, and PDF files., Return document tool definitions., Execute a document tool on a path inside ``scope``. Raises…, _read_excel() (+7 more)
 
-### Community 193 - "stub_connection"
-Cohesion: 0.06
-Nodes (42): DiscoveryResults, The latest discovery per connection, in this process., Assignment, A connection assigned to a role or to one user, with its monthly credit…, StubFactory, StubScript, Any, Connection (+34 more)
+### Community 193 - "stub_runtime"
+Cohesion: 0.11
+Nodes (20): Assignment, A connection assigned to a role or to one user, with its monthly credit…, StubScript, Any, Connection, A conduit stub turn playing a response written in SPARK's format., A real connection runtime on conduit's stub provider, recording usage to…, script() (+12 more)
 
 ### Community 194 - "_conv"
 Cohesion: 0.12
 Nodes (10): _conv(), db(), fixture, Tests for the debate database schema and operations., A migrated SPARK database (SQLite, and PostgreSQL when marked)., TestCapabilityColumns, TestDebateSchema, TestDebatesCrud (+2 more)
 
-### Community 195 - "server.py"
-Cohesion: 0.04
-Nodes (61): auth_middleware(), _csrf_exempt(), _is_public(), HTTPConnection, Request, FastAPI web server for Spark., The CSRF token for a page rendered for this request. The auth middleware sets…, Whether the authenticator says this request carries no ambient credential. (+53 more)
+### Community 195 - "sign_in"
+Cohesion: 0.05
+Nodes (46): create_app(), auth_middleware(), _is_public(), Create and configure the FastAPI application., app_client(), Any, TestClient, A TestClient whose lifespan has opened ``settings`` (auto-migrating). Inside… (+38 more)
 
 ### Community 196 - "test_worker_pruning.py"
 Cohesion: 0.12
 Nodes (13): App, _bootstrapped(), clean_registrations(), _konfig(), Any, fixture, MonkeyPatch, Path (+5 more)
 
-### Community 197 - "security.py"
-Cohesion: 0.04
-Nodes (41): ExemptSource, Headers, PolicySource, _browser_provenance(), _normalise(), _origin(), origin_of_url(), OriginPolicy (+33 more)
-
-### Community 198 - "updater.py"
+### Community 197 - "_client"
 Cohesion: 0.12
-Nodes (24): apply_update(), check_for_update(), _find_pyapp_binary(), get_current_version(), get_install_method(), _is_newer(), is_pyapp_install(), _parse_version() (+16 more)
+Nodes (9): _app(), _client(), FastAPI, parametrize, TestClient, The request guard's exemption for requests authenticated by a bearer API key. A…, TestExempt, TestNotExempt (+1 more)
 
-### Community 199 - "voice_usage.py"
-Cohesion: 0.09
-Nodes (19): characters_this_month(), _month_start(), Any, Voice synthesis usage ledger: characters billed, per user and conversation., Start of the current calendar month (UTC), as both engines compare it., Bill characters against a user (and optionally a conversation)., Characters billed to this user since the start of the calendar month., This month's total, plus a per-conversation breakdown. (+11 more)
+### Community 198 - "_init"
+Cohesion: 0.10
+Nodes (29): apply_update(), check_for_update(), _find_pyapp_binary(), get_current_version(), get_install_method(), _is_newer(), is_pyapp_install(), _parse_version() (+21 more)
 
-### Community 200 - "VoiceUnavailable"
-Cohesion: 0.20
-Nodes (8): ElevenLabs REST client. Uses httpx directly rather than the elevenlabs SDK:…, Voice synthesis orchestration: cache, cap, API, billing., Exception, Voice failures and their classification. Every failure downgrades an utterance…, Raised when ElevenLabs cannot serve an utterance. Callers fall back., VoiceUnavailable, Mapping ElevenLabs HTTP failures to fallback reasons., test_voice_unavailable_carries_reason()
+### Community 199 - "over_cap"
+Cohesion: 0.14
+Nodes (9): over_cap(), The monthly character cap: a local guard, independent of the ElevenLabs plan., True when the user has reached their configured cap. 0 means unlimited., db(), fixture, Voice character accounting and the monthly cap., A migrated SPARK database (SQLite, and PostgreSQL when marked)., TestCap (+1 more)
+
+### Community 200 - ".__call__"
+Cohesion: 0.11
+Nodes (22): ExemptSource, Headers, PolicySource, _browser_provenance(), origin_of_url(), provenance_ok(), ASGIApp, HTTPConnection (+14 more)
 
 ### Community 201 - "endpoints/skills.py"
 Cohesion: 0.19
 Nodes (23): _parse_skill_dir(), Parse one skill folder into a record; invalid records carry an error., delete_skill(), download_skill(), import_skill(), list_skills(), _manager(), Any (+15 more)
 
 ### Community 202 - "endpoints/usage.py"
-Cohesion: 0.10
-Nodes (37): list_connections(), Every connection, by id. Deliberately unscoped: instance-wide configuration., emit_request(), Request, :func:`emit` for the request's signed-in user, with the request's source…, _BadMonthError, _cell(), _connection_names() (+29 more)
+Cohesion: 0.12
+Nodes (30): _BadMonthError, _cell(), _connection_names(), _credits(), export_usage(), _month(), _people(), Person (+22 more)
 
 ### Community 203 - "test_action_budgets.py"
 Cohesion: 0.17
@@ -1294,20 +1319,20 @@ Cohesion: 0.11
 Nodes (23): production_factories(), ProviderFactory, Every conduit adapter M4 offers: conduit's built-in ones, without the test stub., AskedForNothing, _aws_environment(), bedrock(), Any, Connection (+15 more)
 
 ### Community 205 - "test_mcp_settings_follower.py"
-Cohesion: 0.15
-Nodes (12): _entry(), _follow(), Any, fixture, MonkeyPatch, Server mode: the MCP servers follow ``mcp.servers`` live, on every replica…, Secrets, Source (+4 more)
+Cohesion: 0.16
+Nodes (10): _entry(), _follow(), Any, MonkeyPatch, Server mode: the MCP servers follow ``mcp.servers`` live, on every replica…, Secrets, Source, Target (+2 more)
 
-### Community 206 - "Any"
-Cohesion: 0.21
-Nodes (9): Deny, _NoSecrets, _policy_events(), Any, parametrize, postgres, TestClient, _rows() (+1 more)
+### Community 206 - "test_result_policy.py"
+Cohesion: 0.10
+Nodes (18): _clean(), Ctx, Deny, events(), MemorySecrets, _NoSecrets, _policy_events(), Any (+10 more)
 
 ### Community 207 - "FakeConnection"
 Cohesion: 0.13
 Nodes (7): Events, FakeConnection, Notify, Delivers the queued notifications once, then stays idle., _run_listener(), connect(), TestListenerRefresh
 
-### Community 208 - "DatabaseSettings"
-Cohesion: 0.03
-Nodes (57): DatabaseSettings, server_db(), Connection, fixture, Path, postgres, The connections revision: upgrade and downgrade on SQLite and PostgreSQL.…, TestPostgres (+49 more)
+### Community 208 - "TestSqlite"
+Cohesion: 0.13
+Nodes (7): Connection, fixture, Path, postgres, The connections revision: upgrade and downgrade on SQLite and PostgreSQL.…, TestPostgres, TestSqlite
 
 ### Community 209 - "test_identity_db.py"
 Cohesion: 0.28
@@ -1318,48 +1343,48 @@ Cohesion: 0.22
 Nodes (8): _new(), Any, User file metadata and the per-user usage counter (SQLite and PostgreSQL)., Twenty concurrent 10-byte records against a 55-byte quota: exactly five fit., TestQuota, one(), one(), TestRecord
 
 ### Community 211 - "SmtpSender"
-Cohesion: 0.26
-Nodes (8): A ``MailSender`` over one :class:`SmtpSettings`; sends on a worker thread with…, SmtpSender, certificates(), MonkeyPatch, TempPathFactory, _send(), _smtp(), TestDelivery
+Cohesion: 0.21
+Nodes (11): A ``MailSender`` over one :class:`SmtpSettings`; sends on a worker thread with…, SmtpSender, certificates(), fixture, LogCaptureFixture, MailMessage, MonkeyPatch, TempPathFactory (+3 more)
 
 ### Community 212 - "filesystem.py"
 Cohesion: 0.21
 Nodes (21): _entries(), execute(), _find_in_file(), _get_directory_tree(), _get_file_info(), get_tools(), _inside(), _list_directory() (+13 more)
 
-### Community 213 - "test_tools.py"
-Cohesion: 0.08
-Nodes (25): execute(), get_tools(), _html_to_markdown(), Any, Web tools — search and fetch web content. Supports multiple search engines: -…, Search via Brave Search API., Search via Google using SerpAPI., Search via Bing Web Search API (Azure). (+17 more)
+### Community 213 - "tools/web.py"
+Cohesion: 0.13
+Nodes (21): execute(), get_tools(), _html_to_markdown(), Any, Web tools — search and fetch web content. Supports multiple search engines: -…, Search via Brave Search API., Search via Google using SerpAPI., Search via Bing Web Search API (Azure). (+13 more)
 
 ### Community 214 - "TestUnderNode"
 Cohesion: 0.13
 Nodes (9): _cases(), Any, fixture, skipif, TempPathFactory, The chat composer's attach control (``static/js/attachments.js``). Under Node,…, results(), TestChatPage (+1 more)
 
-### Community 215 - "test_turn_models_web.py"
-Cohesion: 0.13
-Nodes (18): Answers, fixture, ModelRequest, StubTurn, The stub's script: answers with the model it was called on, and remembers it., The app's connection runtime and conversation manager over one stub connection., shared(), _plain_conversation() (+10 more)
+### Community 215 - ".test_a_default_no_longer_offered_is_not_named"
+Cohesion: 0.21
+Nodes (10): _plain_conversation(), _prefer(), TestClient, usefixtures, A conversation with no memory or retrieval (no embedding model needed)., The administrator the ``shared`` fixture made, signed in on another browser., _root(), TestConcurrentTurns (+2 more)
 
 ### Community 216 - "meter"
 Cohesion: 0.14
 Nodes (15): meter(), Any, ``service`` with its calls billed to ``user_guid`` under ``source`` (None stays…, bridge(), Any, fixture, Metering through conduit's events: one usage row per model call, billed to the…, The bridge over a fresh database at head, on SQLite and (marked) PostgreSQL. (+7 more)
 
 ### Community 217 - "document_creation.py"
-Cohesion: 0.19
-Nodes (17): ImageResolver, Exception, QuotaExceeded, Recording the file would take the user over their storage quota., _create_excel(), _create_pdf(), _create_powerpoint(), _create_word() (+9 more)
+Cohesion: 0.24
+Nodes (14): ImageResolver, _create_excel(), _create_pdf(), _create_powerpoint(), _create_word(), execute(), get_tools(), _image_resolver() (+6 more)
 
 ### Community 218 - "mcp_integration/manager.py"
-Cohesion: 0.05
-Nodes (36): McpServerSettings, SecretStr, conduit_name(), PermissionError, SecretRef, One MCP server, reached through conduit's MCP client over the official SDK…, A stdio server was asked for in server mode (A12)., The name conduit knows server ``name`` by: lower-case words joined by ``_``. (+28 more)
+Cohesion: 0.06
+Nodes (25): McpServerSettings, SecretStr, conduit_name(), PermissionError, SecretRef, One MCP server, reached through conduit's MCP client over the official SDK…, A stdio server was asked for in server mode (A12)., The name conduit knows server ``name`` by: lower-case words joined by ``_``. (+17 more)
 
 ### Community 219 - "test_skills_conduit.py"
-Cohesion: 0.13
-Nodes (21): _chat(), frozen_clock(), Any, fixture, MonkeyPatch, SPARK's skills on conduit: the skill source, progressive disclosure and the…, A model service that plays SPARK-format responses and records each call., The system prompt carries the time; hold it still so prompts compare byte for… (+13 more)
+Cohesion: 0.19
+Nodes (14): _chat(), Any, SPARK's skills on conduit: the skill source, progressive disclosure and the…, A model service that plays SPARK-format responses and records each call., RecordingService, _skill_tools(), TestChatTurn, TestPrefixAcrossCompaction (+6 more)
 
 ### Community 220 - "DaemonManager"
 Cohesion: 0.17
 Nodes (8): DaemonManager, Start the daemon as a detached background process., Check if a process is still running., Manages the Spark daemon process lifecycle., Start the daemon. Returns True on success., Stop the daemon gracefully. Returns True if stopped., Check if the daemon is currently running., Run the daemon in the foreground (for debugging).
 
-### Community 221 - "main"
-Cohesion: 0.29
-Nodes (7): describe(), main(), _run(), parse(), Namespace, What happened, one line per step., Run ``spark bootstrap``; return the exit code.
+### Community 221 - "TestPostgres"
+Cohesion: 0.16
+Nodes (7): Connection, fixture, Path, postgres, The credit metering revision: upgrade and downgrade on SQLite and PostgreSQL.…, TestPostgres, TestSqlite
 
 ### Community 222 - "ToolSelector"
 Cohesion: 0.18
@@ -1382,8 +1407,8 @@ Cohesion: 0.08
 Nodes (29): accept_invitation(), admin(), alice(), bob(), configured(), _epoch(), invite_and_accept(), model_id() (+21 more)
 
 ### Community 227 - "Path"
-Cohesion: 0.15
-Nodes (12): Ctx, Any, fixture, MonkeyPatch, Path, Secrets, Start-up wiring in spark.core.application: secret database URLs, migration,…, The 0.2 settings page stored database.url as the secret 'url' (issue fixed… (+4 more)
+Cohesion: 0.18
+Nodes (9): Ctx, Any, MonkeyPatch, Path, Secrets, The 0.2 settings page stored database.url as the secret 'url' (issue fixed…, ``spark web`` starts through validate_startup: the files API needs files.root…, TestConfigureRuntime (+1 more)
 
 ### Community 228 - "TestPolicy"
 Cohesion: 0.10
@@ -1394,8 +1419,8 @@ Cohesion: 0.15
 Nodes (26): Composed, LoginChange, apply_grants(), ensure_login(), _exists(), Login, login_of(), _owns_nothing() (+18 more)
 
 ### Community 230 - "TurnSkills"
-Cohesion: 0.09
-Nodes (19): DisclosureLimits, LoadedSkill, Any, Path, SkillSummary, T, Transcript, One chat turn's skills, through conduit's progressive disclosure. A… (+11 more)
+Cohesion: 0.15
+Nodes (10): Any, T, Transcript, Reload the skills the conversation had loaded, in their original order., The loaded skills' names, in the order they were loaded., The skills the model may load (the turn's user's enabled skills)., ``base``, then the skill listing, then each loaded skill: the system prompt…, ``use_skill`` (and ``read_skill_resource`` with ``resource``): the tool's text… (+2 more)
 
 ### Community 231 - "voice.py"
 Cohesion: 0.20
@@ -1406,12 +1431,12 @@ Cohesion: 0.25
 Nodes (19): create_memory(), delete_all_memories(), delete_memory(), export_memories(), _get_memory_index(), import_memories(), list_memories(), memories_page() (+11 more)
 
 ### Community 233 - "voice.js"
-Cohesion: 0.14
-Nodes (14): cancel(), speak(), speakWithBrowser(), next(), speakWithElevenLabs(), splitIntoSentences(), usingElevenLabs(), warnOnce() (+6 more)
+Cohesion: 0.22
+Nodes (8): cancel(), speak(), speakWithBrowser(), next(), speakWithElevenLabs(), splitIntoSentences(), usingElevenLabs(), warnOnce()
 
-### Community 234 - "test_user_scoping_web.py"
-Cohesion: 0.11
-Nodes (21): adas(), client(), _grace_conversation(), host(), Any, fixture, MonkeyPatch, Path (+13 more)
+### Community 234 - "_call"
+Cohesion: 0.14
+Nodes (14): adas(), _call(), _grace_conversation(), Any, TestClient, Ada's data: conversations, messages, tools, a debate, a panel, an action, a…, Another user's action name is free, and a clash names only the caller's own…, _Settings (+6 more)
 
 ### Community 235 - "Connection"
 Cohesion: 0.06
@@ -1419,19 +1444,19 @@ Nodes (36): Connection, ConnectionInvalid, default_residency(), _plain(), Any, P
 
 ### Community 236 - "SparkSkillSource"
 Cohesion: 0.08
-Nodes (23): FilesystemSkillSource, SkillSource, SkillSourceSuite, These skills as a conduit skill source, limited to ``enabled`` names (a user's)., _folder(), Path, Skill, SkillSummary (+15 more)
+Nodes (24): DisclosureLimits, FilesystemSkillSource, LoadedSkill, Path, SkillSummary, One chat turn's skills, through conduit's progressive disclosure. A…, The Available Skills block: names and one-line descriptions only., How a loaded skill appears in the system prompt: its instructions, the folder… (+16 more)
 
-### Community 237 - "ScriptedModels"
-Cohesion: 0.16
-Nodes (15): One stub connection whose models (declared by catalogue overlay) each play…, ScriptedModels, _build(), FakeEmbedder, _fragment(), models(), Any, fixture (+7 more)
+### Community 237 - "model_helpers.py"
+Cohesion: 0.23
+Nodes (13): Test stand-ins for SPARK's model connections. :class:`FakeModels` implements…, One stub connection whose models (declared by catalogue overlay) each play…, ScriptedModels, _build(), FakeEmbedder, _fragment(), models(), Any (+5 more)
 
 ### Community 238 - "stack.py"
 Cohesion: 0.22
 Nodes (21): _certificates(), leaf(), _compose_prefix(), _key(), _lines(), main(), _oidc_config(), _pem_key() (+13 more)
 
 ### Community 239 - "docs/index.md"
-Cohesion: 0.08
-Nodes (35): Context limits resolution, Voice and ElevenLabs configuration, Origin and CSRF request checks, secret:// URIs and OS keychain secrets, Roles: administrator, auditor, power_user, user, Usage and token budgets, Context compaction (LLM summarisation), Conversation linking (+27 more)
+Cohesion: 0.10
+Nodes (23): Context limits resolution, Voice and ElevenLabs configuration, Origin and CSRF request checks, secret:// URIs and OS keychain secrets, Context compaction (LLM summarisation), Conversation linking, Retrieval-augmented generation per conversation, Tool use loop (+15 more)
 
 ### Community 240 - "licence_audit.py"
 Cohesion: 0.19
@@ -1454,12 +1479,12 @@ Cohesion: 0.18
 Nodes (16): compose(), _example_values(), Any, fixture, Static checks of deploy/compose.yaml, the example env file and .dockerignore., _services(), test_a_local_mail_catcher_on_loopback(), test_credentials_come_from_a_required_env_file() (+8 more)
 
 ### Community 245 - "builder.py"
-Cohesion: 0.09
-Nodes (18): is_building(), Any, Background, watermarked, cancellable knowledge graph builds., Pending work for a scope without any LLM calls (the cost signal)., Extract all pending sources for a scope. Synchronous engine. Every model call…, Acquire the build lock for a scope. Returns False when already building., (source_key, pending messages) pairs for a scope., release() (+10 more)
+Cohesion: 0.11
+Nodes (20): is_building(), Background, watermarked, cancellable knowledge graph builds., Acquire the build lock for a scope. Returns False when already building., release(), try_acquire(), chunk_messages(), extract_fragment(), _normalise() (+12 more)
 
-### Community 246 - "DirectionalEmbedder"
-Cohesion: 0.08
-Nodes (32): Knowledge graphs: extraction, storage, resolution, and query., expand(), find_entities(), Any, Subgraph retrieval: embedding match, hop expansion, and compact rendering., The relevant subgraph for a query, or an empty string when nothing matches., Top entities across scopes by cosine similarity to the query., BFS over edges within each seed's own scope, up to depth hops. (+24 more)
+### Community 246 - "execute"
+Cohesion: 0.13
+Nodes (18): expand(), find_entities(), Any, Subgraph retrieval: embedding match, hop expansion, and compact rendering., The relevant subgraph for a query, or an empty string when nothing matches., Top entities across scopes by cosine similarity to the query., BFS over edges within each seed's own scope, up to depth hops., Compact text rendering, strongest weight first, truncated at max_chars. (+10 more)
 
 ### Community 247 - "model_stub.py"
 Cohesion: 0.19
@@ -1469,25 +1494,25 @@ Nodes (16): BaseHTTPRequestHandler, _directives(), _graph_fragment(), Handler, _
 Cohesion: 0.20
 Nodes (17): MIMEMultipart, _build_message(), _draft_email(), execute(), _get_allowed_paths(), get_tools(), _prepare_message(), Any (+9 more)
 
-### Community 249 - "identity/runtime.py"
-Cohesion: 0.15
-Nodes (16): MailKind, captured(), InstanceMail, LinkCapture, MailMessage, warden's ``MailSender`` on a server: ``mail.smtp`` when a host is set, else…, A ``MailSender`` that hands messages to the open :func:`captured` block, or…, Keep the messages warden sends during the block (this task only) in the list… (+8 more)
+### Community 249 - "test_identity_mail_smtp.py"
+Cohesion: 0.18
+Nodes (13): MailKind, InstanceMail, LinkCapture, warden's ``MailSender`` on a server: ``mail.smtp`` when a host is set, else…, A ``MailSender`` that hands messages to the open :func:`captured` block, or…, _Konfig, mail_settings(), install() (+5 more)
 
 ### Community 250 - "test_health.py"
-Cohesion: 0.16
-Nodes (14): _assert_clean(), _BrokenSecrets, _Ctx, Any, MonkeyPatch, ``/health`` and ``/ready``: the load balancer's and the container's probes.…, A store that cannot be read (the error text carries a secret-looking value)., test_a_burst_of_probes_costs_one_check() (+6 more)
+Cohesion: 0.13
+Nodes (18): _assert_clean(), _BrokenSecrets, _clean(), _Ctx, personal_app(), Any, fixture, MemorySecrets (+10 more)
 
 ### Community 251 - "knowledge/store.py"
 Cohesion: 0.10
-Nodes (24): clear_scope(), count_edges(), count_nodes(), get_build_state(), get_edges(), get_edges_for_nodes(), get_nodes(), get_nodes_by_ids() (+16 more)
+Nodes (22): clear_scope(), count_edges(), count_nodes(), get_build_state(), get_edges(), get_edges_for_nodes(), get_nodes(), get_nodes_by_ids() (+14 more)
 
 ### Community 252 - "SettingsListener"
-Cohesion: 0.14
-Nodes (7): Connect, Have the secrets store re-read its data; a failure must not stop the reload., Listens for settings changes and calls ``reload`` after each, and after every…, SettingsListener, is_secret_key(), Whether ``key`` (a notification payload) names a registered secret or a model…, TestStartRefusals
+Cohesion: 0.22
+Nodes (5): Connect, Have the secrets store re-read its data; a failure must not stop the reload., Listens for settings changes and calls ``reload`` after each, and after every…, SettingsListener, TestStartRefusals
 
-### Community 253 - "PersonalAuthenticator"
-Cohesion: 0.11
-Nodes (14): GatingAuthenticator, PersonalAuthenticator, HTTPConnection, Protocol, Request, Response, What the web layer asks of whatever signs users in. Personal mode answers from…, Whether the request belongs to a signed-in session (refreshing it). (+6 more)
+### Community 253 - "web/auth.py"
+Cohesion: 0.07
+Nodes (24): GatingAuthenticator, PersonalAuthenticator, HTTPConnection, Protocol, Request, Response, Personal-mode login codes: single use, short-lived and rate-limited. A code is…, What the web layer asks of whatever signs users in. Personal mode answers from… (+16 more)
 
 ### Community 254 - "command_policy.py"
 Cohesion: 0.25
@@ -1501,21 +1526,21 @@ Nodes (7): _identity(), Any, Server mode: a request's user holds ``spark.mcp.<se
 Cohesion: 0.18
 Nodes (5): Any, The mapping of SPARK user guids onto warden users (SQLite and PostgreSQL)., TestLink, TestUserGuidFor, TestWardenUserFor
 
-### Community 257 - "fake_smtp.py"
-Cohesion: 0.13
-Nodes (13): Certificates, make_certificates(), _name(), EmailMessage, Path, SSLContext, Test-only: a small SMTP server on 127.0.0.1 for delivery tests, with no…, One accepted message and the session it arrived in. (+5 more)
+### Community 257 - "test_instance_settings_web.py"
+Cohesion: 0.15
+Nodes (17): _clean(), config_file(), Ctx, Deny, personal(), Any, fixture, MonkeyPatch (+9 more)
 
 ### Community 258 - "test_daemon_server_mode.py"
-Cohesion: 0.11
-Nodes (19): _fake_pystray(), _IconStarted, _isolated_env(), _personal(), CaptureFixture, Exception, fixture, ModuleType (+11 more)
+Cohesion: 0.14
+Nodes (13): Daemon process for autonomous action execution., _IconStarted, _isolated_env(), Exception, fixture, Path, timeout, The tray daemon and the background daemon refuse server mode; personal mode is… (+5 more)
 
 ### Community 259 - "test_action_names_migration.py"
 Cohesion: 0.16
 Nodes (13): _pg_execute(), _pg_insert(), Any, Connection, fixture, Path, postgres, The per-user action names revision: upgrade and downgrade on SQLite and… (+5 more)
 
 ### Community 260 - "pid_alive"
-Cohesion: 0.13
-Nodes (15): pid_alive(), Process liveness checks that never signal the process they probe. On POSIX,…, True when a process with this id is running., _windows_pid_alive(), Daemon process for autonomous action execution., Daemon lifecycle management — start, stop, status., parametrize, skipif (+7 more)
+Cohesion: 0.15
+Nodes (14): pid_alive(), Process liveness checks that never signal the process they probe. On POSIX,…, True when a process with this id is running., _windows_pid_alive(), Daemon lifecycle management — start, stop, status., parametrize, skipif, pid_alive must probe a process without signalling it (Windows: signal 0 is… (+6 more)
 
 ### Community 261 - "test_models_offered.py"
 Cohesion: 0.10
@@ -1529,9 +1554,13 @@ Nodes (14): attachFiles(), byId(), chipsHtml(), clearRefusals(), decorate(), esc
 Cohesion: 0.14
 Nodes (17): account.html (My account page), account_api_keys.html (My API keys page), account_mfa.html (Two-step verification page), All API keys page, _api_key_table.html partial, Two-step verification page, Accept invitation page, Auth layout template (+9 more)
 
-### Community 264 - ".execute"
-Cohesion: 0.12
-Nodes (8): Any, Build the agent's system prompt with environment context., Get available tools, excluding spawn_agent to prevent recursive spawning., Run the agent's tool-use loop. Returns a dict with: content, input_tokens,…, build_skills_block(), Any, Names and one-line descriptions only; full content loads via use_skill., TestBlock
+### Community 264 - "build_skills_block"
+Cohesion: 0.40
+Nodes (4): build_skills_block(), Any, Names and one-line descriptions only; full content loads via use_skill., TestBlock
+
+### Community 265 - "_Session"
+Cohesion: 0.09
+Nodes (15): Certificates, make_certificates(), _name(), EmailMessage, Path, socket, SSLContext, Test-only: a small SMTP server on 127.0.0.1 for delivery tests, with no… (+7 more)
 
 ### Community 266 - "TestTags"
 Cohesion: 0.15
@@ -1539,11 +1568,11 @@ Nodes (8): _load(), CaptureFixture, ModuleType, parametrize, Path, The GHCR tag 
 
 ### Community 267 - "budgets.py"
 Cohesion: 0.07
-Nodes (31): BudgetState, connections_for(), The ids of the connections assigned to ``user_guid`` or to any of ``roles``., _amount(), BudgetStatus, check(), _connection_name(), connection_of() (+23 more)
+Nodes (34): BudgetState, connections_for(), get_metering(), A connection's metering settings (the defaults when none are saved)., The ids of the connections assigned to ``user_guid`` or to any of ``roles``., period_of(), The period (``YYYY-MM``, the UTC calendar month) that ``at`` falls in., _amount() (+26 more)
 
 ### Community 268 - "get_skills_manager"
-Cohesion: 0.06
-Nodes (43): SkillInvalid, _escapes_skill(), get_write_tools(), Any, _quoted(), Approval-gated skill authoring: create_skill and update_skill. Authoring stays…, Write the skill folder atomically and reload the manager., True when a resource path could leave the skill folder on any platform. Judged… (+35 more)
+Cohesion: 0.05
+Nodes (47): SkillInvalid, _escapes_skill(), get_write_tools(), Any, _quoted(), Approval-gated skill authoring: create_skill and update_skill. Authoring stays…, Write the skill folder atomically and reload the manager., True when a resource path could leave the skill folder on any platform. Judged… (+39 more)
 
 ### Community 269 - "stamp_version.py"
 Cohesion: 0.20
@@ -1553,9 +1582,9 @@ Nodes (15): check_follows(), main(), parse_version(), Exception, Path, Stamp a n
 Cohesion: 0.38
 Nodes (4): _balanced(), Split one command line into simple commands in one dialect., Return the text inside the parenthesis at ``open_index`` and the index of its…, _Splitter
 
-### Community 271 - "test_sqlite_export_imported_into_postgresql_row_for_row"
-Cohesion: 0.20
-Nodes (16): compare(), compare_vectors(), kept(), norm(), Any, Test-only: compare a personal user's rows with what an import made of them, row…, Each imported memory and context element has its source vector in pgvector., One representation per value: timestamps as naive UTC text (SQLite keeps them… (+8 more)
+### Community 271 - "personal_bundle"
+Cohesion: 0.09
+Nodes (29): compare(), compare_vectors(), kept(), norm(), Any, Test-only: compare a personal user's rows with what an import made of them, row…, Each imported memory and context element has its source vector in pgvector., One representation per value: timestamps as naive UTC text (SQLite keeps them… (+21 more)
 
 ### Community 272 - "test_bundles_cli.py"
 Cohesion: 0.19
@@ -1565,13 +1594,13 @@ Nodes (18): _loader(), load(), personal_db(), Any, CaptureFixture, fixture, Monk
 Cohesion: 0.16
 Nodes (19): _copier(), execute(), _extract_archive(), get_tools(), _list_archive(), Any, IO, Path (+11 more)
 
-### Community 274 - "_call"
-Cohesion: 0.17
-Nodes (12): _claim_and_finish(), _conversation(), Any, Path, TestClient, Server mode: the knowledge endpoint queues builds as jobs and reads status from…, What the worker does with the oldest queued job., TestBuildQueuesAJob (+4 more)
+### Community 274 - "_signed_in"
+Cohesion: 0.19
+Nodes (11): _claim_and_finish(), _conversation(), Any, Path, TestClient, What the worker does with the oldest queued job., TestBuildQueuesAJob, TestInstancePermission (+3 more)
 
 ### Community 275 - "parametrize"
-Cohesion: 0.15
-Nodes (5): MonkeyPatch, parametrize, The mode refuses only the local-only categories; the rest follow the role., TestAvailability, TestRefusedByName
+Cohesion: 0.10
+Nodes (11): MonkeyPatch, parametrize, Path, TestClient, The mode refuses only the local-only categories; the rest follow the role., A server keeps its settings in the database (instance settings), not…, Fail the test if a local-only tool implementation is reached., TestAvailability (+3 more)
 
 ### Community 276 - "test_usage_migration.py"
 Cohesion: 0.18
@@ -1582,8 +1611,8 @@ Cohesion: 0.11
 Nodes (14): _create_icon_image(), Any, Path, Open the Spark web UI. If already running, opens the existing URL., Read action stats from the database once., Periodically read action stats from the database., Open the log folder in the system file browser., Convert a UTC ISO datetime string to local time display. (+6 more)
 
 ### Community 278 - "ActionRunner"
-Cohesion: 0.12
-Nodes (23): configure_runtime(), Validate the mode and database settings and set the process-wide mode. With…, _load(), Daemon application — long-running process for autonomous actions., Main daemon entry point., run_daemon(), _run(), load_runtime() (+15 more)
+Cohesion: 0.16
+Nodes (18): configure_runtime(), Validate the mode and database settings and set the process-wide mode. With…, Daemon application — long-running process for autonomous actions., Main daemon entry point., run_daemon(), _run(), RuntimeError, The tray daemon and the background daemon run only in personal mode. In server… (+10 more)
 
 ### Community 279 - "knowledge.js"
 Cohesion: 0.27
@@ -1594,8 +1623,8 @@ Cohesion: 0.16
 Nodes (4): configureMarked(), escapeHtml(), renderMarkdown(), renderMermaidDiagrams()
 
 ### Community 281 - "database/memories.py"
-Cohesion: 0.09
-Nodes (23): add_memory(), delete_all_memories(), delete_memory(), get_all_memories(), get_memory(), memory_exists(), Any, ndarray (+15 more)
+Cohesion: 0.10
+Nodes (22): add_memory(), delete_all_memories(), delete_memory(), get_all_memories(), get_memory(), memory_exists(), Any, ndarray (+14 more)
 
 ### Community 282 - "debate/prompts.py"
 Cohesion: 0.20
@@ -1603,7 +1632,7 @@ Nodes (7): debater_system(), judge_phase_instruction(), judge_system(), System p
 
 ### Community 283 - "TestClient"
 Cohesion: 0.07
-Nodes (35): _anthropic(), _call(), _config_of(), _declare(), _entries(), _foundry(), _fresh_results(), _listed() (+27 more)
+Nodes (36): _anthropic(), _call(), _config_of(), _declare(), _entries(), _foundry(), _fresh_results(), _listed() (+28 more)
 
 ### Community 284 - "vector_store_2_kg_skill_uniqueness.py"
 Cohesion: 0.35
@@ -1615,15 +1644,15 @@ Nodes (9): _get_platform_description(), get_tools(), Any, System command tool �
 
 ### Community 286 - "test_database.py"
 Cohesion: 0.09
-Nodes (11): Test fixtures README, Legacy SQLite fixtures (spark_0_2_0.db, spark_0_1_0.db), bundles/synthetic-v1.zip user bundle fixture, conn(), db(), fixture, Tests for the database layer., A migrated SPARK database (SQLite, and PostgreSQL when marked). (+3 more)
+Nodes (13): Test fixtures README, Legacy SQLite fixtures (spark_0_2_0.db, spark_0_1_0.db), bundles/synthetic-v1.zip user bundle fixture, conn(), db(), fixture, ndarray, Tests for the database layer. (+5 more)
 
-### Community 287 - ".menu"
-Cohesion: 0.29
-Nodes (3): fixture, The Home lists must route each conversation to its type's view., TestMenuConversationLinks
-
-### Community 288 - "upsert"
+### Community 287 - "tool_scope"
 Cohesion: 0.16
-Nodes (9): _check(), insert_returning_id(), ``INSERT ... ON CONFLICT (...) DO UPDATE`` (or ``DO NOTHING``). ``update``…, ``INSERT ... RETURNING id`` (SQLite 3.35 or later, and PostgreSQL)., upsert(), parametrize, Tests for the SQL dialect helpers in spark.db.dialect., TestInsertReturningId (+1 more)
+Nodes (10): _allowed_roots(), Any, Build the scope for a tool call from the registry's runtime ``config``. Server…, tool_scope(), Any, MonkeyPatch, Sub-agents and scheduled actions give file tools the user and the bridge., _Settings (+2 more)
+
+### Community 288 - "tool_permissions.py"
+Cohesion: 0.07
+Nodes (27): check_global_tool_permission(), check_tool_permission(), delete_global_tool_permission(), delete_tool_permission(), get_all_global_tool_permissions(), get_all_tool_permissions(), is_tool_allowed(), Tool permission management: per conversation (scoped by the conversation's… (+19 more)
 
 ### Community 289 - "TestRefresh"
 Cohesion: 0.14
@@ -1642,24 +1671,24 @@ Cohesion: 0.06
 Nodes (43): Named model connections on conduit (0.3.0rc3), Deployment mode: personal and server, Per-user file areas and quotas, Knowledge graph build jobs on the worker, MCP servers in server mode (role grants), Untrusted content in tool results, Usage metering and monthly token budgets, User bundle export and import (+35 more)
 
 ### Community 293 - "_default_settings"
-Cohesion: 0.11
-Nodes (10): _default_settings(), _get_default_db_path(), Sensible defaults so Spark can boot with an empty config., Return the default SQLite database path inside the data directory., fixture, Tests for core application bootstrap., _Settings, TestDefaultSettings (+2 more)
+Cohesion: 0.14
+Nodes (9): _default_settings(), _get_default_db_path(), Sensible defaults so Spark can boot with an empty config., Return the default SQLite database path inside the data directory., fixture, Tests for core application bootstrap., _Settings, TestDefaultSettings (+1 more)
 
 ### Community 294 - "getting-started.md"
 Cohesion: 0.21
 Nodes (11): Prompt caching setting, Adding a new LLM provider, First-run configuration flow, Personal mode versus server mode databases, Install via pip, Anthropic provider, AWS Bedrock provider, Google Gemini provider (+3 more)
 
-### Community 295 - "build_registry"
-Cohesion: 0.26
-Nodes (7): PermissionRegistry, build_registry(), A warden registry holding every permission and role in the catalogue., A role: the permissions it holds, and whether it is an administrator role.…, RoleSpec, MonkeyPatch, TestRegistry
+### Community 295 - "test_orchestrator_budgets.py"
+Cohesion: 0.24
+Nodes (12): _setup_debate(), _debate(), _debate_services(), made(), _now(), _panel_orch(), _panel_services(), Any (+4 more)
 
-### Community 296 - "SessionManager"
-Cohesion: 0.17
-Nodes (9): _matches(), Personal-mode browser session: one at a time, with inactivity and absolute…, Manages a single active browser session. ``timeout_minutes`` ends a session…, Create a new session, replacing any existing one., Whether ``session_id`` is the live session; refreshes its activity., The CSRF token of the live session ``session_id``, without refreshing it., End the session (only if it is ``session_id``, when one is given)., _Session (+1 more)
+### Community 296 - "HashEmbedding"
+Cohesion: 0.16
+Nodes (11): conversation(), HashEmbedding, memory_index(), Any, fixture, float32, NDArray, MemoryIndex and ConversationVectorIndex over the VectorStore and EmbeddingModel… (+3 more)
 
 ### Community 297 - "classify_error"
-Cohesion: 0.26
-Nodes (4): classify_error(), Any, Map an ElevenLabs HTTP failure to a fallback reason. Quota detection is…, TestClassifyError
+Cohesion: 0.15
+Nodes (8): ElevenLabs REST client. Uses httpx directly rather than the elevenlabs SDK:…, classify_error(), Any, Voice failures and their classification. Every failure downgrades an utterance…, Map an ElevenLabs HTTP failure to a fallback reason. Quota detection is…, Mapping ElevenLabs HTTP failures to fallback reasons., test_voice_unavailable_carries_reason(), TestClassifyError
 
 ### Community 298 - "test_credits_warn_at_80_stop_at_100_and_the_turn_in_flight_finishes"
 Cohesion: 0.19
@@ -1673,13 +1702,9 @@ Nodes (9): amount(), creditsLabel(), el(), escape(), groups(), optionsHtml(), re
 Cohesion: 0.15
 Nodes (5): Tests for knowledge graph storage., TestBuildsAndClear, TestEdgeMerge, TestKgSchema, TestNodeMerge
 
-### Community 301 - "test_kg_surfaces.py"
-Cohesion: 0.27
-Nodes (7): db(), fake_embedder(), _make_manager(), fixture, Auto-context must inject the relevant subgraph into the system prompt., The bridge (SyncDatabase) to a fresh migrated SQLite database., TestAutoContext
-
 ### Community 302 - "application.py"
-Cohesion: 0.10
-Nodes (30): Konfig, _ensure_config(), _ensure_macos_path(), _log_startup_paths(), AppContext, Path, Spark application bootstrap and lifecycle., Migrate 0.2 secret names, validate the start-up configuration and set the mode.… (+22 more)
+Cohesion: 0.05
+Nodes (59): Konfig, describe(), main(), _run(), parse(), Namespace, ``spark bootstrap [--resend-invitation]``: run the server's first-run steps and…, What happened, one line per step. (+51 more)
 
 ### Community 303 - "CI workflow"
 Cohesion: 0.12
@@ -1689,25 +1714,25 @@ Nodes (18): Pull request template, CI workflow, CI licence audit job, CI lint an
 Cohesion: 0.19
 Nodes (14): CI server-mode PostgreSQL job, Worker role (spark worker), Server-mode Compose stack, Docker Desktop Compose stack, Live end-to-end overlay stack, Portainer stack, migrate one-shot service, PostgreSQL with pgvector service (+6 more)
 
-### Community 305 - "FakeClock"
-Cohesion: 0.16
-Nodes (5): FakeClock, LogCaptureFixture, MonkeyPatch, TestWaitTiming, fake_missing()
+### Community 305 - "tools.md"
+Cohesion: 0.15
+Nodes (16): Roles: administrator, auditor, power_user, user, Usage and token budgets, API keys, Adding a new built-in tool, Code style (black, isort, mypy), Project structure, MCP server mode (role grants, no stdio), Memory categories (+8 more)
 
 ### Community 306 - "test_daemon.py"
 Cohesion: 0.14
 Nodes (7): Tests for daemon and scheduler modules., Verify action system prompt includes key fields., Verify failure count logic., Verify cron expression parsing logic., Verify schedule config JSON parsing., TestActionExecutor, TestActionRunnerScheduling
 
-### Community 307 - "TestInterface"
-Cohesion: 0.20
-Nodes (5): _ctx(), Any, MonkeyPatch, TestInterface, TestServe
+### Community 307 - "LoginPolicy"
+Cohesion: 0.12
+Nodes (9): LoginPolicy, Lifetime of a code and the per-address failure limit., guid(), _ctx(), Any, MonkeyPatch, TestInterface, TestServe (+1 more)
 
 ### Community 308 - "_build_tool_categories"
-Cohesion: 0.17
-Nodes (6): _build_tool_categories(), Build embedded tool category data for the tools management panel., TestBuildToolCategories, Any, _settings_get(), TestSettingsPage
+Cohesion: 0.16
+Nodes (8): _build_tool_categories(), An on/off setting as a yes/no select's value ("true" or "false")., Build embedded tool category data for the tools management panel., _select_bool(), TestBuildToolCategories, Any, _settings_get(), TestSettingsPage
 
-### Community 309 - "CompactionSettings"
-Cohesion: 0.15
-Nodes (7): CompactionSettings, When to compact: shares of the context window, and the summary's size., These settings, or the defaults for any value outside (0, 1]., Use ``settings`` from the next compaction check on (a settings change)., ratio(), Use new compaction thresholds from the next compaction check on (a settings…, The compaction thresholds now: a server's instance settings, else this…
+### Community 309 - "_add_memory"
+Cohesion: 0.12
+Nodes (12): _add_memory(), Any, float32, NDArray, Vector, Store a memory. Returns ID or None if duplicate., Search memories by semantic similarity., Auto-retrieve relevant memories for a user message. Returns a formatted context… (+4 more)
 
 ### Community 311 - "_HeaderTransport"
 Cohesion: 0.15
@@ -1718,8 +1743,8 @@ Cohesion: 0.17
 Nodes (6): db(), fixture, Tests for skills state persistence., A migrated SPARK database (SQLite, and PostgreSQL when marked)., TestSkillsSchema, TestSkillStates
 
 ### Community 313 - "Running Spark on AWS (ECS on Fargate)"
-Cohesion: 0.09
-Nodes (23): A failed deploy, Bedrock through the task role, Configuration: the settings document and the bundle, Deploying to the test environment, EFS, Going back to an earlier version, `/health` and `/ready`, IAM: one role per task (+15 more)
+Cohesion: 0.08
+Nodes (24): A failed deploy, Bedrock through the task role, Configuration: the settings document and the bundle, Deploying to the test environment, EFS, Going back to an earlier version, `/health` and `/ready`, IAM: one role per task (+16 more)
 
 ### Community 314 - "panel/prompts.py"
 Cohesion: 0.25
@@ -1732,6 +1757,10 @@ Nodes (8): Prompt inspection and security features., Prompt inspection — multi
 ### Community 316 - "create_agent_run"
 Cohesion: 0.14
 Nodes (14): create_agent_run(), get_agent_run(), get_agent_runs(), Record a new agent run under one of the user's conversations. Returns the row…, Agent runs of one of the user's conversations, newest first., One of the user's agent runs by agent ID, or None., conn(), conv_id() (+6 more)
+
+### Community 317 - "test_copy_image_script.py"
+Cohesion: 0.28
+Nodes (16): _check_rules(), copies(), copy_image(), parametrize, Path, scripts/copy-image.sh against a stub ``crane`` that records its calls. The stub…, Run, test_a_copy_that_comes_back_with_another_digest_fails() (+8 more)
 
 ### Community 318 - "test_mcp_conversation.py"
 Cohesion: 0.12
@@ -1757,21 +1786,21 @@ Nodes (15): Before starting, Gotchas, Live provider (only when Matthew names the
 Cohesion: 0.17
 Nodes (12): Assignments and allowances, How credits are worked out, Metered and unmetered connections, Metering and allowances, Personal mode, Precision and history, The usage view and CSV, Tiers (+4 more)
 
-### Community 325 - ".__init__"
-Cohesion: 0.29
-Nodes (5): AsyncConnectionPool, AbstractEventLoop, AsyncConnection, The event loop that owns the connections., The psycopg pool in server mode (shared with warden); None on SQLite.
-
-### Community 326 - "_get_data_path"
+### Community 325 - "TestPostgres"
 Cohesion: 0.15
-Nodes (13): _get_data_path(), Return the platform-conventional data directory., _handle_daemon_settings(), Start or stop the tray daemon based on settings changes., Start the system tray daemon as a detached process if not already running., _start_tray_daemon_if_needed(), generate_self_signed_cert(), Path (+5 more)
+Nodes (8): fixture, Path, postgres, The knowledge graph build jobs revision: upgrade and downgrade on SQLite and…, _sqlite_exec(), _sqlite_tables(), TestPostgres, TestSqlite
+
+### Community 326 - "_start_daemon_if_enabled"
+Cohesion: 0.33
+Nodes (6): _handle_daemon_settings(), Start or stop the tray daemon based on settings changes., Start the system tray daemon as a detached process if not already running., Start the tray daemon when actions and the daemon are enabled, in personal mode…, _start_daemon_if_enabled(), _start_tray_daemon_if_needed()
 
 ### Community 327 - "test_identity_passwords.py"
 Cohesion: 0.25
 Nodes (3): warden's password refusals and forced changes, worded for SPARK's screens.…, test_another_user_error_keeps_its_own_message(), UserError
 
 ### Community 328 - "AuthManager"
-Cohesion: 0.12
-Nodes (13): AuthManager, _Code, _digest(), _Failures, LoginPolicy, Personal-mode login codes: single use, short-lived and rate-limited. A code is…, Lifetime of a code and the per-address failure limit., Issues and redeems one live login code at a time. (+5 more)
+Cohesion: 0.19
+Nodes (8): AuthManager, _Code, _digest(), _Failures, Issues and redeems one live login code at a time., Issue a new 8-character code, replacing any live one., Issue a new code only when none is live; return it, or None., Spend ``code`` for ``client`` if it is live and the client is not locked out.
 
 ### Community 329 - "csrf.js"
 Cohesion: 0.17
@@ -1810,28 +1839,28 @@ Cohesion: 0.33
 Nodes (11): assigned_connections(), catalogue_provider(), downgrade(), _insert(), Any, Catalogue overlay entries scoped to a connection:…, The catalogue provider of a connection's settings, as conduit 0.1.0 derives it…, The ids of the connections that offer ``entry`` before this revision, by id. (+3 more)
 
 ### Community 339 - "TestRoles"
-Cohesion: 0.27
-Nodes (5): CaptureFixture, MonkeyPatch, parametrize, The ``spark`` command's roles: ``spark`` and ``spark web`` serve, ``spark…, TestRoles
+Cohesion: 0.36
+Nodes (4): CaptureFixture, MonkeyPatch, parametrize, TestRoles
 
-### Community 340 - "attachments.py"
-Cohesion: 0.18
-Nodes (15): attach(), AttachmentError, _name(), _one_id(), parse_ids(), Any, JSONResponse, Request (+7 more)
+### Community 340 - "Chain"
+Cohesion: 0.15
+Nodes (13): Path, Chain, clear_chains(), Add a chain after SPARK's (warden's chain, in its ``warden`` schema)., A further migration chain run by ``spark migrate`` after SPARK's own.…, register_chain(), registered_chains(), _no_extra_chains() (+5 more)
 
-### Community 341 - "._emb"
-Cohesion: 0.22
-Nodes (3): ndarray, TestContextIndex, TestMemories
+### Community 341 - ".compute_similarity"
+Cohesion: 0.17
+Nodes (8): Any, float32, NDArray, Compute cosine similarities between a query and corpus embeddings. Assumes…, Load or retrieve the cached model (thread-safe)., L2-normalised embeddings, one row per text: shape ``(len(texts), dimension)``., Encode text(s) into embedding vectors. Returns shape (dim,) for a single…, TestEmbeddingModel
 
 ### Community 342 - "test_skills_endpoints.py"
-Cohesion: 0.16
-Nodes (9): _auth(), client(), _mock_settings_get(), TestClient, Skills page API tests: list, toggle, view, import, download, delete., TestConversationToggles, TestImportDownloadDelete, TestListAndToggle (+1 more)
+Cohesion: 0.15
+Nodes (10): _auth(), client(), _mock_settings_get(), fixture, TestClient, Skills page API tests: list, toggle, view, import, download, delete., TestConversationToggles, TestImportDownloadDelete (+2 more)
 
-### Community 343 - "_with"
-Cohesion: 0.18
-Nodes (3): TestConfigPermissions, TestOffered, _with()
+### Community 343 - "db_helpers.py"
+Cohesion: 0.15
+Nodes (11): FastAPI, Helpers for tests that run the web app with a real database., _auth(), client(), _mock_settings_get(), fixture, TestClient, The /skill-name trigger must rewrite messages on both streaming surfaces. (+3 more)
 
-### Community 344 - "repository.py"
-Cohesion: 0.14
-Nodes (25): is_retired(), ValueError, Whether ``key`` is a setting named connections replaced., A setting was refused., SettingsError, _checked(), _decoded(), delete_instance() (+17 more)
+### Community 344 - "Scope"
+Cohesion: 0.09
+Nodes (37): preferences(), Every preference of one user, defaults filled in. Server mode reads…, Server mode: store one preference for one user and report it to the audit hook., set_preference(), is_offered(), is_retired(), keys(), Kind (+29 more)
 
 ### Community 345 - "FakeSentenceTransformer"
 Cohesion: 0.29
@@ -1841,25 +1870,25 @@ Nodes (4): FakeSentenceTransformer, Any, ndarray, Records how it was built and c
 Cohesion: 0.11
 Nodes (19): wait_for(), _config_path(), _personal_env(), Path, Scope 5 (MCP): a streamable-HTTP MCP server added for Users; the model's call…, Start SPARK's web process in personal mode, wait until it is ready, stop it., Scope 6: a 0.2-style ``config.yaml`` with Anthropic (a plain-text key) and…, _start_personal() (+11 more)
 
-### Community 347 - "Recorder"
-Cohesion: 0.28
-Nodes (4): parametrize, An executor that records what it is asked to run., Recorder, TestAnnounce
+### Community 347 - "announce"
+Cohesion: 0.20
+Nodes (8): announce(), is_secret_key(), Whether ``key`` (a notification payload) names a registered secret or a model…, Tell every replica the secret ``key`` changed; the payload is the key, never a…, parametrize, An executor that records what it is asked to run., Recorder, TestAnnounce
 
-### Community 348 - "TestThePurgeUrlSetting"
-Cohesion: 0.26
-Nodes (3): parametrize, Settings, TestThePurgeUrlSetting
+### Community 348 - "skills_manager"
+Cohesion: 0.16
+Nodes (13): SkillSource, SkillSourceSuite, frozen_clock(), fixture, MonkeyPatch, Path, Skill, conduit's skill source suite, with the skills split across SPARK's two folders. (+5 more)
 
-### Community 349 - "Any"
-Cohesion: 0.22
-Nodes (5): _bootstrapped(), make(), Any, Stands in for the worker's wait for ``spark bootstrap``., __call__()
+### Community 349 - "skill_transcript"
+Cohesion: 0.20
+Nodes (14): SkillUse, _blocks(), _loaded_name(), Any, Transcript, conduit transcripts read from SPARK's stored conversations. SPARK keeps its own…, A stored message's content as SPARK sends it: its JSON blocks when it holds…, The skill a ``use_skill`` call loads (not a resource read), if it names a valid… (+6 more)
 
 ### Community 350 - "mcp_stdio_stub.py"
 Cohesion: 0.33
 Nodes (6): echo(), env(), tool, A local stub MCP server spoken to over stdio, for personal-mode tests. Run as…, Return the text given., Return an environment variable's value (empty when unset).
 
 ### Community 351 - "endpoints/__init__.py"
-Cohesion: 0.10
-Nodes (17): help_page(), get, HTMLResponse, JSONResponse, Request, User guide and help endpoints., Render the user guide page., search_help() (+9 more)
+Cohesion: 0.16
+Nodes (9): FastAPI, Route registration for the Spark web interface., Register all endpoint routers., register_routes(), _client(), parametrize, TestClient, The provider setup guides and help text point at connections, not 0.2 providers… (+1 more)
 
 ### Community 352 - "mcp_server.py"
 Cohesion: 0.33
@@ -1897,29 +1926,25 @@ Nodes (4): cancelCurrentRequest(), closeStream(), openChatStream(), sendMessageW
 Cohesion: 0.29
 Nodes (4): Set a value in a nested dict using a dot-separated key., _set_nested(), Tests for settings endpoint helper functions., TestSetNested
 
-### Community 361 - "_tool_result"
-Cohesion: 0.50
-Nodes (3): Build a standard tool_result block., _tool_result(), TestToolResult
+### Community 361 - "TestServerMode"
+Cohesion: 0.24
+Nodes (6): _pg(), _pg_tables(), postgres, An rc2-era database (warden at 0.1.0b8's head) upgrades cleanly to 0.1.0's…, TestServerMode, _warden_revision()
 
-### Community 362 - "_get_tool_category_siblings"
-Cohesion: 0.50
-Nodes (3): _get_tool_category_siblings(), Return all tool names in the same category as the given tool. When a user…, Approving skill loading must not carry over to skill authoring.
-
-### Community 363 - "test_tool_availability.py"
-Cohesion: 0.12
-Nodes (9): Built-in tool definitions and execution., _personal(), personal_mode(), fixture, Tool availability by mode: local-only tools do not exist in server mode. In…, Fail the test if a local-only tool implementation is reached., TestCategories, TestRegistration (+1 more)
+### Community 362 - "AdvisoryLock"
+Cohesion: 0.19
+Nodes (7): AdvisoryLock, AsyncConnection, A session-level PostgreSQL advisory lock on a dedicated connection., The server process holding the lock's connection (None when not connected)., Take the lock if it is free; never waits., Whether the lock connection is alive (so the lock is still ours)., Release the lock (if held) and close the connection.
 
 ### Community 364 - "Windows Code Signing Setup"
 Cohesion: 0.50
 Nodes (5): Windows Code Signing Setup, SSL.com CodeSignTool, eSigner TOTP authentication, GitHub signing secrets, Release workflow signing steps
 
-### Community 365 - "database/user_identities.py"
-Cohesion: 0.22
-Nodes (10): IdentityConflict, link(), Exception, The mapping of SPARK user guids onto warden users (``user_identities``).…, The guid or the warden user is already mapped to someone else., The guid mapped to ``warden_user_id``, created on first use, in one…, The warden user ``user_guid`` is mapped to, or None., Bind an existing guid to a warden user; refuse if either is already mapped… (+2 more)
+### Community 365 - "test_user_identities_migration.py"
+Cohesion: 0.21
+Nodes (8): _pg_tables(), Path, postgres, The user identities revision: upgrade and downgrade on SQLite and PostgreSQL., _sqlite_columns(), _sqlite_tables(), TestPostgres, TestSqlite
 
 ### Community 366 - ".test_an_unassigned_connection_is_not_offered"
-Cohesion: 0.19
-Nodes (10): _agents(), _panel(), _pending_approval(), Any, TestClient, usefixtures, A sub-agent model approval waiting for ``guid``'s answer, as a stream registers…, TestPinnedConversation (+2 more)
+Cohesion: 0.17
+Nodes (12): _agents(), _panel(), _pending_approval(), Any, TestClient, usefixtures, A sub-agent model approval waiting for ``guid``'s answer, as a stream registers…, A connection reaches only the users and roles assigned it (M9). (+4 more)
 
 ### Community 367 - ".inspect"
 Cohesion: 0.20
@@ -1937,9 +1962,13 @@ Nodes (9): Remove the source (tests)., reset(), AuditHook, Install the hook ever
 Cohesion: 0.50
 Nodes (4): spawn_agent tool doc, Chain agent mode, Orchestrator-workers agent mode, store_memory tool doc
 
-### Community 375 - "TestTransactions"
-Cohesion: 0.25
-Nodes (3): A writer given the caller's connection (as warden's audit will be) shares its…, TestTransactions, audit()
+### Community 374 - "test_secret_propagation.py"
+Cohesion: 0.21
+Nodes (12): needs_konfig_reload, KeyedSettings, postgres, ProviderSettings, Secrets saved on one web replica reach every replica (wave 3 question 16; A8,…, A test adapter whose settings carry a credential (a secret reference)., Every table in the database with a row whose text contains ``value``., _rows_holding() (+4 more)
+
+### Community 375 - "build_panel_transcript"
+Cohesion: 0.26
+Nodes (11): build_panel_transcript(), Any, Panel transcript builder. Panels have shared visibility: every panellist sees…, The shared discussion transcript, filtered by audience. Panellists see framing,…, _render_turn(), _speaker_name(), Shared-visibility transcript for panels., test_empty_transcript_placeholder() (+3 more)
 
 ### Community 376 - "FakeSecretsManager"
 Cohesion: 0.25
@@ -1949,9 +1978,9 @@ Nodes (5): exceptions, FakeSecretsManager, Exception, One AWS Secrets Manager se
 Cohesion: 0.50
 Nodes (4): db(), Any, fixture, The async SPARK database the engine bills against (SQLite and PostgreSQL).
 
-### Community 378 - "_signed_in"
+### Community 378 - "TestClient"
 Cohesion: 0.32
-Nodes (5): TestClient, Server mode, signed in through warden: users see only the MCP servers granted…, TestGrantedServers, _tool_panel(), _signed_in()
+Nodes (3): TestClient, TestGrantedServers, _tool_panel()
 
 ### Community 385 - "skill-creator skill"
 Cohesion: 0.67
@@ -1961,88 +1990,180 @@ Nodes (3): skill-creator skill, create_skill / update_skill tools, Skill authori
 Cohesion: 0.38
 Nodes (3): _next_notify(), postgres, TestNotify
 
-### Community 387 - "identity_web_helpers.py"
-Cohesion: 0.10
-Nodes (25): app_of(), claims(), client_options(), Ctx, FastAPI, MemorySecrets, Path, TestClient (+17 more)
+### Community 387 - "server_app"
+Cohesion: 0.22
+Nodes (10): _EnvCtx, Any, fixture, MonkeyPatch, parametrize, Path, konfig's settings as ``spark web`` loads them: config file, SPARK__ variables,…, server_app() (+2 more)
 
 ### Community 401 - ".transaction"
 Cohesion: 0.33
 Nodes (4): AbstractAsyncContextManager, Connection, Nest a unit of work in this connection's transaction (a savepoint)., A transaction: new on a Database, a savepoint inside a Connection's.
 
-### Community 402 - "is_offered"
-Cohesion: 0.33
-Nodes (6): is_offered(), Whether this mode offers ``key``: a server has no settings for the local-only…, _offers_local_tools(), Whether this mode offers the local-only tools (personal mode does, a server…, Whether saving ``dotted_key`` would write settings for a tool category this…, _touches_unavailable_tools()
+### Community 402 - "_touches_unavailable_tools"
+Cohesion: 0.50
+Nodes (4): _offers_local_tools(), Whether this mode offers the local-only tools (personal mode does, a server…, Whether saving ``dotted_key`` would write settings for a tool category this…, _touches_unavailable_tools()
 
 ### Community 403 - "test_conversation_links.py"
 Cohesion: 0.40
 Nodes (5): conn(), db(), fixture, Tests for conversation links database module., A migrated SPARK database (SQLite, and PostgreSQL when marked).
 
-### Community 405 - "_Konfig"
-Cohesion: 0.50
-Nodes (3): _Konfig, install(), Any
+### Community 404 - "_fake_pystray"
+Cohesion: 0.22
+Nodes (6): _fake_pystray(), CaptureFixture, ModuleType, MonkeyPatch, TestBackgroundDaemon, TestTrayDaemon
+
+### Community 405 - "TestPostgres"
+Cohesion: 0.24
+Nodes (7): _pg(), _pg_schema(), Any, postgres, Same tables, same columns in the same order, same nullability, same indices., Why there is no PostgreSQL legacy upgrade: 0.2.0's DDL fails on PostgreSQL.…, TestPostgres
+
+### Community 406 - "Built"
+Cohesion: 0.18
+Nodes (9): Built, _clean(), _client_options(), _payloads_while(), Any, fixture, A conduit provider factory recording the key each build of the connection…, The settings notifications delivered while ``action`` runs. (+1 more)
 
 ### Community 408 - "execute_write"
 Cohesion: 0.18
 Nodes (7): execute_write(), Dispatch create_skill or update_skill. Returns (result_text, is_error)., _create(), parametrize, TestCreate, TestUpdate, TestAuthoringValidation
 
-### Community 409 - "metered"
+### Community 409 - "test_usage_db.py"
 Cohesion: 0.06
-Nodes (15): metered(), Store ``connection_id`` (if need be) and its metering (tokens as credits by…, db(), fixture, parametrize, The usage repository: per-call rows with their credits, monthly totals and the…, Each call is charged when recorded, at its connection's rates and its model's…, A migrated SPARK database (SQLite, and PostgreSQL when marked). (+7 more)
+Nodes (12): db(), fixture, parametrize, The usage repository: per-call rows with their credits, monthly totals and the…, Each call is charged when recorded, at its connection's rates and its model's…, A migrated SPARK database (SQLite, and PostgreSQL when marked)., TestCredits, TestPeriod (+4 more)
 
-### Community 412 - "SkillValidationError"
-Cohesion: 0.67
-Nodes (3): Exception, Raised when authored skill input is invalid., SkillValidationError
+### Community 410 - "database/conversations.py"
+Cohesion: 0.17
+Nodes (11): create_conversation(), delete_conversation(), get_conversation(), get_conversation_type(), Conversation CRUD operations., Soft-delete a conversation., Search conversations by name or message content., The type ('standard', 'debate', 'panel') of one of the user's conversations.… (+3 more)
 
-### Community 413 - "Path"
-Cohesion: 0.42
-Nodes (4): Path, TestClient, A server keeps its settings in the database (instance settings), not…, TestSettingsApi
+### Community 411 - "EmbeddingDimensionMismatch"
+Cohesion: 0.17
+Nodes (7): Collection, EmbeddingDimensionMismatch, hnsw_index_name(), ValueError, The partial HNSW index serving one dimension of a collection's vectors., A vector's dimension differs from the dimension of the user's stored vectors., Items that carry a vector: their table, text and the filters search accepts.
+
+### Community 412 - "test_files_migration.py"
+Cohesion: 0.21
+Nodes (9): _pg_tables(), Path, postgres, The file areas revision: upgrade and downgrade on SQLite and PostgreSQL., The revision sits on the one chain above the baseline (the integration session…, _sqlite_tables(), test_revision_follows_the_baseline(), TestPostgres (+1 more)
+
+### Community 413 - "voice_usage.py"
+Cohesion: 0.24
+Nodes (10): characters_this_month(), _month_start(), Any, Voice synthesis usage ledger: characters billed, per user and conversation., Start of the current calendar month (UTC), as both engines compare it., Bill characters against a user (and optionally a conversation)., Characters billed to this user since the start of the calendar month., This month's total, plus a per-conversation breakdown. (+2 more)
 
 ### Community 414 - "test_web_fetch.py"
 Cohesion: 0.27
 Nodes (9): fake_get(), install(), fixture, web_fetch turns HTML into readable Markdown (links kept, images dropped, no…, html2text is GPL-3.0-or-later; SPARK's runtime dependencies are not strong…, test_html2text_is_not_a_dependency(), test_html_becomes_markdown(), test_json_is_returned_as_is() (+1 more)
 
-### Community 415 - "_clean_state"
-Cohesion: 0.67
-Nodes (3): _clean_state(), fixture, smtp()
+### Community 415 - "OwnerAccess"
+Cohesion: 0.18
+Nodes (8): OwnerAccess, OwnerResolver, Protocol, An action owner's standing for one run. ``refusal`` is None when the run may go…, Resolves an action owner's standing (async, on the database's event loop)., The owner's current permissions, or why their actions may not run., Any, ``owners`` resolves each action owner's standing in server mode; without it a…
+
+### Community 416 - "get_builtin_tools"
+Cohesion: 0.25
+Nodes (3): get_builtin_tools(), Return all enabled built-in tool definitions. Tools that require a filesystem…, TestRegistry
+
+### Community 417 - "test_index.py"
+Cohesion: 0.25
+Nodes (8): memory_index(), _mock_embedder(), Any, fixture, Tests for the memory and vector indexing layer., Create a mock EmbeddingModel that returns random vectors., TestValidCategories, vector_index()
+
+### Community 418 - ".build_scope"
+Cohesion: 0.22
+Nodes (4): Any, Pending work for a scope without any LLM calls (the cost signal)., Extract all pending sources for a scope. Synchronous engine. Every model call…, (source_key, pending messages) pairs for a scope.
+
+### Community 419 - "test_bootstrap_migration.py"
+Cohesion: 0.24
+Nodes (7): Path, postgres, The bootstrap_record revision: on the chain, and its upgrade and downgrade on…, _sqlite_tables(), test_upgrade_and_downgrade_on_postgresql(), exists(), test_upgrade_and_downgrade_on_sqlite()
+
+### Community 420 - "open_standalone"
+Cohesion: 0.39
+Nodes (8): open_standalone(), Prepare the schema, then open the database on a new loop thread., Path, Tests for a database owned by a process with no event loop of its own (tray,…, test_close_is_idempotent(), test_opens_migrates_and_bridges(), test_refuses_a_database_behind_head_without_auto_migrate(), test_upgrades_a_legacy_database_in_personal_mode()
+
+### Community 421 - "help_page"
+Cohesion: 0.28
+Nodes (8): help_page(), get, HTMLResponse, JSONResponse, Request, User guide and help endpoints., Render the user guide page., search_help()
+
+### Community 422 - "chat.html (conversation chat page)"
+Cohesion: 0.22
+Nodes (9): Navbar and Account menu, chat.html (conversation chat page), Create autonomous action from conversation modal, Tool permission modal, Conversation settings modal, Tool and agent activity sidecar panel, Speech input and voice conversation mode, conversations.html (conversation list) (+1 more)
 
 ### Community 423 - "TestClient"
 Cohesion: 0.43
 Nodes (3): Path, TestClient, TestPersonalMode
 
-### Community 428 - "SettingChange"
-Cohesion: 0.10
-Nodes (22): _audit_within(), Within, The audit call to run inside the write's transaction, when a transaction hook…, The single audit hook for settings changes. Every write of an instance setting,…, Report a change that has already happened; a failing hook is logged, never…, Install the hook a write calls inside its transaction (``None`` removes it)., The installed transaction hook, or None (writes then report through…, Report a change inside the transaction ``conn`` that makes it; raises if the… (+14 more)
+### Community 424 - "Path"
+Cohesion: 0.28
+Nodes (3): Path, TestEnsureConfig, TestPlatformPaths
+
+### Community 425 - "get_user_guid"
+Cohesion: 0.29
+Nodes (6): get_user_guid(), User GUID management — generates and persists a unique user identifier., Get the persistent user GUID, generating one on first use. The GUID is stored…, Reset the cached GUID (used in testing)., reset_cache(), TestUserGUID
+
+### Community 428 - "accessor.py"
+Cohesion: 0.09
+Nodes (18): _audit_within(), configure(), current(), _from_konfig(), get(), KonfigLike, _non_secret(), Any (+10 more)
 
 ### Community 429 - "settings_values.py"
 Cohesion: 0.14
-Nodes (11): coerce_bool(), Any, Protocol, ValueError, Typed reads of SPARK's settings. konfig returns a ``SPARK__`` environment…, Anything that reads a dotted settings key with a default (konfig, the instance…, A setting holds a value that cannot be read as its type. The message names the…, ``value`` read as a boolean for ``key``; ``None`` (not set) gives ``default``.… (+3 more)
+Nodes (12): coerce_bool(), Any, Protocol, ValueError, Typed reads of SPARK's settings. konfig returns a ``SPARK__`` environment…, Anything that reads a dotted settings key with a default (konfig, the instance…, A setting holds a value that cannot be read as its type. The message names the…, ``value`` read as a boolean for ``key``; ``None`` (not set) gives ``default``.… (+4 more)
+
+### Community 430 - "_Request"
+Cohesion: 0.29
+Nodes (4): _App, _Request, _State, TestAccessCheck
 
 ### Community 431 - "no_build_in_the_web_process"
 Cohesion: 0.40
 Nodes (4): no_build_in_the_web_process(), fixture, MonkeyPatch, A server's web process must never make a model client for a build.
 
 ### Community 432 - "test_repositories.py"
-Cohesion: 0.07
-Nodes (9): Repository behaviour added or made explicit by the async port, on SQLite and…, add_message inserts and bumps total_tokens in one transaction., TestActionHelpers, TestColumnAllowLists, TestCompaction, TestConversationType, TestParallelUnitsOfWork, TestUserScoping (+1 more)
+Cohesion: 0.06
+Nodes (10): Repository behaviour added or made explicit by the async port, on SQLite and…, add_message inserts and bumps total_tokens in one transaction., TestActionHelpers, TestColumnAllowLists, TestCompaction, TestConversationType, TestMemoryUpdates, TestParallelUnitsOfWork (+2 more)
 
 ### Community 433 - "autonomous_actions.py"
 Cohesion: 0.05
 Nodes (45): action_models_all_users(), action_stats(), _check_name_free(), clear_stale_locks(), complete_run(), create_action(), delete_action(), DuplicateActionName (+37 more)
 
+### Community 434 - "test_kg_e2e.py"
+Cohesion: 0.32
+Nodes (7): db(), fake_embedder(), fixture, End to end: build a conversation graph, query it, and pool it via a link., The bridge (SyncDatabase) to a fresh migrated SQLite database., test_build_query_and_link_pooling(), tool_response()
+
+### Community 435 - "violations.py"
+Cohesion: 0.29
+Nodes (6): list_violations(), Any, Prompt inspection violations., Record a prompt inspection violation (a user prompt or a tool result)., A user's most recent violations, newest first., record_violation()
+
+### Community 436 - ".save"
+Cohesion: 0.29
+Nodes (4): charge(), BinaryIO, Store an upload under the upload limit and the user's quota; return its id.…, These skills as a conduit skill source, limited to ``enabled`` names (a user's).
+
+### Community 440 - "TestInstall"
+Cohesion: 0.38
+Nodes (3): MonkeyPatch, Path, TestInstall
+
+### Community 442 - "add_index_element"
+Cohesion: 0.40
+Nodes (6): add_index_element(), Any, ndarray, Add a context element with embedding to one of the user's conversations.…, Search context elements by cosine similarity across the user's conversations.…, search_context()
+
+### Community 444 - "copy-image.sh"
+Cohesion: 0.70
+Nodes (4): fail(), scrub(), copy-image.sh script, valid_digest()
+
+### Community 445 - "execute"
+Cohesion: 0.40
+Nodes (4): execute(), Any, DateTime tool — get current date and time., Execute the get_current_datetime tool.
+
+### Community 449 - "_csrf_exempt"
+Cohesion: 0.67
+Nodes (3): _csrf_exempt(), HTTPConnection, Whether the authenticator says this request carries no ambient credential.
+
+### Community 450 - "_template_csrf_token"
+Cohesion: 0.67
+Nodes (3): Request, The CSRF token for a page rendered for this request. The auth middleware sets…, _template_csrf_token()
+
 ## Knowledge Gaps
-- **143 isolated node(s):** `launcher.sh script`, `cognisn-spark`, `AWS_PAGER`, `_AnyRole`, `_dateGroupCounts` (+138 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3980 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **27 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **144 isolated node(s):** `launcher.sh script`, `cognisn-spark`, `AWS_PAGER`, `_AnyRole`, `_dateGroupCounts` (+139 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3985 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **28 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Executor` connect `Executor` to `Dialect`, `db/__init__.py`, `available_scopes`, `spark/__init__.py`, `identity/access.py`, `database/usage.py`, `budgets.py`, `identity/audit.py`, `bundles.py`, `.transaction`, `run.py`, `database/memories.py`, `TestExecutorTransactions`, `exporter.py`, `endpoints/files.py`, `panel/orchestrator.py`, `wait.py`, `ServerSettings`, `bootstrap.py`, `SettingChange`, `database/connections.py`, `Request`, `autonomous_actions.py`, `create_agent_run`, `test_bundles_export.py`, `jobs.py`, `PgVectorStore`, `voice_usage.py`, `FileConnectionStore`, `endpoints/usage.py`, `worker.py`, `upgrade.py`, `SentenceTransformerEmbedding`, `repository.py`, `LoopThread`, `connections/runtime.py`, `endpoints/conversations.py`, `database/user_identities.py`, `knowledge/store.py`, `endpoints/connections.py`, `_Row`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `DatabaseSettings` connect `DatabaseSettings` to `Executor`, `Dialect`, `db/__init__.py`, `identity_web_helpers.py`, `test_action_names_migration.py`, `test_daemon_server_mode.py`, `MemorySecrets`, `spark/__init__.py`, `test_worker.py`, `test_chat_attachments_server.py`, `test_sqlite_export_imported_into_postgresql_row_for_row`, `test_bundles_cli.py`, `Database`, `Bundle`, `_call`, `test_usage_migration.py`, `run.py`, `test_overlay_scope_migration.py`, `test_migration_vector_store.py`, `wait.py`, `another_client`, `test_instance_settings_listener.py`, `test_kg_uniqueness.py`, `test_secret_propagation.py`, `test_worker_actions.py`, `test_db_roles.py`, `test_bundles_web.py`, `test_bundles_export.py`, `TestClient`, `server.py`, `test_worker_pruning.py`, `worker.py`, `Stack`, `test_identity_db.py`, `test_identity_migrations.py`, `test_mcp_servers_web.py`, `TestThePurgeUrlSetting`, `test_kg_build_jobs.py`, `migrate.py`, `LoopThread`, `create_app`, `FakeSmtp`, `Path`, `test_tool_availability.py`, `test_user_scoping_web.py`, `identity_screen_helpers.py`, `_konfig`, `mode.py`, `test_tls_rds.py`, `test_health.py`, `SettingsListener`, `permissions.py`, `tests/conftest.py`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
-- **Why does `ConversationManager` connect `ConversationManager` to `Executor`, `Dialect`, `ConnectionRuntime`, `KnowledgeGraphBuilder`, `test_models_offered.py`, `setting_bool`, `test_chat_attachments_server.py`, `SyncDatabase`, `PromptInspector`, `parametrize`, `StubModel`, `FakeModels`, `MemoryIndex`, `executor.py`, `test_turn_model_service.py`, `test_chat_attachments.py`, `test_kg_surfaces.py`, `test_secret_propagation.py`, `CancellationToken`, `CompactionSettings`, `ConversationVectorIndex`, `AgentExecutor`, `TestRefused`, `stub_connection`, `TestClient`, `server.py`, `test_conversation_manager_users.py`, `context_compaction.py`, `test_turn_models_web.py`, `_with`, `test_skills_conduit.py`, `allow`, `ConnectionService`, `TurnSkills`, `create_app`, `test_user_scoping_web.py`, `test_conduit_compaction.py`, `MCPServerConfig`, `permissions.py`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+- **Why does `Executor` connect `Executor` to `DatabaseSettings`, `available_scopes`, `MemorySecrets`, `identity/access.py`, `_Row`, `budgets.py`, `database`, `BudgetExceeded`, `db/engine.py`, `personal_bundle`, `bundles.py`, `.transaction`, `Database`, `database/memories.py`, `database/conversations.py`, `vector_store`, `exporter.py`, `PathRefused`, `voice_usage.py`, `tool_permissions.py`, `panel/orchestrator.py`, `mode.py`, `ServerSettings`, `bootstrap.py`, `accessor.py`, `database/connections.py`, `application.py`, `autonomous_actions.py`, `violations.py`, `_add_memory`, `importer.py`, `ConversationVectorIndex`, `add_index_element`, `create_agent_run`, `jobs.py`, `_ColumnStore`, `over_cap`, `FileConnectionStore`, `worker.py`, `endpoints/usage.py`, `upgrade.py`, `SentenceTransformerEmbedding`, `Scope`, `announce`, `SyncDatabase`, `connections/runtime.py`, `run.py`, `endpoints/connections.py`, `knowledge/store.py`?**
+  _High betweenness centrality (0.091) - this node is a cross-community bridge._
+- **Why does `ConversationManager` connect `ConversationManager` to `DatabaseSettings`, `ConnectionRuntime`, `test_models_offered.py`, `server.py`, `test_chat_attachments_server.py`, `PromptInspector`, `parametrize`, `StubModel`, `FakeModels`, `conversation_manager.py`, `MemoryIndex`, `executor.py`, `test_turn_model_service.py`, `test_chat_attachments.py`, `_make_manager`, `StubServer`, `_server_app`, `test_kg_e2e.py`, `CancellationToken`, `ConversationVectorIndex`, `AgentExecutor`, `role_permissions`, `stub_runtime`, `TestClient`, `_init`, `test_conversation_manager_users.py`, `context_compaction.py`, `test_skills_conduit.py`, `_manager`, `database/__init__.py`, `SyncDatabase`, `TurnSkills`, `test_server_wiring.py`, `test_spark_audit_web.py`?**
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
+- **Why does `DatabaseSettings` connect `DatabaseSettings` to `test_instance_settings_web.py`, `warden_database`, `test_action_names_migration.py`, `server_app`, `MemorySecrets`, `test_worker.py`, `server.py`, `test_chat_attachments_server.py`, `db/engine.py`, `personal_bundle`, `test_bundles_cli.py`, `Database`, `_signed_in`, `OriginPolicy`, `TestPostgres`, `test_usage_migration.py`, `test_files_migration.py`, `test_overlay_scope_migration.py`, `test_migration_vector_store.py`, `test_bootstrap_migration.py`, `mode.py`, `open_standalone`, `another_client`, `test_instance_settings_listener.py`, `test_kg_uniqueness.py`, `_server_app`, `test_worker_actions.py`, `.open`, `test_bundles_web.py`, `TestClient`, `sign_in`, `test_worker_pruning.py`, `TestPostgres`, `worker.py`, `test_result_policy.py`, `Stack`, `TestSqlite`, `test_identity_db.py`, `test_identity_migrations.py`, `Chain`, `test_mcp_servers_web.py`, `TestPostgres`, `database/__init__.py`, `test_kg_build_jobs.py`, `migrate.py`, `SyncDatabase`, `test_server_wiring.py`, `TestServerMode`, `FakeSmtp`, `Path`, `run.py`, `identity_screen_helpers.py`, `test_user_identities_migration.py`, `setting_bool`, `test_secret_propagation.py`, `test_tls_rds.py`, `test_health.py`, `SettingsListener`, `test_spark_audit_web.py`, `tests/conftest.py`?**
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **Are the 198 inferred relationships involving `DatabaseSettings` (e.g. with `run()` and `before_web_serves()`) actually correct?**
   _`DatabaseSettings` has 198 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 216 inferred relationships involving `Executor` (e.g. with `completed()` and `_record_missing()`) actually correct?**
