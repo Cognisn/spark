@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A model declared on a running connection can be used at once.** conduit's provider keeps the catalogue it was built with, and the connection runtime reused a provider whose settings, residency and secrets were unchanged, so a model declared through the models view (`POST /api/connections/{id}/overlays`) was offered but every turn on it failed (`model ... is not declared in the catalogue`) until a restart or a change to the connection. A digest of the connection's own overlay entries is now part of its provider's fingerprint: declaring a model, declaring it again or removing it rebuilds that connection's provider on every replica and worker that hears of the change, and every other connection keeps its provider. The live suite's set-up now declares its models after creating the stub connection, as an administrator would
+
 ## [0.3.0rc16] - 2026-11-19
 
 ### Added

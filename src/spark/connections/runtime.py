@@ -15,12 +15,15 @@ declared, :func:`~spark.connections.catalogue.connection_catalogue`), so conduit
 checks every call against them and a model declared on one connection is never
 offered or served on another. Several connections of one kind coexist.
 
-Applying a later snapshot rebuilds only the connections whose settings, residency
-or resolved secrets changed (server mode: the settings follower calls
-:meth:`refresh` after every LISTEN/NOTIFY reload). A rebuilt provider replaces the
-old one only once it has been built; a connection that fails to build keeps its
-previous provider, so a bad change never drops a working connection (D38). A
-replaced provider is closed after a grace period, so calls already on it finish.
+Applying a later snapshot rebuilds only the connections whose settings, residency,
+resolved secrets or own overlay entries changed (server mode: the settings
+follower calls :meth:`refresh` after every LISTEN/NOTIFY reload). conduit's
+provider keeps the catalogue it was built with, so a model declared on a running
+connection, declared again or removed rebuilds that connection's provider. A
+rebuilt provider replaces the old one only once it has been built; a connection
+that fails to build keeps its previous provider, so a bad change never drops a
+working connection (D38). A replaced provider is closed after a grace period, so
+calls already on it finish.
 
 The models a connection offers are its enabled ``connection_models`` rows, or,
 before any are stored for it, every chat model its catalogue (conduit's, with the
@@ -59,7 +62,7 @@ from conduit import (
 from conduit.providers import builtin_factories
 
 from spark.connections import model as model_mod
-from spark.connections.catalogue import build_catalogue, connection_catalogue
+from spark.connections.catalogue import build_catalogue, connection_catalogue, own_entries
 from spark.connections.model import Connection, ConnectionInvalid, ConnectionModel
 from spark.connections.refs import ModelRef
 from spark.connections.service import ConnectionService, ModelUnavailable
@@ -159,6 +162,36 @@ def _secret_refs(value: Any) -> list[SecretRef]:
         except ValueError:
             pass
     return refs
+
+
+def _overlay_digest(rows: Iterable[repo.OverlayRow], connection_id: str) -> str:
+    """A digest of ``connection_id``'s own overlay entries, every field, in a fixed order.
+
+    conduit's provider keeps the catalogue it was built with and checks each call
+    against it, so this digest is part of a provider's fingerprint: declaring a model
+    on a connection, declaring it again or removing it rebuilds that connection's
+    provider, and no other connection's (wave 10 Q54).
+    """
+    canonical = sorted(
+        repr(
+            (
+                row.provider,
+                row.model_id,
+                row.kind,
+                row.context_window,
+                row.output_limit,
+                row.embedding_dimensions,
+                row.tools,
+                row.vision,
+                row.prompt_caching,
+                row.structured_output,
+                row.residency_scope,
+                tuple(sorted(row.regions)),
+            )
+        )
+        for row in own_entries(rows, connection_id)
+    )
+    return hashlib.sha256("\n".join(canonical).encode()).hexdigest()
 
 
 class ConnectionRuntime:
@@ -462,7 +495,11 @@ class ConnectionRuntime:
             connection = wanted[connection_id]
             if not connection.enabled:
                 continue
-            fingerprint = connection.fingerprint() + await self._secrets_digest(connection)
+            fingerprint = (
+                connection.fingerprint()
+                + await self._secrets_digest(connection)
+                + _overlay_digest(snapshot.overlays, connection_id)
+            )
             old = previous.get(connection_id)
             if old is not None and old.fingerprint == fingerprint:
                 built[connection_id] = old
