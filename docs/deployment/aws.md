@@ -382,3 +382,76 @@ definition revision. Spark's web start refuses a database that is not at its hea
 [Backups and upgrades](operations.md#upgrades)), so a task started before the migration
 stops with a message naming `spark migrate`, and a database moved out from under a running
 task shows `"schema": "failed"` on `/ready`.
+
+## Deploying to the test environment
+
+A release-candidate tag (`v0.3.0rcN`) deploys itself to the test environment at
+`https://test.spark.cognisn.net`, with no manual step. The `deploy-test` job of
+`.github/workflows/container-publish.yml` runs after the image is published to ghcr.io, only for a
+tag push whose version is a release candidate (never a final version, never a manual dispatch),
+in the GitHub environment `spark-test`, one deploy at a time (a second waits, it is not
+cancelled). It signs in to AWS with GitHub's OIDC token, so the repository holds no AWS secret.
+
+The repository is public, so its run logs are public: the job masks every AWS identifier before
+a step can print one, and prints and summarises none. The identifiers live only in the
+environment's variables: `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_URI`,
+`SPARK_TEST_STACK_NAME` (the service stack) and `SPARK_TEST_SERVICE_ROLE_NAME` (the
+CloudFormation execution role the change sets run as).
+
+### What it does
+
+1. Copies `ghcr.io/cognisn/spark:<version>` to the ECR repository by version tag, without a
+   rebuild. The same digest already in ECR is success; a different digest fails.
+2. `scripts/deploy-test.sh <version>` reads the service stack, which must be in
+   `CREATE_COMPLETE`, `UPDATE_COMPLETE` or `UPDATE_ROLLBACK_COMPLETE`. If `RunningImageTag`
+   already equals the version (a re-run), it goes straight to the checks.
+3. **Change set one** sets `MigrateImageTag`, so the one-off migrate task definition points at
+   the new image. Only `MigrateTaskDefinition` may change.
+4. **The migrate task** runs from the stack's outputs (cluster, task definition, subnets and
+   security group, Fargate, no public IP) and must stop with exit code 0 from its
+   `spark-migrate` container: `spark migrate && spark bootstrap`. If it fails, the job stops
+   with the stop reason and exit code, and the services are not touched. The job's role cannot
+   read the task's log; read the migrate log group.
+5. **Change set two** sets `ImageTag`. Only the web and worker task definitions and the two
+   services may change. The job waits up to 30 minutes for the stack to finish updating and
+   fails, printing the failed stack events, on anything but `UPDATE_COMPLETE`.
+6. The checks: `RunningImageTag` equals the version; each service's primary deployment uses the
+   stack's task definition, rollout `COMPLETED`, running count equal to desired count and at
+   least 1; and `GET /ready` answers 200 with the version, retried for a bounded time. The job
+   summary reports these checks and no identifier.
+
+Both change sets reuse the stack's current template (`--use-previous-template`), are named
+`spark-deploy-...`, run as the CloudFormation execution role and list only the resource types
+`AWS::ECS::TaskDefinition` and `AWS::ECS::Service`; every other parameter is
+`UsePreviousValue`. Each change is checked before execution, and a change set with anything
+else, or any removal, is deleted and the deploy fails. The job never registers a task
+definition, updates a service or updates the stack without a change set.
+
+### What it never changes
+
+The stack template, the sizes, the web count, `MigrateShellCommand` and the other parameters,
+any other stack, the network, the data stores and the secrets. Changes to the service stack's
+template are made by hand and approved by Matthew; the job cannot make them.
+
+### The first deploy
+
+The stack is created with `ImageTag` and `MigrateImageTag` set to `none`, so nothing runs. The
+first release-candidate tag runs the migrate task (which brings both schemas to head and runs
+the headless bootstrap) and then starts the web service and the worker, with no manual step.
+
+### A failed deploy
+
+A refused AWS call fails the job with the AWS message shown (ARNs hidden), so the deploy role's
+policy can be adjusted. If a service cannot reach a healthy state, ECS's deployment circuit
+breaker rolls the service back, the stack update ends in `UPDATE_ROLLBACK_COMPLETE`, and the job
+fails with the failed events; the stack then runs the previous version. The job never
+continues or repairs a rollback. A stack in any other state (for example
+`UPDATE_ROLLBACK_FAILED`) is refused at the start, and is repaired by hand.
+
+### Going back to an earlier version
+
+Set the stack's `ImageTag` (and `MigrateImageTag`) to an earlier version tag still held in ECR,
+which keeps the newest 10 images, through a change set in the console or the CLI. Migrations
+are not rolled back: the earlier image runs against the database as it now is, so check that
+the earlier version accepts the current schema first (Spark's web start refuses a database that
+is not at its head).

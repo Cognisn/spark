@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A release candidate deploys itself to the test environment.** A `deploy-test` job in `container-publish.yml` runs after the image is published for a `v0.3.0rcN` tag (never a final version or a manual dispatch), in the `spark-test` environment: it copies the image from ghcr.io to ECR by version, then `scripts/deploy-test.sh` sets `MigrateImageTag` through a limited CloudFormation change set, runs the one-off migrate task (`spark migrate && spark bootstrap`) and requires exit code 0, sets `ImageTag` through a second change set, and checks the stack, both services and `/ready`. Every AWS identifier is masked in the public run log. See [Running Spark on AWS](docs/deployment/aws.md#deploying-to-the-test-environment)
+
 ## [0.3.0rc19] - 2026-11-19
 
 ### Changed

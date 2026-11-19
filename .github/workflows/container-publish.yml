@@ -2,6 +2,10 @@ name: Container publish
 
 # Pushes the checked image to ghcr.io: from a v* tag, or a manual dispatch.
 # Tags are the version only (0.3.0rcN or 0.3.0), never latest; see container.yml.
+#
+# A release-candidate tag then deploys to the test environment (the deploy-test job,
+# docs/deployment/aws.md). The repository is public and so are its run logs: every AWS
+# identifier is masked before a step can print it, and none is written in this file.
 
 on:
   push:
@@ -17,3 +21,99 @@ jobs:
     uses: ./.github/workflows/container.yml
     with:
       push: true
+
+  # Runs only for a release-candidate tag push (v<version>rcN), never for a final version or
+  # a manual dispatch. The version is read from src/spark/_version.txt and must match the tag
+  # (the same file container.yml tags the image from).
+  deploy-test:
+    name: deploy to the test environment
+    needs: publish
+    if: github.event_name == 'push' && github.ref_type == 'tag' && contains(github.ref_name, 'rc')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: spark-test
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+    concurrency:
+      group: deploy-spark-test
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REPOSITORY_URI: ${{ vars.ECR_REPOSITORY_URI }}
+      STACK_NAME: ${{ vars.SPARK_TEST_STACK_NAME }}
+      SERVICE_ROLE_NAME: ${{ vars.SPARK_TEST_SERVICE_ROLE_NAME }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Work out the version and mask every identifier
+        id: version
+        run: |
+          set -euo pipefail
+          # Mask first: nothing below can print these.
+          account="${DEPLOY_ROLE_ARN#arn:*:iam::}"
+          account="${account%%:*}"
+          for value in "$DEPLOY_ROLE_ARN" "${DEPLOY_ROLE_ARN##*/}" "$account"               "$ECR_REPOSITORY_URI" "${ECR_REPOSITORY_URI%%/*}" "$STACK_NAME" "$SERVICE_ROLE_NAME"; do
+            [ -z "$value" ] || echo "::add-mask::$value"
+          done
+          for name in AWS_REGION DEPLOY_ROLE_ARN ECR_REPOSITORY_URI STACK_NAME SERVICE_ROLE_NAME; do
+            [ -n "${!name}" ] || { echo "::error::the spark-test environment variable for $name is not set"; exit 1; }
+          done
+          version="$(cat src/spark/_version.txt)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$ ]]; then
+            echo "::error::$version is not a release candidate"
+            exit 1
+          fi
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME does not name version $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "execution_role_arn=arn:aws:iam::${account}:role/${SERVICE_ROLE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: spark-deploy-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: true
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy the image to ECR (no rebuild)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          source="ghcr.io/${GITHUB_REPOSITORY,,}:$VERSION"
+          target="$ECR_REPOSITORY_URI:$VERSION"
+          source_digest="$(docker buildx imagetools inspect "$source" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          existing="$(docker buildx imagetools inspect "$target" --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || true)"
+          if [ -n "$existing" ]; then
+            if [ "$existing" = "$source_digest" ]; then
+              echo "the image is already in ECR with the same digest"
+              exit 0
+            fi
+            echo "::error::ECR already holds $VERSION with a different digest"
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$target" "$source"
+          copied="$(docker buildx imagetools inspect "$target" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          [ "$copied" = "$source_digest" ] || { echo "::error::the copied image's digest differs from the published one"; exit 1; }
+          echo "copied $VERSION to ECR"
+
+      - name: Deploy
+        env:
+          EXECUTION_ROLE_ARN: ${{ steps.version.outputs.execution_role_arn }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/deploy-test.sh "$VERSION"
