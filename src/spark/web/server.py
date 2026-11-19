@@ -991,6 +991,13 @@ async def create_and_serve(ctx: AppContext, *, first_run: bool = False) -> None:
         logger.error("Failed to create uvicorn config: %s", e, exc_info=True)
         raise
 
+    if server_mode:
+        from spark.bootstrap import wait as bootstrap_wait
+
+        await bootstrap_wait.before_web_serves(
+            runtime.database, ctx.settings, ctx.secrets, host=host, port=port
+        )
+
     logger.info("Starting uvicorn server on %s:%d", host, port)
     server = uvicorn.Server(config)
     try:
