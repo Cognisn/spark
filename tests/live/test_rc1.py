@@ -2,8 +2,8 @@
 
 Each test names the checklist item it proves in its docstring (``A18 item N``):
 
-0. the stack: the first administrator from ``spark identity create-admin`` and
-   two users invited through the administration screens;
+0. the stack: the first administrator invited by ``spark bootstrap`` (accepted from
+   the mail catcher) and two users invited through the administration screens;
 1. single sign-on against mock-oauth2-server behind a throwaway CA;
 2. a tool category a User may not have refused;
 3. the stop at 100% of an allowance on the plain send route as on the stream
@@ -49,6 +49,7 @@ from tests.live.conftest import (
     Stack,
     assign,
     connection,
+    declare,
     invite_and_accept,
     new_password,
     wait_for,
@@ -85,7 +86,8 @@ def _usage(person: Person, connection_id: str | None = None) -> dict[str, Any]:
 def test_stack_has_the_created_administrator_and_two_invited_users(
     stack: Stack, admin: Person, alice: Person, bob: Person
 ) -> None:
-    """A18 item 0: the administrator from create-admin; two users invited and signed in."""
+    """A18 item 0: the administrator from bootstrap's invitation; two users invited and
+    signed in."""
     assert "administrator" in admin.session["roles"]
     assert "spark.users.admin" in admin.session["permissions"]
     for person in (alice, bob):
@@ -558,6 +560,8 @@ def test_a_role_allowance_also_stops_the_plain_send_route(stack: Stack, admin: P
         "Model stub (send route)",
         {"base_url": stack.state.get("stub_internal", "http://model-stub:11434")},
     )
+    # Since 0.3.0rc14 a declaration belongs to its connection (Skuld question 53).
+    declare(admin, connection_id, STUB_MODEL)
     metered = admin.browser.put(
         f"/api/connections/{connection_id}/metering", json={"metered": True}
     )

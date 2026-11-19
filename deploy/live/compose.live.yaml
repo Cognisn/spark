@@ -1,12 +1,15 @@
 # The live end-to-end stack (A18): layered over deploy/compose.yaml by
 # deploy/live/stack.py, never used on its own and never for a real deployment.
 #
-# Adds a second web replica, a standby worker, an OIDC provider
-# (mock-oauth2-server) and a mail catcher (Mailpit) behind a throwaway CA, a
-# scripted model server (Ollama on http, Anthropic on https with the same CA)
-# and an MCP server in the first web replica's network namespace. Every value
-# below comes from the env file that stack.py writes into the sandbox; the CA,
-# keys and passwords live only there. Every published port binds to 127.0.0.1.
+# deploy/compose.yaml's shape is kept: migrate runs `spark migrate && spark
+# bootstrap`, and migrate and web share the network namespace of its mail
+# catcher (mailpit), which publishes web's port and its inbox. This overlay gives
+# that catcher STARTTLS from a throwaway CA and adds a second web replica, a
+# standby worker, an OIDC provider (mock-oauth2-server) behind the same CA, a
+# scripted model server (Ollama on http, Anthropic on https with the same CA) and
+# an MCP server in web's namespace. Every value below comes from the env file
+# that stack.py writes into the sandbox; the CA, keys and passwords live only
+# there. Every published port binds to 127.0.0.1.
 
 x-live-environment: &live-environment
   # The throwaway CA plus the public CAs: SPARK reaches the OIDC provider, the
@@ -25,10 +28,25 @@ services:
     ports:
       - "127.0.0.1:${LIVE_POSTGRES_PORT}:5432"
 
+  # The one mail catcher, deploy/compose.yaml's. It requires STARTTLS with a
+  # certificate for "mailpit" from the throwaway CA, so every Spark container sends
+  # to it by that name over verified TLS, whether or not it shares its namespace.
+  mailpit:
+    command:
+      - --smtp-tls-cert=/etc/spark-live/mailpit.crt
+      - --smtp-tls-key=/etc/spark-live/mailpit.key
+      - --smtp-require-starttls
+      - --smtp-auth-accept-any
+    volumes:
+      - ${LIVE_CERTS}:/etc/spark-live:ro
+
   migrate:
     image: ${SPARK_IMAGE}
     environment: *live-environment
     volumes: *live-volumes
+    depends_on:
+      oidc:
+        condition: service_started
 
   web:
     image: ${SPARK_IMAGE}
@@ -36,8 +54,6 @@ services:
     volumes: *live-volumes
     depends_on:
       oidc:
-        condition: service_started
-      mail:
         condition: service_started
       model-stub:
         condition: service_started
@@ -65,17 +81,24 @@ services:
       - "127.0.0.1:${LIVE_WEB2_PORT}:8000"
     restart: unless-stopped
     depends_on:
+      # bootstrap has created the instance's identity and invited the first
+      # administrator; web2 waits for it as web does.
       migrate:
         condition: service_completed_successfully
-      # The first replica creates the instance's identity in the secrets file.
-      web:
-        condition: service_healthy
+      oidc:
+        condition: service_started
+      model-stub:
+        condition: service_started
 
   worker:
     image: ${SPARK_IMAGE}
     environment: *live-environment
     volumes: *live-volumes
-    # One active worker and one on standby (failover check).
+    # One active worker and one on standby (failover check). Each has a network
+    # namespace of its own, so its own address and host name: the suite tells the
+    # active worker from the standby by the address holding the worker lock and by
+    # the host name in a claimed job.
+    network_mode: !reset null
     scale: 2
 
   oidc:
@@ -87,19 +110,6 @@ services:
       - ${LIVE_CERTS}:/etc/spark-live:ro
     ports:
       - "127.0.0.1:${LIVE_OIDC_PORT}:8443"
-    restart: unless-stopped
-
-  mail:
-    image: axllent/mailpit:${LIVE_MAILPIT_VERSION}
-    command:
-      - --smtp-tls-cert=/etc/spark-live/mail.crt
-      - --smtp-tls-key=/etc/spark-live/mail.key
-      - --smtp-require-starttls
-      - --smtp-auth-accept-any
-    volumes:
-      - ${LIVE_CERTS}:/etc/spark-live:ro
-    ports:
-      - "127.0.0.1:${LIVE_MAIL_API_PORT}:8025"
     restart: unless-stopped
 
   model-stub:
@@ -114,14 +124,14 @@ services:
       - "127.0.0.1:${LIVE_STUB_PORT}:11434"
     restart: unless-stopped
 
-  # A streamable-HTTP MCP server sharing the first web replica's network
-  # namespace, so web reaches it on loopback (conduit allows plain http only
-  # there). Only web connects to it; web2 and the workers cannot reach it.
+  # A streamable-HTTP MCP server in the catcher's network namespace, which web
+  # shares, so web reaches it on loopback (conduit allows plain http only there).
+  # Only web connects to it; web2 and the workers cannot reach it.
   mcp:
     image: ${SPARK_IMAGE}
     entrypoint: ["python", "-I", "/opt/spark-live/mcp_server.py"]
     command: []
-    network_mode: "service:web"
+    network_mode: "service:mailpit"
     volumes:
       - ${LIVE_TOOLS}:/opt/spark-live:ro
     restart: unless-stopped

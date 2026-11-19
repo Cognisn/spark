@@ -211,7 +211,8 @@ class Browser:
                 resp.read()
                 yield Event("http_error", {"status": resp.status_code, "body": resp.text})
                 return
-            name, data = "message", []
+            data: list[str] = []
+            name = "message"
             for line in resp.iter_lines():
                 if line.startswith(":"):
                     continue

@@ -180,15 +180,44 @@ def wait_for(check: Callable[[], Any], timeout: float, what: str, every: float =
     raise AssertionError(f"{what} within {timeout:.0f}s (last: {last!r})")
 
 
+def accept_invitation(
+    stack: Stack, link: str, password: str, base_url: str | None = None
+) -> tuple[Browser, bytes | None]:
+    """Accept an invitation from its mailed link on ``base_url`` (web by default): set
+    ``password`` and enrol a second factor. Returns the signed-in browser and the TOTP key."""
+    assert link.startswith(stack.base_url + "/auth/invitation?token="), link
+    browser = Browser(base_url or stack.base_url)
+    accept = browser.navigate(link[len(stack.base_url) :])
+    assert accept.status_code == 200, accept.text[:2000]
+    token = re.search(r'name="token" value="([^"]+)"', accept.text)
+    assert token, accept.text[:2000]
+    done = browser.submit(
+        "/auth/invitation", accept, token=token.group(1), password=password, confirm=password
+    )
+    assert done.status_code == 303, done.text[:2000]
+    return browser, browser.finish_challenge(done, None)
+
+
 @pytest.fixture(scope="session")
 def admin(stack: Stack) -> Iterator[Person]:
-    """The first administrator (from ``spark identity create-admin``), signed in on web."""
+    """The first administrator, signed in on web.
+
+    ``spark bootstrap`` (the stack's ``migrate`` service) invites them by mail. The
+    first run on a stack accepts that invitation from the catcher's inbox, with the
+    password ``stack.py prepare`` chose, and keeps the TOTP key in the sandbox
+    (``people.json``); later runs sign in with them.
+    """
     email = stack.state["admin_email"]
     known = stack.remembered().get(email, {})
-    password = known.get("password") or stack.state["admin_password"]
-    secret = base64.b32decode(known["totp"]) if known.get("totp") else None
-    browser = Browser(stack.base_url)
-    secret = browser.sign_in(email, password, secret)
+    if known:
+        password = known["password"]
+        secret = base64.b32decode(known["totp"]) if known.get("totp") else None
+        browser = Browser(stack.base_url)
+        secret = browser.sign_in(email, password, secret)
+    else:
+        password = stack.state["admin_password"]
+        link = stack.mail_link(email, "/auth/invitation")
+        browser, secret = accept_invitation(stack, link, password)
     stack.remember(email, password, secret)
     person = Person(email, password, browser, secret, browser.adopt_session())
     yield person
@@ -301,7 +330,9 @@ def configured(stack: Stack, admin: Person) -> None:
             "embedded_tools.agents.enabled": True,
             "embedded_tools.documents.enabled": True,
             "embedded_tools.tool_results.documents": "warn",
-            "mail.smtp.host": "mail",
+            # The values bootstrap stored from the start-up settings (stack.py), set
+            # again so the suite also runs on a stack set up before bootstrap.
+            "mail.smtp.host": "mailpit",
             "mail.smtp.port": 1025,
             "mail.smtp.tls": "starttls",
             "mail.smtp.sender_address": "spark@example.com",
@@ -347,19 +378,8 @@ def invite_and_accept(
     assert resp.status_code == 200, resp.text[:2000]
     assert "The link is sent" in resp.text, "the invitation was not mailed"
     link = stack.mail_link(email, "/auth/invitation", after=sent_at)
-    assert link.startswith(stack.base_url + "/auth/invitation?token=")
-
-    browser = Browser(base_url or stack.base_url)
-    accept = browser.navigate(link[len(stack.base_url) :])
-    assert accept.status_code == 200, accept.text[:2000]
-    token = re.search(r'name="token" value="([^"]+)"', accept.text)
-    assert token, accept.text[:2000]
     password = new_password()
-    done = browser.submit(
-        "/auth/invitation", accept, token=token.group(1), password=password, confirm=password
-    )
-    assert done.status_code == 303, done.text[:2000]
-    secret = browser.finish_challenge(done, None)
+    browser, secret = accept_invitation(stack, link, password, base_url)
     session = browser.adopt_session()
     stack.remember(email, password, secret)
     return Person(email, password, browser, secret, session)
