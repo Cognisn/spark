@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc15] - 2026-11-19
+
 ### Added
 - **`GET /health` and `GET /ready`** (`spark.web.endpoints.health`), for load balancers and container health checks, in personal and server mode, with no sign-in and outside warden's checks. `/health` answers 200 whenever the process serves and depends on nothing. `/ready` answers 200 only when the database answers, the schema is at both Alembic heads (Spark's and warden's) and the secrets store is readable, otherwise 503; its body names each check and Spark's version and never a secret, URL, host name or stack trace.
 - **Running on AWS** (`docs/deployment/aws.md`): ECS on Fargate task definitions for web, worker and the one-off migrate task, EFS access points, the konfig settings document and secrets bundle, a database URL per login through `SPARK__DATABASE__URL=secret://database_url_<login>`, TLS to RDS, load balancer health checks, Bedrock through the task role, and each task role's policy.
