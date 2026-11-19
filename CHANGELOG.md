@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The Docker Desktop and Portainer stacks come up headless.** Their `migrate` service now runs `spark migrate && spark bootstrap`, web and worker start after it (the worker no longer waits for web), and a local mail catcher (`mailpit`) shares its network namespace with Spark's containers as in `deploy/compose.yaml`, so the first administrator's invitation arrives in its inbox with no `spark identity create-admin` step. The first administrator and the mail settings come from `SPARK__BOOTSTRAP__ADMIN__*` and `SPARK__MAIL__SMTP__*` variables (a placeholder administrator at `example.com` in the example environment); the web port is published by the catcher, and the Desktop `https` profile now proxies to it. Ports, volumes and image tags are unchanged. `tests/test_deploy_stacks.py` checks the new shape
+
 ## [0.3.0rc18] - 2026-11-19
 
 ### Changed
