@@ -5,10 +5,87 @@ the web and worker processes over the same PostgreSQL database. warden keeps the
 users, sessions, roles, invitations, API keys and the audit trail; Spark provides the
 screens. There is no separate identity service to deploy.
 
-## The first administrator
+<a id="the-first-administrator"></a>
 
-A new server has no users. Create the first administrator once the stack is up,
-giving the password on standard input:
+## Bootstrap
+
+A server comes up with nobody at a keyboard. `spark bootstrap` runs once as the schema
+owner after `spark migrate`, before web and worker start: Compose's `migrate` service
+runs `spark migrate && spark bootstrap`, and a cloud deployment runs the same command
+in a one-off task. Personal mode never bootstraps.
+
+### Settings
+
+Each setting is read from `config.yaml`, a `SPARK__` variable or the AWS settings
+document, at the same dotted path. Bootstrap refuses to run unless all of them are
+complete and valid, and its refusal lists every problem by both names, never a value.
+
+| Setting | `SPARK__` variable | Required |
+|---|---|---|
+| `bootstrap.admin.email` | `SPARK__BOOTSTRAP__ADMIN__EMAIL` | Yes: the first administrator's address |
+| `bootstrap.admin.first_name` | `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME` | Yes |
+| `bootstrap.admin.last_name` | `SPARK__BOOTSTRAP__ADMIN__LAST_NAME` | Yes |
+| `bootstrap.database.web_url` | `SPARK__BOOTSTRAP__DATABASE__WEB_URL` | With [restricted roles](database.md#restricted-roles), with the next |
+| `bootstrap.database.worker_url` | `SPARK__BOOTSTRAP__DATABASE__WORKER_URL` | With restricted roles, with the previous |
+| `worker.audit_purge_database_url` | `SPARK__WORKER__AUDIT_PURGE_DATABASE_URL` | With restricted roles and an audit retention |
+| `mail.smtp.host`, `port`, `tls`, `sender_address`, `sender_name`, `username` | `SPARK__MAIL__SMTP__HOST` and so on | A host and a sender address, unless already stored ([Mail](#mail)) |
+| `bootstrap.wait_seconds` | `SPARK__BOOTSTRAP__WAIT_SECONDS` | No: how long web and worker wait for bootstrap (600) |
+| `bootstrap.wait_interval_seconds` | `SPARK__BOOTSTRAP__WAIT_INTERVAL_SECONDS` | No: how often they check (5) |
+
+The database URLs may be `secret://<name>` references to the secrets store. A URL with
+`sslmode=verify-full` (or `verify-ca`) needs a readable root certificate, named by
+`sslrootcert` in the URL or by `PGSSLROOTCERT`, and the owner's connection must then be
+encrypted; the refusal names the setting, never the URL.
+
+### What it does
+
+In one PostgreSQL advisory lock, so two copies started together agree:
+
+1. checks the settings and the owner's connection;
+2. creates or updates the restricted database logins and their grants, when they are
+   configured ([Database roles](database.md#restricted-roles));
+3. creates the instance identity in the secrets store: warden's signing key, the TOTP
+   key and Spark's CSRF key ([Secrets](secrets.md#what-the-store-holds));
+4. stores the start-up `mail.smtp` values as the instance's mail settings, while the
+   database holds none (audited as `spark.settings.instance.changed` by
+   `spark-bootstrap`);
+5. invites the first administrator through warden, as "First Last", with the
+   `administrator` role granted when they accept. warden sends the invitation by mail
+   inside its own transaction, so if delivery fails nothing is written and bootstrap
+   exits non-zero; run it again once mail works. If anyone already holds or has been
+   invited to `administrator`, nothing is sent;
+6. records that bootstrap is complete (the `spark.bootstrap` table).
+
+It prints one line per step, never an address, a URL, a password or a link. A later run
+finds the record and sends nothing, but repeats steps 2 to 4, so a changed login
+password, or a table a new version adds, is applied. Exit code 0 means done; 2 means a
+refusal, with every problem on standard error.
+
+The invitation expires after seven days. To send it again (it must not yet be
+accepted):
+
+```bash
+docker compose -p spark -f deploy/compose.yaml run --rm migrate "spark bootstrap --resend-invitation"
+```
+
+### Web and worker wait for it
+
+Web and worker may start before bootstrap has finished, for example when a deployment
+starts them together. The worker always waits for the instance identity (it may only be
+allowed to read the secrets store), and both wait for the bootstrap record when
+`bootstrap.admin.email` is set. Each logs one line, `spark worker is waiting for spark
+bootstrap (missing: ...)`, checks every `bootstrap.wait_interval_seconds`, and starts as
+soon as everything is there. After `bootstrap.wait_seconds` it exits, naming what is
+missing. While web waits it is not yet serving.
+
+An installation without `bootstrap.admin.email` (one that does not run bootstrap) keeps
+the old behaviour: the first web start creates any missing identity key.
+
+## Restoring an administrator
+
+`spark identity create-admin` creates or restores an administrator with a password on
+standard input. A new server does not need it, since bootstrap invites the first
+administrator; it is for recovery, when no administrator can sign in:
 
 ```bash
 docker compose -p spark -f deploy/compose.yaml run --rm -T web \
@@ -20,20 +97,21 @@ and the redirect it asks for the password twice instead. The password must be at
 least 12 characters (`warden.identity.password_min_length`). Delete `password.txt`
 afterwards.
 
-The command is safe to run again: for an existing email address it keeps the
-password, gives the administrator role if it is missing, and prints `already existed`.
-That is also how to restore administrator rights to someone after the last other
-administrator has gone.
+For an existing email address it keeps the password, gives the administrator role if
+it is missing, and prints `already existed`.
 
 `--link-user-guid GUID` binds an existing Spark user guid to the administrator, so
 data made under it stays theirs. It is only for a server that ran a 0.3.0 pre-release
 before identity existed, whose data belongs to one interim guid; a new server does
 not need it, and personal users are moved [with a bundle](from-personal.md).
 
-Then sign in at `https://spark.example.com/auth/sign-in`. Two-step verification is on
-by default, so the first sign-in asks the administrator to add Spark to an
-authenticator app (a QR code, or the key typed in) and shows ten recovery codes once.
-Keep the recovery codes somewhere safe.
+## Signing in the first time
+
+Follow the invitation's link, set a password, and sign in at
+`https://spark.example.com/auth/sign-in`. Two-step verification is on by default, so
+the first sign-in asks the administrator to add Spark to an authenticator app (a QR
+code, or the key typed in) and shows ten recovery codes once. Keep the recovery codes
+somewhere safe.
 
 ## Roles
 
@@ -146,8 +224,10 @@ them.
 
 warden sends invitations, resends, password reset links, signed-out reset requests and
 second factor notices by email once an SMTP server is set. Mail is set on the instance
-settings page only (**Settings**, as an administrator, the Mail section), not through
-`SPARK__` variables:
+settings page (**Settings**, as an administrator, the Mail section). On a new server,
+bootstrap stores the `SPARK__MAIL__SMTP__...` start-up values there first, because the
+first administrator's invitation is sent by mail; after that, the page's values are the
+ones used and the start-up values are ignored:
 
 | Setting | Default | Meaning |
 |---|---|---|

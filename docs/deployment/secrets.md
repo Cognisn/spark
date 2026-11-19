@@ -20,9 +20,9 @@ refuses the encrypted file without `KONFIG_MASTER_KEY`.
 
 | Name | What | Written by |
 |---|---|---|
-| `warden.signing-key.<id>` | warden's Ed25519 signing keys (session tokens, audit checkpoints) | the first web start |
-| `warden.totp-key` | The key that encrypts users' authenticator secrets in the database | the first web start |
-| `spark.csrf-key` | The key that binds CSRF tokens to warden sessions | the first web start |
+| `warden.signing-key.<id>` | warden's Ed25519 signing keys (session tokens, audit checkpoints) | `spark bootstrap` (or, without it, the first web start) |
+| `warden.totp-key` | The key that encrypts users' authenticator secrets in the database | `spark bootstrap` (or, without it, the first web start) |
+| `spark.csrf-key` | The key that binds CSRF tokens to warden sessions | `spark bootstrap` (or, without it, the first web start) |
 | `connections.<id>.<field>` (for example `connections.work-claude.api_key`) | A model connection's credentials | the Connections page (`/admin/connections`) |
 | `embedded_tools_web_brave_api_key`, `embedded_tools_web_google_api_key`, `embedded_tools_web_bing_api_key` | Web search keys | the instance settings page |
 | `voice_elevenlabs_api_key` | ElevenLabs | the instance settings page |
@@ -86,8 +86,8 @@ bundle needs one secret and the narrowest policy, so prefer it.
 ### One bundle secret (recommended)
 
 1. Create one secret holding a JSON object, for example `spark/production`, with
-   the value `{}`. Spark adds names to it as administrators save secrets and as the
-   first web start creates warden's keys.
+   the value `{}`. Spark adds names to it as administrators save secrets and as
+   `spark bootstrap` creates warden's keys.
 2. Give the containers `KONFIG_AWS_SECRETS_MANAGER` set to that secret's ARN, for
    example
    `KONFIG_AWS_SECRETS_MANAGER=arn:aws:secretsmanager:ap-southeast-2:111122223333:secret:spark/production-AbCdEf`.
