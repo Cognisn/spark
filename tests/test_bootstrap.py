@@ -19,6 +19,8 @@ over plain text on 127.0.0.1. It proves:
 from __future__ import annotations
 
 import asyncio
+import json
+import socket
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -400,17 +402,88 @@ class TestWorkerWait:
         assert wait.RECORD in text and TOTP_SECRET in text and CSRF_KEY_SECRET in text
         assert wait.SIGNING_KEY in text
 
-    async def test_web_waits_for_the_record_when_bootstrap_is_configured(
+    async def test_the_worker_waits_for_its_own_login(self, server: Server, smtp: FakeSmtp) -> None:
+        """Started before bootstrap, as its restricted login, which does not exist yet."""
+        settings = _settings(smtp.port)
+        worker_login = DatabaseSettings(Dialect.POSTGRESQL, url=server.login_url("worker"))
+        assert await wait.missing_at(worker_login, settings, server.secrets, record=True) == [
+            wait.LOGIN
+        ]
+        sleeps: list[float] = []
+
+        async def bootstrap_meanwhile(seconds: float) -> None:
+            sleeps.append(seconds)
+            if len(sleeps) == 1:
+                await _run(server, settings)
+
+        await wait.before_worker(worker_login, settings, server.secrets, sleep=bootstrap_meanwhile)
+        assert sleeps == [1.0]
+
+
+async def _get(port: int, path: str) -> tuple[int, dict[str, Any]]:
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(f"GET {path} HTTP/1.1\r\nHost: spark.example.com\r\n\r\n".encode())
+    await writer.drain()
+    raw = await reader.read()
+    writer.close()
+    head, _, body = raw.partition(b"\r\n\r\n")
+    return int(head.split()[1]), json.loads(body)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+class TestWebWait:
+    async def test_health_answers_while_web_waits_then_the_port_is_free(
+        self, server: Server, smtp: FakeSmtp
+    ) -> None:
+        settings = _settings(smtp.port, bootstrap__wait_interval_seconds=0.2)
+        web_login = DatabaseSettings(Dialect.POSTGRESQL, url=server.login_url("web"))
+        port = _free_port()
+        waiting = asyncio.create_task(
+            wait.before_web_serves(web_login, settings, server.secrets, host="127.0.0.1", port=port)
+        )
+        for _ in range(50):
+            try:
+                status, body = await _get(port, "/health")
+                break
+            except OSError:
+                await asyncio.sleep(0.1)
+        assert (status, body["status"]) == (200, "ok")
+        status, body = await _get(port, "/ready")
+        assert (status, body["checks"]) == (503, {"bootstrap": "waiting"})
+        status, _ = await _get(port, "/")
+        assert status == 503
+        assert not waiting.done()
+        await _run(server, settings)
+        await asyncio.wait_for(waiting, timeout=20)
+        # The listener has closed: uvicorn can take the port.
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", port))
+
+    async def test_web_gives_up_naming_what_is_missing(
         self, server: Server, smtp: FakeSmtp
     ) -> None:
         settings = _settings(
             smtp.port, bootstrap__wait_seconds=0.5, bootstrap__wait_interval_seconds=0.1
         )
-        db = await Database.open(server.owner, max_size=2)
-        try:
-            with pytest.raises(wait.BootstrapNotReady, match="spark web"):
-                await wait.before_web(db, settings, server.secrets)
-            await _run(server, settings)
-            await wait.before_web(db, settings, server.secrets)
-        finally:
-            await db.close()
+        with pytest.raises(wait.BootstrapNotReady, match="spark web") as caught:
+            await wait.before_web_serves(
+                server.owner, settings, server.secrets, host="127.0.0.1", port=_free_port()
+            )
+        assert wait.RECORD in str(caught.value)
+
+    async def test_a_bootstrapped_server_starts_without_listening(
+        self, server: Server, smtp: FakeSmtp
+    ) -> None:
+        settings = _settings(smtp.port)
+        await _run(server, settings)
+        port = _free_port()
+        with socket.socket() as holder:
+            holder.bind(("127.0.0.1", port))  # a listener would fail to bind
+            await wait.before_web_serves(
+                server.owner, settings, server.secrets, host="127.0.0.1", port=port
+            )

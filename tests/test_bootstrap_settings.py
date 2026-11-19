@@ -420,8 +420,20 @@ class TestWaitTiming:
         async def boom(*_: Any, **__: Any) -> list[str]:
             raise AssertionError("checked")
 
-        monkeypatch.setattr(wait, "missing", boom)
-        await wait.before_web(None, _konfig(), None)  # type: ignore[arg-type]
+        monkeypatch.setattr(wait, "missing_at", boom)
+        await wait.before_web_serves(
+            None, _konfig(), None, host="127.0.0.1", port=1  # type: ignore[arg-type]
+        )
+
+    def test_probe_answers(self) -> None:
+        health = wait.probe_answer(b"GET /health HTTP/1.1")
+        assert health.startswith(b"HTTP/1.1 200 OK\r\n")
+        assert b'"status": "ok"' in health
+        ready = wait.probe_answer(b"GET /ready?x=1 HTTP/1.1")
+        assert ready.startswith(b"HTTP/1.1 503 ") and b'"bootstrap": "waiting"' in ready
+        assert b"Retry-After: 5" in ready
+        assert wait.probe_answer(b"POST /auth/sign-in HTTP/1.1").startswith(b"HTTP/1.1 503 ")
+        assert wait.probe_answer(b"").startswith(b"HTTP/1.1 503 ")
 
 
 class TestWording:

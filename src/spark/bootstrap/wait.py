@@ -7,25 +7,35 @@ missing, logs one line and checks again every ``bootstrap.wait_interval_seconds`
 trips a deployment's rollback. Past the limit it raises :class:`BootstrapNotReady`
 naming what is missing.
 
-What each waits for:
+What each waits for, on a short-lived connection of its own for each check (its
+restricted login may not exist until bootstrap creates it):
 
-* the worker: the instance identity (warden's signing key, the TOTP key and the CSRF
-  key), which it may not be able to write (its role may only read the secrets
-  store), and the bootstrap record when the installation names a first
-  administrator (``bootstrap.admin.email``);
-* web, when the installation names a first administrator: the bootstrap record and
-  the identity. Without one, web creates any missing key itself, as before, so an
-  installation that does not run ``spark bootstrap`` keeps working.
+* the worker (:func:`before_worker`): a working database login, the instance
+  identity (warden's signing key, the TOTP key and the CSRF key), which it may not
+  be able to write (its role may only read the secrets store), and the bootstrap
+  record when the installation names a first administrator (``bootstrap.admin.email``);
+* web (:func:`before_web_serves`), when the installation names a first
+  administrator: the login, the record and the identity, before uvicorn starts.
+  While it waits, a small listener on the web port answers ``GET /health`` with 200
+  and ``GET /ready`` (and anything else) with 503, so a load balancer's or
+  container's health check keeps passing; once bootstrap is complete the listener
+  closes and uvicorn takes the port. Without a first administrator configured, web
+  does not wait and creates any missing key itself, as before, so an installation
+  that does not run ``spark bootstrap`` keeps working.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
+import psycopg
+
+import spark
 from spark.bootstrap import settings as bootstrap_settings
 from spark.db.engine import Database, Executor
 from spark.instance_settings.startup import StartupConfigError
@@ -33,19 +43,26 @@ from spark.mode import DatabaseSettings
 
 __all__ = [
     "BootstrapNotReady",
-    "before_web",
+    "before_web_serves",
     "before_worker",
     "missing",
+    "missing_at",
+    "probe_answer",
     "wait_until_ready",
 ]
 
 logger = logging.getLogger(__name__)
 
+LOGIN: Final = "a working database login (spark bootstrap creates restricted logins)"
 RECORD: Final = "the bootstrap record (run spark bootstrap after spark migrate)"
 SIGNING_KEY: Final = "a usable warden signing key"
+#: How long the probe listener waits for a request's head before closing the connection.
+_REQUEST_TIMEOUT: Final = 5.0
+_REQUEST_LIMIT: Final = 8192
 
 Sleep = Callable[[float], Awaitable[None]]
 Clock = Callable[[], float]
+Check = Callable[[], Awaitable[list[str]]]
 
 
 class BootstrapNotReady(StartupConfigError):
@@ -82,22 +99,30 @@ async def missing(database: Database, settings: Any, secrets: Any, *, record: bo
     return gaps
 
 
-async def wait_until_ready(
-    database: Database,
-    settings: Any,
-    secrets: Any,
-    *,
-    role: str,
-    record: bool,
-    sleep: Sleep = asyncio.sleep,
-    clock: Clock = time.monotonic,
-) -> None:
-    """Return once nothing is :func:`missing`; :class:`BootstrapNotReady` after the limit."""
+async def missing_at(
+    database: DatabaseSettings, settings: Any, secrets: Any, *, record: bool
+) -> list[str]:
+    """:func:`missing`, on a connection of its own; :data:`LOGIN` when it cannot connect."""
+    try:
+        probe = await psycopg.AsyncConnection.connect(
+            database.url or "", autocommit=True, connect_timeout=10
+        )
+    except psycopg.Error:
+        return [LOGIN]
+    await probe.close()
+    db = await Database.open(database, min_size=1, max_size=2)
+    try:
+        return await missing(db, settings, secrets, record=record)
+    finally:
+        await db.close()
+
+
+async def _poll(check: Check, settings: Any, *, role: str, sleep: Sleep, clock: Clock) -> None:
     total, interval = bootstrap_settings.wait_limits(settings)
     deadline = clock() + total
     waited = False
     while True:
-        gaps = await missing(database, settings, secrets, record=record)
+        gaps = await check()
         if not gaps:
             if waited:
                 logger.info("Bootstrap is complete; spark %s is starting", role)
@@ -121,11 +146,22 @@ async def wait_until_ready(
         await sleep(min(interval, remaining))
 
 
-async def before_web(database: Database, settings: Any, secrets: Any) -> None:
-    """Web start-up's wait, before warden's runtime starts (a no-op without bootstrap settings)."""
-    if not bootstrap_settings.configured(settings):
-        return
-    await wait_until_ready(database, settings, secrets, role="web", record=True)
+async def wait_until_ready(
+    database: Database,
+    settings: Any,
+    secrets: Any,
+    *,
+    role: str,
+    record: bool,
+    sleep: Sleep = asyncio.sleep,
+    clock: Clock = time.monotonic,
+) -> None:
+    """Return once nothing is :func:`missing` on ``database``; :class:`BootstrapNotReady` after the limit."""
+
+    async def check() -> list[str]:
+        return await missing(database, settings, secrets, record=record)
+
+    await _poll(check, settings, role=role, sleep=sleep, clock=clock)
 
 
 async def before_worker(
@@ -136,17 +172,103 @@ async def before_worker(
     sleep: Sleep = asyncio.sleep,
     clock: Clock = time.monotonic,
 ) -> None:
-    """The worker's wait, on a short-lived pool of its own, before any duty starts."""
-    db = await Database.open(database, max_size=2)
+    """The worker's wait, before any duty starts."""
+    record = bootstrap_settings.configured(settings)
+
+    async def check() -> list[str]:
+        return await missing_at(database, settings, secrets, record=record)
+
+    await _poll(check, settings, role="worker", sleep=sleep, clock=clock)
+
+
+# -- web: probes answered while waiting ----------------------------------------------
+
+
+def _response(status: int, reason: str, body: dict[str, Any]) -> bytes:
+    payload = json.dumps(body).encode("utf-8")
+    head = (
+        f"HTTP/1.1 {status} {reason}\r\n"
+        "Content-Type: application/json\r\n"
+        "Cache-Control: no-store\r\n"
+        f"Content-Length: {len(payload)}\r\n"
+        "Connection: close\r\n"
+    )
+    if status == 503:
+        head += "Retry-After: 5\r\n"
+    return (head + "\r\n").encode("ascii") + payload
+
+
+def probe_answer(request_line: bytes) -> bytes:
+    """The listener's answer to one request line: 200 for ``GET /health``, else 503."""
+    parts = request_line.decode("latin-1").split()
+    method = parts[0] if parts else ""
+    path = parts[1].split("?", 1)[0] if len(parts) > 1 else ""
+    version = spark.__version__
+    if method in ("GET", "HEAD") and path == "/health":
+        return _response(200, "OK", {"status": "ok", "version": version})
+    if path == "/ready":
+        body: dict[str, Any] = {
+            "status": "not_ready",
+            "version": version,
+            "checks": {"bootstrap": "waiting"},
+        }
+        return _response(503, "Service Unavailable", body)
+    return _response(503, "Service Unavailable", {"status": "starting", "version": version})
+
+
+async def _serve_probe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
-        await wait_until_ready(
-            db,
-            settings,
-            secrets,
-            role="worker",
-            record=bootstrap_settings.configured(settings),
-            sleep=sleep,
-            clock=clock,
-        )
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), _REQUEST_TIMEOUT)
+        writer.write(probe_answer(head[:_REQUEST_LIMIT].split(b"\r\n", 1)[0]))
+        await writer.drain()
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+        pass
+    except OSError:
+        pass
     finally:
-        await db.close()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+
+async def before_web_serves(
+    database: DatabaseSettings,
+    settings: Any,
+    secrets: Any,
+    *,
+    host: str,
+    port: int,
+    sleep: Sleep = asyncio.sleep,
+    clock: Clock = time.monotonic,
+) -> None:
+    """Web's wait, before uvicorn binds ``host:port``; a no-op without bootstrap settings.
+
+    The first check runs before anything listens, so a server already bootstrapped
+    starts at once. Otherwise the probe listener answers on ``host:port`` until
+    bootstrap is complete (or :class:`BootstrapNotReady`), then closes.
+    """
+    if not bootstrap_settings.configured(settings):
+        return
+
+    async def check() -> list[str]:
+        return await missing_at(database, settings, secrets, record=True)
+
+    first = await check()
+    if not first:
+        return
+    answered = [first]
+
+    async def later() -> list[str]:
+        if answered:
+            return answered.pop()
+        return await check()
+
+    server = await asyncio.start_server(_serve_probe, host, port, limit=_REQUEST_LIMIT)
+    logger.info("Answering /health on %s:%d while spark bootstrap finishes", host, port)
+    try:
+        await _poll(later, settings, role="web", sleep=sleep, clock=clock)
+    finally:
+        server.close()
+        await server.wait_closed()

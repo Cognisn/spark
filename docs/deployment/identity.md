@@ -76,7 +76,7 @@ allowed to read the secrets store), and both wait for the bootstrap record when
 `bootstrap.admin.email` is set. Each logs one line, `spark worker is waiting for spark
 bootstrap (missing: ...)`, checks every `bootstrap.wait_interval_seconds`, and starts as
 soon as everything is there. After `bootstrap.wait_seconds` it exits, naming what is
-missing. While web waits it is not yet serving.
+missing. While web waits, its port answers `GET /health` with 200 and every other request, `/ready` included, with 503, so a health check keeps passing; once bootstrap is complete, Spark takes the port.
 
 An installation without `bootstrap.admin.email` (one that does not run bootstrap) keeps
 the old behaviour: the first web start creates any missing identity key.
