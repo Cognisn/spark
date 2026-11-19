@@ -9,12 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **A server comes up with nobody at a keyboard: `spark bootstrap`.** Run once as the schema owner after `spark migrate` (Compose's `migrate` service now runs `spark migrate && spark bootstrap`), it checks every bootstrap setting and fails once listing each missing or invalid one by its dotted and `SPARK__` names; creates the restricted database logins for web, worker and the audit purge from the URLs they connect with (`bootstrap.database.web_url`, `bootstrap.database.worker_url`, `worker.audit_purge_database_url`), with Spark's grants and warden's own, and verifies them; creates the instance identity (warden's signing key, the TOTP key, the CSRF key); stores the start-up `mail.smtp` values while the database holds none; and invites the first administrator (`bootstrap.admin.email`, `first_name`, `last_name`) through warden with the administrator role staged, by mail. It runs in one PostgreSQL advisory lock, records completion in a new `bootstrap` table (revision `bootstrap_record`), and a later run sends nothing; `--resend-invitation` resends. A URL asking for `sslmode=verify-full` needs a readable root certificate, and the refusal names the setting, never the URL
-- **Web and worker wait for bootstrap** instead of racing it or exiting: the worker waits for the instance identity, and both for the bootstrap record when a first administrator is configured, checking every `bootstrap.wait_interval_seconds` (5) for up to `bootstrap.wait_seconds` (600), with one log line, then exit naming what is missing
+- **Web and worker wait for bootstrap** instead of racing it or exiting: the worker waits for the instance identity, and both for the bootstrap record when a first administrator is configured, checking every `bootstrap.wait_interval_seconds` (5) for up to `bootstrap.wait_seconds` (600), with one log line, then exit naming what is missing.
 - **A local mail catcher in Compose** (`mailpit`, inbox on `127.0.0.1:8025`), and example bootstrap and mail settings in `deploy/spark.env.example`
 
 ### Changed
 - **`spark identity create-admin` is for recovery**: a new server's first administrator is invited by `spark bootstrap`; the command still restores an administrator or links the interim user guid
 - **Compose**: the worker no longer waits for web to be healthy, and the Spark services share the mail catcher's network namespace, so it publishes the web port. The restricted database roles are made by bootstrap rather than by hand (docs/deployment/database.md)
+
+## [0.3.0rc15] - 2026-11-19
+
+### Added
+- **`GET /health` and `GET /ready`** (`spark.web.endpoints.health`), for load balancers and container health checks, in personal and server mode, with no sign-in and outside warden's checks. `/health` answers 200 whenever the process serves and depends on nothing. `/ready` answers 200 only when the database answers, the schema is at both Alembic heads (Spark's and warden's) and the secrets store is readable, otherwise 503; its body names each check and Spark's version and never a secret, URL, host name or stack trace.
+- **Running on AWS** (`docs/deployment/aws.md`): ECS on Fargate task definitions for web, worker and the one-off migrate task, EFS access points, the konfig settings document and secrets bundle, a database URL per login through `SPARK__DATABASE__URL=secret://database_url_<login>`, TLS to RDS, load balancer health checks, Bedrock through the task role, and each task role's policy.
+- **The AWS RDS certificate authority bundle in the image** at `/etc/ssl/certs/rds-global-bundle.pem` (public certificates only, fetched at build time and checked against a pinned SHA-256), so `sslmode=verify-full` works against RDS with no `sslrootcert` in the URL when a task sets `PGSSLROOTCERT` to that path. `deploy/check-image.sh` checks the file is present, readable by the image's user and holds no private key.
+- Tests that run konfig's settings document and secrets bundle against a stubbed Secrets Manager (a server starts with no master key; `SPARK__DATABASE__URL` selects the owner, web or worker login for web, migrate and worker and wins over any other `database.url`; every settings document key is honoured with its precedence against `SPARK__` variables; `KONFIG_AWS_SEED=false` leaves a pre-filled bundle untouched), that every connection Spark opens honours `PGSSLROOTCERT` and never falls back to a weaker TLS mode, and that a Bedrock connection with `credential_chain` builds its client with no keys.
+
+### Changed
+- The image's health check requests `/health` instead of `/loading/api/status`, which is unchanged.
 
 ## [0.3.0rc14] - 2026-11-19
 

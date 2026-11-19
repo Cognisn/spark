@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Check a built Spark image: it runs as a non-root user, carries no compiler or
-# installer, has a healthcheck, holds no tests, its worker role refuses personal
-# mode, and no NVIDIA package is installed. Exits non-zero on the first failure.
+# installer, has a healthcheck on /health, carries the RDS certificate authority
+# bundle at its fixed path, holds no tests, its worker role refuses personal mode,
+# and no NVIDIA package is installed. Exits non-zero on the first failure.
 #
 #   deploy/check-image.sh spark:dev
 set -euo pipefail
@@ -40,7 +41,25 @@ pass "no compiler, make or pip"
 # 3. A healthcheck is defined (for the web role).
 healthcheck="$(docker image inspect --format '{{if .Config.Healthcheck}}{{json .Config.Healthcheck.Test}}{{end}}' "$image")"
 [ -n "$healthcheck" ] || fail "no healthcheck"
+case "$healthcheck" in
+    */health*) ;;
+    *) fail "the healthcheck does not probe /health: ${healthcheck}" ;;
+esac
 pass "healthcheck ${healthcheck}"
+
+# 3b. The RDS certificate authority bundle, at the path tasks name in PGSSLROOTCERT,
+# readable by the unprivileged user, public certificates only.
+rds_bundle=/etc/ssl/certs/rds-global-bundle.pem
+if ! docker run --rm --entrypoint sh "$image" -c '
+    f=/etc/ssl/certs/rds-global-bundle.pem
+    [ -f "$f" ] || { echo "missing"; exit 1; }
+    [ -r "$f" ] || { echo "not readable by uid $(id -u)"; exit 1; }
+    grep -q "BEGIN CERTIFICATE" "$f" || { echo "no certificates"; exit 1; }
+    if grep -q "PRIVATE KEY" "$f"; then echo "holds a private key"; exit 1; fi
+'; then
+    fail "the RDS certificate bundle at ${rds_bundle} is missing, unreadable or not certificate-only"
+fi
+pass "RDS certificate bundle at ${rds_bundle}, readable by uid ${uid}"
 
 # 4. No tests or build context in the image.
 if ! docker run --rm --entrypoint python "$image" -c '

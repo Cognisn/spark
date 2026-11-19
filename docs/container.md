@@ -54,7 +54,9 @@ request.
 The image sets `SPARK__INTERFACE__HOST=0.0.0.0`, `SPARK__INTERFACE__PORT=8000`,
 `SPARK__INTERFACE__OPEN_BROWSER=false` and turns off the browser heartbeat (which
 would otherwise stop a web process no browser is attached to). The healthcheck
-requests `/loading/api/status` on the web port.
+requests `/health` on the web port (`/ready` also checks the database, the schema and the
+secrets store; see [Running on AWS](deployment/aws.md)). The image also carries the AWS RDS
+certificate authority bundle at `/etc/ssl/certs/rds-global-bundle.pem`.
 
 ## Configuration
 

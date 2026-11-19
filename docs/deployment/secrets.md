@@ -79,9 +79,11 @@ When Spark runs in AWS (ECS, EC2), keep the secrets in AWS Secrets Manager and g
 the containers an IAM role instead of a master key. Two layouts are available; the
 bundle needs one secret and the narrowest policy, so prefer it.
 
-> These AWS steps were not run for this guide (no AWS account was used). The settings
-> and IAM actions come from konfig's AWS backends; Spark's tests prove the bundle's
-> refresh on PostgreSQL notifications against a stubbed Secrets Manager.
+> These AWS steps are tested against a stubbed Secrets Manager, not run against AWS (no
+> AWS account was used for this guide). The settings and IAM actions come from konfig's AWS
+> backends; Spark's tests prove the bundle's refresh on PostgreSQL notifications, and that a
+> server starts from a settings document and a bundle with no master key. For a complete
+> ECS on Fargate layout see [Running Spark on AWS](aws.md).
 
 ### One bundle secret (recommended)
 
@@ -159,7 +161,9 @@ konfig uses boto3's default credential chain. Use the ECS task role or the EC2
 instance profile; do not put long-lived access keys in the env file. konfig can
 also read non-secret start-up settings from a Secrets Manager secret
 (`KONFIG_AWS_SETTINGS`, read only), which needs `GetSecretValue` on that secret; the
-env file works as well and is what this guide uses.
+env file works as well. [Running Spark on AWS](aws.md#configuration-the-settings-document-and-the-bundle)
+shows the document's layout, its precedence against `SPARK__` variables, and a database
+URL per login held in the bundle (`SPARK__DATABASE__URL=secret://database_url_web`).
 
 ## How a saved secret reaches every replica
 
