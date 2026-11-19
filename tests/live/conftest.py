@@ -313,17 +313,11 @@ def configured(stack: Stack, admin: Person) -> None:
     assert resp.status_code == 200, resp.text
 
     stub = {"base_url": stack.state.get("stub_internal", "http://model-stub:11434")}
-    if admin.browser.get(f"/api/connections/{STUB_CONNECTION}").status_code == 404:
-        # The overlays are declared before the stub connection exists, so every process
-        # builds its provider with them: a provider built earlier keeps the catalogue it
-        # was built with (Skuld question 54). They are declared through a connection of
-        # the same service, which is then removed (an overlay is per catalogue provider).
-        bootstrap = f"{STUB_CONNECTION}-overlays"
-        connection(admin, bootstrap, "ollama", "Overlay set-up", stub)
-        declare(admin, bootstrap, STUB_MODEL)
-        declare(admin, bootstrap, TINY_MODEL, context_window=4096, output_limit=1024)
-        assert admin.browser.delete(f"/api/connections/{bootstrap}").status_code == 200
+    # The administrator's natural order: add the connection, then declare its models on
+    # it. Declaring the same entry again on a later run changes nothing.
     connection(admin, STUB_CONNECTION, "ollama", "Model stub (Ollama)", stub)
+    declare(admin, STUB_CONNECTION, STUB_MODEL)
+    declare(admin, STUB_CONNECTION, TINY_MODEL, context_window=4096, output_limit=1024)
     held = {
         a["role"]
         for a in admin.browser.get(f"/api/connections/{STUB_CONNECTION}/assignments").json()[
