@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Server start-up confirms its identity keys against the secrets store, not konfig's cache.** The first full test deployment (0.3.0rc22) lost the TOTP and CSRF key writes to a stale read on Secrets Manager, and failed in warden's `SecretBox` with "secret warden.totp-key is not set", because Spark's own check after each write read konfig's write-through cache. `_ensure_secret` now refreshes konfig before reading back, and, before warden's `Identity` is built, start-up refreshes again and confirms the TOTP key, the CSRF key and the active signing key's seed by name; a missing one stops start-up with a `StartupConfigError` naming it (never its value). A signing key whose seed the store holds is kept on a re-run, otherwise a new one is rotated in, so `spark bootstrap` recovers the state rc22 left (logins, a signing key, no TOTP or CSRF key, no administrator). `cognisn-konfig` is now `>=0.5.1`, whose AWS bundle backend reads its own writes. `docs/deployment/aws.md` describes recovering a failed migrate task and confirming the keys by name
+
 ## [0.3.0rc22] - 2026-11-19
 
 ### Fixed

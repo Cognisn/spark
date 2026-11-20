@@ -42,7 +42,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "cognisn-konfig[aws]>=0.5.0",
+    "cognisn-konfig[aws]>=0.5.1",
     # Identity, sessions, permissions and audit in server mode, at warden's first release
     "cognisn-warden>=0.1.0",
     "fastapi>=0.100.0",

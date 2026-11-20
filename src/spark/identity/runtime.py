@@ -138,16 +138,43 @@ def warden_config(settings: SettingsLike, secrets: SecretsLike, base_url: str) -
         raise StartupConfigError(str(exc)) from None
 
 
+def _refresh(secrets: SecretsLike) -> None:
+    """Have konfig re-read its store, so the next ``get`` is not answered from its cache.
+
+    konfig's ``set`` writes through to a cache that ``get`` reads, so a write the
+    store dropped (a stale read on an eventually consistent backend) still reads
+    back. A store without ``refresh`` has nothing cached.
+    """
+    refresh = getattr(secrets, "refresh", None)
+    if callable(refresh):
+        refresh()
+
+
 def _ensure_secret(secrets: SecretsLike, name: str, make: Callable[[], str]) -> str:
-    """The secret ``name``, generated and stored first if it is missing."""
+    """The secret ``name``, generated and stored first if it is missing.
+
+    The check after a write reads the store afresh, not konfig's write-through cache.
+    """
     value = secrets.get(name)
     if not value:
         logger.info("Generating %s in the secrets store", name)
         secrets.set(name, make())
+        _refresh(secrets)
         value = secrets.get(name)
     if not value:
         raise StartupConfigError(f"the secrets store did not keep {name}; check secrets.backend")
     return value
+
+
+def _confirm_stored(secrets: SecretsLike, names: list[str]) -> None:
+    """Confirm each secret in ``names`` from a fresh read of the store (names only, never values)."""
+    _refresh(secrets)
+    for name in names:
+        if not secrets.get(name):
+            raise StartupConfigError(
+                f"the secrets store did not keep {name}; check secrets.backend "
+                "(a write may have been lost), then run spark bootstrap again"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,17 +253,29 @@ async def _bootstrap(wdb: Any, keys: KeyStore, secrets: SecretsLike, config: War
     async with wdb.connection() as conn:
         await conn.execute("SELECT pg_advisory_lock(%s)", (_BOOTSTRAP_LOCK,))
         try:
-            await asyncio.to_thread(
-                _ensure_secret, secrets, config.identity.totp_key_secret, new_totp_key
-            )
+            # A fresh read first: whether a signing key is usable is judged on the
+            # store, not on what this process cached.
+            await asyncio.to_thread(_refresh, secrets)
+            totp_name = config.identity.totp_key_secret
+            await asyncio.to_thread(_ensure_secret, secrets, totp_name, new_totp_key)
             csrf = await asyncio.to_thread(
                 _ensure_secret, secrets, CSRF_KEY_SECRET, lambda: _secrets.token_urlsafe(32)
             )
+            # A signing key already recorded with its seed in the store is kept (it
+            # is usable, so rotating would only orphan it); with none, or none whose
+            # seed the store holds, a new one is rotated in.
             try:
                 await keys.sign(b"spark start-up check")
             except KeyStoreError as exc:
                 logger.warning("No usable warden signing key (%s); rotating one in", exc)
                 await keys.rotate()
+            # Before Identity is built: all three, confirmed from the store itself.
+            signing = await keys.active_key()
+            await asyncio.to_thread(
+                _confirm_stored,
+                secrets,
+                [totp_name, CSRF_KEY_SECRET, config.keys.secret_prefix + signing.key_id],
+            )
         finally:
             await conn.execute("SELECT pg_advisory_unlock(%s)", (_BOOTSTRAP_LOCK,))
             await conn.commit()

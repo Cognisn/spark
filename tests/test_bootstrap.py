@@ -314,6 +314,32 @@ class TestRestart:
         assert _invited(smtp) == [ADMIN, ADMIN]
 
 
+class TestRerunAfterFailedMigrateTask:
+    async def test_the_state_rc22_left_is_recovered(self, server: Server, smtp: FakeSmtp) -> None:
+        """Signing key present, no TOTP or CSRF key, no administrator: bootstrap finishes the job."""
+        from spark.identity.runtime import IdentityRuntime
+
+        db = await Database.open(server.owner, max_size=2)
+        try:
+            runtime = await IdentityRuntime.start(db, _settings(smtp.port), server.secrets)
+            runtime.close()
+        finally:
+            await db.close()
+        server.secrets.delete(TOTP_SECRET)
+        server.secrets.delete(CSRF_KEY_SECRET)
+        seeds = {k for k in server.secrets.data if k.startswith("warden.signing-key.")}
+        assert len(seeds) == 1
+        keys = _one(server.url, "SELECT count(*) FROM warden.signing_keys")
+
+        outcome = await _run(server, _settings(smtp.port))
+
+        assert outcome.invited and _invited(smtp) == [ADMIN]
+        assert server.secrets.get(TOTP_SECRET) and server.secrets.get(CSRF_KEY_SECRET)
+        assert {k for k in server.secrets.data if k.startswith("warden.signing-key.")} == seeds
+        assert _one(server.url, "SELECT count(*) FROM warden.signing_keys") == keys
+        assert await _signing_key_works(server, _settings(smtp.port), server.login_url("worker"))
+
+
 class TestConcurrency:
     async def test_two_runs_at_once_send_one_invitation(
         self, server: Server, smtp: FakeSmtp
