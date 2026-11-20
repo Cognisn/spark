@@ -62,6 +62,36 @@ class TestLookup:
             assert not registry.is_known(key), key
 
 
+class TestInternalKeys:
+    """Keys SPARK keeps in instance_settings for itself are not settings."""
+
+    MARKER = "bootstrap.bedrock.seeded"
+
+    def test_the_bootstrap_marker_is_internal_and_not_a_setting(self) -> None:
+        assert registry.is_internal(self.MARKER)
+        assert not registry.is_known(self.MARKER)
+        with pytest.raises(UnknownSettingError):
+            registry.spec(self.MARKER)
+        with pytest.raises(UnknownSettingError):
+            registry.coerce(self.MARKER, True)
+
+    def test_the_marker_is_listed_nowhere(self) -> None:
+        assert self.MARKER not in registry.keys()
+        assert self.MARKER not in registry.offered_keys()
+        assert self.MARKER not in registry.secret_keys()
+        for scope in Scope:
+            assert self.MARKER not in registry.keys(scope), scope
+
+    def test_other_keys_are_not_internal(self) -> None:
+        for key in ("mode", "voice.engine", "retired.key", "bootstrap.bedrock.region"):
+            assert not registry.is_internal(key), key
+
+    def test_bootstrap_takes_the_marker_name_from_the_registry(self) -> None:
+        from spark.bootstrap import connections
+
+        assert connections.MARKER == self.MARKER
+
+
 class TestSecrets:
     def test_secret_keys_are_flagged(self) -> None:
         for key in (

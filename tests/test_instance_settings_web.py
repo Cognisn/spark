@@ -439,6 +439,13 @@ class TestServerInstanceSave:
         assert resp.json()["keys"] == ["nope.nope"]
         assert _rows(server) == []
 
+    def test_the_internal_marker_is_refused_and_not_listed(self, server: TestClient) -> None:
+        resp = server.post("/settings/api/instance", json={"bootstrap.bedrock.seeded": True})
+        assert resp.status_code == 400
+        assert resp.json()["keys"] == ["bootstrap.bedrock.seeded"]
+        assert _rows(server) == []
+        assert "bootstrap.bedrock.seeded" not in server.get("/settings").text
+
     def test_preference_and_startup_keys_refused_on_the_instance_endpoint(
         self, server: TestClient
     ) -> None:

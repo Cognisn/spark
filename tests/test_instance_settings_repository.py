@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
@@ -94,6 +95,51 @@ class TestInstanceSettings:
             ("voice.engine", '"telegraph"', "2026-10-29T00:00:00+00:00", "a"),
         )
         assert await repository.load_instance(spark_db) == {}
+
+    async def test_the_internal_marker_is_skipped_quietly_on_load(
+        self, spark_db: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        await repository.save_instance(spark_db, "voice.engine", "elevenlabs", actor="a")
+        await spark_db.execute(
+            "INSERT INTO instance_settings (key, value, updated_at, updated_by) "
+            "VALUES (?, ?, ?, ?)",
+            ("bootstrap.bedrock.seeded", "true", "2026-11-20T00:00:00+00:00", "bootstrap"),
+        )
+        with caplog.at_level(logging.WARNING):
+            loaded = await repository.load_instance(spark_db)
+        assert loaded == {"voice.engine": "elevenlabs"}
+        assert "bootstrap.bedrock.seeded" not in caplog.text
+
+    async def test_an_unknown_stored_key_still_logs_a_warning(
+        self, spark_db: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        await spark_db.execute(
+            "INSERT INTO instance_settings (key, value, updated_at, updated_by) "
+            "VALUES (?, ?, ?, ?)",
+            ("retired.key", "true", "2026-11-20T00:00:00+00:00", "a"),
+        )
+        with caplog.at_level(logging.WARNING):
+            assert await repository.load_instance(spark_db) == {}
+        assert "Ignoring stored setting retired.key" in caplog.text
+
+    async def test_the_internal_marker_cannot_be_saved_or_deleted(self, spark_db: Any) -> None:
+        with pytest.raises(UnknownSettingError):
+            await repository.save_instance(spark_db, "bootstrap.bedrock.seeded", True, actor="a")
+        with pytest.raises(UnknownSettingError):
+            await repository.delete_instance(spark_db, "bootstrap.bedrock.seeded", actor="a")
+        count = await spark_db.fetch_value("SELECT COUNT(*) FROM instance_settings")
+        assert count == 0
+
+    async def test_the_retired_row_listing_does_not_name_the_marker(self, spark_db: Any) -> None:
+        from spark.connections.upgrade import ignored_server_settings
+
+        for key in ("bootstrap.bedrock.seeded", "providers.xai.api_key"):
+            await spark_db.execute(
+                "INSERT INTO instance_settings (key, value, updated_at, updated_by) "
+                "VALUES (?, ?, ?, ?)",
+                (key, "true", "2026-11-20T00:00:00+00:00", "a"),
+            )
+        assert await ignored_server_settings(spark_db) == ["providers.xai.api_key"]
 
 
 class TestPreferences:

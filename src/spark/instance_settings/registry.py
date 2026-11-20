@@ -25,6 +25,8 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 __all__ = [
+    "BOOTSTRAP_BEDROCK_MARKER",
+    "INTERNAL_KEYS",
     "RETIRED_PREFIXES",
     "InvalidSettingError",
     "Kind",
@@ -33,6 +35,7 @@ __all__ = [
     "SettingsError",
     "UnknownSettingError",
     "coerce",
+    "is_internal",
     "is_known",
     "is_offered",
     "is_retired",
@@ -420,6 +423,22 @@ RETIRED_PREFIXES: Final[tuple[str, ...]] = ("providers.", "models.offered")
 def is_retired(key: str) -> bool:
     """Whether ``key`` is a setting named connections replaced."""
     return key.startswith(RETIRED_PREFIXES)
+
+
+#: The instance settings row bootstrap writes once it has dealt with the Amazon Bedrock
+#: connection (:mod:`spark.bootstrap.connections`). Bookkeeping, not a setting.
+BOOTSTRAP_BEDROCK_MARKER: Final = "bootstrap.bedrock.seeded"
+
+#: Keys SPARK itself keeps in ``instance_settings`` that are not settings. They have no
+#: :class:`SettingSpec`, so :func:`spec` refuses them, and the settings API, the
+#: administration page and the exports never list, read or set them. A stored row of
+#: one is skipped quietly on load, with no warning.
+INTERNAL_KEYS: Final[frozenset[str]] = frozenset({BOOTSTRAP_BEDROCK_MARKER})
+
+
+def is_internal(key: str) -> bool:
+    """Whether ``key`` is a row SPARK keeps for itself (:data:`INTERNAL_KEYS`), not a setting."""
+    return key in INTERNAL_KEYS
 
 
 def spec(key: str) -> SettingSpec:
