@@ -15,6 +15,9 @@ every problem by its dotted and ``SPARK__`` names, never a value:
 * ``mail.smtp.*``: instance settings that bootstrap fills in from the start-up
   values while the database holds none (:func:`mail_to_seed`), so the invitation
   can be sent; a host and a sender address are required from one or the other;
+* ``bootstrap.bedrock.region``, ``name`` and ``residency_regions``: an optional Amazon
+  Bedrock connection that uses the task's IAM role, added once by bootstrap
+  (:mod:`spark.bootstrap.connections`); a Region turns it on;
 * ``bootstrap.wait_seconds`` and ``bootstrap.wait_interval_seconds``: how long web
   and worker wait for bootstrap (:mod:`spark.bootstrap.wait`).
 
@@ -26,6 +29,7 @@ A URL that asks for a verified TLS connection (``sslmode=verify-ca`` or
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +46,10 @@ __all__ = [
     "ADMIN_EMAIL",
     "ADMIN_FIRST_NAME",
     "ADMIN_LAST_NAME",
+    "BEDROCK_NAME",
+    "BEDROCK_REGION",
+    "BEDROCK_RESIDENCY_REGIONS",
+    "DEFAULT_BEDROCK_NAME",
     "DEFAULT_WAIT_INTERVAL_SECONDS",
     "DEFAULT_WAIT_SECONDS",
     "MAIL_KEYS",
@@ -51,6 +59,7 @@ __all__ = [
     "WEB_URL",
     "WORKER_URL",
     "Administrator",
+    "BedrockSeed",
     "BootstrapSettings",
     "BootstrapSettingsError",
     "Logins",
@@ -75,6 +84,11 @@ WAIT_INTERVAL_SECONDS: Final = "bootstrap.wait_interval_seconds"
 DEFAULT_WAIT_SECONDS: Final = 600.0
 DEFAULT_WAIT_INTERVAL_SECONDS: Final = 5.0
 
+BEDROCK_REGION: Final = "bootstrap.bedrock.region"
+BEDROCK_NAME: Final = "bootstrap.bedrock.name"
+BEDROCK_RESIDENCY_REGIONS: Final = "bootstrap.bedrock.residency_regions"
+DEFAULT_BEDROCK_NAME: Final = "Amazon Bedrock (task role)"
+
 DATABASE_URL: Final = "database.url"
 RETENTION: Final = "warden.audit.retention_days"
 #: The ``mail.smtp`` instance settings bootstrap may fill in (the password is a secret).
@@ -90,6 +104,10 @@ _SECRET_PREFIX: Final = "secret://"
 _POSTGRES: Final = frozenset({"postgresql", "postgres"})
 _VERIFIED: Final = frozenset({"verify-ca", "verify-full"})
 _NAME_MAX: Final = 100
+#: The connection model's limit on a connection's name (``spark.connections.model``).
+_CONNECTION_NAME_MAX: Final = 128
+#: An AWS Region's shape: ``ap-southeast-2``, ``us-gov-west-1``, ``eu-central-1``.
+_REGION: Final = re.compile(r"^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$")
 
 
 class KonfigLike(Protocol):
@@ -144,6 +162,17 @@ class Logins:
 
 
 @dataclass(frozen=True, slots=True)
+class BedrockSeed:
+    """The Amazon Bedrock connection bootstrap adds (task role, no credential of its own)."""
+
+    region: str
+    name: str = DEFAULT_BEDROCK_NAME
+    #: The Regions the connection may process in beyond its own (cross-Region inference
+    #: profiles); None keeps the service's in-Region default.
+    residency_regions: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BootstrapSettings:
     administrator: Administrator
     logins: Logins | None
@@ -151,6 +180,8 @@ class BootstrapSettings:
     mail: Mapping[str, Any] = field(default_factory=dict)
     #: The values bootstrap writes to the instance settings (empty when some are stored).
     mail_seed: Mapping[str, Any] = field(default_factory=dict)
+    #: The Bedrock connection to add, or None when no Region is set.
+    bedrock: BedrockSeed | None = None
 
 
 def _text(settings: KonfigLike, key: str) -> str:
@@ -383,6 +414,55 @@ def smtp_of(values: Mapping[str, Any], secrets: SecretReader) -> mail.SmtpSettin
     )
 
 
+def _region_list(raw: Any) -> list[str] | None:
+    """The items of a Region list: a JSON list, or comma-separated text; None if neither."""
+    if isinstance(raw, str):
+        return [item.strip() for item in raw.split(",")]
+    if isinstance(raw, list | tuple):
+        return [item.strip() if isinstance(item, str) else "" for item in raw]
+    return None
+
+
+def _bedrock(settings: KonfigLike, problems: list[str]) -> BedrockSeed | None:
+    region = _text(settings, BEDROCK_REGION)
+    if not region:
+        return None
+    start = len(problems)
+    if not _REGION.fullmatch(region):
+        problems.append(
+            f"{named(BEDROCK_REGION)} is not an AWS Region (for example ap-southeast-2)"
+        )
+    name = _text(settings, BEDROCK_NAME) or DEFAULT_BEDROCK_NAME
+    if len(name) > _CONNECTION_NAME_MAX or any(ch in name for ch in "\r\n\x00"):
+        problems.append(
+            f"{named(BEDROCK_NAME)} must be one line of at most {_CONNECTION_NAME_MAX} characters"
+        )
+    residency: tuple[str, ...] | None = None
+    raw = settings.get(BEDROCK_RESIDENCY_REGIONS, None)
+    listed = _region_list(raw)
+    if raw is not None and listed is None:
+        problems.append(f"{named(BEDROCK_RESIDENCY_REGIONS)} must be a list of AWS Regions")
+    elif listed is not None and (len(listed) > 1 or any(listed)):
+        found = [item for item in listed if item]
+        bad = len(found) != len(listed) or not all(_REGION.fullmatch(i) for i in found)
+        if bad:
+            problems.append(
+                f"{named(BEDROCK_RESIDENCY_REGIONS)} must be AWS Regions separated by commas "
+                "(for example ap-southeast-2,ap-southeast-4)"
+            )
+        elif len(set(found)) != len(found):
+            problems.append(f"{named(BEDROCK_RESIDENCY_REGIONS)} names a Region more than once")
+        elif region not in found:
+            problems.append(
+                f"{named(BEDROCK_RESIDENCY_REGIONS)} must include {named(BEDROCK_REGION)}"
+            )
+        else:
+            residency = tuple(sorted(found))
+    if len(problems) > start:
+        return None
+    return BedrockSeed(region, name, residency)
+
+
 def collect(
     settings: KonfigLike,
     secrets: SecretReader,
@@ -407,6 +487,7 @@ def collect(
     seed = mail_to_seed(stored_mail, startup_mail)
     effective = _effective_mail(stored_mail, seed)
     _mail_problems(effective, secrets, problems)
+    bedrock = _bedrock(settings, problems)
     if problems or administrator is None:
         raise BootstrapSettingsError(problems)
-    return BootstrapSettings(administrator, logins, effective, seed)
+    return BootstrapSettings(administrator, logins, effective, seed, bedrock)

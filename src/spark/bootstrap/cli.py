@@ -37,6 +37,13 @@ def parse(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(list(argv))
 
 
+_BEDROCK = {
+    "created": "bedrock connection: aws-bedrock added (task role credentials)",
+    "exists": "bedrock connection: aws-bedrock already exists, left unchanged",
+    "declined": "bedrock connection: aws-bedrock was deleted by an administrator, not added again",
+}
+
+
 def describe(outcome: Outcome) -> str:
     """What happened, one line per step."""
     lines: list[str] = []
@@ -50,6 +57,8 @@ def describe(outcome: Outcome) -> str:
     lines.append("instance identity: present")
     if outcome.mail_seeded:
         lines.append("mail settings: stored from the start-up settings")
+    if outcome.bedrock:
+        lines.append(_BEDROCK[outcome.bedrock])
     if outcome.invited:
         lines.append("first administrator: invitation sent")
     elif outcome.already_complete:
