@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -250,12 +251,20 @@ class TestThroughKonfigBackends:
 
             def __init__(self) -> None:
                 self.secret = "{}"
+                self.version_id = str(uuid.uuid4())
 
             def get_secret_value(self, SecretId: str) -> dict[str, str]:  # noqa: N803
-                return {"SecretString": self.secret}
+                return {"SecretString": self.secret, "VersionId": self.version_id}
 
-            def put_secret_value(self, SecretId: str, SecretString: str) -> None:  # noqa: N803
+            def put_secret_value(
+                self,
+                SecretId: str,  # noqa: N803
+                SecretString: str,  # noqa: N803
+                ClientRequestToken: str | None = None,  # noqa: N803
+            ) -> dict[str, str]:
                 self.secret = SecretString
+                self.version_id = ClientRequestToken or str(uuid.uuid4())
+                return {"VersionId": self.version_id}
 
         client = FakeClient()
         arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:spark-dev-only"
