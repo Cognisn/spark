@@ -182,7 +182,7 @@ one that missed a notification while the database was unreachable catches up. Th
 worker builds the model clients for each knowledge graph job from the store as it is
 then.
 
-This needs cognisn-konfig 0.5.0 or later, which Spark 0.3.0 requires. The image
+This needs cognisn-konfig 0.5.1 or later, which Spark 0.3.0 requires. The image
 already has it.
 
 ## Placing a secret in the store

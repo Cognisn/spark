@@ -470,6 +470,24 @@ fails with the failed events; the stack then runs the previous version. The job 
 continues or repairs a rollback. A stack in any other state (for example
 `UPDATE_ROLLBACK_FAILED`) is refused at the start, and is repaired by hand.
 
+### A migrate task that fails after the logins exist
+
+If the migrate task fails after `spark bootstrap` has created the `spark_web` and
+`spark_worker` logins (for example a lost secrets write), nothing has started, because the
+deploy stops before either service changes. Image tags in ECR are immutable, so recover by
+publishing the next release candidate: its deploy runs the migrate task again. `spark
+bootstrap` is safe to re-run. It leaves the logins and a usable signing key as they are,
+generates only the identity keys that are missing, replaces a signing key whose private half
+the store does not hold, and then invites the first administrator if none exists.
+
+Start-up confirms the three identity keys from a fresh read of the store before it builds the
+identity, and stops with a message such as `the secrets store did not keep warden.totp-key`
+if one is absent. To check by hand which keys exist, list the bundle's key names without
+reading any value, for example `aws secretsmanager get-secret-value --secret-id <bundle>
+--query SecretString --output text | jq 'keys'`, and look for `warden.totp-key`,
+`spark.csrf-key` and one `warden.signing-key.<id>` (the bundle's names carry your
+configured prefix).
+
 ### Going back to an earlier version
 
 Set the stack's `ImageTag` (and `MigrateImageTag`) to an earlier version tag still held in ECR,
