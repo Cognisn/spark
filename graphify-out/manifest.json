@@ -48,9 +48,9 @@
     "semantic_hash": ""
   },
   "deploy/live/stack.py": {
-    "mtime": 1795071287.41862,
-    "seen": 1795077435.312192,
-    "ast_hash": "ee9a117ab4fdb451860004c0ac2487ab",
+    "mtime": 1795168805.4750576,
+    "seen": 1795170631.3400304,
+    "ast_hash": "3f8dd28591523f9f438473e6ccbc90e7",
     "semantic_hash": ""
   },
   "dev/worktree.json": {
@@ -1848,9 +1848,9 @@
     "semantic_hash": ""
   },
   "tests/test_deploy_stacks.py": {
-    "mtime": 1795065728.1440804,
-    "seen": 1795068990.9436326,
-    "ast_hash": "57f013041a2662d65ec60d18fad0d854",
+    "mtime": 1795168805.4834034,
+    "seen": 1795170631.3404138,
+    "ast_hash": "bec0369b5587b201d4d87c2159fbcd2e",
     "semantic_hash": ""
   },
   "tests/test_embedding_model.py": {
@@ -2778,9 +2778,9 @@
     "semantic_hash": "4b1922d8809cb904f598875a6e9714e2"
   },
   "CHANGELOG.md": {
-    "mtime": 1795153079.540319,
-    "seen": 1795167589.982799,
-    "ast_hash": "0fcacd0782624844c1fc7d6c0e7cd1c7",
+    "mtime": 1795168812.6466548,
+    "seen": 1795170631.3404138,
+    "ast_hash": "1fdbb6db53034237636bb565be876524",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2802,9 +2802,9 @@
     "semantic_hash": ""
   },
   "deploy/docker-desktop/compose.yaml": {
-    "mtime": 1795065728.1366928,
-    "seen": 1795068990.9436326,
-    "ast_hash": "8c9b06c5080c0e8a2e7ebc27986f7d57",
+    "mtime": 1795168805.4738586,
+    "seen": 1795170631.3404138,
+    "ast_hash": "f32b136bff89993aae0846b4c813ee4e",
     "semantic_hash": ""
   },
   "deploy/live/compose.live.yaml": {
@@ -2814,9 +2814,9 @@
     "semantic_hash": ""
   },
   "deploy/portainer/stack.yaml": {
-    "mtime": 1795065728.138734,
-    "seen": 1795068990.9436326,
-    "ast_hash": "26b2e2f9b155a6a7090858539e114d89",
+    "mtime": 1795168805.475971,
+    "seen": 1795170631.3404138,
+    "ast_hash": "6baee7adb8f7866228cc3e6239792012",
     "semantic_hash": ""
   },
   "dev/worktree-compose.yml": {
@@ -2874,9 +2874,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/compose.md": {
-    "mtime": 1795053541.20927,
-    "seen": 1795058750.3832536,
-    "ast_hash": "814fbee7b04eeea9416d8de958cfbbb0",
+    "mtime": 1795168805.4776251,
+    "seen": 1795170631.3404138,
+    "ast_hash": "b9d2a64651d7b52b305bd6b5eb80728f",
     "semantic_hash": ""
   },
   "docs/deployment/database.md": {
@@ -2886,9 +2886,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/docker-desktop.md": {
-    "mtime": 1795065728.1412616,
-    "seen": 1795068990.9436326,
-    "ast_hash": "1da7668f4e571b583858b0be8695904b",
+    "mtime": 1795168805.478163,
+    "seen": 1795170631.3404138,
+    "ast_hash": "254a8527aa5413323053e47b7d95d12f",
     "semantic_hash": ""
   },
   "docs/deployment/from-personal.md": {
@@ -2898,9 +2898,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/identity.md": {
-    "mtime": 1795053541.210398,
-    "seen": 1795058750.3832536,
-    "ast_hash": "779380c768f2cc1f6185781e5de9fcbd",
+    "mtime": 1795168805.478163,
+    "seen": 1795170631.3404138,
+    "ast_hash": "eca34e19ad0719d5fd187ed7908437e0",
     "semantic_hash": ""
   },
   "docs/deployment/index.md": {
@@ -2916,9 +2916,9 @@
     "semantic_hash": "5f9af93edf02764c5c9da32082623af2"
   },
   "docs/deployment/portainer.md": {
-    "mtime": 1795065728.143316,
-    "seen": 1795068990.9436326,
-    "ast_hash": "8c2ac4a0e2af2672925d42898f8a13ff",
+    "mtime": 1795168805.478163,
+    "seen": 1795170631.3404138,
+    "ast_hash": "7f8f09ca49aa9eb8bf38a9679cf4339a",
     "semantic_hash": ""
   },
   "docs/deployment/reverse-proxy.md": {
@@ -2994,9 +2994,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795155526.8395238,
-    "seen": 1795167589.982799,
-    "ast_hash": "1ef2511b238b67a20e9574746e1c6416",
+    "mtime": 1795168812.6458793,
+    "seen": 1795170631.3404138,
+    "ast_hash": "a878f66fb4e2994c6f0a14907273343e",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3720,21 +3720,21 @@
     "semantic_hash": ""
   },
   "src/spark/bootstrap/cli.py": {
-    "mtime": 1795053541.2195566,
-    "seen": 1795058750.3828697,
-    "ast_hash": "a716b744d28b67b011ec6a4eeee3a4b8",
+    "mtime": 1795168805.4799047,
+    "seen": 1795170631.3400304,
+    "ast_hash": "ab3207563c7142955ebf3958cd6d231f",
     "semantic_hash": ""
   },
   "src/spark/bootstrap/run.py": {
-    "mtime": 1795053541.2206502,
-    "seen": 1795058750.3828697,
-    "ast_hash": "5bfbeb8fb44ce422f71870f34a758bc8",
+    "mtime": 1795168805.481677,
+    "seen": 1795170631.3400304,
+    "ast_hash": "3970a406c5383c6de161d6062188b5a7",
     "semantic_hash": ""
   },
   "src/spark/bootstrap/settings.py": {
-    "mtime": 1795053541.2206502,
-    "seen": 1795058750.3828697,
-    "ast_hash": "558857b7937d5ef32818686d77fcbc17",
+    "mtime": 1795168805.481677,
+    "seen": 1795170631.3400304,
+    "ast_hash": "33962c96a314bdfc34bc74abaf4ee06d",
     "semantic_hash": ""
   },
   "src/spark/bootstrap/wait.py": {
@@ -3846,9 +3846,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/aws.md": {
-    "mtime": 1795153025.4216774,
-    "seen": 1795167589.982799,
-    "ast_hash": "98fbde980f7389c0b4684234b13b338c",
+    "mtime": 1795168805.475971,
+    "seen": 1795170631.3404138,
+    "ast_hash": "7d7f8f5c1efbc2892d30e717be710f66",
     "semantic_hash": ""
   },
   "scripts/deploy-test.sh": {
@@ -3891,6 +3891,24 @@
     "mtime": 1795080186.806287,
     "seen": 1795122201.353034,
     "ast_hash": "d69edb614aa91a8024792f4fc9b701ad",
+    "semantic_hash": ""
+  },
+  "src/spark/bootstrap/connections.py": {
+    "mtime": 1795168805.4799047,
+    "seen": 1795170631.3400304,
+    "ast_hash": "1601f923efbc5b6545c9a720982a5d8d",
+    "semantic_hash": ""
+  },
+  "tests/test_bootstrap_bedrock.py": {
+    "mtime": 1795168805.4827254,
+    "seen": 1795170631.3404138,
+    "ast_hash": "b33b44088663f9b539e684c495c1899f",
+    "semantic_hash": ""
+  },
+  "tests/test_bootstrap_bedrock_run.py": {
+    "mtime": 1795168805.4834034,
+    "seen": 1795170631.3404138,
+    "ast_hash": "4de45c098fd6b66861a52c886f3bf19f",
     "semantic_hash": ""
   }
 }
