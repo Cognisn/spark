@@ -77,6 +77,7 @@ The second command prints a new key for `KONFIG_MASTER_KEY` (any Python with the
 | `SPARK__DATABASE__URL` | Spark | `postgresql://USER:PASSWORD@postgres:5432/DB`, the same credentials; percent-encode special characters in the password |
 | `SPARK__SERVER__PUBLIC_BASE_URL` | Spark | The https address users reach Spark on; see [Reverse proxy and TLS](reverse-proxy.md) |
 | `KONFIG_MASTER_KEY` | Spark | The key to konfig's encrypted secrets file; see [Secrets](secrets.md) |
+| `SPARK__BOOTSTRAP__BEDROCK__REGION`, `..._NAME`, `..._RESIDENCY_REGIONS` | `migrate` | Optional, AWS only: add an Amazon Bedrock connection that uses the task role; see [AWS](aws.md#bedrock-through-the-task-role) |
 | `SPARK__BOOTSTRAP__ADMIN__EMAIL`, `..._FIRST_NAME`, `..._LAST_NAME` | `migrate` | The first administrator, invited on the first start; see [Identity](identity.md#bootstrap) |
 | `SPARK__MAIL__SMTP__HOST`, `..._PORT`, `..._TLS`, `..._SENDER_ADDRESS`, `..._SENDER_NAME` | `migrate` | Mail, stored as the instance's mail settings on the first start; the example sends to the mail catcher |
 | any `SPARK__<SECTION>__<KEY>` | Spark | Any other start-up setting, for example `SPARK__LOGGING__LEVEL=INFO` or `SPARK__WARDEN__SSO__ENABLED=true` |

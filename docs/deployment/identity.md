@@ -29,6 +29,9 @@ complete and valid, and its refusal lists every problem by both names, never a v
 | `bootstrap.database.worker_url` | `SPARK__BOOTSTRAP__DATABASE__WORKER_URL` | With restricted roles, with the previous |
 | `worker.audit_purge_database_url` | `SPARK__WORKER__AUDIT_PURGE_DATABASE_URL` | With restricted roles and an audit retention |
 | `mail.smtp.host`, `port`, `tls`, `sender_address`, `sender_name`, `username` | `SPARK__MAIL__SMTP__HOST` and so on | A host and a sender address, unless already stored ([Mail](#mail)) |
+| `bootstrap.bedrock.region` | `SPARK__BOOTSTRAP__BEDROCK__REGION` | No: an AWS Region such as `ap-southeast-2`; set, bootstrap adds an Amazon Bedrock connection that uses the task role ([AWS](aws.md#bedrock-through-the-task-role)) |
+| `bootstrap.bedrock.name` | `SPARK__BOOTSTRAP__BEDROCK__NAME` | No: its display name (Amazon Bedrock (task role)) |
+| `bootstrap.bedrock.residency_regions` | `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | No: comma-separated Regions it may process in, including its own, for the cross-Region inference profiles |
 | `bootstrap.wait_seconds` | `SPARK__BOOTSTRAP__WAIT_SECONDS` | No: how long web and worker wait for bootstrap (600) |
 | `bootstrap.wait_interval_seconds` | `SPARK__BOOTSTRAP__WAIT_INTERVAL_SECONDS` | No: how often they check (5) |
 

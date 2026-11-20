@@ -286,7 +286,49 @@ The task role needs, on the models and inference profiles the connection uses:
   Connections page; `Resource: "*"`, these actions do not support narrower resources).
 
 Enable model access for the account in the Bedrock console, and use an inference profile ARN
-where the model needs one.
+where the model needs one. Both the web and the worker task roles need the invoke permissions:
+the web task answers chat, and the worker runs scheduled actions and knowledge graph builds.
+The list permissions matter to the web task only.
+
+### Adding the connection at deployment
+
+A fresh deployment has no model connection until an administrator adds one. To have
+`spark bootstrap` add the Bedrock connection above, set these on the stack (the migrate and
+bootstrap task, or the settings document). They are read by `spark bootstrap` in server mode
+only; personal mode has no bootstrap, so it ignores them.
+
+| Setting | Variable | Meaning |
+|---|---|---|
+| `bootstrap.bedrock.region` | `SPARK__BOOTSTRAP__BEDROCK__REGION` | An AWS Region, for example `ap-southeast-2`. Set, it turns the step on; unset or empty, nothing happens |
+| `bootstrap.bedrock.name` | `SPARK__BOOTSTRAP__BEDROCK__NAME` | Optional display name (default Amazon Bedrock (task role)) |
+| `bootstrap.bedrock.residency_regions` | `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | Optional, comma-separated Regions (a JSON list in a settings document also works), for example `ap-southeast-2,ap-southeast-4`. It must include the Region above |
+
+What is created is one connection, `aws-bedrock`, service Amazon Bedrock, enabled, with
+authentication credential chain, no profile and no secret reference. A bad Region, name or
+list stops `spark bootstrap` before anything is written, naming the variable.
+
+**Residency.** By default a Bedrock connection allows processing in its own Region only. In
+`ap-southeast-2` Anthropic models are offered only through the AU geographic inference
+profiles (`au.anthropic.*`), which may be processed in `ap-southeast-2` and `ap-southeast-4`
+(some older ones also in `ap-southeast-6`). The default refuses every one of them, so a
+connection bootstrapped without `residency_regions` can reach no Claude model in that Region.
+With `residency_regions` set, the connection allows local, in-Region and cross-Region
+processing within exactly those Regions, and never global. A profile whose Regions are not
+all listed is refused: with `ap-southeast-2,ap-southeast-4`, the profiles that also list
+`ap-southeast-6` stay refused (shown with their reason on the Connections page) until
+`ap-southeast-6` is allowed there by an administrator.
+
+**Once only.** Bootstrap adds the connection when none with that id exists and it has not
+dealt with it before, and then records that it has. It never changes, re-enables or
+overwrites a connection that exists, whatever its state, Region or residency, and it does not
+add it again if an administrator deleted it. An instance that was bootstrapped before this
+setting existed gets the connection on its next run. Running bootstrap again is safe.
+
+**Models.** The connection stores no model rows. A connection with none offers every model in
+its Region that residency allows, enabled at the standard tier, so no administrator step is
+needed before people can chat; an administrator who wants to curate the list opens the
+connection on the Connections page. Task role permissions and model access in the Bedrock
+console still apply.
 
 ## IAM: one role per task
 

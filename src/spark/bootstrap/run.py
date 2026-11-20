@@ -11,12 +11,15 @@ advisory lock, so two runs at once agree:
 3. create the instance identity, warden's signing key, the TOTP key and the CSRF
    key, by the code web start-up runs (:meth:`spark.identity.runtime.IdentityRuntime.start`);
 4. store the start-up ``mail.smtp`` values while the database holds none, audited;
-5. invite the first administrator through warden with ``administrator`` staged,
+5. add the Amazon Bedrock connection that uses the task role, when
+   ``bootstrap.bedrock.region`` is set: once, never over an administrator's change
+   or deletion (:mod:`spark.bootstrap.connections`), audited;
+6. invite the first administrator through warden with ``administrator`` staged,
    sent by the SMTP sender, unless someone already holds or is invited to that
    role; warden sends inside its transaction, so a failed delivery writes nothing;
-6. write the bootstrap record (:mod:`spark.migrations.versions.bootstrap_record`).
+7. write the bootstrap record (:mod:`spark.migrations.versions.bootstrap_record`).
 
-A later run finds the record and sends nothing; steps 2 to 4 are repeated, so a
+A later run finds the record and sends nothing; steps 2 to 5 are repeated, so a
 changed login password or a new table after an upgrade is applied.
 ``resend_invitation`` asks warden to resend the first administrator's invitation
 (``spark bootstrap --resend-invitation``). Nothing here logs a URL, a password, an
@@ -37,8 +40,10 @@ import psycopg
 from psycopg import AsyncConnection
 
 import spark
+from spark.bootstrap import connections as bootstrap_connections
 from spark.bootstrap import settings as bootstrap_settings
 from spark.bootstrap.settings import BootstrapSettings, BootstrapSettingsError, KonfigLike
+from spark.connections.model import ConnectionInvalid
 from spark.db import roles
 from spark.db.engine import Database, Executor
 from spark.identity.mail import SmtpSender
@@ -78,6 +83,8 @@ class Outcome:
     invited: bool
     resent: bool
     already_complete: bool
+    #: What the Bedrock step did: ``created``, ``exists``, ``declined``, or empty when off.
+    bedrock: str = ""
 
 
 def connect_reason(exc: BaseException) -> str:
@@ -178,6 +185,16 @@ async def _seed_mail(
     return tuple(sorted(seed))
 
 
+async def _seed_bedrock(database: Database, seed: bootstrap_settings.BedrockSeed) -> str:
+    try:
+        result = await bootstrap_connections.seed_bedrock(database, seed, actor=ACTOR)
+    except ConnectionInvalid as refused:
+        raise BootstrapError(f"the Bedrock connection was refused: {refused}") from None
+    if result == "created":
+        logger.info("Added the Amazon Bedrock connection %s", bootstrap_connections.CONNECTION_ID)
+    return result
+
+
 async def _invite(identity: Any, found: BootstrapSettings) -> None:
     from warden.identity import InvitationError, MailError, StagedGrant
 
@@ -275,9 +292,12 @@ async def run(
             )
             identity = await IdentityRuntime.start(db, settings, secrets, mail_sender=sender)
             invited = resent = False
+            bedrock = ""
             try:
                 async with spark_audit.installed(db):
                     seeded = await _seed_mail(db, settings, found.mail_seed)
+                    if found.bedrock is not None:
+                        bedrock = await _seed_bedrock(db, found.bedrock)
                     if not already and not await administrator_present(lock):
                         await _invite(identity.identity, found)
                         invited = True
@@ -296,4 +316,4 @@ async def run(
         except psycopg.Error:
             pass
         await lock.close()
-    return Outcome(changes, seeded, invited, resent, already)
+    return Outcome(changes, seeded, invited, resent, already, bedrock)

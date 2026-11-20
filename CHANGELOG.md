@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `spark bootstrap` can add an Amazon Bedrock connection that uses the task's IAM role: set `bootstrap.bedrock.region` (`SPARK__BOOTSTRAP__BEDROCK__REGION`), and optionally `bootstrap.bedrock.name` and `bootstrap.bedrock.residency_regions` (the Regions the cross-Region AU inference profiles may be processed in; global is never allowed). The connection `aws-bedrock` is added once, never changes or re-adds one an administrator has edited, disabled or deleted, and is added on an instance bootstrapped before this setting existed.
+
 ## [0.3.0rc23] - 2026-11-20
 
 ### Fixed
