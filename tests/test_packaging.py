@@ -24,10 +24,10 @@ def test_primary_spark_command_preserved() -> None:
 
 
 def test_konfig_declared_with_its_aws_extra() -> None:
-    """Server mode's AWS Secrets Manager backends need konfig and its ``aws`` extra (Q6); 0.5.0 reloads its encrypted store across replicas (wave 5 D67)."""
+    """Server mode's AWS Secrets Manager backends need konfig and its ``aws`` extra (Q6); 0.5.0 reloads its encrypted store across replicas (wave 5 D67), and 0.5.1 makes the AWS bundle backend read its own writes, so a write is never based on a stale read (rc22 deployment)."""
     root = Path(__file__).resolve().parent.parent
     deps = tomllib.loads((root / "pyproject.toml").read_text())["project"]["dependencies"]
-    assert [d for d in deps if d.startswith("cognisn-konfig")] == ["cognisn-konfig[aws]>=0.5.0"]
+    assert [d for d in deps if d.startswith("cognisn-konfig")] == ["cognisn-konfig[aws]>=0.5.1"]
 
 
 def _project() -> dict:
