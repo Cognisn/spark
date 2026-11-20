@@ -255,6 +255,10 @@ def _spark_env(path: Path, public: str) -> None:
         "SPARK__BOOTSTRAP__ADMIN__EMAIL": ADMIN_EMAIL,
         "SPARK__BOOTSTRAP__ADMIN__FIRST_NAME": ADMIN_FIRST_NAME,
         "SPARK__BOOTSTRAP__ADMIN__LAST_NAME": ADMIN_LAST_NAME,
+        # Optional on AWS, left off here (no Bedrock in the sandbox), see docs/deployment/aws.md:
+        # "SPARK__BOOTSTRAP__BEDROCK__REGION": "ap-southeast-2",
+        # "SPARK__BOOTSTRAP__BEDROCK__NAME": "Amazon Bedrock (task role)",
+        # "SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS": "ap-southeast-2,ap-southeast-4",
         # STARTTLS from the throwaway CA (SSL_CERT_FILE), so every container may send,
         # whether or not it shares the catcher's network namespace.
         "SPARK__MAIL__SMTP__HOST": MAIL_HOST,

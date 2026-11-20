@@ -34,6 +34,11 @@ x-spark: &spark
     SPARK__BOOTSTRAP__ADMIN__EMAIL: ${SPARK__BOOTSTRAP__ADMIN__EMAIL:?set SPARK__BOOTSTRAP__ADMIN__EMAIL in the env file}
     SPARK__BOOTSTRAP__ADMIN__FIRST_NAME: ${SPARK__BOOTSTRAP__ADMIN__FIRST_NAME:?set SPARK__BOOTSTRAP__ADMIN__FIRST_NAME in the env file}
     SPARK__BOOTSTRAP__ADMIN__LAST_NAME: ${SPARK__BOOTSTRAP__ADMIN__LAST_NAME:?set SPARK__BOOTSTRAP__ADMIN__LAST_NAME in the env file}
+    # Optional, AWS only: add an Amazon Bedrock connection that uses the task's IAM role,
+    # once, on the first bootstrap that sees the Region (docs/deployment/aws.md).
+    # SPARK__BOOTSTRAP__BEDROCK__REGION: ap-southeast-2
+    # SPARK__BOOTSTRAP__BEDROCK__NAME: Amazon Bedrock (task role)
+    # SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS: ap-southeast-2,ap-southeast-4
     # Mail for the invitation, stored as the instance's mail settings on the first
     # start. The defaults send to the mail catcher below.
     SPARK__MAIL__SMTP__HOST: ${SPARK__MAIL__SMTP__HOST:-127.0.0.1}

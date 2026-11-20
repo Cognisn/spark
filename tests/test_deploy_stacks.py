@@ -149,6 +149,33 @@ def test_the_first_administrator_comes_from_required_bootstrap_settings(
             assert env[key].startswith("${" + key + ":?"), (name, role, key)
 
 
+BEDROCK_VARIABLES = (
+    "SPARK__BOOTSTRAP__BEDROCK__REGION",
+    "SPARK__BOOTSTRAP__BEDROCK__NAME",
+    "SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS",
+)
+
+
+def test_the_bedrock_connection_variables_are_commented_out_examples(
+    stack: tuple[str, dict[str, Any]],
+) -> None:
+    name, data = stack
+    text = STACKS[name].read_text(encoding="utf-8")
+    for key in BEDROCK_VARIABLES:
+        assert re.search(r"^\s+# " + key + r": \S", text, re.MULTILINE), (name, key)
+        for role in SPARK_SERVICES:
+            assert key not in _services(data)[role]["environment"], (name, role, key)
+    assert "# SPARK__BOOTSTRAP__BEDROCK__REGION: ap-southeast-2" in text
+    assert "ap-southeast-2,ap-southeast-4" in text
+
+
+def test_the_live_stack_names_the_bedrock_variables_only_as_comments() -> None:
+    text = (ROOT / "deploy" / "live" / "stack.py").read_text(encoding="utf-8")
+    for key in BEDROCK_VARIABLES:
+        assert re.search(r'^\s+# "' + key + '": "', text, re.MULTILINE), key
+        assert not re.search(r'^\s+"' + key + '":', text, re.MULTILINE), key
+
+
 def test_credentials_are_required_variables_never_written_in(
     stack: tuple[str, dict[str, Any]],
 ) -> None:
