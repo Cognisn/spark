@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The bootstrap marker no longer logs a warning on each settings load.** Bootstrap records that it has dealt with the Amazon Bedrock connection in an instance settings row (`bootstrap.bedrock.seeded`), which is not a setting. The registry now declares it as an internal key: a stored row is skipped quietly on load, and no API, page or export can read, set or list it.
+
 ## [0.3.0rc25] - 2026-11-20
 
 ### Added

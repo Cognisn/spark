@@ -88,6 +88,9 @@ async def load_instance(db: Executor) -> dict[str, Any]:
         if registry.is_retired(key):
             # Replaced by named connections; start-up lists such rows once.
             continue
+        if registry.is_internal(key):
+            # SPARK's own bookkeeping, never a setting: skipped without a warning.
+            continue
         ok, value = _decoded(key, str(row["value"]), Scope.INSTANCE)
         if ok:
             loaded[key] = value

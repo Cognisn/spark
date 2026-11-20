@@ -43,14 +43,15 @@ from spark.connections.runtime import production_factories
 from spark.connections.store import DatabaseConnectionStore
 from spark.db.dialect import upsert
 from spark.db.engine import Database
+from spark.instance_settings.registry import BOOTSTRAP_BEDROCK_MARKER
 
 __all__ = ["CONNECTION_ID", "MARKER", "build", "seed_bedrock"]
 
 #: The id of the connection bootstrap adds.
 CONNECTION_ID: Final = "aws-bedrock"
 #: The instance settings row that records bootstrap has dealt with :data:`CONNECTION_ID`.
-#: It is not a registered setting: only bootstrap reads and writes it.
-MARKER: Final = "bootstrap.bedrock.seeded"
+#: It is not a setting: the registry declares it as internal, and only bootstrap writes it.
+MARKER: Final = BOOTSTRAP_BEDROCK_MARKER
 
 #: ``created`` (added now), ``exists`` (one was there, left alone), ``declined`` (an
 #: administrator deleted it earlier, not added again).
