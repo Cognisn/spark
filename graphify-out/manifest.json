@@ -60,9 +60,9 @@
     "semantic_hash": "c8af884d09c65c8dbc4f310f11a4889f"
   },
   "pyproject.toml": {
-    "mtime": 1795065121.8156312,
-    "seen": 1795068990.942599,
-    "ast_hash": "cd2672c28a2062c5e2392bcba49f4117",
+    "mtime": 1795153025.4237106,
+    "seen": 1795167589.9819632,
+    "ast_hash": "6dde482c551451e922e69d6e3d510d5d",
     "semantic_hash": ""
   },
   "scripts/check_no_nvidia.py": {
@@ -594,10 +594,10 @@
     "semantic_hash": "8ef09031025d228a70cd8edff092c1c2"
   },
   "src/spark/identity/runtime.py": {
-    "mtime": 1793758186.45529,
-    "seen": 1794786212.600967,
-    "ast_hash": "c670e0c045bfc0aa0be67577d956b74a",
-    "semantic_hash": "c670e0c045bfc0aa0be67577d956b74a"
+    "mtime": 1795153025.4237106,
+    "seen": 1795167589.982434,
+    "ast_hash": "670830b02198346cca47ac6f540da699",
+    "semantic_hash": ""
   },
   "src/spark/identity/web.py": {
     "mtime": 1793658631.795004,
@@ -1962,10 +1962,10 @@
     "semantic_hash": "85f700af0f3ae772a0cf2fef3b7596aa"
   },
   "tests/test_identity_runtime.py": {
-    "mtime": 1793658631.863283,
-    "seen": 1794786212.600967,
-    "ast_hash": "f0bee46f85f2e986380ac36bed9b2192",
-    "semantic_hash": "f0bee46f85f2e986380ac36bed9b2192"
+    "mtime": 1795153025.4257488,
+    "seen": 1795167589.982799,
+    "ast_hash": "acdf5b2de9b613d88ea9bbf535426666",
+    "semantic_hash": ""
   },
   "tests/test_identity_screens_account.py": {
     "mtime": 1793658631.864744,
@@ -2064,10 +2064,10 @@
     "semantic_hash": "da23da2ef8043acc6ce51d24811f3ac2"
   },
   "tests/test_instance_settings_secrets.py": {
-    "mtime": 1794780409.2166095,
-    "seen": 1794786212.600967,
-    "ast_hash": "4dc965745e4cf9405e4117bcd21d8674",
-    "semantic_hash": "4dc965745e4cf9405e4117bcd21d8674"
+    "mtime": 1795155517.6290474,
+    "seen": 1795167589.982799,
+    "ast_hash": "497196188935c62ac9167177fa21c90e",
+    "semantic_hash": ""
   },
   "tests/test_instance_settings_startup.py": {
     "mtime": 1793658631.8708587,
@@ -2304,9 +2304,9 @@
     "semantic_hash": ""
   },
   "tests/test_packaging.py": {
-    "mtime": 1794993679.6437054,
-    "seen": 1794993833.7491727,
-    "ast_hash": "a686bbdbea938289954dd32ffab834f3",
+    "mtime": 1795153025.4277804,
+    "seen": 1795167589.982799,
+    "ast_hash": "e3be8411c7967b26cade096a1502c86a",
     "semantic_hash": ""
   },
   "tests/test_panel_e2e.py": {
@@ -2388,9 +2388,9 @@
     "semantic_hash": "5f65cd743eb50ab5cb2eaf5b6b875aed"
   },
   "tests/test_secret_propagation.py": {
-    "mtime": 1795045124.413195,
-    "seen": 1795058750.3832536,
-    "ast_hash": "34ccd526d80d73afe620ffbe44c21563",
+    "mtime": 1795155517.6310334,
+    "seen": 1795167589.982799,
+    "ast_hash": "7edc17a5300969801a9731760775eac8",
     "semantic_hash": ""
   },
   "tests/test_security.py": {
@@ -2778,9 +2778,9 @@
     "semantic_hash": "4b1922d8809cb904f598875a6e9714e2"
   },
   "CHANGELOG.md": {
-    "mtime": 1795080350.4277499,
-    "seen": 1795122201.353034,
-    "ast_hash": "557b5fc4bd1c9d93315cb3e0be0740d0",
+    "mtime": 1795153079.540319,
+    "seen": 1795167589.982799,
+    "ast_hash": "0fcacd0782624844c1fc7d6c0e7cd1c7",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2994,9 +2994,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795080350.4277499,
-    "seen": 1795122201.353034,
-    "ast_hash": "81417947569afdab17fc480c6514ba22",
+    "mtime": 1795155526.8395238,
+    "seen": 1795167589.982799,
+    "ast_hash": "1ef2511b238b67a20e9574746e1c6416",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3768,9 +3768,9 @@
     "semantic_hash": ""
   },
   "tests/aws_helpers.py": {
-    "mtime": 1795051395.3960276,
-    "seen": 1795058750.3832536,
-    "ast_hash": "411d629bdb55420453ce3bd8bbabb853",
+    "mtime": 1795155517.6290474,
+    "seen": 1795167589.982799,
+    "ast_hash": "12b248a67a6b7a93c6aeec5d68b53165",
     "semantic_hash": ""
   },
   "tests/test_aws_bedrock.py": {
@@ -3792,9 +3792,9 @@
     "semantic_hash": ""
   },
   "tests/test_bootstrap.py": {
-    "mtime": 1795053541.2247212,
-    "seen": 1795058750.3832536,
-    "ast_hash": "fbcf0e3d74c28e24fb9677d3b7041b81",
+    "mtime": 1795153025.4257488,
+    "seen": 1795167589.982799,
+    "ast_hash": "789e70cb1c5919572da139dd68ddd7d0",
     "semantic_hash": ""
   },
   "tests/test_bootstrap_migration.py": {
@@ -3846,9 +3846,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/aws.md": {
-    "mtime": 1795080186.7964754,
-    "seen": 1795122201.353034,
-    "ast_hash": "accd437084b22a0706c04ae93700bdf9",
+    "mtime": 1795153025.4216774,
+    "seen": 1795167589.982799,
+    "ast_hash": "98fbde980f7389c0b4684234b13b338c",
     "semantic_hash": ""
   },
   "scripts/deploy-test.sh": {
