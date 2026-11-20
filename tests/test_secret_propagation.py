@@ -17,6 +17,7 @@ import json
 import sys
 import threading
 import time
+import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -273,15 +274,23 @@ class FakeSecretsManager:
 
     def __init__(self) -> None:
         self.secret = "{}"
+        self.version_id = str(uuid.uuid4())
         self.lock = threading.Lock()
 
     def get_secret_value(self, SecretId: str) -> dict[str, str]:  # noqa: N803 - boto3's name
         with self.lock:
-            return {"SecretString": self.secret}
+            return {"SecretString": self.secret, "VersionId": self.version_id}
 
-    def put_secret_value(self, SecretId: str, SecretString: str) -> None:  # noqa: N803
+    def put_secret_value(
+        self,
+        SecretId: str,  # noqa: N803 - boto3's name
+        SecretString: str,  # noqa: N803
+        ClientRequestToken: str | None = None,  # noqa: N803
+    ) -> dict[str, str]:
         with self.lock:
             self.secret = SecretString
+            self.version_id = ClientRequestToken or str(uuid.uuid4())
+            return {"VersionId": self.version_id}
 
 
 def _encrypted_store(path: Path) -> Secrets:

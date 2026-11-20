@@ -10,6 +10,7 @@ invented (account 123456789012, example.com).
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -36,7 +37,12 @@ class _Exceptions:
 
 
 class FakeSecretsManager:
-    """The corner of the Secrets Manager API konfig uses, over a dict of SecretStrings."""
+    """The corner of the Secrets Manager API konfig uses, over a dict of SecretStrings.
+
+    Each secret keeps its current VersionId, as Secrets Manager does. A write
+    takes the ClientRequestToken as its new VersionId (a fresh one when the
+    caller gives none), and the write's response and later reads return it.
+    """
 
     exceptions = _Exceptions
 
@@ -44,17 +50,25 @@ class FakeSecretsManager:
         self.secrets = secrets
         self.reads: list[str] = []
         self.writes: list[str] = []
+        self.version_ids: dict[str, str] = {secret_id: str(uuid.uuid4()) for secret_id in secrets}
 
     def get_secret_value(self, SecretId: str) -> dict[str, Any]:  # noqa: N803 - boto3's name
         self.reads.append(SecretId)
         if SecretId not in self.secrets:
             raise _NotFound(SecretId)
-        return {"SecretString": self.secrets[SecretId]}
+        return {"SecretString": self.secrets[SecretId], "VersionId": self.version_ids[SecretId]}
 
-    def put_secret_value(self, SecretId: str, SecretString: str) -> dict[str, Any]:  # noqa: N803
+    def put_secret_value(
+        self,
+        SecretId: str,  # noqa: N803 - boto3's name
+        SecretString: str,  # noqa: N803
+        ClientRequestToken: str | None = None,  # noqa: N803
+    ) -> dict[str, Any]:
         self.writes.append(SecretId)
         self.secrets[SecretId] = SecretString
-        return {}
+        version_id = ClientRequestToken or str(uuid.uuid4())
+        self.version_ids[SecretId] = version_id
+        return {"ARN": SecretId, "VersionId": version_id}
 
 
 def install_secrets_manager(
