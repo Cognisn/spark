@@ -230,5 +230,142 @@ class TestStart:
             await db.close()
 
 
+class CachedStore:
+    """A secrets store as konfig's AWS bundle behaves: a write-through cache over a store.
+
+    ``get`` answers from the cache, ``refresh`` re-reads the store, and ``on_set``
+    may make the store lose a write that the cache keeps (the eventually
+    consistent read that rc22 hit).
+    """
+
+    def __init__(self, on_set: Any = None) -> None:
+        self.store: dict[str, str] = {"original.entry": "synthetic-original"}
+        self.cache: dict[str, str] = dict(self.store)
+        self.baseline = dict(self.store)
+        self.on_set = on_set
+
+    def get(self, key: str) -> str | None:
+        return self.cache.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        self.cache[key] = value
+        if self.on_set is None or self.on_set(self, key, value):
+            self.store[key] = value
+
+    def refresh(self) -> None:
+        self.cache = dict(self.store)
+
+    def list_keys(self) -> list[str]:
+        return list(self.cache)
+
+
+def _lose_name(name_start: str) -> Any:
+    """A store that never keeps a write to a name beginning ``name_start``."""
+    return lambda store, key, value: not key.startswith(name_start)
+
+
+def _stale_signing_write(store: CachedStore, key: str, value: str) -> bool:
+    """The rc22 sequence: the signing key's write is based on the bundle from before the others."""
+    if key.startswith("warden.signing-key."):
+        store.store = {**store.baseline, key: value}
+        return False
+    return True
+
+
+def _stale_signing_write_without_csrf(store: CachedStore, key: str, value: str) -> bool:
+    """The signing key's write lands on a bundle that has the TOTP key but not the CSRF key."""
+    if key.startswith("warden.signing-key."):
+        store.store = {k: v for k, v in store.store.items() if k != CSRF_KEY_SECRET}
+        store.store[key] = value
+        return False
+    return True
+
+
+@pytest.fixture
+def no_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Building Identity (warden's SecretBox) must never be reached when a key is missing."""
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("Identity was built although an identity key was not kept")
+
+    monkeypatch.setattr(runtime_mod, "Identity", refuse)
+
+
+class TestEnsureSecret:
+    def test_a_write_the_store_dropped_is_not_read_back_from_the_cache(self) -> None:
+        store = CachedStore(_lose_name("synthetic.name"))
+        with pytest.raises(StartupConfigError, match="did not keep synthetic.name"):
+            runtime_mod._ensure_secret(store, "synthetic.name", lambda: "synthetic-value")
+
+    def test_a_kept_write_is_returned(self) -> None:
+        store = CachedStore()
+        value = runtime_mod._ensure_secret(store, "synthetic.name", lambda: "synthetic-value")
+        assert value == "synthetic-value" and store.store["synthetic.name"] == value
+
+
+@pytest.mark.postgres
+class TestStoreVerification:
+    async def test_the_rc22_sequence_fails_naming_the_lost_secret(
+        self, database: Any, no_identity: None
+    ) -> None:
+        store = CachedStore(_stale_signing_write)
+        with pytest.raises(StartupConfigError, match="did not keep warden.totp-key") as caught:
+            await IdentityRuntime.start(database, _settings(), store)
+        assert "synthetic-original" not in str(caught.value)  # names only, never values
+        assert "warden.totp-key" not in store.store
+
+    async def test_a_csrf_key_lost_after_its_own_check_is_caught_at_the_end(
+        self, database: Any, no_identity: None
+    ) -> None:
+        store = CachedStore(_stale_signing_write_without_csrf)
+        with pytest.raises(StartupConfigError, match=f"did not keep {CSRF_KEY_SECRET}"):
+            await IdentityRuntime.start(database, _settings(), store)
+
+    @pytest.mark.parametrize("lost", ["warden.totp-key", CSRF_KEY_SECRET, "warden.signing-key."])
+    async def test_any_one_lost_key_fails_by_name(
+        self, database: Any, no_identity: None, lost: str
+    ) -> None:
+        store = CachedStore(_lose_name(lost))
+        with pytest.raises(StartupConfigError, match=f"did not keep {lost}"):
+            await IdentityRuntime.start(database, _settings(), store)
+
+    async def test_a_rerun_against_the_rc22_state_keeps_the_key_and_adds_the_rest(
+        self, database: Any
+    ) -> None:
+        secrets = MemorySecrets({"original.entry": "synthetic-original"})
+        first = await IdentityRuntime.start(database, _settings(), secrets)
+        first.close()
+        # What rc22 left: the original entries and a signing key, no TOTP or CSRF key.
+        secrets.delete("warden.totp-key")
+        secrets.delete(CSRF_KEY_SECRET)
+        seeds = {k: v for k, v in secrets.data.items() if k.startswith("warden.signing-key.")}
+        assert len(seeds) == 1
+        second = await IdentityRuntime.start(database, _settings(), secrets)
+        try:
+            assert secrets.get("warden.totp-key") and secrets.get(CSRF_KEY_SECRET)
+            assert secrets.get("original.entry") == "synthetic-original"
+            # The signing key was usable, so it is kept: no second key, same seed.
+            assert await _key_count(database) == 1
+            assert {
+                k: v for k, v in secrets.data.items() if k.startswith("warden.signing-key.")
+            } == seeds
+        finally:
+            second.close()
+
+    async def test_a_signing_key_without_its_seed_is_rotated(self, database: Any) -> None:
+        secrets = MemorySecrets()
+        first = await IdentityRuntime.start(database, _settings(), secrets)
+        first.close()
+        for name in [k for k in secrets.data if k.startswith("warden.signing-key.")]:
+            secrets.delete(name)
+        second = await IdentityRuntime.start(database, _settings(), secrets)
+        try:
+            assert await _key_count(database) == 2
+            active = await second.keys.active_key()
+            assert secrets.get(second.config.keys.secret_prefix + active.key_id)
+        finally:
+            second.close()
+
+
 def test_module_names_its_public_api() -> None:
     assert "IdentityRuntime" in runtime_mod.__all__
