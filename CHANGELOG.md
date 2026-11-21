@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc27] - 2026-11-21
+
 ### Added
 
 - **Discovered models show where they are processed, and why any is refused.** On the Connections page each connection's models view lists every model the service lists, with the Regions it is processed in, whether it is usable under the connection's residency and Region choice, and conduit's reason when it is refused. Differences between the catalogue and the listing (conduit's drift: no capability record, not listed, limits or capabilities differ, Regions declared) are shown as information and never hide a model. A model the service lists is no longer left out because the catalogue lacks its Region.
