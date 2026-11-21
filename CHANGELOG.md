@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Autonomous actions use OAuth MCP servers.** The action executor builds its MCP manager as the web interface does, with SPARK's resolver over konfig's secrets store and that store for the OAuth tokens, so a server an administrator has signed in to connects for scheduled actions and **Run now** with the instance's tokens, refreshing them when they expire. On a server the action's servers now come from the `mcp.servers` instance setting (read for each run, credentials from the secrets store), so actions run by `spark worker` use MCP servers at all. A server that is not signed in, or whose refresh fails, is left out of the run and logged with its name and conduit's failure class only, and the action carries on with the others. When the web process and the worker refresh the same tokens at once, the one refused uses the tokens the other stored or, if none are stored yet, the server needs a new sign-in; a reader never sees a mixture. `docs/mcp-integration.md` describes it.
+
+### Changed
+
+- **An action reaches only the MCP servers its user may use.** The executor lists and calls MCP tools with the permissions of the user the action runs as (`spark.mcp.<server>`, read when the run starts) and audits each call under that user. In personal mode every configured server is offered, as before.
+
 ## [0.3.0rc31] - 2026-11-21
 
 ### Changed

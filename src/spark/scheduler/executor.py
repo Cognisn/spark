@@ -105,10 +105,29 @@ class ActionExecutor:
         except NotOwned:
             logger.error("Action %d not found for its owner; refusal not recorded", action_id)
 
-    def _init_mcp(self) -> None:
-        """Initialise independent MCP connections for this executor."""
-        import asyncio
-        import threading
+    # -- MCP servers ------------------------------------------------------------------
+
+    def _mcp_secret(self, name: str) -> str | None:
+        """One MCP server credential from konfig's secrets store (server side only)."""
+        store = getattr(self._ctx, "secrets", None)
+        value = store.get(name) if store is not None else None
+        return str(value) if value else None
+
+    def _mcp_server_configs(self) -> list[Any]:
+        """The MCP servers this process offers actions, read as the web application reads them.
+
+        Server mode: ``mcp.servers`` from the instance settings, read now from the
+        database, with credentials from the secrets store; ``config.yaml``'s ``mcp``
+        section is never read. Personal mode: ``config.yaml``.
+        """
+        from spark.mcp_integration import servers as mcp_servers
+
+        if _server():
+            from spark.instance_settings import consumers
+            from spark.instance_settings import repository as settings_repository
+
+            stored = self._db.call(settings_repository.load_instance)
+            return list(consumers.mcp_server_configs(stored, self._mcp_secret))
 
         import yaml
 
@@ -116,39 +135,54 @@ class ActionExecutor:
 
         config_path = _get_config_path()
         if not config_path.exists():
-            logger.info("Executor MCP: config file not found at %s", config_path)
+            return []
+        raw = yaml.safe_load(config_path.read_text()) or {}
+        listed = (raw.get("mcp") or {}).get("servers") if isinstance(raw, dict) else None
+        return [mcp_servers.to_config(srv, None) for srv in (listed or [])]
+
+    def _new_mcp_manager(self) -> Any:
+        """An MCP manager made as the web application makes its own.
+
+        SPARK's resolver over konfig's secrets store resolves credentials given as
+        references, and the same store holds the OAuth tokens an administrator's
+        sign-in left there (one token store per server, shared with every client
+        of the server in this process).
+        """
+        from spark.mcp_integration.manager import MCPManager
+
+        store = getattr(self._ctx, "secrets", None)
+        resolver = None
+        if store is not None:
+            from conduit.integrations.konfig import KonfigSecretResolver
+
+            resolver = KonfigSecretResolver(store)
+        return MCPManager(secrets=resolver, tokens=store)
+
+    def _init_mcp(self) -> None:
+        """Connect this run's MCP servers on a loop of its own.
+
+        A server that does not connect (an OAuth server not signed in, or whose
+        refresh failed) is logged by name and failure class and left out; the
+        action carries on with the others. No credential or token is logged.
+        """
+        import asyncio
+        import threading
+
+        try:
+            configs = [c for c in self._mcp_server_configs() if c.enabled]
+        except Exception as e:  # noqa: BLE001 - an action runs without MCP rather than not at all
+            logger.error("Executor MCP: the MCP servers could not be read (%s)", type(e).__name__)
+            return
+        if not configs:
+            logger.info("Executor MCP: no MCP servers configured")
             return
 
         try:
-            raw_config = yaml.safe_load(config_path.read_text()) or {}
-            mcp_config = raw_config.get("mcp", {})
-            servers_list = mcp_config.get("servers", [])
-            if not servers_list:
-                logger.info("Executor MCP: no MCP servers configured in config.yaml")
-                return
-
-            enabled_count = sum(1 for s in servers_list if s.get("enabled", True))
-            logger.info(
-                "Executor MCP: found %d server(s) in config (%d enabled)",
-                len(servers_list),
-                enabled_count,
-            )
-            for srv in servers_list:
-                logger.info(
-                    "  - %s (transport=%s, enabled=%s, command=%s)",
-                    srv.get("name", "?"),
-                    srv.get("transport", "?"),
-                    srv.get("enabled", True),
-                    srv.get("command", srv.get("url", "n/a")),
-                )
-
-            from spark.mcp_integration.manager import MCPManager
-
-            self._mcp_manager = MCPManager.from_config(raw_config)
-            logger.info(
-                "Executor MCP: MCPManager created with %d client(s)",
-                len(self._mcp_manager.servers),
-            )
+            manager = self._new_mcp_manager()
+            for config in configs:
+                manager.add_server(config)
+            logger.info("Executor MCP: %d server(s) configured", len(manager.servers))
+            self._mcp_manager = manager
 
             # Create a persistent event loop for MCP connections
             self._mcp_loop = asyncio.new_event_loop()
@@ -159,35 +193,26 @@ class ActionExecutor:
 
             self._mcp_thread = threading.Thread(target=_run_loop, daemon=True)
             self._mcp_thread.start()
-            logger.info("Executor MCP: event loop thread started")
 
-            # Connect all servers
-            logger.info("Executor MCP: connecting to servers...")
-            future = asyncio.run_coroutine_threadsafe(
-                self._mcp_manager.connect_all(), self._mcp_loop
-            )
+            future = asyncio.run_coroutine_threadsafe(manager.connect_all(), self._mcp_loop)
             results = future.result(timeout=60)
             for name, success in results.items():
-                logger.info("  - %s: %s", name, "connected" if success else "FAILED")
+                if success:
+                    logger.info("Executor MCP: %s connected", name)
+                    continue
+                failure = getattr(manager.servers.get(name), "last_failure", None)
+                logger.warning(
+                    "Executor MCP: %s not connected (%s); the action runs without it",
+                    name,
+                    failure or "unreachable",
+                )
             connected = sum(1 for v in results.values() if v)
-            failed = sum(1 for v in results.values() if not v)
-            logger.info("Executor MCP: %d connected, %d failed", connected, failed)
-
-            # Populate tool cache
-            tools_future = asyncio.run_coroutine_threadsafe(
-                self._mcp_manager.list_all_tools(), self._mcp_loop
-            )
-            tools = tools_future.result(timeout=10)
-            tool_names = [t.get("name", "?") for t in tools]
             logger.info(
-                "Executor MCP: %d tools available: %s",
-                len(tools),
-                ", ".join(tool_names),
+                "Executor MCP: %d connected, %d failed", connected, len(results) - connected
             )
-
-        except Exception as e:
-            logger.error("Executor MCP init failed: %s", e, exc_info=True)
-            self._mcp_manager = None
+        except Exception as e:  # noqa: BLE001 - an action runs without MCP rather than not at all
+            logger.error("Executor MCP init failed (%s)", type(e).__name__)
+            self._cleanup_mcp()
 
     def _cleanup_mcp(self) -> None:
         """Disconnect MCP servers and stop the event loop."""
@@ -700,8 +725,10 @@ class ActionExecutor:
                 try:
                     import asyncio
 
+                    # Only the servers the action's user may use (spark.mcp.<server>).
                     mcp_tools = asyncio.run_coroutine_threadsafe(
-                        self._mcp_manager.list_all_tools(), self._mcp_loop
+                        self._mcp_manager.list_all_tools(permissions=self._permissions),
+                        self._mcp_loop,
                     ).result(timeout=10)
                     for t in mcp_tools:
                         tools.append(
@@ -764,8 +791,14 @@ class ActionExecutor:
                 try:
                     import asyncio
 
+                    # Refused unless the action's user may use the tool's server.
                     future = asyncio.run_coroutine_threadsafe(
-                        self._mcp_manager.call_tool(tool_name, tool_input),
+                        self._mcp_manager.call_tool(
+                            tool_name,
+                            tool_input,
+                            permissions=self._permissions,
+                            user_guid=self._user_guid,
+                        ),
                         self._mcp_loop,
                     )
                     mcp_result = future.result(timeout=60)
