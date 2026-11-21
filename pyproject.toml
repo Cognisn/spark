@@ -57,7 +57,7 @@ dependencies = [
     "cryptography>=42.0.0",
     # Model providers, catalogue, residency and usage events: conduit, with the
     # extras for every service a connection may use (M4, M13)
-    "cognisn-conduit[anthropic,bedrock,bedrock-mantle,gemini,konfig,mcp,ollama,openai]>=0.1.0rc4",
+    "cognisn-conduit[anthropic,bedrock,bedrock-mantle,gemini,konfig,mcp,ollama,openai]>=0.1.0",
     # MCP
     "mcp>=2.3,<3",
     # Document handling

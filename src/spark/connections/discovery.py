@@ -1,12 +1,13 @@
 """Which models a connection can reach, and the models view built on it (M5).
 
 :func:`discover` asks conduit what a connection's provider lists
-(``ProviderRegistry.discover``, conduit 0.1.0rc3), through the process's conduit
+(``ProviderRegistry.discover``, conduit 0.1.0), through the process's conduit
 loop: it blocks, so callers run it on a worker thread (``asyncio.to_thread``),
 never on conduit's own loop. conduit validates the settings, resolves the
 secrets, builds the client, lists, and closes the client again; SPARK makes no
-provider call of its own. Each listed model comes back allowed, refused (with
-conduit's reason) or undeclared. A failed listing is recorded with conduit's
+provider call of its own. Each listed model comes back allowed or refused (with
+conduit's reason), with where the provider processes it, whether the catalogue declares
+it, and the drift between the catalogue and the listing (shown as information). A failed listing is recorded with conduit's
 failure class only, never provider text.
 
 The latest result per connection is kept in this process (:data:`RESULTS`), with
@@ -33,12 +34,15 @@ from typing import Any, Final, Protocol
 from conduit import (
     Catalogue,
     ConduitError,
+    DiscoveryOutcome,
     DiscoveryResult,
+    DriftReason,
     LoopThread,
     ModelEntry,
     ProviderError,
     ProviderFailure,
     ProviderRegistry,
+    ProviderSettings,
     ResidencyPolicy,
     ResidencyRefused,
     ResidencyScope,
@@ -49,12 +53,17 @@ from spark.connections.model import Connection, ConnectionModel
 __all__ = [
     "RESULTS",
     "DiscoveryHost",
+    "DRIFT_TEXT",
+    "DiscoveredRow",
     "DiscoveryRecord",
     "DiscoveryResults",
+    "DriftNote",
     "Undeclared",
     "discover",
     "models_view",
     "offered_in",
+    "record_of",
+    "refusal",
 ]
 
 #: Plain words for each failure class conduit reports (never the provider's own text).
@@ -89,6 +98,72 @@ class Undeclared:
     label: str | None = None
 
 
+#: Plain words for each kind of drift conduit reports. The drift never hides a model.
+DRIFT_TEXT: Final[Mapping[str, str]] = {
+    DriftReason.UNCATALOGUED.value: (
+        "conduit has no capability record for this model; using defaults"
+    ),
+    DriftReason.UNLISTED.value: "the catalogue declares this model, but the service does not list it",
+    DriftReason.LIMITS_DIFFER.value: "the service reports different limits from the catalogue",
+    DriftReason.CAPABILITIES_DIFFER.value: (
+        "the service reports different capabilities from the catalogue"
+    ),
+    DriftReason.REGIONS_DECLARED.value: (
+        "this connection declares where the model is processed, which differs from the listing"
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredRow:
+    """One model the service lists, joined to the catalogue and the connection's residency.
+
+    ``allowed`` is whether conduit allows it under the connection's residency;
+    ``reason`` is conduit's reason when it does not. ``scope`` and ``regions`` are where
+    the provider says it is processed.
+    """
+
+    model_id: str
+    label: str | None = None
+    allowed: bool = True
+    reason: str | None = None
+    scope: str = "global"
+    regions: frozenset[str] = frozenset()
+    catalogued: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "model_id": self.model_id,
+            "label": self.label,
+            "allowed": self.allowed,
+            "reason": self.reason,
+            "scope": self.scope,
+            "regions": sorted(self.regions),
+            "catalogued": self.catalogued,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DriftNote:
+    """One difference between the catalogue and the listing (conduit's ``DriftReason``)."""
+
+    model_id: str
+    reason: str
+    detail: str
+
+    @property
+    def text(self) -> str:
+        return DRIFT_TEXT.get(self.reason, self.reason)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "model_id": self.model_id,
+            "reason": self.reason,
+            "text": self.text,
+            "detail": self.detail,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveryRecord:
     """The latest discovery on one connection.
@@ -104,7 +179,23 @@ class DiscoveryRecord:
     error: str | None = None
     #: Every model id the service listed, declared or not.
     reachable: frozenset[str] = frozenset()
-    undeclared: tuple[Undeclared, ...] = ()
+    #: Each listed model, joined to the catalogue and the connection's residency.
+    models: tuple[DiscoveredRow, ...] = ()
+    #: The drift between the catalogue and the listing, as information.
+    drift: tuple[DriftNote, ...] = ()
+    #: The connection's Region choice the listing was held to (regions, allow_global), or None.
+    choice: Mapping[str, Any] | None = None
+
+    @property
+    def undeclared(self) -> tuple[Undeclared, ...]:
+        """The listed models no catalogue entry matched (conduit's ``uncatalogued``)."""
+        return tuple(Undeclared(m.model_id, m.label) for m in self.models if not m.catalogued)
+
+    def row(self, model_id: str) -> DiscoveredRow | None:
+        for row in self.models:
+            if row.model_id == model_id:
+                return row
+        return None
 
     @property
     def ok(self) -> bool:
@@ -132,6 +223,9 @@ class DiscoveryRecord:
             "summary": self.summary(),
             "reachable": sorted(self.reachable),
             "undeclared": [{"model_id": u.model_id, "label": u.label} for u in self.undeclared],
+            "models": [m.as_dict() for m in self.models],
+            "drift": [d.as_dict() for d in self.drift],
+            "choice": dict(self.choice) if self.choice is not None else None,
         }
 
 
@@ -170,9 +264,37 @@ def _now() -> str:
 def _record(connection_id: str, result: DiscoveryResult) -> DiscoveryRecord:
     if not result.supported:
         return DiscoveryRecord(connection_id, _now(), supported=False, reason=result.reason)
-    reachable = frozenset(m.model_id for m in result.models)
-    undeclared = tuple(Undeclared(m.model_id, m.label) for m in result.undeclared)
-    return DiscoveryRecord(connection_id, _now(), reachable=reachable, undeclared=undeclared)
+    return record_of(connection_id, result)
+
+
+def record_of(connection_id: str, result: DiscoveryResult) -> DiscoveryRecord:
+    """The record of a supported conduit discovery result."""
+    rows = tuple(
+        DiscoveredRow(
+            m.model_id,
+            m.label,
+            allowed=m.outcome is DiscoveryOutcome.ALLOWED,
+            reason=m.reason,
+            scope=m.scope.value,
+            regions=m.regions,
+            catalogued=m.catalogued,
+        )
+        for m in result.models
+    )
+    drift = tuple(DriftNote(d.model_id, d.reason.value, d.detail) for d in result.drift)
+    choice = (
+        {"regions": sorted(result.choice.regions), "allow_global": result.choice.allow_global}
+        if result.choice is not None
+        else None
+    )
+    return DiscoveryRecord(
+        connection_id,
+        _now(),
+        reachable=frozenset(m.model_id for m in rows),
+        models=rows,
+        drift=drift,
+        choice=choice,
+    )
 
 
 def discover(
@@ -211,12 +333,27 @@ def offered_in(entry: ModelEntry, region: str | None) -> bool:
     return region is None or region in entry.regions
 
 
-def _refusal(policy: ResidencyPolicy, entry: ModelEntry, connection: Connection) -> str | None:
+def refusal(
+    policy: ResidencyPolicy,
+    entry: ModelEntry,
+    region: str | None,
+    settings: ProviderSettings | None,
+    task: str,
+) -> str | None:
+    """Why ``policy`` (and the Region choice in ``settings``, the connection's validated
+    provider settings) refuses ``entry`` called from ``region``, or None (conduit 0.1.0
+    holds a model to both)."""
     try:
-        policy.check(entry, connection.region, task=connection.id)
+        policy.check(entry, region, task=task, provider=settings)
     except ResidencyRefused as refused:
         return str(refused)
     return None
+
+
+def _scope_of(entry: ModelEntry) -> str:
+    """Where the catalogue says ``entry`` is processed (conduit 0.1.0's default catalogue
+    states none for most models: unbounded, so ``global``, until a listing says otherwise)."""
+    return (entry.residency_scope or ResidencyScope.GLOBAL).value
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +364,9 @@ class _Row:
     tier: str
     refused: str | None
     reachable: bool | None
+    #: Where the provider says it processes the model (None: no discovery lists it).
+    scope: str | None = None
+    regions: frozenset[str] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         caps = self.entry.capabilities
@@ -238,8 +378,8 @@ class _Row:
             "vision": caps.vision,
             "prompt_caching": caps.prompt_caching,
             "structured_output": caps.structured_output,
-            "residency_scope": self.entry.residency_scope.value,
-            "regions": sorted(self.entry.regions),
+            "residency_scope": self.scope if self.scope is not None else _scope_of(self.entry),
+            "regions": sorted(self.regions if self.regions is not None else self.entry.regions),
             "overlay": self.overlay,
             "enabled": self.enabled,
             "tier": self.tier,
@@ -261,36 +401,54 @@ def models_view(
     stored: Iterable[ConnectionModel] | None,
     record: DiscoveryRecord | None,
     overlay_keys: Collection[tuple[str, str]] = (),
+    settings: ProviderSettings | None = None,
 ) -> dict[str, Any]:
     """The models view of one connection (see the module docstring).
 
     ``stored`` is the connection's model rows, or None when none are stored (every
     catalogue model is then enabled at the standard tier). ``catalogue`` is the
     connection's own; ``overlay_keys`` are the (provider, model id) pairs of the
-    overlay entries the connection declared.
+    overlay entries the connection declared. ``settings`` are the connection's validated
+    provider settings: conduit holds each model to the connection's Region choice in them,
+    and the Region they name (set by a choice such as an OpenAI data residency) is the
+    one the connection is called in.
+
+    Where the last discovery lists a model, the row shows where the provider processes
+    it (its scope and Regions) and conduit's verdict on it under the connection's
+    residency; a model the discovery lists is never left out for the catalogue's Regions.
+    ``drift`` carries the differences between the catalogue and the listing, as information.
     """
+    region = settings.region if settings is not None and settings.region else connection.region
+    listed = record if record is not None and record.ok else None
     rows_by_id = {m.model_id: m for m in stored} if stored is not None else None
     view = _View()
     declared: set[str] = set()
     for entry in sorted(catalogue, key=lambda e: e.model_id):
         if entry.provider != catalogue_provider or entry.kind != "chat":
             continue
-        if not offered_in(entry, connection.region):
+        found = listed.row(entry.model_id) if listed is not None else None
+        if found is None and not offered_in(entry, region):
             continue
         declared.add(entry.model_id)
         row = rows_by_id.get(entry.model_id) if rows_by_id is not None else None
         enabled = rows_by_id is None or (row is not None and row.enabled)
         reachable: bool | None = None
-        if record is not None and record.ok:
-            reachable = entry.model_id in record.reachable
+        if listed is not None:
+            reachable = found is not None
         view.rows.append(
             _Row(
                 entry=entry,
                 overlay=(catalogue_provider, entry.model_id) in overlay_keys,
                 enabled=enabled,
                 tier=row.tier if row is not None else "standard",
-                refused=_refusal(connection.residency, entry, connection),
+                refused=(
+                    found.reason
+                    if found is not None
+                    else refusal(connection.residency, entry, region, settings, connection.id)
+                ),
                 reachable=reachable,
+                scope=found.scope if found is not None else None,
+                regions=found.regions if found is not None else None,
             )
         )
     if record is not None and record.ok:
@@ -301,4 +459,17 @@ def models_view(
         "models": [r.as_dict() for r in view.rows],
         "undeclared": [{"model_id": u.model_id, "label": u.label} for u in view.undeclared],
         "discovery": record.as_dict() if record is not None else None,
+        "discovered": _discovered(listed),
+        "drift": [d.as_dict() for d in listed.drift] if listed is not None else [],
     }
+
+
+def _discovered(listed: DiscoveryRecord | None) -> list[dict[str, Any]]:
+    """Every model the service lists with where it is processed, whether conduit allows it
+    under the connection's residency and why not, and the drift noted for it."""
+    if listed is None:
+        return []
+    notes: dict[str, list[str]] = {}
+    for d in listed.drift:
+        notes.setdefault(d.model_id, []).append(d.reason)
+    return [{**m.as_dict(), "drift": notes.get(m.model_id, [])} for m in listed.models]

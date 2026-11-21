@@ -24,3 +24,5 @@
 .conn-actions { margin-top: 0.375rem; }
 .conn-table td { vertical-align: top; }
 .conn-table td:first-child { min-width: 13rem; }
+.conn-region-list { max-height: 18rem; overflow-y: auto; border: 1px solid var(--app-border); border-radius: 0.5rem; padding: 0.5rem 0.75rem; }
+.conn-drift summary { cursor: pointer; font-size: 0.875rem; }

@@ -49,9 +49,11 @@ from typing import Any, Final, Protocol
 from conduit import (
     Catalogue,
     ConduitError,
+    DiscoveryResult,
     LoopThread,
     MeteredProvider,
     ModelEntry,
+    ProviderError,
     ProviderFactory,
     ProviderRegistry,
     ProviderSettings,
@@ -77,6 +79,7 @@ __all__ = [
     "Snapshot",
     "UserScope",
     "production_factories",
+    "served_catalogue",
     "snapshot_of",
 ]
 
@@ -146,6 +149,28 @@ class _Built:
     settings: ProviderSettings
     provider: MeteredProvider
     fingerprint: str
+    #: What the provider was built to serve: the connection's catalogue with the Regions
+    #: and limits the service's own listing gave each catalogued model (None: no listing).
+    served: Catalogue | None = None
+
+
+def served_catalogue(base: Catalogue, result: DiscoveryResult) -> Catalogue:
+    """``base`` with each catalogued model the service lists replaced by its effective
+    entry (the provider's own Regions and limits, with the capabilities the join settled on).
+
+    conduit 0.1.0's default catalogue carries no Region data, so a provider built on
+    ``base`` alone refuses every in-Region and cross-Region model under a policy that
+    names Regions; the provider's listing is the source of truth for them. A model the
+    catalogue does not declare keeps no entry: it is declared on the connection first, as
+    before, so a connection that chooses no Regions offers what it always did.
+    """
+    entries = {e.key: e for e in base}
+    for model in result.models:
+        if model.catalogued and model.entry is not None:
+            entries[model.entry.key] = model.entry
+    return Catalogue(
+        entries.values(), version=base.version, overlays=base.overlays, overlaid=base.overlaid
+    )
 
 
 def _secret_refs(value: Any) -> list[SecretRef]:
@@ -246,6 +271,20 @@ class ConnectionRuntime:
         """The catalogue conduit ships (the runtime's base), without any overlay entry."""
         return self._catalogue
 
+    def served_for(self, connection_id: str) -> Catalogue:
+        """What a running connection's provider serves: its catalogue with the service's own
+        Regions and limits (:func:`served_catalogue`); the catalogue alone before a listing."""
+        with self._lock:
+            built = self._built.get(connection_id)
+            served = built.served if built is not None else None
+        return served if served is not None else self.catalogue_for(connection_id)
+
+    def settings_of(self, connection_id: str) -> ProviderSettings | None:
+        """The validated provider settings a running connection was built with."""
+        with self._lock:
+            built = self._built.get(connection_id)
+        return built.settings if built is not None else None
+
     def catalogue_for(self, connection_id: str) -> Catalogue:
         """A configured connection's catalogue: conduit's, with that connection's own
         overlay entries (conduit's alone for a connection this runtime does not know)."""
@@ -324,8 +363,14 @@ class ConnectionRuntime:
         provider = self._catalogue_provider(ref.connection_id)
         if connection is None or provider is None:
             raise ModelUnavailable(f"connection {ref.connection_id!r} is not available")
-        entry = self.catalogue_for(ref.connection_id).require(provider, ref.model_id)
-        connection.residency.check(entry, connection.region, task=ref.connection_id)
+        entry = self.served_for(ref.connection_id).require(provider, ref.model_id)
+        settings = self.settings_of(ref.connection_id)
+        connection.residency.check(
+            entry,
+            settings.region if settings is not None else connection.region,
+            task=ref.connection_id,
+            provider=settings,
+        )
         return entry
 
     def refusal(self, ref: ModelRef) -> str | None:
@@ -342,7 +387,8 @@ class ConnectionRuntime:
         provider = self._catalogue_provider(connection_id)
         if connection is None or provider is None:
             return []
-        catalogue = self.catalogue_for(connection_id)
+        catalogue = self.served_for(connection_id)
+        settings = self.settings_of(connection_id)
         with self._lock:
             stored = self._models.get(connection_id)
         if stored is None:
@@ -360,7 +406,12 @@ class ConnectionRuntime:
             if entry.kind != "chat":
                 continue
             try:
-                connection.residency.check(entry, connection.region, task=connection_id)
+                connection.residency.check(
+                    entry,
+                    settings.region if settings is not None else connection.region,
+                    task=connection_id,
+                    provider=settings,
+                )
             except ResidencyRefused:
                 continue
             offered.append((entry, tier))
@@ -445,7 +496,7 @@ class ConnectionRuntime:
         ref = self.resolve(model)
         provider = self._catalogue_provider(ref.connection_id) if ref is not None else None
         entry = (
-            self.catalogue_for(ref.connection_id).get(provider, ref.model_id)
+            self.served_for(ref.connection_id).get(provider, ref.model_id)
             if ref and provider
             else None
         )
@@ -474,11 +525,37 @@ class ConnectionRuntime:
             digest.update(f"{ref.name}\0{value}\0".encode())
         return digest.hexdigest()
 
-    async def _build(self, connection: Connection) -> tuple[ProviderSettings, MeteredProvider]:
+    async def _build(
+        self, connection: Connection
+    ) -> tuple[ProviderSettings, MeteredProvider, Catalogue | None]:
         registry = self.registry(connection.residency, connection_id=connection.id)
         settings = model_mod.validate(connection, registry)
-        provider = await registry.build(connection.id, settings)
-        return settings, provider
+        served = await self._listed(registry, connection, settings)
+        provider = await registry.build(connection.id, settings, catalogue=served)
+        return settings, provider, served
+
+    async def _listed(
+        self, registry: ProviderRegistry, connection: Connection, settings: ProviderSettings
+    ) -> Catalogue | None:
+        """The catalogue to build ``connection``'s provider on: its own, with the Regions
+        and limits the service lists for each catalogued model. None when the service lists
+        nothing for these settings or the listing failed (the catalogue alone is used, and
+        the failure class is logged, never provider text)."""
+        try:
+            result = await registry.discover(connection.id, settings)
+        except ProviderError as failed:
+            logger.warning(
+                "Connection %s: the model listing failed (%s); building on the catalogue alone",
+                connection.id,
+                failed.failure.value,
+            )
+            return None
+        except ConduitError as refused:
+            logger.warning("Connection %s: no model listing: %s", connection.id, refused)
+            return None
+        if not result.supported:
+            return None
+        return served_catalogue(registry.catalogue, result)
 
     async def _apply(self, snapshot: Snapshot) -> None:
         wanted = {c.id: c for c in snapshot.connections}
@@ -505,7 +582,7 @@ class ConnectionRuntime:
                 built[connection_id] = old
                 continue
             try:
-                settings, provider = await self._build(connection)
+                settings, provider, served = await self._build(connection)
             except (ConduitError, ConnectionInvalid) as refused:
                 reason = str(refused)
                 failures[connection_id] = reason
@@ -513,7 +590,7 @@ class ConnectionRuntime:
                 if old is not None:
                     built[connection_id] = old  # keep the working provider
                 continue
-            built[connection_id] = _Built(connection, settings, provider, fingerprint)
+            built[connection_id] = _Built(connection, settings, provider, fingerprint, served)
             if old is not None:
                 retired.append(old.provider)
                 logger.info("Connection %s rebuilt after a change", connection_id)

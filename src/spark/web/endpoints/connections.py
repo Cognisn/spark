@@ -44,7 +44,7 @@ from conduit import ResidencyPolicy
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from spark.connections import discovery
+from spark.connections import discovery, regions
 from spark.connections.catalogue import entry_of
 from spark.connections.model import (
     CONNECTION_ID_PATTERN,
@@ -675,7 +675,16 @@ async def _view(request: Request, runtime: Any, connection: Connection) -> dict[
         await _stored_models(store, connection.id),
         discovery.RESULTS.get(connection.id),
         {(o.provider, o.model_id) for o in overlays},
+        _validated(runtime, connection),
     )
+
+
+def _validated(runtime: Any, connection: Connection) -> Any:
+    """The connection's settings as conduit validates them (None when it refuses them)."""
+    try:
+        return runtime.validate(connection)
+    except ConnectionInvalid:
+        return None
 
 
 async def _connection_or_404(request: Request, connection_id: str) -> Connection | None:
@@ -747,6 +756,8 @@ async def _summary(
         "region": connection.region,
         "residency": residency_record(connection.residency),
         "residency_text": _residency_text(connection.residency),
+        "regions_mode": regions.mode_of(connection.service),
+        "region_choice": regions.current(connection.settings),
         "enabled": connection.enabled,
         "status": status,
         "failure": failures.get(connection.id),
@@ -961,6 +972,55 @@ async def rename_connection(connection_id: str, request: Request) -> JSONRespons
     after = Connection(existing.id, name, existing.settings, existing.residency, existing.enabled)
     await _replace(request, existing, after, "renamed")
     return JSONResponse({"id": connection_id, "name": name})
+
+
+@router.get(API + "/{connection_id}/regions")
+async def get_regions(connection_id: str, request: Request) -> JSONResponse:
+    """The Regions the connection may choose (conduit's documented lists for its service),
+    the choice it has made and where conduit calls it (``region``)."""
+    runtime = _runtime(request)
+    if runtime is None:
+        return _error(NOT_STARTED, 503)
+    connection = await _connection_or_404(request, connection_id)
+    if connection is None:
+        return _not_found()
+    validated = _validated(runtime, connection)
+    return JSONResponse(
+        {
+            "id": connection_id,
+            **regions.offered(runtime.registry(), connection.settings),
+            "choice": regions.current(connection.settings),
+            "region": validated.region if validated is not None else connection.region,
+        }
+    )
+
+
+@router.put(API + "/{connection_id}/regions")
+async def set_regions(connection_id: str, request: Request) -> JSONResponse:
+    """Choose where the connection's requests may be processed (``choice``, or null to
+    clear it). conduit validates the settings the choice makes and its refusal is shown;
+    nothing is saved then. The choice only narrows the deployment's residency policy."""
+    runtime = _runtime(request)
+    if runtime is None:
+        return _error(NOT_STARTED, 503)
+    existing = await _connection_or_404(request, connection_id)
+    if existing is None:
+        return _not_found()
+    data = await _body(request)
+    choice = data.get("choice")
+    if choice is not None and not isinstance(choice, Mapping):
+        return _error("A Region choice is an object, or null to clear it.")
+    try:
+        settings = regions.with_choice(existing.settings, choice)
+        after = Connection(
+            existing.id, existing.name, settings, existing.residency, existing.enabled
+        )
+        runtime.validate(after)
+    except ConnectionInvalid as refused:
+        # conduit's refusal names fields and kinds, never a value.
+        return _error(str(refused))
+    await _replace(request, existing, after, "regions")
+    return JSONResponse({"id": connection_id, "choice": regions.current(settings)})
 
 
 async def _actions_using(request: Request, connection_id: str) -> list[dict[str, Any]]:
