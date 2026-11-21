@@ -138,7 +138,8 @@
                     h('div', { class: 'conn-actions' }, actionsFor(item))),
                 h('td', { text: item.service_label }),
                 h('td', { text: item.region || '' }),
-                h('td', { text: item.residency_text }),
+                h('td', {}, h('div', { text: item.residency_text }),
+                    item.region_choice ? h('div', { class: 'conn-muted', text: 'Region choice: ' + choiceText(item.region_choice) }) : null),
             ];
             if (server) cells.push(h('td', { text: item.metered ? 'Metered' : 'Not metered' }));
             cells.push(h('td', { text: String(item.enabled_models) }));
@@ -164,6 +165,7 @@
         return h('div', { class: 'd-flex flex-wrap gap-1' },
             button('Edit', 'bi-pencil', () => openModal(null, item.id)),
             button('Models', 'bi-list-check', () => openModels(item)),
+            item.regions_mode ? button('Regions', 'bi-globe-asia-australia', () => openRegions(item)) : null,
             server ? button('Metering', 'bi-speedometer2', () => openMetering(item)) : null,
             server ? button('Assignments', 'bi-people', () => openAssignments(item)) : null,
             button(item.enabled ? 'Disable' : 'Enable', item.enabled ? 'bi-pause-circle' : 'bi-play-circle', () => toggle(item)),
@@ -429,7 +431,7 @@
                 h('td', { class: 'conn-muted', text: m.context_window.toLocaleString() + ' / ' + (m.output_limit ? m.output_limit.toLocaleString() : '') }),
                 h('td', { class: 'conn-muted', text: caps.join(', ') }),
                 h('td', {}, m.refused ? h('div', { class: 'conn-refusal', text: 'Refused: ' + m.refused })
-                    : h('span', { class: 'conn-muted', text: SCOPE_LABELS[m.residency_scope] || m.residency_scope })),
+                    : h('span', { class: 'conn-muted', text: processedText(m.residency_scope, m.regions) })),
                 h('td', {}, h('div', { class: 'form-check form-switch' }, toggle)),
                 h('td', {}, tier));
         });
@@ -440,7 +442,140 @@
             h('h6', { text: 'Reachable but not in the catalogue' }),
             h('p', { class: 'conn-muted', text: 'Declare a model to add it to SPARK\'s catalogue for this service. Check its limits with the service first.' }),
             data.undeclared.map((u) => declareRow(holder, item, u))) : null;
-        holder.replaceChildren(...[status, note, table, undeclared, declareTyped(holder, item, data)].filter(Boolean));
+        holder.replaceChildren(...[status, note, table, discoveredTable(data), driftList(data), undeclared, declareTyped(holder, item, data)].filter(Boolean));
+    }
+
+    // -- discovered models, drift and Region choice ---------------------------------
+
+    function processedText(scope, regions) {
+        const label = SCOPE_LABELS[scope] || scope;
+        return regions && regions.length ? label + ': ' + regions.join(', ') : label;
+    }
+
+    function choiceText(choice) {
+        if (choice.geography) return choice.geography;
+        if (choice.deployment) return choice.deployment.type + ' in ' + choice.deployment.azure_region;
+        const regions = (choice.regions || []).join(', ');
+        return regions + (choice.allow_global ? ' (and global)' : '');
+    }
+
+    // Every model the service lists: where it is processed, whether conduit allows it under
+    // the connection's residency, and conduit's reason when it does not. Nothing is hidden.
+    function discoveredTable(data) {
+        if (!data.discovered || !data.discovered.length) return null;
+        const rows = data.discovered.map((m) => h('tr', { 'data-discovered': m.model_id, class: m.allowed ? '' : 'conn-refused' },
+            h('td', {}, h('div', { class: 'conn-model', text: m.model_id }), m.label ? h('div', { class: 'conn-id', text: m.label }) : null),
+            h('td', { class: 'conn-muted', text: processedText(m.scope, m.regions) }),
+            h('td', {}, m.allowed ? h('span', { class: 'badge-app badge-app-success', text: 'Usable' })
+                : h('div', { class: 'conn-refusal', text: 'Refused: ' + m.reason })),
+            h('td', { class: 'conn-muted', text: (m.drift || []).map((r) => DRIFT_LABELS[r] || r).join('; ') })));
+        return h('div', { class: 'mt-4' },
+            h('h6', { text: 'Models the service lists' }),
+            h('p', { class: 'conn-muted', text: 'Where the service says each model is processed, and whether it is usable under this connection\'s residency and Region choice.' }),
+            h('div', { class: 'app-table-responsive' }, h('table', { class: 'app-table conn-table' },
+                h('thead', {}, h('tr', {}, ['Model', 'Processed in', 'Usable', 'Notes'].map((t) => h('th', { text: t })))),
+                h('tbody', {}, rows))));
+    }
+
+    const DRIFT_LABELS = {
+        uncatalogued: 'No capability record; using defaults',
+        unlisted: 'Not listed by the service',
+        limits_differ: 'Limits differ from the catalogue',
+        capabilities_differ: 'Capabilities differ from the catalogue',
+        regions_declared: 'Regions declared here differ from the listing',
+    };
+
+    // Where the catalogue and the service's listing differ, as information only: no model is
+    // hidden or refused for it.
+    function driftList(data) {
+        if (!data.drift || !data.drift.length) return null;
+        return h('details', { class: 'mt-4 conn-drift' },
+            h('summary', { text: 'Differences from the catalogue (' + data.drift.length + ')' }),
+            h('p', { class: 'conn-muted mt-2', text: 'For information. conduit still allows every model its residency rules allow.' }),
+            h('ul', { class: 'conn-rules' }, data.drift.map((d) => h('li', { 'data-drift': d.reason },
+                h('span', { class: 'conn-model', text: d.model_id }), ': ' + d.text + (d.detail ? ' (' + d.detail + ')' : '')))));
+    }
+
+    async function openRegions(item) {
+        const holder = h('div', {}, h('div', { class: 'app-spinner mx-auto' }));
+        const error = alertBox();
+        const save = h('button', { type: 'button', class: 'btn btn-app-primary', text: 'Save' });
+        const view = dialog('Regions for ' + item.name, [error, holder], [save,
+            h('button', { type: 'button', class: 'btn btn-app-ghost', 'data-bs-dismiss': 'modal', text: 'Cancel' })]);
+        const path = '/' + encodeURIComponent(item.id) + '/regions';
+        let read = () => null;
+        try {
+            const data = await call('GET', path);
+            read = renderRegions(holder, data);
+        } catch (err) { holder.replaceChildren(h('div', { class: 'alert-app alert-app-danger', text: err.message })); save.disabled = true; }
+        save.addEventListener('click', async () => {
+            error.hidden = true;
+            save.disabled = true;
+            try {
+                await call('PUT', path, { choice: read() });
+                view.close();
+                toast('success', 'Regions', 'Saved. The connection restarts with the new choice.');
+                await load();
+            } catch (err) { showError(error, err.message); }
+            finally { save.disabled = false; }
+        });
+    }
+
+    // The choices conduit offers for the connection's service, and how each is set. Returns
+    // a function that reads the form as the choice to save (null clears it).
+    function renderRegions(holder, data) {
+        const chosen = data.choice || {};
+        const regions = data.listings.flatMap((l) => l.regions.map((r) => ({ ...r, listing: l })));
+        const sources = data.listings.map((l) => h('div', { class: 'conn-muted', text: 'Source: ' + l.documentation + ' (as of ' + l.as_of + ')' }));
+        const intro = h('p', { class: 'conn-muted', text: 'Choose where this connection\'s requests may be processed. The choice only narrows what the deployment\'s residency policy allows; leave it empty for no choice. conduit checks it and says why when it refuses one.' });
+        let read;
+        let controls;
+        if (data.mode === 'processing') {
+            const boxes = regions.filter((r) => r.invocation).map((r) => {
+                const box = h('input', { type: 'checkbox', class: 'form-check-input', value: r.code, id: 'rg-' + r.code });
+                box.checked = (chosen.regions || []).includes(r.code);
+                return { box, el: h('div', { class: 'form-check' }, box, h('label', { class: 'form-check-label', for: 'rg-' + r.code, text: r.name + ' (' + r.code + ')' })) };
+            });
+            const global = h('input', { type: 'checkbox', class: 'form-check-input', id: 'rg-global' });
+            global.checked = Boolean(chosen.allow_global);
+            const globalNote = data.listings[0] && data.listings[0].global_option;
+            controls = [h('div', { class: 'conn-region-list' }, boxes.map((b) => b.el)),
+                globalNote ? h('div', { class: 'form-check mt-3' }, global, h('label', { class: 'form-check-label', for: 'rg-global', text: 'Also allow global processing: ' + globalNote })) : null];
+            read = () => {
+                const picked = boxes.filter((b) => b.box.checked).map((b) => b.box.value);
+                return picked.length ? { regions: picked, allow_global: global.checked } : null;
+            };
+        } else if (data.mode === 'inference_geo') {
+            const select = h('select', { class: 'form-select', 'aria-label': 'Inference geography' },
+                h('option', { value: '', text: 'No choice' }),
+                h('option', { value: 'us', text: 'United States only' }),
+                h('option', { value: 'global', text: 'Global (any geography)' }));
+            select.value = chosen.geography || '';
+            controls = [select];
+            read = () => (select.value ? { geography: select.value } : null);
+        } else if (data.mode === 'data_residency') {
+            const select = h('select', { class: 'form-select', 'aria-label': 'Data residency Region' },
+                h('option', { value: '', text: 'No choice' }),
+                regions.filter((r) => r.invocation).map((r) => h('option', { value: r.code, text: r.name + (r.stores_only ? ' (stores data only; processing may happen anywhere)' : '') })));
+            select.value = (chosen.regions || [])[0] || '';
+            controls = [select];
+            read = () => (select.value ? { regions: [select.value] } : null);
+        } else {
+            const dep = chosen.deployment || {};
+            const type = h('select', { class: 'form-select', 'aria-label': 'Deployment type' },
+                h('option', { value: '', text: 'No choice' }),
+                h('option', { value: 'global', text: 'Global' }),
+                h('option', { value: 'data_zone', text: 'Data zone' }),
+                h('option', { value: 'standard', text: 'Standard (in one geography)' }));
+            type.value = dep.type || '';
+            const azure = h('select', { class: 'form-select mt-2', 'aria-label': 'Azure Region of the resource' },
+                regions.filter((r) => r.invocation).map((r) => h('option', { value: r.code.replace('azure:', ''), text: r.name })));
+            azure.value = dep.azure_region || '';
+            controls = [type, azure];
+            read = () => (type.value ? { deployment: { type: type.value, azure_region: azure.value } } : null);
+        }
+        holder.replaceChildren(intro, ...controls, h('div', { class: 'mt-3' }, sources));
+        return read;
     }
 
     const FOUNDRY = new Set(['anthropic_foundry', 'openai_foundry']);
