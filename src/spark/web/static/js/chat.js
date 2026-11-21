@@ -157,7 +157,7 @@ function appendMessage(msg) {
                     (b.type === 'text' && b.text) || (b.type === 'tool_use' && b.name)
                 );
                 if (hasContent) {
-                    appendContentBlocks(role, blocks, timestamp);
+                    appendContentBlocks(role, blocks, timestamp, msg.reasoning);
                     return;
                 }
             }
@@ -186,7 +186,7 @@ function appendMessage(msg) {
         }
     }
 
-    appendTextMessage(role, content, timestamp, msg.model_id || null);
+    appendTextMessage(role, content, timestamp, msg.model_id || null, msg.reasoning);
 }
 
 function _lastBubble() {
@@ -243,7 +243,7 @@ function _buildCopyButton(contentText) {
     `;
 }
 
-function appendTextMessage(role, content, timestamp, modelId) {
+function appendTextMessage(role, content, timestamp, modelId, reasoning) {
     clearEmptyState();
     const container = document.getElementById('chat-messages');
 
@@ -266,6 +266,8 @@ function appendTextMessage(role, content, timestamp, modelId) {
 
     // Show model badge on assistant messages
     const badge = (role === 'assistant') ? (modelId || window._currentModelId || '') : null;
+    // The model's reasoning sits above the reply, collapsed, and is not part of it
+    if (role === 'assistant' && reasoning) wrapper.appendChild(_buildThoughtProcess(reasoning));
     wrapper.appendChild(bubble);
     wrapper.insertAdjacentHTML('beforeend', _buildTimestamp(timestamp, badge));
     container.appendChild(wrapper);
@@ -279,7 +281,7 @@ function appendSystemMessage(text) {
     container.appendChild(div);
 }
 
-function appendContentBlocks(role, blocks, timestamp) {
+function appendContentBlocks(role, blocks, timestamp, reasoning) {
     const textParts = [];
     const toolCalls = [];
 
@@ -293,7 +295,10 @@ function appendContentBlocks(role, blocks, timestamp) {
     });
 
     if (textParts.length) {
-        appendTextMessage(role, textParts.join(''), timestamp);
+        appendTextMessage(role, textParts.join(''), timestamp, null, reasoning);
+    } else if (reasoning && role === 'assistant') {
+        // Reasoning before a tool call, with no reply text of its own
+        appendThoughtOnly(reasoning);
     }
 
     if (toolCalls.length) {
@@ -578,7 +583,13 @@ let streamingWrapperDiv = null;
 
 function removeStreamingMessage() {
     if (streamingWrapperDiv) {
-        streamingWrapperDiv.remove();
+        collapseStreamingReasoning();
+        // Reasoning with no reply text of its own (before a tool call) stays, as its line
+        if (streamingWrapperDiv.querySelector('.thought-process') && streamingMessageDiv) {
+            streamingMessageDiv.remove();
+        } else {
+            streamingWrapperDiv.remove();
+        }
         streamingMessageDiv = null;
         streamingWrapperDiv = null;
     }
@@ -608,6 +619,8 @@ function startStreamingMessage() {
 
 function updateStreamingMessage(content) {
     if (!streamingMessageDiv) startStreamingMessage();
+    // The answer has started: the reasoning above it collapses
+    collapseStreamingReasoning();
     const md = streamingMessageDiv.querySelector('.markdown-content');
     md.innerHTML = renderMarkdown(content);
     highlightCodeBlocks(md);
@@ -616,6 +629,7 @@ function updateStreamingMessage(content) {
 
 function finaliseStreamingMessage(content) {
     if (!streamingMessageDiv) startStreamingMessage();
+    collapseStreamingReasoning();
     const md = streamingMessageDiv.querySelector('.markdown-content');
     md.innerHTML = renderMarkdown(content);
     highlightCodeBlocks(md);
@@ -638,6 +652,94 @@ function finaliseStreamingMessage(content) {
     streamingMessageDiv = null;
     streamingWrapperDiv = null;
     scrollToBottom();
+}
+
+/* ==========================================================================
+   Reasoning ("Thought process"): above a reply, outside its bubble
+   ========================================================================== */
+
+let _thoughtCount = 0;
+
+/** A collapsed "Thought process" line that expands to the model's reasoning. */
+function _buildThoughtProcess(text) {
+    const id = `thought-${++_thoughtCount}`;
+    const box = document.createElement('div');
+    box.className = 'thought-process';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'thought-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', id);
+    const chevron = document.createElement('i');
+    chevron.className = 'bi bi-chevron-right thought-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'thought-label';
+    label.textContent = 'Thought process';
+    toggle.appendChild(chevron);
+    toggle.appendChild(label);
+    toggle.addEventListener('click', () => {
+        toggle.dataset.userToggled = 'true';
+        _setThoughtOpen(box, toggle.getAttribute('aria-expanded') !== 'true');
+    });
+
+    const body = document.createElement('div');
+    body.className = 'thought-body';
+    body.id = id;
+    body.hidden = true;
+    body.textContent = text || '';
+
+    box.appendChild(toggle);
+    box.appendChild(body);
+    return box;
+}
+
+function _setThoughtOpen(box, open) {
+    const toggle = box.querySelector('.thought-toggle');
+    const body = box.querySelector('.thought-body');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    body.hidden = !open;
+}
+
+/** Reasoning that has no reply text of its own (before a tool call): its line alone. */
+function appendThoughtOnly(text) {
+    clearEmptyState();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-message-wrapper assistant';
+    wrapper.appendChild(_buildThoughtProcess(text));
+    document.getElementById('chat-messages').appendChild(wrapper);
+}
+
+/** Reasoning arrives while streaming: open "Thinking..." above the reply and let it grow. */
+function addStreamingReasoning(text) {
+    if (!text) return;
+    if (!streamingMessageDiv) startStreamingMessage();
+    let box = streamingWrapperDiv.querySelector('.thought-process');
+    if (!box) {
+        box = _buildThoughtProcess('');
+        streamingWrapperDiv.insertBefore(box, streamingMessageDiv);
+        // Already answering (reasoning reported after the reply began): leave it collapsed
+        const answering = streamingMessageDiv.querySelector('.markdown-content').textContent.trim();
+        if (!answering) {
+            box.classList.add('thinking');
+            box.querySelector('.thought-label').textContent = 'Thinking...';
+            _setThoughtOpen(box, true);
+        }
+    }
+    const body = box.querySelector('.thought-body');
+    body.textContent = body.textContent ? `${body.textContent}\n\n${text}` : text;
+    scrollToBottom();
+}
+
+/** The answer has started (or the turn ended): collapse the reasoning, unless the user chose. */
+function collapseStreamingReasoning() {
+    if (!streamingWrapperDiv) return;
+    const box = streamingWrapperDiv.querySelector('.thought-process.thinking');
+    if (!box) return;
+    box.classList.remove('thinking');
+    box.querySelector('.thought-label').textContent = 'Thought process';
+    if (!box.querySelector('.thought-toggle').dataset.userToggled) _setThoughtOpen(box, false);
 }
 
 // Streaming tool tracking — routes to sidecar panel
