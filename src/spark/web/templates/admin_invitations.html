@@ -17,7 +17,7 @@
                 {% for invitation in pending %}
                 <tr>
                     <td>{{ invitation.user.email }}</td>
-                    <td>{{ "single sign-on" if invitation.user.sign_in_method == "sso_only" else "password or SSO" }}</td>
+                    <td>{% if invitation.user.sign_in_method == "sso_only" %}single sign-on{% elif sso_available %}password or SSO{% else %}password{% endif %}</td>
                     <td>{% for grant in invitation.grants %}<span class="badge-app badge-app-primary me-1">{{ grant.role }}</span>{% endfor %}</td>
                     <td>{{ invitation.expires_at.strftime("%Y-%m-%d %H:%M") if invitation.expires_at else "expired" }}</td>
                     <td class="text-end text-nowrap">
@@ -58,8 +58,12 @@
                     <div class="col-md-6">
                         <label for="method" class="form-label">Signs in with</label>
                         <select id="method" name="method" class="form-select">
+                            {% if sso_available %}
                             <option value="password_and_sso">A password, or single sign-on</option>
                             <option value="sso_only">Single sign-on only</option>
+                            {% else %}
+                            <option value="password_and_sso">A password</option>
+                            {% endif %}
                         </select>
                     </div>
                 </div>

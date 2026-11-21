@@ -190,38 +190,61 @@ warden signs users in with one OpenID Connect provider (Microsoft Entra ID, Goog
 Okta, Keycloak and others). Single sign-on does not create accounts: a user must
 already exist, created or invited, before they can sign in through it.
 
+An administrator sets it up on the **Single sign-on** page (`/admin/sso`, from the
+**Single sign-on settings** button on the Users page):
+
 1. Register Spark with the provider as a web application:
-   - redirect URI `https://spark.example.com/identity/auth/sso/callback`;
+   - the redirect URI the page shows (with a copy button), for example
+     `https://spark.example.com/identity/auth/sso/callback`;
    - scopes `openid`, `email` and `profile`;
    - a client secret.
-2. Put the client secret in the secrets store under `warden.sso.client-secret`
-   ([placing a secret](secrets.md#placing-a-secret-in-the-store)).
-3. Add to the env file:
+2. On the page, enter the issuer URL (exactly as the provider's discovery document
+   states it, trailing slash included; it must use https), the client ID and the client
+   secret, and **Save**. The secret is written to the secrets store under
+   `warden.sso.client-secret` and is never shown again; leave the field blank to keep
+   it, or enter a new one to replace it.
+3. **Test** checks the saved settings: the client secret, the discovery document at
+   `<issuer>/.well-known/openid-configuration` (and that it names the same issuer), the
+   signing algorithms and the provider's signing keys. It signs nobody in.
+4. Tick **Offer single sign-on on the sign-in and invitation pages** and **Save**. It
+   cannot be switched on without a stored client secret.
 
-   ```
-   SPARK__WARDEN__SSO__ENABLED=true
-   SPARK__WARDEN__SSO__ISSUER_URL=https://login.example.com/realms/example
-   SPARK__WARDEN__SSO__CLIENT_ID=spark
-   ```
+Until single sign-on is on and fully configured (issuer URL, client ID and a stored
+client secret), Spark offers it nowhere: the sign-in and invitation pages have no single
+sign-on button, My account shows the sign-in method as Password, and the Users and
+Invitations pages offer only a password. A user who signs in only through single sign-on
+is flagged "Cannot sign in: single sign-on is off" on the Users page; change their
+sign-in method on their page and send them a password reset link. Switching single
+sign-on off ends every session it issued, and while any active, suspended or invited user
+signs in only through it the page asks for confirmation first and names them.
 
-   Optionally `SPARK__WARDEN__SSO__ALLOWED_EMAIL_DOMAINS=example.com` to accept only
-   addresses in your own domains, and `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`,
-   `google`, `okta` or `generic`), a label that changes nothing.
-4. Restart web and worker: `docker compose -p spark -f deploy/compose.yaml up -d`.
+Every change is audited by warden with field and secret names only, never values
+(`warden.identity.sso.settings_changed`, `warden.identity.sso.client_secret_set`,
+`warden.identity.sso.configuration_tested`, `warden.identity.sso.disabled`).
 
-The sign-in page then offers single sign-on, and an invitation can be accepted
-through it. warden reads the provider's discovery document from
-`<issuer>/.well-known/openid-configuration`, accepts only asymmetrically signed ID
-tokens (RS256, ES256, PS256), and checks the state, nonce and PKCE of every sign-in.
-A provider behind a private certificate authority needs `SSL_CERT_FILE` naming a
-bundle that holds that authority and the public ones, mounted into the containers.
+The page's values are run-time overrides over the start-up settings, which still work
+and are the defaults until an administrator saves the page:
 
-Single sign-on settings come from the env file only in 0.3.0; Spark has no screen for
-them.
+```
+SPARK__WARDEN__SSO__ENABLED=true
+SPARK__WARDEN__SSO__ISSUER_URL=https://login.example.com/realms/example
+SPARK__WARDEN__SSO__CLIENT_ID=spark
+```
+
+with the client secret placed in the secrets store under `warden.sso.client-secret`
+([placing a secret](secrets.md#placing-a-secret-in-the-store)). Optionally
+`SPARK__WARDEN__SSO__ALLOWED_EMAIL_DOMAINS=example.com` accepts only addresses in your
+own domains, and `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`, `google`, `okta` or
+`generic`) is a label that changes nothing; neither is on the page.
+
+warden accepts only asymmetrically signed ID tokens (RS256, ES256, PS256), and checks
+the state, nonce and PKCE of every sign-in. A provider behind a private certificate
+authority needs `SSL_CERT_FILE` naming a bundle that holds that authority and the public
+ones, mounted into the containers.
 
 > Not run for this guide: a sign-in against a real provider. Spark's tests run single
-> sign-on against a fake provider, and a live test against a local OpenID provider
-> is run by hand before a release.
+> sign-on and the page's Test against synthetic providers, and a live test against a
+> local OpenID provider is run by hand before a release.
 
 ## Mail
 

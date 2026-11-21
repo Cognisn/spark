@@ -14,7 +14,7 @@
         <div class="card-body" style="font-size: 0.875rem;">
             <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Name</span><span>{{ user.display_name or "" }}</span></div>
             <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Status</span><span>{{ user.status }}</span></div>
-            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Signs in with</span><span>{{ "single sign-on only" if user.sign_in_method == "sso_only" else "a password, or single sign-on" }}</span></div>
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Signs in with</span><span>{% if user.sign_in_method == "sso_only" %}single sign-on only{% if not sso_available %} <span class="badge-app badge-app-warning">{{ sso_off_flag }}</span>{% endif %}{% elif sso_available %}a password, or single sign-on{% else %}a password{% endif %}</span></div>
             <div class="d-flex justify-content-between mb-3"><span style="color: var(--app-text-secondary);">Authenticator app</span><span>{{ "set up" if mfa_enrolled else "not set up" }}</span></div>
             <div class="d-flex flex-wrap gap-2">
                 {% for value, label, icon in [("active", "Reactivate", "bi-play-circle"), ("suspended", "Suspend", "bi-pause-circle"), ("deactivated", "Deactivate", "bi-x-octagon")] %}
@@ -37,6 +37,24 @@
                 </form>
                 {% endif %}
             </div>
+            {% if user.sign_in_method == "sso_only" or sso_available %}
+            <form method="POST" action="/admin/users/{{ user.id }}/sign-in-method" class="d-flex align-items-center gap-2 mt-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label for="sign-in-method" class="form-label mb-0">Sign-in method</label>
+                <select id="sign-in-method" name="method" class="form-select form-select-sm" style="width: 240px;">
+                    {% if sso_available %}
+                    <option value="password_and_sso" {% if user.sign_in_method != "sso_only" %}selected{% endif %}>A password, or single sign-on</option>
+                    <option value="sso_only" {% if user.sign_in_method == "sso_only" %}selected{% endif %}>Single sign-on only</option>
+                    {% else %}
+                    <option value="password_and_sso">A password</option>
+                    {% endif %}
+                </select>
+                <button type="submit" class="btn btn-app-outline btn-sm">Change</button>
+            </form>
+            {% if user.sign_in_method == "sso_only" and not sso_available %}
+            <p class="mt-2 mb-0" style="font-size: 0.8125rem; color: var(--app-text-muted);">After changing to a password, send the user a password reset link so they can set one.</p>
+            {% endif %}
+            {% endif %}
         </div>
     </div>
 

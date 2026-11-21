@@ -51,6 +51,7 @@ from warden.identity import (
     TokenPair,
 )
 
+from spark.identity import sso
 from spark.identity.access import current_identity
 from spark.identity.passwords import PASSWORDS_DIFFER, change_reason_text, refusal_text
 from spark.identity.runtime import IdentityRuntime
@@ -152,13 +153,12 @@ def forget_form_token(response: Response, path: str) -> None:
 
 
 async def sso_enabled(runtime: IdentityRuntime) -> bool:
-    """Whether single sign-on is switched on and configured (for its buttons)."""
-    try:
-        settings = await runtime.identity.sso.settings.current()
-    except Exception:  # a settings read failing must not break sign-in
-        logger.warning("Could not read the single sign-on settings")
-        return False
-    return bool(settings.enabled and settings.issuer_url and settings.client_id)
+    """Whether single sign-on is switched on and configured, client secret included.
+
+    Every SSO button, wording and sign-in method choice follows this
+    (:func:`spark.identity.sso.available`); a failed read offers none.
+    """
+    return await sso.available(runtime.identity)
 
 
 def signed_in_response(target: str, pair: TokenPair) -> RedirectResponse:

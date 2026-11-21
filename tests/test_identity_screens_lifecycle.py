@@ -351,6 +351,10 @@ class FakeSso:
 
         return Store()
 
+    def client_secret_set(self) -> bool:
+        """A client secret is stored (single sign-on is offered only with one)."""
+        return True
+
     async def aclose(self) -> None:
         """warden closes its provider client at shutdown."""
 

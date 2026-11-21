@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Spark - Single sign-on{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 900px;">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Single sign-on</h4>
+        <a class="btn btn-app-ghost btn-sm" href="/admin/users"><i class="bi bi-arrow-left me-1"></i> Users</a>
+    </div>
+    {% include "_page_messages.html" %}
+
+    {% if confirm_users %}
+    <div class="app-card mb-4">
+        <div class="card-body" style="font-size: 0.875rem;">
+            <ul id="sso-only-users" class="mb-3">
+                {% for user in confirm_users %}<li>{{ user.email }}{% if user.display_name %} ({{ user.display_name }}){% endif %}</li>{% endfor %}
+            </ul>
+            {% if secret_dropped %}
+            <p style="color: var(--app-text-secondary);">The new client secret you entered was not saved. Enter it again if you still want it.</p>
+            {% endif %}
+            <form method="POST" action="/admin/sso">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="issuer_url" value="{{ issuer_url }}">
+                <input type="hidden" name="client_id" value="{{ client_id }}">
+                <input type="hidden" name="confirm" value="yes">
+                <button type="submit" class="btn btn-app-outline btn-sm" style="color: var(--app-danger);"><i class="bi bi-x-octagon me-1"></i>Switch single sign-on off anyway</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-building-lock me-2"></i> Status</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Single sign-on</span><span>{% if available %}<span class="badge-app badge-app-success">on</span>{% elif enabled %}<span class="badge-app badge-app-warning">on, but not fully configured</span>{% else %}<span class="badge-app badge-app-warning">off</span>{% endif %}</span></div>
+            <div class="d-flex justify-content-between mb-3"><span style="color: var(--app-text-secondary);">Client secret</span><span>{% if secret_set %}A client secret is stored{% else %}No client secret is stored{% endif %}</span></div>
+            <div class="mb-1" style="color: var(--app-text-secondary);">Redirect URI to register with the provider</div>
+            <div class="d-flex align-items-start gap-2">
+                <code id="sso-callback" style="word-break: break-all;">{{ callback_url }}</code>
+                <button type="button" class="btn btn-app-ghost btn-sm" data-copy="#sso-callback"><i class="bi bi-clipboard"></i> Copy</button>
+            </div>
+            <p class="mt-3 mb-0" style="color: var(--app-text-muted); font-size: 0.8125rem;">
+                Register Spark with your OpenID Connect provider as a web application with this redirect URI
+                and the scopes openid, email and profile. Single sign-on does not create accounts: a user must
+                be created or invited first.
+            </p>
+        </div>
+    </div>
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-gear me-2"></i> Settings</div>
+        <div class="card-body">
+            <form method="POST" action="/admin/sso" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="mb-3">
+                    <label for="issuer_url" class="form-label">Issuer URL</label>
+                    <input type="url" id="issuer_url" name="issuer_url" class="form-control" value="{{ issuer_url }}" placeholder="https://login.example.com/realms/example">
+                    <div class="form-text">Exactly as the provider's discovery document states it, trailing slash included.</div>
+                </div>
+                <div class="mb-3">
+                    <label for="client_id" class="form-label">Client ID</label>
+                    <input type="text" id="client_id" name="client_id" class="form-control" value="{{ client_id }}">
+                </div>
+                <div class="mb-3">
+                    <label for="client_secret" class="form-label">Client secret</label>
+                    <input type="password" id="client_secret" name="client_secret" class="form-control" autocomplete="new-password">
+                    <div class="form-text">{% if secret_set %}A client secret is stored and is never shown. Leave this blank to keep it, or enter a new one to replace it.{% else %}Stored in the secrets store and never shown again.{% endif %}</div>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="on" {% if enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="enabled">Offer single sign-on on the sign-in and invitation pages</label>
+                </div>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-save me-1"></i> Save</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="app-card">
+        <div class="card-header"><i class="bi bi-clipboard-check me-2"></i> Test</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <p style="color: var(--app-text-muted); font-size: 0.8125rem;">
+                Checks the saved settings: the client secret, the issuer's discovery document, the signing
+                algorithms and the provider's signing keys. Nobody is signed in.
+            </p>
+            {% if checks %}
+            <div class="alert-app {{ 'alert-app-success' if checks_ok else 'alert-app-warning' }} mb-3" role="status">
+                {% if checks_ok %}All checks passed.{% else %}Some checks failed.{% endif %}
+            </div>
+            <table class="app-table mb-3" style="font-size: 0.8125rem;">
+                <thead><tr><th>Check</th><th>Result</th></tr></thead>
+                <tbody>
+                {% for check in checks %}
+                <tr><td>{{ check.label }}</td><td style="color: var({{ '--app-success' if check.ok else '--app-danger' }});">{{ check.result }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <form method="POST" action="/admin/sso/test">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-play-circle me-1"></i> Test</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}
