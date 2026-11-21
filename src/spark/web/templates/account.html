@@ -22,7 +22,7 @@
             </div>
             <div class="d-flex justify-content-between">
                 <span style="color: var(--app-text-secondary);">Sign-in</span>
-                <span>{% if sso_only %}Single sign-on only{% else %}Password or single sign-on{% endif %}</span>
+                <span>{% if sso_only %}Single sign-on only{% elif sso_enabled %}Password or single sign-on{% else %}Password{% endif %}</span>
             </div>
         </div>
     </div>

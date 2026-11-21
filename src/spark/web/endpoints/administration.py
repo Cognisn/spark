@@ -11,6 +11,14 @@ SPARK's screens over warden's Python API; warden audits every change itself
 * ``/admin/invitations``: pending invitations; invite with staged roles,
   resend (the old link stops working) and revoke.
 * ``/admin/api-keys``: every user's API keys; revoke one.
+* ``/admin/sso``: single sign-on through warden's settings: the issuer URL,
+  client ID, client secret (to the secrets store, never shown again) and
+  whether it is on, the redirect URI to register, and a Test of the saved
+  settings against the provider that signs nobody in. Switching it off while
+  any user signs in only through it asks first and names them. Until it is on
+  and configured (:func:`spark.identity.sso.available`) the user screens offer
+  no single sign-on method, and flag SSO-only users so their method can be
+  changed (``POST /admin/users/{id}/sign-in-method``).
 
 warden refuses to leave no active administrator (``LastAdministratorError``);
 the screen says so and nothing changes. Without a mail service warden's mails
@@ -39,6 +47,7 @@ from warden.identity import (
     UserStatus,
 )
 
+from spark.identity import sso
 from spark.identity.access import SparkIdentity, require_permission
 from spark.identity.mail import captured, link_in
 from spark.identity.permissions import USERS_ADMIN
@@ -72,10 +81,21 @@ DONE = {
     "created": "The user is created.",
     "revoked": "Revoked.",
     "sent": "The link is sent.",
+    "method": "The sign-in method is changed.",
+    "saved": "The single sign-on settings are saved.",
 }
+SSO_PATH = "/admin/sso"
+SSO_OFF = "Single sign-on is not switched on, so a user cannot be set to sign in only through it."
+SSO_OFF_FLAG = "Cannot sign in: single sign-on is off"
+SSO_ONLY_ASK = (
+    "These users sign in only through single sign-on and cannot sign in once it is "
+    "switched off. Change their sign-in method first, or switch it off anyway."
+)
 # The statuses an administrator sets, and those the list filters by.
 _STATUSES = {s.value: s for s in (UserStatus.ACTIVE, UserStatus.SUSPENDED, UserStatus.DEACTIVATED)}
 _FILTERS = {s.value: s for s in UserStatus}
+# The sign-in methods an administrator sets on these screens.
+_SETTABLE = {m.value: m for m in (SignInMethod.PASSWORD_AND_SSO, SignInMethod.SSO_ONLY)}
 
 administrator = require_permission(USERS_ADMIN)
 
@@ -119,6 +139,11 @@ def _mailed(runtime: IdentityRuntime, messages: list[Any], path: str) -> dict[st
 # -- Users ----------------------------------------------------------------------------------
 
 
+def _sso_only_refused(method: SignInMethod | None, sso_on: bool) -> bool:
+    """SSO-only is not a method to set while single sign-on is unavailable."""
+    return method is SignInMethod.SSO_ONLY and not sso_on
+
+
 async def _users_page(
     request: Request,
     runtime: IdentityRuntime,
@@ -148,6 +173,9 @@ async def _users_page(
             "next_after": users_api.cursor(users[-1]) if more and users else None,
             "role_names": _role_names(runtime),
             "error": error,
+            "sso_available": await sso.available(runtime.identity),
+            "sso_off_flag": SSO_OFF_FLAG,
+            "sso_path": SSO_PATH,
         },
         status_code=status_code,
     )
@@ -168,6 +196,8 @@ async def create_user(
     method = _method(_text(form.get("method")))
     password = _text(form.get("password")) or None
     roles = [r for r in form.getlist("roles") if isinstance(r, str)]
+    if _sso_only_refused(method, await sso.available(runtime.identity)):
+        return await _users_page(request, runtime, error=SSO_OFF, status_code=400)
     if method is SignInMethod.PASSWORD_AND_SSO and password is None:
         return await _users_page(
             request,
@@ -225,6 +255,8 @@ async def _user_page(
         "notice": DONE.get(request.query_params.get("done", "")),
         "error": error,
         "mailed_link": None,
+        "sso_available": await sso.available(runtime.identity),
+        "sso_off_flag": SSO_OFF_FLAG,
     }
     context.update(extra or {})
     return screen(
@@ -262,6 +294,30 @@ async def set_status(
     except LastAdministratorError:
         return await _user_page(request, runtime, user, error=LAST_ADMINISTRATOR, status_code=409)
     return redirect(f"{USERS_PATH}/{user.id}?done=status")
+
+
+@router.post(USERS_PATH + "/{user_id}/sign-in-method")
+async def set_sign_in_method(
+    request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Change how a user signs in (SSO-only only while single sign-on is available)."""
+    runtime = _runtime(request)
+    user = await _user_or_404(runtime, user_id)
+    form = await request.form()
+    method = _SETTABLE.get(_text(form.get("method")))
+    if method is None:
+        return await _user_page(
+            request, runtime, user, error="That is not a sign-in method to set.", status_code=400
+        )
+    if _sso_only_refused(method, await sso.available(runtime.identity)):
+        return await _user_page(request, runtime, user, error=SSO_OFF, status_code=400)
+    try:
+        await runtime.identity.users.set_sign_in_method(
+            user.id, method, actor=_actor(identity), source_ip=source_ip(runtime, request)
+        )
+    except UserError as exc:
+        return await _user_page(request, runtime, user, error=_message(exc), status_code=409)
+    return redirect(f"{USERS_PATH}/{user.id}?done=method")
 
 
 @router.post(USERS_PATH + "/{user_id}/roles")
@@ -345,6 +401,7 @@ async def _invitations_page(
         "notice": DONE.get(request.query_params.get("done", "")),
         "error": error,
         "mailed_link": None,
+        "sso_available": await sso.available(runtime.identity),
     }
     context.update(extra or {})
     return screen(
@@ -369,13 +426,16 @@ async def invite(request: Request, identity: SparkIdentity = Depends(administrat
     runtime = _runtime(request)
     form = await request.form()
     grants = [StagedGrant(r) for r in form.getlist("roles") if isinstance(r, str)]
+    method = _method(_text(form.get("method")))
+    if _sso_only_refused(method, await sso.available(runtime.identity)):
+        return await _invitations_page(request, runtime, error=SSO_OFF, status_code=400)
     try:
         with captured() as messages:
             await runtime.identity.invitations.create(
                 _text(form.get("email")),
                 actor=_actor(identity),
                 display_name=_text(form.get("display_name")) or None,
-                sign_in_method=_method(_text(form.get("method"))),
+                sign_in_method=method,
                 grants=grants,
                 source_ip=source_ip(runtime, request),
             )
@@ -460,3 +520,102 @@ async def revoke_key(
         raise HTTPException(status_code=404)
     await keys.revoke(key.id, actor=_actor(identity), source_ip=source_ip(runtime, request))
     return redirect(f"{KEYS_PATH}?done=revoked")
+
+
+# -- Single sign-on -------------------------------------------------------------------------
+
+
+def _checks(report: Any) -> list[dict[str, Any]]:
+    """warden's configuration report, worded from its fixed names and reasons only."""
+    rows = []
+    for check in report.checks:
+        label, result = sso.check_text(check.name, check.ok, check.reason)
+        rows.append({"label": label, "ok": check.ok, "result": result})
+    return rows
+
+
+async def _sso_page(
+    request: Request,
+    runtime: IdentityRuntime,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+    extra: dict[str, Any] | None = None,
+) -> HTMLResponse:
+    current = await sso.state(runtime.identity)
+    settings = current.settings
+    context: dict[str, Any] = {
+        "issuer_url": settings.issuer_url or "",
+        "client_id": settings.client_id or "",
+        "enabled": settings.enabled,
+        "secret_set": current.secret_set,
+        "available": current.available,
+        "callback_url": runtime.config.http.sso_callback_url,
+        "notice": DONE["saved"] if request.query_params.get("done") == "saved" else None,
+        "error": error,
+        "checks": None,
+        "checks_ok": False,
+        "confirm_users": None,
+        "secret_dropped": False,
+    }
+    context.update(extra or {})
+    # The page never holds the secret; it is kept out of caches all the same.
+    return screen(request, "admin_sso.html", context, status_code=status_code, private=True)
+
+
+@router.get(SSO_PATH, response_class=HTMLResponse)
+async def sso_page(request: Request, _: SparkIdentity = Depends(administrator)) -> HTMLResponse:
+    return await _sso_page(request, _runtime(request))
+
+
+@router.post(SSO_PATH)
+async def save_sso(request: Request, identity: SparkIdentity = Depends(administrator)) -> Response:
+    """Save the settings; a new client secret goes to the secrets store, a blank keeps it.
+
+    Switching single sign-on off while any user signs in only through it needs
+    ``confirm=yes``; without it nothing is saved and the page names them.
+    """
+    runtime = _runtime(request)
+    form = await request.form()
+    secret = form.get("client_secret")
+    change = sso.SsoChange(
+        issuer_url=_text(form.get("issuer_url")) or None,
+        client_id=_text(form.get("client_id")) or None,
+        enabled=form.get("enabled") == "on",
+        client_secret=secret if isinstance(secret, str) and secret != "" else None,
+    )
+    typed = {"issuer_url": change.issuer_url or "", "client_id": change.client_id or ""}
+    current = await sso.state(runtime.identity)
+    if current.settings.enabled and not change.enabled and form.get("confirm") != "yes":
+        users = await sso.sso_only_users(runtime.identity)
+        if users:
+            return await _sso_page(
+                request,
+                runtime,
+                error=SSO_ONLY_ASK,
+                status_code=409,
+                extra={
+                    **typed,
+                    "confirm_users": users,
+                    "secret_dropped": change.client_secret is not None,
+                },
+            )
+    try:
+        await sso.save(
+            runtime.identity, change, actor=_actor(identity), source_ip=source_ip(runtime, request)
+        )
+    except ValueError as exc:
+        return await _sso_page(request, runtime, error=str(exc), status_code=400, extra=typed)
+    return redirect(f"{SSO_PATH}?done=saved")
+
+
+@router.post(SSO_PATH + "/test", response_class=HTMLResponse)
+async def test_sso(request: Request, identity: SparkIdentity = Depends(administrator)) -> Response:
+    """Check the saved settings against the provider (warden's test); signs nobody in."""
+    runtime = _runtime(request)
+    report = await runtime.identity.sso.test_configuration(
+        actor=_actor(identity), source_ip=source_ip(runtime, request)
+    )
+    return await _sso_page(
+        request, runtime, extra={"checks": _checks(report), "checks_ok": report.ok}
+    )

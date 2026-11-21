@@ -36,7 +36,13 @@ from spark.identity.passwords import refusal_text
 from spark.identity.permissions import API_KEYS
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import principal_of, source_ip, via_api_key
-from spark.web.endpoints.identity import identity_runtime, private_headers, redirect, shown_back
+from spark.web.endpoints.identity import (
+    identity_runtime,
+    private_headers,
+    redirect,
+    shown_back,
+    sso_enabled,
+)
 from spark.web.qr import qr_data_uri
 
 router = APIRouter()
@@ -120,6 +126,7 @@ async def _account_page(
             "display_name": user.display_name,
             "roles": sorted(identity.roles),
             "sso_only": user.sign_in_method is SignInMethod.SSO_ONLY,
+            "sso_enabled": await sso_enabled(runtime),
             "mfa_enrolled": await runtime.identity.mfa.has_confirmed_totp(user_id),
             "may_use_keys": API_KEYS in identity.permissions,
             "min_length": runtime.config.identity.password_min_length,

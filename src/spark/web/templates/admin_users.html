@@ -4,7 +4,10 @@
 <div class="container-fluid" style="max-width: 1100px;">
     <div class="d-flex align-items-center justify-content-between mb-4">
         <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Users</h4>
-        <a class="btn btn-app-outline btn-sm" href="/admin/invitations"><i class="bi bi-envelope-plus me-1"></i> Invite a user</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-app-ghost btn-sm" href="{{ sso_path }}"><i class="bi bi-building-lock me-1"></i> Single sign-on settings</a>
+            <a class="btn btn-app-outline btn-sm" href="/admin/invitations"><i class="bi bi-envelope-plus me-1"></i> Invite a user</a>
+        </div>
     </div>
     {% include "_page_messages.html" %}
 
@@ -30,7 +33,7 @@
                     <td><a href="/admin/users/{{ user.id }}">{{ user.email }}</a></td>
                     <td>{{ user.display_name or "" }}</td>
                     <td><span class="badge-app {{ 'badge-app-success' if user.status == 'active' else 'badge-app-warning' }}">{{ user.status }}</span></td>
-                    <td>{{ "single sign-on" if user.sign_in_method == "sso_only" else "password or SSO" }}</td>
+                    <td>{% if user.sign_in_method == "sso_only" %}single sign-on{% if not sso_available %} <span class="badge-app badge-app-warning">{{ sso_off_flag }}</span>{% endif %}{% elif sso_available %}password or SSO{% else %}password{% endif %}</td>
                     <td>{% for role in roles[user.id|string] %}<span class="badge-app badge-app-primary me-1">{{ role }}</span>{% endfor %}</td>
                     <td>{{ user.created_at.strftime("%Y-%m-%d") }}</td>
                 </tr>
@@ -68,12 +71,16 @@
                     <div class="col-md-6">
                         <label for="method" class="form-label">Signs in with</label>
                         <select id="method" name="method" class="form-select">
+                            {% if sso_available %}
                             <option value="password_and_sso">A password, or single sign-on</option>
                             <option value="sso_only">Single sign-on only</option>
+                            {% else %}
+                            <option value="password_and_sso">A password</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label for="password" class="form-label">Password (not for single sign-on only)</label>
+                        <label for="password" class="form-label">Password{% if sso_available %} (not for single sign-on only){% endif %}</label>
                         <input type="password" id="password" name="password" class="form-control" autocomplete="new-password">
                     </div>
                 </div>
