@@ -304,8 +304,10 @@ only; personal mode has no bootstrap, so it ignores them.
 | `bootstrap.bedrock.residency_regions` | `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | Optional, comma-separated Regions (a JSON list in a settings document also works), for example `ap-southeast-2,ap-southeast-4`. It must include the Region above |
 
 What is created is one connection, `aws-bedrock`, service Amazon Bedrock, enabled, with
-authentication credential chain, no profile and no secret reference. A bad Region, name or
-list stops `spark bootstrap` before anything is written, naming the variable.
+authentication credential chain, no profile and no secret reference. A Region or name
+that is malformed stops `spark bootstrap` before anything is written, naming the variable. A
+Region that is well formed but that Amazon Bedrock's runtime endpoint does not serve is refused
+when the connection is validated, with conduit's reason in the error, and nothing is stored.
 
 **Residency.** By default a Bedrock connection allows processing in its own Region only. In
 `ap-southeast-2` Anthropic models are offered only through the AU geographic inference
@@ -317,6 +319,33 @@ processing within exactly those Regions, and never global. A profile whose Regio
 all listed is refused: with `ap-southeast-2,ap-southeast-4`, the profiles that also list
 `ap-southeast-6` stay refused (shown with their reason on the Connections page) until
 `ap-southeast-6` is allowed there by an administrator.
+
+### Choosing Regions for the Bedrock connection
+
+An administrator chooses, for each Bedrock connection, the Regions its requests may be
+processed in. On the Connections page, choose **Regions** on the connection, tick the AWS
+Regions and, if the connection may also use `global.` inference profiles (which any supported
+AWS commercial Region may process), tick **Also allow global processing**. The list offered is
+the set of Regions where the `bedrock-runtime` endpoint is available; the connection's own
+Region must be among those chosen. Spark saves the choice with the connection (its Bedrock
+`processing` setting), records the change in the audit log by field name only, and refuses a
+choice conduit rejects, showing its reason, without saving anything.
+
+The choice only narrows. A model is usable only when the deployment's residency policy and the
+connection's Region choice both allow it, so a connection that chooses no Regions behaves as it
+always did. Choosing `ap-southeast-2` alone, for example, refuses an AU cross-Region profile
+that may also be processed in `ap-southeast-4`, and the Connections page shows that reason.
+`bootstrap.bedrock.residency_regions` sets the same choice (the listed Regions, without
+global) together with the residency policy when the connection is first created; a connection
+that already exists is never changed by bootstrap.
+
+**Where each model is processed** comes from the service's own listing, not from a built-in
+table. For every model Bedrock lists, the Connections page shows the Regions it is processed
+in, whether it is usable under the connection's residency, and the reason when it is refused.
+Differences between Spark's catalogue and the listing (a model with no capability record, a
+catalogued model Bedrock does not list, different limits or capabilities) are shown as
+information; they never hide a model. A model with no capability record is shown under
+"Reachable but not in the catalogue", and is declared there before use.
 
 **Once only.** Bootstrap adds the connection when none with that id exists and it has not
 dealt with it before, and then records that it has. It never changes, re-enables or
