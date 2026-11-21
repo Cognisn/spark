@@ -36,10 +36,11 @@ def _project() -> dict:
 
 
 def test_warden_declared_from_pypi() -> None:
-    """Server-mode identity is cognisn-warden from PyPI (A10), at its 0.1.0 release or later
-    (A18): never a pre-release pin."""
+    """Server-mode identity is cognisn-warden from PyPI (A10), at its 0.1.1 release or later
+    (A18), which takes the client address on sign-in method and single sign-on settings
+    changes: never a pre-release pin."""
     deps = _project()["dependencies"]
-    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden>=0.1.0"]
+    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden>=0.1.1"]
 
 
 def test_conduit_declared_from_pypi_with_every_provider() -> None:
