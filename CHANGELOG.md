@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP servers can use OAuth.** An HTTP or SSE server's authentication can be OAuth, through conduit's OAuth client (discovery with its resource and issuer checks, the authorisation code with PKCE, refresh rotation). The form takes a client ID (empty for dynamic registration), an optional client secret (written to the secrets store, never shown again, replaceable and removable), the issuer that pins the authorisation server (required with a secret) and scopes; certificate checks must stay on. A **Sign in** button beside each OAuth server opens the authorisation server; it returns the browser to Spark's callback, `/mcp/oauth/callback` under the instance's own address, which completes the sign-in and shows how it ended. The callback is reachable without a session, because the return is cross-site and Spark's session cookies are `SameSite=Strict`; it is bound to the browser that started the sign-in by its own short-lived `SameSite=Lax` cookie, used once, and conduit checks the answer's state, issuer and address. Each server shows Signed in, Needs sign-in, or Sign-in failed with conduit's reason (a server with no OAuth discovery metadata, for example), and **Sign out** removes its tokens, as do changing its URL, client ID or issuer and removing it. There is one sign-in per server for the instance. Tokens and dynamic registrations are kept only in konfig's secrets store, in entries of at most 1,000 characters, and never reach `config.yaml`, the instance settings, a page, a log or a user bundle. Signing in, signing out and a refresh that fails are audited (`spark.mcp.oauth.signed_in`, `spark.mcp.oauth.signed_out`, `spark.mcp.oauth.refresh_failed`) with the server's name and conduit's failure class only. `docs/mcp-integration.md` describes it.
+
+### Changed
+
+- **An MCP server's custom headers and basic credentials are sent to its own address only**, never to another origin such as an OAuth authorisation server.
+
 ## [0.3.0rc28] - 2026-11-21
 
 ### Added

@@ -1,0 +1,21 @@
+{% extends "auth_layout.html" %}
+{% block title %}MCP server sign-in{% endblock %}
+{% block content %}
+{% if signed_in %}
+<p class="mb-3 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    Signed in to the MCP server <strong>{{ server }}</strong>. Its tools are available
+    to the roles it is granted to.
+</p>
+{% else %}
+<p class="mb-3 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+    The sign-in{% if server %} to the MCP server <strong>{{ server }}</strong>{% endif %}
+    did not succeed.
+</p>
+{% if message %}
+<div class="alert-app alert-app-danger mb-3" role="alert">{{ message }}</div>
+{% endif %}
+{% endif %}
+<p class="mb-3 text-center" style="color: var(--app-text-muted); font-size: 0.8125rem;">
+    You can close this window and return to the settings page.
+</p>
+{% endblock %}

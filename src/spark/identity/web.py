@@ -153,6 +153,9 @@ PUBLIC_PATHS = frozenset(
         CHALLENGE_PATH,
         STATUS_PATH,
         SSO_COMPLETE_PATH,
+        # An MCP server's OAuth sign-in returns here from another site, so without
+        # the Strict session cookie; it is bound by its own Lax cookie instead.
+        "/mcp/oauth/callback",
         "/favicon.ico",
     }
     | FORM_PATHS

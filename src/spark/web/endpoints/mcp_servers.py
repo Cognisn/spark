@@ -13,18 +13,30 @@ Only a holder of ``spark.settings.instance`` may use these endpoints.
 Every connection, a test one included, is made through conduit's MCP client on
 the process's conduit loop (:class:`~spark.mcp_integration.manager.MCPManager`
 carries the work there from the request's loop).
+
+OAuth servers (:mod:`spark.mcp_integration.oauth`): the client secret is a
+credential like the others, in the secrets store in both modes, write-only. The
+administrator signs in from the settings page (``.../oauth/sign-in``, which sets
+the binding cookie and answers the authorisation URL), the authorisation server
+returns the browser to :data:`~spark.mcp_integration.oauth.CALLBACK_PATH`
+(:data:`callback_router`, public: the return is cross-site and carries no session
+cookie), and the page there says how it ended. A changed URL, client id or issuer,
+a sign-out and the server's removal drop the tokens.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import secrets as _secrets
 from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
+from spark.mcp_integration import oauth
 from spark.mcp_integration import servers as mcp_servers
 from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig, run_on
 from spark.mcp_integration.servers import STDIO_REFUSED, ServerEntryError
@@ -53,6 +65,9 @@ def _instance_settings(request: Request) -> None:
 
 
 router = APIRouter(prefix="/settings/mcp", dependencies=[Depends(_instance_settings)])
+#: The OAuth callback alone: reached without a session (see the module), bound by
+#: the sign-in's own cookie.
+callback_router = APIRouter()
 
 
 # -- Server mode: the instance setting and the secrets store ----------------------------
@@ -141,8 +156,24 @@ def _refused(message: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
 
-def _server_entry(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], list[str]]:
-    """The entry the request describes (validated), its credentials and those to clear."""
+def _oauth_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """The OAuth fields a request gives (checked later, with the entry)."""
+    scopes = data.get("oauth_scopes", [])
+    return {
+        "oauth_client_id": str(data.get("oauth_client_id") or "").strip() or None,
+        "oauth_issuer": str(data.get("oauth_issuer") or "").strip() or None,
+        "oauth_scopes": scopes if isinstance(scopes, list) else str(scopes or "").split(),
+    }
+
+
+def _server_entry(
+    data: dict[str, Any], stored: mcp_servers.SecretLookup | None = None
+) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    """The entry the request describes (validated), its credentials and those to clear.
+
+    ``stored`` reads the secrets store, to tell whether an OAuth client secret is
+    kept there when the request gives none.
+    """
     transport = data.get("transport", "http")
     entry: dict[str, Any] = {
         "name": str(data.get("name", "")).strip(),
@@ -158,6 +189,8 @@ def _server_entry(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str],
         entry["auth_header_name"] = data.get("auth_header_name", "X-API-Key")
     if entry["auth_type"] == "basic":
         entry["basic_username"] = data.get("basic_username", "")
+    if entry["auth_type"] == "oauth":
+        entry.update(_oauth_fields(data))
     headers = data.get("custom_headers", {})
     if isinstance(headers, str):
         try:
@@ -169,11 +202,33 @@ def _server_entry(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str],
             "auth_token": data.get("auth_token", ""),
             "basic_password": data.get("basic_password", ""),
             "custom_headers": headers if isinstance(headers, dict) else {},
+            "oauth_client_secret": (
+                data.get("oauth_client_secret", "") if entry["auth_type"] == "oauth" else ""
+            ),
         }
     )
-    cleared = data.get("clear_secrets", [])
+    raw_cleared = data.get("clear_secrets", [])
+    cleared = [str(c) for c in raw_cleared] if isinstance(raw_cleared, list) else []
     checked = mcp_servers.validate_entry(entry, server=True)
-    return checked, given, [str(c) for c in cleared] if isinstance(cleared, list) else []
+    if checked.get("auth_type") == "oauth":
+        mcp_servers.check_oauth(
+            checked, secret_set=_secret_kept(checked["name"], given, cleared, stored)
+        )
+    return checked, given, cleared
+
+
+def _secret_kept(
+    name: str,
+    given: dict[str, str],
+    cleared: list[str],
+    stored: mcp_servers.SecretLookup | None,
+) -> bool:
+    """Whether the server will have an OAuth client secret once this request applies."""
+    if "oauth_client_secret" in given:
+        return True
+    if "oauth_client_secret" in cleared or stored is None:
+        return False
+    return bool(stored(mcp_servers.secret_name(name, "oauth_client_secret")))
 
 
 def _status(request: Request, entry: dict[str, Any]) -> dict[str, Any]:
@@ -184,7 +239,45 @@ def _status(request: Request, entry: dict[str, Any]) -> dict[str, Any]:
     client = manager.servers.get(name) if manager is not None else None
     shown["connected"] = bool(client is not None and client.connected)
     shown["tool_count"] = _admin_tool_count(manager, name)
+    _add_oauth_status(request, entry, shown)
     return shown
+
+
+def _add_oauth_status(request: Request, entry: dict[str, Any], shown: dict[str, Any]) -> None:
+    """An OAuth server's sign-in status, for the editor (never a token)."""
+    if entry.get("auth_type") != "oauth":
+        return
+    store = _token_store(request, str(entry.get("name", "")))
+    shown["oauth"] = (
+        oauth.oauth_status(store)
+        if store is not None
+        else {"state": "failed", "reason": "store", "message": oauth.reason_text("store")}
+    )
+
+
+def _token_store(request: Request, name: str) -> oauth.SecretsTokenStore | None:
+    manager = getattr(request.app.state, "mcp_manager", None)
+    if isinstance(manager, MCPManager) and manager.token_secrets is not None:
+        return manager.token_store(name)
+    store = getattr(getattr(request.app.state, "ctx", None), "secrets", None)
+    return oauth.token_store(store, name) if store is not None else None
+
+
+#: The fields whose change means the tokens were issued for something else.
+_OAUTH_IDENTITY = ("url", "transport", "auth_type", "oauth_client_id", "oauth_issuer")
+
+
+def _oauth_identity_changed(before: dict[str, Any] | None, after: dict[str, Any]) -> bool:
+    if before is None or before.get("auth_type") != "oauth":
+        return False
+    return any(before.get(f) != after.get(f) for f in _OAUTH_IDENTITY)
+
+
+async def _forget_tokens(request: Request, name: str) -> None:
+    """Drop ``name``'s OAuth tokens and registration (they belong to what it was)."""
+    store = _token_store(request, name)
+    if store is not None:
+        await asyncio.to_thread(store.forget)
 
 
 def _admin_tool_count(manager: Any, name: Any) -> int:
@@ -214,7 +307,10 @@ async def list_servers(request: Request) -> JSONResponse:
             connected = client.connected
             if mcp_mgr._tools_cache:
                 tool_count = sum(1 for t in mcp_mgr._tools_cache if t.get("server") == srv["name"])
-        result.append({**srv, "enabled": enabled, "connected": connected, "tool_count": tool_count})
+        shown = _personal_public(request, srv)
+        result.append(
+            {**shown, "enabled": enabled, "connected": connected, "tool_count": tool_count}
+        )
     return JSONResponse(result)
 
 
@@ -272,6 +368,16 @@ async def save_server(request: Request) -> JSONResponse:
     elif srv_config["auth_type"] == "basic":
         srv_config["basic_username"] = data.get("basic_username", "")
         srv_config["basic_password"] = data.get("basic_password", "")
+    elif srv_config["auth_type"] == "oauth":
+        srv_config.update(_oauth_fields(data))
+
+    previous = next((s for s in _load_server_configs(request) if s.get("name") == name), None)
+    write_secret: str | None = None
+    if srv_config["auth_type"] == "oauth":
+        try:
+            write_secret = _personal_oauth(request, srv_config, data, previous)
+        except ServerEntryError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     # Custom headers
     custom_headers = data.get("custom_headers", {})
@@ -283,8 +389,12 @@ async def save_server(request: Request) -> JSONResponse:
     if custom_headers:
         srv_config["custom_headers"] = custom_headers
 
-    # Save to config.yaml
+    if _oauth_identity_changed(previous, srv_config):
+        await _forget_tokens(request, name)
+
+    # Save to config.yaml (an OAuth client secret goes to the secrets store first)
     try:
+        _apply_personal_secret(request, name, write_secret)
         _save_server_to_config(request, srv_config)
     except Exception as e:
         return JSONResponse({"error": f"Failed to save: {e}"}, status_code=500)
@@ -304,15 +414,26 @@ async def _save_server_mode(request: Request, data: dict[str, Any]) -> JSONRespo
     if data.get("transport") == "stdio":
         return _refused(STDIO_REFUSED)
     try:
-        entry, given, cleared = _server_entry(data)
+        entry, given, cleared = _server_entry(data, _lookup(request))
     except ServerEntryError as exc:
         return _refused(str(exc))
     entries = await _entries(request)
     names = [e.get("name") for e in entries]
-    if entry["name"] in names:
+    before = entries[names.index(entry["name"])] if entry["name"] in names else None
+    identity_changed = _oauth_identity_changed(before, entry)
+    if (
+        before is not None
+        and before.get("oauth_session")
+        and entry.get("auth_type") == "oauth"
+        and not identity_changed
+    ):
+        entry["oauth_session"] = before["oauth_session"]
+    if before is not None:
         entries[names.index(entry["name"])] = entry
     else:
         entries.append(entry)
+    if identity_changed:
+        await _forget_tokens(request, entry["name"])
     try:
         await _store_entries(request, entries)
     except SettingsError as exc:
@@ -330,12 +451,16 @@ async def test_connection(request: Request) -> JSONResponse:
     if _server():
         if data.get("transport", "http") == "stdio":
             return JSONResponse({"status": "error", "message": STDIO_REFUSED}, status_code=400)
+        stored = _lookup(request)
         try:
-            entry, given, _ = _server_entry({**data, "enabled": True})
+            entry, given, _ = _server_entry({**data, "enabled": True}, stored)
         except ServerEntryError as exc:
             return JSONResponse({"status": "error", "message": str(exc)}, status_code=400)
-        stored = _lookup(request)
         name = entry["name"]
+        if entry.get("auth_type") == "oauth":
+            saved = next((e for e in await _entries(request) if e.get("name") == name), None)
+            if saved is None or _oauth_identity_changed(saved, entry):
+                return _save_first()
 
         def lookup(secret: str) -> str | None:
             field = secret[len(f"mcp_server_{name}_") :]
@@ -361,8 +486,19 @@ async def test_connection(request: Request) -> JSONResponse:
             timeout=float(data.get("timeout", 10)),
             ssl_verify=data.get("ssl_verify", True),
         )
+        if config.auth_type == "oauth":
+            saved = next(
+                (s for s in _load_server_configs(request) if s.get("name") == config.name), None
+            )
+            candidate = {"auth_type": "oauth", **_oauth_fields(data)}
+            candidate.update(url=config.url, transport=config.transport)
+            if saved is None or _oauth_identity_changed(saved, candidate):
+                return _save_first()
+            config = mcp_servers.to_config(saved, None)
+            config.timeout = float(data.get("timeout", 10))
 
-    tools = await _probe(request, config)
+    failure: list[str] = []
+    tools = await _probe(request, config, failure)
     if tools is not None:
         return JSONResponse(
             {
@@ -372,6 +508,11 @@ async def test_connection(request: Request) -> JSONResponse:
             }
         )
     transport = data.get("transport", "stdio")
+    if config.auth_type == "oauth" and failure and failure[0] in oauth.REASONS:
+        return JSONResponse(
+            {"status": "error", "message": oauth.reason_text(failure[0]), "reason": failure[0]},
+            status_code=400,
+        )
     return JSONResponse(
         {
             "status": "error",
@@ -385,16 +526,42 @@ async def test_connection(request: Request) -> JSONResponse:
     )
 
 
-async def _probe(request: Request, config: MCPServerConfig) -> list[dict[str, Any]] | None:
-    """Connect ``config`` once, without registering it: its tools, or ``None``."""
+def _save_first() -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "error",
+            "message": "Save this OAuth server and sign in to it, then test the connection.",
+        },
+        status_code=400,
+    )
+
+
+async def _probe(
+    request: Request, config: MCPServerConfig, failure: list[str] | None = None
+) -> list[dict[str, Any]] | None:
+    """Connect ``config`` once, without registering it: its tools, or ``None``.
+
+    ``failure`` receives conduit's failure class when the connection fails.
+    """
     manager = getattr(request.app.state, "mcp_manager", None)
     if isinstance(manager, MCPManager):
-        return await manager.probe(manager.new_client(config))
-    client = MCPClient(config, secrets=getattr(request.app.state, "mcp_secrets", None))
+        made = manager.new_client(config)
+        tools = await manager.probe(made)
+        reason = getattr(made, "last_failure", None)
+        if tools is None and failure is not None and reason:
+            failure.append(str(reason))
+        return tools
+    client = MCPClient(
+        config,
+        secrets=getattr(request.app.state, "mcp_secrets", None),
+        tokens=_token_store(request, config.name),
+    )
     loop = getattr(getattr(request.app.state, "mcp_runtime", None), "loop", None)
 
     async def probe() -> list[dict[str, Any]] | None:
         if not await client.connect():
+            if failure is not None and client.last_failure:
+                failure.append(client.last_failure)
             return None
         try:
             return await client.list_tools()
@@ -404,18 +571,246 @@ async def _probe(request: Request, config: MCPServerConfig) -> list[dict[str, An
     return await run_on(loop, probe())
 
 
+# -- OAuth sign-in ----------------------------------------------------------------------------
+
+
+async def _server_config(request: Request, name: str) -> MCPServerConfig | None:
+    """The saved configuration of server ``name``, credentials from the store."""
+    if _server():
+        for entry in await _entries(request):
+            if entry.get("name") == name:
+                return mcp_servers.to_config(entry, _lookup(request))
+        return None
+    for srv in _load_server_configs(request):
+        if srv.get("name") == name:
+            return mcp_servers.to_config(srv, None)
+    return None
+
+
+def _public_base(request: Request) -> str:
+    """The instance's own address: server mode's public base URL, or the address the
+    administrator's browser uses (personal mode, on this machine)."""
+    if _server():
+        from spark.instance_settings.startup import public_base_url
+
+        return public_base_url(request.app.state.ctx.settings.get("server.public_base_url", ""))
+    return str(request.base_url).rstrip("/")
+
+
+def _secure_cookie(request: Request) -> bool:
+    return _server() or request.url.scheme == "https"
+
+
+def _requester(request: Request) -> dict[str, Any]:
+    """Who started a sign-in, for its audit events (ids only)."""
+    from spark.identity.access import current_identity
+
+    identity = current_identity(request)
+    if identity is None:
+        return {}
+    who: dict[str, Any] = {"user_guid": identity.user_guid or None}
+    if identity.warden_user_id:
+        who["actor"] = identity.warden_user_id
+    return who
+
+
+def _ensure_manager(request: Request) -> MCPManager | None:
+    manager = getattr(request.app.state, "mcp_manager", None)
+    if isinstance(manager, MCPManager):
+        return manager
+    if _server():
+        return None  # start-up always binds one in server mode
+    _bind_manager(request.app.state)
+    manager = request.app.state.mcp_manager
+    return manager if isinstance(manager, MCPManager) else None
+
+
+async def _signed_in_changed(request: Request, name: str, actor: dict[str, Any]) -> None:
+    """Reconnect ``name`` with its new tokens (or none): on every replica in server mode
+    (a new ``oauth_session`` in the setting), here in personal mode."""
+    if _server():
+        entries = await _entries(request)
+        for entry in entries:
+            if entry.get("name") == name:
+                entry["oauth_session"] = _secrets.token_hex(8)
+                source = await _source(request)
+                await source.set("mcp.servers", entries, actor=actor.get("actor") or "operator")
+                return
+        return
+    manager = getattr(request.app.state, "mcp_manager", None)
+    config = await _server_config(request, name)
+    if isinstance(manager, MCPManager) and config is not None and config.enabled:
+        try:
+            await manager.connect_server(config)
+        except Exception as exc:  # noqa: BLE001 - the status shows what happened
+            logger.warning("MCP server '%s' did not reconnect: %s", name, type(exc).__name__)
+
+
+def _oauth_refused(message: str, status: int = 400) -> JSONResponse:
+    return JSONResponse({"status": "failed", "message": message}, status_code=status)
+
+
+@router.post("/api/{server_name}/oauth/sign-in")
+async def oauth_sign_in(request: Request, server_name: str) -> JSONResponse:
+    """Start the OAuth sign-in of a saved server: the authorisation URL to open.
+
+    Sets the binding cookie the callback needs. A server already signed in answers
+    ``signed_in``; one conduit refuses answers ``failed`` with conduit's reason.
+    """
+    config = await _server_config(request, server_name)
+    if config is None:
+        return _oauth_refused("Server not found", 404)
+    if config.auth_type != "oauth" or config.transport not in mcp_servers.SERVER_TRANSPORTS:
+        return _oauth_refused("This server does not use OAuth.")
+    manager = _ensure_manager(request)
+    store = manager.token_store(server_name) if manager is not None else None
+    if manager is None or store is None:
+        return _oauth_refused(oauth.reason_text("store"))
+    client = manager.new_client(config)
+    make_client = getattr(client, "oauth_client", None)
+    if make_client is None:
+        return _oauth_refused("This server does not use OAuth.")
+    redirect_uri = _public_base(request) + oauth.CALLBACK_PATH
+    actor = _requester(request)
+    started = await run_on(
+        manager.loop,
+        manager.sign_ins.start(server_name, make_client, redirect_uri, store=store, actor=actor),
+    )
+    if started.state == "redirect":
+        response = JSONResponse(
+            {"status": "redirect", "authorization_url": started.authorization_url}
+        )
+        response.set_cookie(
+            oauth.BINDING_COOKIE,
+            str(started.nonce),
+            max_age=oauth.SIGN_IN_SECONDS,
+            path=oauth.CALLBACK_PATH,
+            secure=_secure_cookie(request),
+            httponly=True,
+            samesite="lax",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    if started.state == "signed_in":
+        return JSONResponse({"status": "signed_in"})
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.MCP_OAUTH_SIGNED_IN,
+        "failure",
+        resource_type="mcp_server",
+        resource_id=server_name,
+        details={"server": server_name, "reason": started.reason},
+    )
+    return JSONResponse(
+        {
+            "status": "failed",
+            "reason": started.reason,
+            "message": oauth.reason_text(started.reason),
+        },
+        status_code=400,
+    )
+
+
+@router.post("/api/{server_name}/oauth/sign-out")
+async def oauth_sign_out(request: Request, server_name: str) -> JSONResponse:
+    """Drop a server's OAuth tokens (its registration is kept, as conduit keeps it)."""
+    config = await _server_config(request, server_name)
+    if config is None:
+        return _oauth_refused("Server not found", 404)
+    if config.auth_type != "oauth":
+        return _oauth_refused("This server does not use OAuth.")
+    manager = _ensure_manager(request)
+    store = manager.token_store(server_name) if manager is not None else None
+    if manager is None or store is None:
+        return _oauth_refused(oauth.reason_text("store"))
+    client = manager.new_client(config)
+    signed_out = getattr(client, "oauth_client", None)
+    if signed_out is None:
+        return _oauth_refused("This server does not use OAuth.")
+    await run_on(manager.loop, signed_out(None).sign_out())
+    store.last_failure = None
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.MCP_OAUTH_SIGNED_OUT,
+        resource_type="mcp_server",
+        resource_id=server_name,
+        details={"server": server_name},
+    )
+    await _signed_in_changed(request, server_name, _requester(request))
+    return JSONResponse({"status": "ok"})
+
+
+def _received_url(request: Request) -> str:
+    """The callback's full address under the instance's own address, as received."""
+    query = request.url.query
+    return _public_base(request) + request.url.path + (f"?{query}" if query else "")
+
+
+@callback_router.get(oauth.CALLBACK_PATH, response_class=HTMLResponse)
+async def oauth_callback(request: Request) -> HTMLResponse:
+    """Where the authorisation server returns the browser: complete the sign-in the
+    binding cookie names, and say how it ended."""
+    manager = getattr(request.app.state, "mcp_manager", None)
+    nonce = request.cookies.get(oauth.BINDING_COOKIE)
+    if isinstance(manager, MCPManager):
+        outcome = await run_on(
+            manager.loop, manager.sign_ins.complete(nonce, _received_url(request))
+        )
+    else:
+        outcome = oauth.Outcome(False, reason="unknown_sign_in")
+    if outcome.server is not None:
+        from spark.identity import audit
+
+        await audit.emit(
+            audit.MCP_OAUTH_SIGNED_IN,
+            "success" if outcome.signed_in else "failure",
+            resource_type="mcp_server",
+            resource_id=outcome.server,
+            details={"server": outcome.server, "reason": outcome.reason},
+            **outcome.actor,
+        )
+    if outcome.signed_in and outcome.server is not None:
+        await _signed_in_changed(request, outcome.server, outcome.actor)
+    response: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "mcp_sign_in.html",
+        {
+            "signed_in": outcome.signed_in,
+            "server": outcome.server,
+            "message": oauth.reason_text(outcome.reason),
+        },
+        status_code=200 if outcome.signed_in else 400,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.delete_cookie(
+        oauth.BINDING_COOKIE,
+        path=oauth.CALLBACK_PATH,
+        secure=_secure_cookie(request),
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
 @router.get("/api/{server_name}/config")
 async def get_server_config(request: Request, server_name: str) -> JSONResponse:
     """Get the full configuration for a specific MCP server (for editing)."""
     if _server():
         for entry in await _entries(request):
             if entry.get("name") == server_name:
-                return JSONResponse(mcp_servers.public_entry(entry, _lookup(request)))
+                shown = mcp_servers.public_entry(entry, _lookup(request))
+                _add_oauth_status(request, entry, shown)
+                return JSONResponse(shown)
         return JSONResponse({"error": "Server not found"}, status_code=404)
     servers = _load_server_configs(request)
     for srv in servers:
         if srv.get("name") == server_name:
-            return JSONResponse(srv)
+            return JSONResponse(_personal_public(request, srv))
     return JSONResponse({"error": "Server not found"}, status_code=404)
 
 
@@ -485,12 +880,15 @@ async def delete_server(request: Request, server_name: str) -> JSONResponse:
         await _store_entries(request, kept)
         if _set_secrets(request, server_name, {}, list(mcp_servers.SECRET_FIELDS)):
             _secrets_changed(request)
+        await _forget_tokens(request, server_name)
         return JSONResponse({"status": "ok"})
 
     try:
         _remove_server_from_config(request, server_name)
+        _apply_personal_secret(request, server_name, "")
     except Exception as e:
         return JSONResponse({"error": f"Failed to remove: {e}"}, status_code=500)
+    await _forget_tokens(request, server_name)
 
     # Disconnect if connected
     mcp_mgr = getattr(request.app.state, "mcp_manager", None)
@@ -504,6 +902,65 @@ async def delete_server(request: Request, server_name: str) -> JSONResponse:
 
 
 # -- Helpers (personal mode: config.yaml) -----------------------------------------------
+
+
+def _personal_secret_name(name: str) -> str:
+    """The secrets-store name of a personal server's OAuth client secret.
+
+    Personal names are free text; a ``secret://`` reference takes letters, digits and
+    ``_.-`` only, so any other name is made safe and given a digest of the original.
+    """
+    import hashlib
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+    if safe != name:
+        safe = f"{safe}-{hashlib.sha256(name.encode()).hexdigest()[:8]}"
+    return mcp_servers.secret_name(safe, "oauth_client_secret")
+
+
+def _personal_oauth(
+    request: Request,
+    srv_config: dict[str, Any],
+    data: dict[str, Any],
+    previous: dict[str, Any] | None,
+) -> str | None:
+    """Check a personal OAuth server and point it at its client secret.
+
+    Returns the secret to write (``""`` to remove the stored one, ``None`` to leave
+    it). The entry holds only a ``secret://`` reference, never the secret.
+    """
+    given = str(data.get("oauth_client_secret") or "")
+    raw_cleared = data.get("clear_secrets", [])
+    cleared = isinstance(raw_cleared, list) and "oauth_client_secret" in raw_cleared
+    kept = bool((previous or {}).get("oauth_client_secret")) and not cleared
+    srv_config.update(mcp_servers.check_oauth(srv_config, secret_set=bool(given) or kept))
+    reference = f"secret://{_personal_secret_name(str(srv_config['name']))}"
+    if given or kept:
+        srv_config["oauth_client_secret"] = reference
+    if given:
+        return given
+    return "" if cleared else None
+
+
+def _apply_personal_secret(request: Request, name: str, value: str | None) -> None:
+    if value is None:
+        return
+    store = _store(request)
+    secret = _personal_secret_name(name)
+    if value:
+        store.set(secret, value)
+    elif store.get(secret):
+        store.delete(secret)
+
+
+def _personal_public(request: Request, srv: dict[str, Any]) -> dict[str, Any]:
+    """A personal entry for the page: the OAuth client secret only as set or not."""
+    shown = {k: v for k, v in srv.items() if k not in ("oauth_client_secret", "oauth_session")}
+    if srv.get("auth_type") == "oauth":
+        shown["secrets_set"] = {"oauth_client_secret": bool(srv.get("oauth_client_secret"))}
+        _add_oauth_status(request, srv, shown)
+    return shown
 
 
 def _load_server_configs(request: Request) -> list[dict[str, Any]]:
@@ -562,25 +1019,33 @@ def _remove_server_from_config(request: Request, server_name: str) -> None:
     config_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
 
 
+def _bind_manager(state: Any) -> MCPManager:
+    """No server was configured at start-up: bind a manager to conduit's loop now."""
+    from spark.mcp_integration.runtime import MCPRuntime
+
+    connections = getattr(state, "connections", None)
+    ctx = getattr(state, "ctx", None)
+    runtime = MCPRuntime.start(
+        MCPManager(
+            secrets=getattr(state, "mcp_secrets", None), tokens=getattr(ctx, "secrets", None)
+        ),
+        getattr(connections, "loop", None),
+    )
+    state.mcp_runtime = runtime
+    state._mcp_loop = runtime.loop
+    state.mcp_manager = runtime.manager
+    conv_mgr = getattr(state, "conversation_manager", None)
+    if conv_mgr:
+        conv_mgr._mcp_loop = runtime.loop
+    return runtime.manager
+
+
 async def _connect_server(request: Request, srv_config: dict[str, Any]) -> None:
     """Connect an MCP server and add it to the manager (personal mode)."""
     state = request.app.state
     mcp_mgr = getattr(state, "mcp_manager", None)
     if mcp_mgr is None:
-        # No server was configured at start-up: bind a manager to conduit's loop now.
-        from spark.mcp_integration.runtime import MCPRuntime
-
-        connections = getattr(state, "connections", None)
-        runtime = MCPRuntime.start(
-            MCPManager(secrets=getattr(state, "mcp_secrets", None)),
-            getattr(connections, "loop", None),
-        )
-        state.mcp_runtime = runtime
-        state._mcp_loop = runtime.loop
-        state.mcp_manager = mcp_mgr = runtime.manager
-        conv_mgr = getattr(state, "conversation_manager", None)
-        if conv_mgr:
-            conv_mgr._mcp_loop = runtime.loop
+        mcp_mgr = _bind_manager(state)
 
     config = mcp_servers.to_config(srv_config, None)
     await mcp_mgr.connect_server(config)

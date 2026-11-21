@@ -119,6 +119,9 @@ USAGE_BUDGET_CHANGED: Final = "spark.usage.budget_changed"
 KNOWLEDGE_BUILD_REFUSED: Final = "spark.knowledge.build.refused"
 MCP_TOOL_CALLED: Final = "spark.mcp.tool.called"
 MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
+MCP_OAUTH_SIGNED_IN: Final = "spark.mcp.oauth.signed_in"
+MCP_OAUTH_SIGNED_OUT: Final = "spark.mcp.oauth.signed_out"
+MCP_OAUTH_REFRESH_FAILED: Final = "spark.mcp.oauth.refresh_failed"
 BUNDLE_IMPORTED: Final = "spark.bundle.imported"
 MAIL_TEST_SENT: Final = "spark.mail.test_sent"
 
@@ -164,6 +167,15 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ),
     MCP_TOOL_CALLED: ActionDef(Severity.INFO, "{actor} called MCP tool {resource_id}: {outcome}"),
     MCP_TOOL_REFUSED: ActionDef(Severity.NOTICE, "MCP tool {resource_id} refused for {actor}"),
+    MCP_OAUTH_SIGNED_IN: ActionDef(
+        Severity.NOTICE, "{actor} signed in to MCP server {resource_id}: {outcome}"
+    ),
+    MCP_OAUTH_SIGNED_OUT: ActionDef(
+        Severity.NOTICE, "{actor} signed out of MCP server {resource_id}"
+    ),
+    MCP_OAUTH_REFRESH_FAILED: ActionDef(
+        Severity.WARNING, "MCP server {resource_id} needs a new OAuth sign-in"
+    ),
     BUNDLE_IMPORTED: ActionDef(
         Severity.NOTICE, "{actor} imported a user bundle for user {resource_id}: {outcome}"
     ),
