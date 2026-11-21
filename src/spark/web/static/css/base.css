@@ -1744,3 +1744,7 @@ main[tabindex="-1"]:focus-visible {
     font-size: 0.8125rem;
     color: var(--app-text-secondary);
 }
+
+.admin-index-group + .admin-index-group {
+    margin-top: 1rem;
+}
