@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc28] - 2026-11-21
+
 ### Added
 
 - **A model's reasoning is shown outside its reply, as a collapsed "Thought process" line.** With Claude's thinking and Amazon Nova's `<thinking>` text (which conduit 0.1.0 delivers as reasoning, not answer text), the chat page shows "Thinking..." above the reply while the reasoning arrives and collapses it to "Thought process" when the answer starts; a click (or the keyboard) expands it, in a muted, smaller style that follows the theme. The line is a button with `aria-expanded`. Reasoning before a tool call keeps its own line. It is kept beside the message in a new `message_reasoning` table (revision `message_reasoning`, SQLite and PostgreSQL, removed with its message, kept as long as the message is) and shown again, collapsed, when the conversation is reopened. It is never part of the answer: not in the bubble, its copy button, an export (the stored tool-use state is stripped from exports too), the search index, the token count of the reply or the next turn's prompt. Reasoning tokens are already part of the provider's reported output tokens, so usage display is unchanged.
