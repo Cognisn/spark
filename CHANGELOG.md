@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc31] - 2026-11-21
+
+### Changed
+
+- **SPARK now requires cognisn-warden 0.1.1 or later.** Single sign-on administration records the administrator's address when a user's sign-in method or the single sign-on settings change.
+
 ## [0.3.0rc30] - 2026-11-21
 
 ### Added
@@ -15,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **SPARK now requires cognisn-warden 0.1.1 or later.** Single sign-on administration records the administrator's address when a user's sign-in method or the single sign-on settings change.
 - **Single sign-on is offered only once it is switched on and fully configured** (issuer URL, client ID and a stored client secret). Until then the sign-in and invitation pages show no single sign-on button or wording, My account shows the sign-in method as "Password", and the Users, user and Invitations pages offer only a password, refuse to create, invite or set a user as single sign-on only, and flag an existing single sign-on only user with "Cannot sign in: single sign-on is off".
 
 ## [0.3.0rc29] - 2026-11-21
