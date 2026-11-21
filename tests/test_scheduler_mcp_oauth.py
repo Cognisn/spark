@@ -641,7 +641,45 @@ class TestRefreshAcrossProcesses:
         assert again.get_secret_value() == results[0].get_secret_value()
         assert auth.refreshes == 1
 
-    async def test_stored_while_the_other_deletes_ends_signed_out_never_corrupted(self) -> None:
+    async def test_stored_while_the_other_is_deleting_keeps_the_new_tokens(self) -> None:
+        # Case 3: the worker's refresh is refused and conduit has read the stale record;
+        # the web process stores its new tokens before the worker's delete. The delete
+        # re-reads the head, finds a generation it did not read and leaves it.
+        secrets, auth = MemorySecrets(), SyntheticAuthServer(RESOURCE)
+        await _signed_in(secrets, auth)
+        await _expire(secrets)
+        web, worker = _Process(secrets, auth, cached=True), _Process(secrets, auth, cached=False)
+        deleting = asyncio.Event()
+        delete = worker.store.delete
+
+        async def held_delete(key: str) -> None:
+            deleting.set()  # conduit has read the stale record and is deleting it
+            await asyncio.wait_for(web.done(), 10)
+            await delete(key)
+
+        worker.store.delete = held_delete  # type: ignore[method-assign]
+        web.gate.before = worker.gate.arrived.wait
+        web.gate.after = deleting.wait  # the web stores only once the worker is deleting
+        worker.gate.before = web.gate.answered.wait  # the web's refresh token is spent
+        a, b = web.start(), worker.start()
+        results = await asyncio.gather(a, b, return_exceptions=True)
+        assert not isinstance(results[0], BaseException)
+        assert isinstance(results[1], McpAuthError)
+        assert results[1].reason.value == "sign_in_required"
+        held = await _readable(secrets)
+        assert held is not None  # the web's new tokens were kept
+        assert held.access_token.get_secret_value() == results[0].get_secret_value()
+        assert oauth.token_store(secrets, "docs").signed_in()
+        assert _leftovers(secrets, auth) == []
+        # The next run, in either process, uses them without a refresh.
+        again = await _Process(secrets, auth, cached=False).start()
+        assert again.get_secret_value() == results[0].get_secret_value()
+        assert auth.refreshes == 1
+
+    async def test_stored_as_the_other_deletes_ends_signed_out_never_corrupted(self) -> None:
+        # The window left (see the module): the worker's delete has re-read the stale
+        # head and is in the secrets store's delete when the web stores and checks its
+        # new head; the delete then removes it.
         secrets, auth = MemorySecrets(), SyntheticAuthServer(RESOURCE)
         await _signed_in(secrets, auth)
         await _expire(secrets)
@@ -668,6 +706,10 @@ class TestRefreshAcrossProcesses:
         assert results[1].reason.value == "sign_in_required"
         # The worker's delete removed the head the web had just written: the record
         # reads as none (sign in again), never as a mixture or an error. The web's new
-        # parts are left unnamed in the secrets store (see the module and the decision).
+        # parts are left unnamed until a sign-out or removal sweeps them.
         assert await _readable(secrets) is None
         assert not oauth.token_store(secrets, "docs").signed_in()
+        assert _leftovers(secrets, auth) != []
+        oauth.forget(secrets, "docs")
+        assert _leftovers(secrets, auth) == []
+        assert not [n for n in secrets.data if n.startswith("mcp_server_docs_oauth")]

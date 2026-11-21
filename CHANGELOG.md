@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OAuth tokens refreshed by one process are no longer dropped by the other.** When the web process and `spark worker` refresh an MCP server's tokens at once and one is refused, its drop of the old tokens re-reads the stored record first and leaves tokens the other process has stored since, so the server stays signed in. A write whose record was replaced or removed as it was stored takes its entries back. Signing out of a server, or removing it, also removes any entry of its tokens that no record names, so nothing of them stays in the secrets store. Records written by earlier releases are read as before, and records written now are readable by them. No token is logged; only the server's name and counts. `docs/mcp-integration.md` describes it.
+
 ## [0.3.0rc33] - 2026-11-22
 
 ### Added
