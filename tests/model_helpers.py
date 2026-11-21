@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from conduit import LiteralSecretResolver, ResidencyPolicy, ResidencyScope
-from conduit.providers.stub import StubFactory, StubScript
+from conduit.providers.stub import DEFAULT_STUB_MODELS, StubFactory, StubScript
 
 from spark.connections import Connection, ConnectionRuntime, ModelRef, UserScope
 from spark.connections.runtime import snapshot_of
@@ -206,11 +206,20 @@ def stub_runtime(
     overlays: Iterable[Any] = (),
     models: Iterable[Any] = (),
 ) -> ConnectionRuntime:
-    """A real connection runtime on conduit's stub provider, recording usage to ``sync_db``."""
+    """A real connection runtime on conduit's stub provider, recording usage to ``sync_db``.
+
+    The stub lists its default models and each model the overlays declare (conduit 0.1.0's
+    stub reports discovery unsupported without a listing), all ``local``.
+    """
+    overlays = list(overlays)
+    listed = [
+        *DEFAULT_STUB_MODELS,
+        *dict.fromkeys(row.model_id for row in overlays if row.provider == "stub"),
+    ]
     runtime = ConnectionRuntime(
         secrets=LiteralSecretResolver({}),
         usage=UsageSink(database_recorder(sync_db)) if sync_db is not None else None,
-        factories=[StubFactory(scripts=scripts or {})],
+        factories=[StubFactory(scripts=scripts or {}, models=listed)],
         drain_s=0.01,
     )
     chosen = list(connections) if connections is not None else [stub_connection()]

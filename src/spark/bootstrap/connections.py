@@ -17,6 +17,10 @@ The rule, once only and never against an administrator:
 * an instance whose bootstrap ran before this setting existed has no record and no
   connection, so the next run adds it.
 
+``bootstrap.bedrock.residency_regions`` set the residency policy's Regions and the
+connection's Bedrock processing choice (conduit's ``processing``, without
+``allow_global``); a Region conduit refuses fails bootstrap with conduit's reason.
+
 The connection is built and validated by :mod:`spark.connections.model`, saved through
 :class:`spark.connections.store.DatabaseConnectionStore`, and audited as the Connections
 page audits a created connection (names and kinds only), attributed to bootstrap.
@@ -77,6 +81,13 @@ def build(seed: BedrockSeed) -> Connection:
     if seed.residency_regions is None:
         residency = default_residency(settings)
     else:
+        # The Regions are also the connection's Bedrock processing choice (conduit 0.1.0):
+        # conduit holds every model to them as well as to the residency policy, and refuses a
+        # Region its bedrock-runtime endpoint does not serve.
+        settings["processing"] = {
+            "regions": sorted(seed.residency_regions),
+            "allow_global": False,
+        }
         residency = ResidencyPolicy(
             scopes=frozenset(
                 {ResidencyScope.LOCAL, ResidencyScope.IN_REGION, ResidencyScope.CROSS_REGION}

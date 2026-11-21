@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Discovered models show where they are processed, and why any is refused.** On the Connections page each connection's models view lists every model the service lists, with the Regions it is processed in, whether it is usable under the connection's residency and Region choice, and conduit's reason when it is refused. Differences between the catalogue and the listing (conduit's drift: no capability record, not listed, limits or capabilities differ, Regions declared) are shown as information and never hide a model. A model the service lists is no longer left out because the catalogue lacks its Region.
+- **An administrator chooses the Regions for each connection.** A new Regions action on a connection offers conduit's documented lists for its service and sets the adapter's own setting: Bedrock processing (AWS Regions and global), Anthropic `inference_geo`, OpenAI `data_residency`, and a Foundry deployment (type and Azure Region). conduit validates the choice and its refusal is shown with nothing saved; the change is audited by field name only. The choice only narrows the deployment's residency policy, and a connection that chooses none is unchanged. `docs/deployment/aws.md` describes it for Bedrock.
+
+### Changed
+
+- **Adopted conduit 0.1.0** (`cognisn-conduit>=0.1.0`). Models are checked against the connection's provider settings (so its Region choice applies), discovery uses conduit's `uncatalogued`, `catalogued` and `drift` in place of the removed `undeclared`, and each provider is built on the connection's catalogue with the Regions and limits the service lists for each catalogued model, because the default catalogue no longer carries Region data (without this a Bedrock connection under a Regions policy offered no models). A failed or unsupported listing builds on the catalogue alone. A model the catalogue does not declare is still declared first, as before.
+- **`bootstrap.bedrock.residency_regions` also sets the connection's Bedrock processing choice** (the listed Regions, without global). A Region conduit refuses (one where Bedrock's runtime endpoint is not offered) fails bootstrap with conduit's reason. An existing `aws-bedrock` connection is never changed.
+
 ## [0.3.0rc26] - 2026-11-20
 
 ### Fixed

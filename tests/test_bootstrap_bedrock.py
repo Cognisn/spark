@@ -12,15 +12,28 @@ import json
 from typing import Any
 
 import pytest
-from conduit import default_catalogue
+from conduit import (
+    DiscoveredModel,
+    DiscoveryOutcome,
+    LiteralSecretResolver,
+    ProviderRegistry,
+    default_catalogue,
+    join_discovered,
+)
 from conduit.core.residency import ResidencyScope
 
 from spark.bootstrap import cli
 from spark.bootstrap import connections as bc
 from spark.bootstrap import settings as bs
 from spark.bootstrap.run import Outcome
-from spark.connections.discovery import _refusal, offered_in
-from spark.connections.model import Connection, residency_from_record, residency_record
+from spark.connections.model import (
+    Connection,
+    ConnectionInvalid,
+    residency_from_record,
+    residency_record,
+    validate,
+)
+from spark.connections.runtime import production_factories
 from spark.connections.store import DatabaseConnectionStore
 from spark.identity import audit
 from tests.test_bootstrap_settings import ADMIN, _collect, _complete, _konfig, _problems
@@ -157,31 +170,74 @@ class TestBuild:
         }
         assert ResidencyScope.GLOBAL not in connection.residency.scopes
 
+    @staticmethod
+    def _joined(seed: bs.BedrockSeed) -> dict[str, Any]:
+        """The AU profiles as a listing reports them, joined as conduit 0.1.0 does (the
+        default catalogue carries no Region data: the listing is the source of truth)."""
+        connection = bc.build(seed)
+        policy = residency_from_record(residency_record(connection.residency))
+        validated = ProviderRegistry(
+            secrets=LiteralSecretResolver({}), factories=production_factories()
+        ).validate(connection.id, connection.settings)
+        listed = [
+            DiscoveredModel(
+                "au.anthropic.claude-new-v1:0",
+                scope=ResidencyScope.CROSS_REGION,
+                regions=frozenset({"ap-southeast-2", "ap-southeast-4"}),
+                base_model_id="anthropic.claude-new-v1:0",
+            ),
+            DiscoveredModel(
+                "au.anthropic.claude-old-v1:0",
+                scope=ResidencyScope.CROSS_REGION,
+                regions=frozenset({"ap-southeast-2", "ap-southeast-6"}),
+                base_model_id="anthropic.claude-old-v1:0",
+            ),
+        ]
+        models, _ = join_discovered(
+            listed,
+            default_catalogue(),
+            catalogue_provider="bedrock",
+            region=validated.region,
+            residency=policy,
+            provider=connection.id,
+            connection=validated,
+        )
+        return {m.model_id: m for m in models}
+
     def test_the_au_profiles_over_two_regions_pass_and_the_older_ones_are_refused(self) -> None:
-        connection = bc.build(
+        found = self._joined(
             bs.BedrockSeed(REGION, residency_regions=("ap-southeast-2", "ap-southeast-4"))
         )
-        # What the stored record reads back as, which is what conduit checks.
-        policy = residency_from_record(residency_record(connection.residency))
-        entries = [
-            e
-            for e in default_catalogue()
-            if e.model_id.startswith("au.anthropic.") and e.kind == "chat"
-        ]
-        assert entries
-        for entry in entries:
-            assert offered_in(entry, REGION)
-            refused = _refusal(policy, entry, connection)
-            if "ap-southeast-6" in entry.regions:
-                assert refused is not None and "ap-southeast-6" in refused
-            else:
-                assert refused is None, entry.model_id
+        assert found["au.anthropic.claude-new-v1:0"].outcome is DiscoveryOutcome.ALLOWED
+        old = found["au.anthropic.claude-old-v1:0"]
+        assert old.outcome is DiscoveryOutcome.REFUSED
+        assert old.reason is not None and "ap-southeast-6" in old.reason
 
     def test_the_default_residency_refuses_every_au_profile(self) -> None:
-        connection = bc.build(bs.BedrockSeed(REGION))
-        entries = [e for e in default_catalogue() if e.model_id.startswith("au.anthropic.")]
-        assert entries
-        assert all(_refusal(connection.residency, e, connection) for e in entries)
+        found = self._joined(bs.BedrockSeed(REGION))
+        assert all(m.outcome is DiscoveryOutcome.REFUSED for m in found.values())
+
+    def test_residency_regions_become_the_bedrock_processing_choice(self) -> None:
+        connection = bc.build(
+            bs.BedrockSeed(REGION, residency_regions=("ap-southeast-4", "ap-southeast-2"))
+        )
+        assert connection.settings["processing"] == {
+            "regions": ["ap-southeast-2", "ap-southeast-4"],
+            "allow_global": False,
+        }
+
+    def test_no_residency_regions_leave_processing_unset(self) -> None:
+        assert "processing" not in bc.build(bs.BedrockSeed(REGION)).settings
+
+    def test_a_region_conduit_refuses_is_refused_with_its_reason(self) -> None:
+        # Valid in form, but not a Region where the bedrock-runtime endpoint is offered.
+        connection = bc.build(bs.BedrockSeed("xx-nowhere-9"))
+        registry = ProviderRegistry(
+            secrets=LiteralSecretResolver({}), factories=production_factories()
+        )
+        with pytest.raises(ConnectionInvalid) as refused:
+            validate(connection, registry)
+        assert "region" in str(refused.value)
 
 
 @pytest.fixture

@@ -94,7 +94,7 @@ def test_a_model_declared_on_another_connection_is_undeclared_here(
 def test_a_failed_listing_is_recorded_with_the_failure_class_only(
     results: discovery.DiscoveryResults,
 ) -> None:
-    runtime = _runtime(FailingStub())
+    runtime = _runtime(FailingStub(models=["stub-echo"]))
     try:
         record = discovery.discover(runtime, stub_connection("lab"), results)
     finally:
@@ -161,7 +161,7 @@ class TestModelsView:
             "lab",
             "2026-11-18T00:00:00+00:00",
             reachable=frozenset({"model-a"}),
-            undeclared=(discovery.Undeclared("model-a"), discovery.Undeclared("new:1b")),
+            models=(discovery.DiscoveredRow("model-a"), discovery.DiscoveredRow("new:1b")),
         )
         view = self._view(connection, [ConnectionModel("lab", "model-a", True, "higher")], record)
         rows = {m["model_id"]: m for m in view["models"]}
