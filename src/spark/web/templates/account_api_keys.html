@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - My API Keys{% endblock %}
 {% block content %}
 <div class="container-fluid" style="max-width: 900px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">My API keys</h4>
+    {% include "_account_tabs.html" %}
+    {{ page_ui.header("My API keys", "Keys that let your own scripts and tools use Spark's API as you.") }}
     {% include "_page_messages.html" %}
 
     {% if new_key %}

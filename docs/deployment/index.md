@@ -76,8 +76,8 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
    (`spark identity create-admin` is only for
    [restoring an administrator](identity.md#restoring-an-administrator).)
 6. [Add a model connection](../connections.md), choose its models and assign it to
-   roles (and [meter it](../metering.md) if you want allowances); then, on the
-   instance settings page, [set up mail](identity.md#mail), and optionally
+   roles (and [meter it](../metering.md) if you want allowances); then, on
+   **Administration > Mail**, [set up mail](identity.md#mail), and optionally
    [single sign-on](identity.md#single-sign-on).
 7. Invite users and give them roles.
 8. [Schedule backups](operations.md#backups).

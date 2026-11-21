@@ -45,7 +45,7 @@ def _rows(page: Any) -> list[str]:
 
 
 def _audit(client: TestClient, query: str = "") -> Any:
-    page = client.get(f"/audit{query}", headers=NAVIGATE, follow_redirects=False)
+    page = client.get(f"/admin/audit{query}", headers=NAVIGATE, follow_redirects=False)
     assert page.status_code == 200, (page.status_code, page.text[:300])
     return page
 
@@ -55,8 +55,8 @@ class TestAccess:
     def test_other_roles_are_refused(self, plain_client: TestClient, role: str) -> None:
         make_user(plain_client, ADA, role)
         sign_in(plain_client, ADA)
-        assert plain_client.get("/audit", headers=NAVIGATE).status_code == 403
-        assert plain_client.get("/audit/export?format=csv").status_code == 403
+        assert plain_client.get("/admin/audit", headers=NAVIGATE).status_code == 403
+        assert plain_client.get("/admin/audit/export?format=csv").status_code == 403
 
     def test_an_auditor_sees_no_other_administration(self, auditor: TestClient) -> None:
         assert _audit(auditor).status_code == 200
@@ -87,8 +87,8 @@ class TestAccess:
         bearer = TestClient(auditor.app, base_url=PUBLIC)
         bearer.portal = auditor.portal  # type: ignore[attr-defined]
         headers = {"Authorization": f"Bearer {token}"}
-        assert bearer.get("/audit", headers=headers).status_code == 200
-        assert bearer.get("/audit/export?format=csv", headers=headers).status_code == 403
+        assert bearer.get("/admin/audit", headers=headers).status_code == 200
+        assert bearer.get("/admin/audit/export?format=csv", headers=headers).status_code == 403
 
 
 class TestFilters:
@@ -114,7 +114,7 @@ class TestFilters:
         assert _rows(_audit(auditor, f"?since={today}&until={today}"))
 
     def test_a_bad_filter_is_explained(self, auditor: TestClient) -> None:
-        page = auditor.get("/audit?since=not-a-date&outcome=maybe", headers=NAVIGATE)
+        page = auditor.get("/admin/audit?since=not-a-date&outcome=maybe", headers=NAVIGATE)
         assert page.status_code == 400
         assert BAD_FILTER in page.text and _rows(page) == []
 
@@ -123,7 +123,7 @@ class TestFilters:
             make_user(auditor, f"user{n:02d}@example.com")
         first = _audit(auditor)
         assert len(_rows(first)) == 50
-        older = re.search(r'href="/audit\?([^"]*before_id=\d+[^"]*)"', first.text)
+        older = re.search(r'href="/admin/audit\?([^"]*before_id=\d+[^"]*)"', first.text)
         assert older
         second = _audit(auditor, "?" + older.group(1).replace("&amp;", "&"))
         assert 0 < len(_rows(second)) <= 50
@@ -133,7 +133,7 @@ class TestFilters:
 
 class TestExport:
     def test_csv_is_an_attachment_and_is_audited(self, auditor: TestClient) -> None:
-        resp = auditor.get("/audit/export?format=csv&action=warden.identity.sign_in")
+        resp = auditor.get("/admin/audit/export?format=csv&action=warden.identity.sign_in")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
         assert "attachment" in resp.headers["content-disposition"]
@@ -144,11 +144,11 @@ class TestExport:
         assert _rows(recorded) == ["warden.audit.export"]
 
     def test_ndjson(self, auditor: TestClient) -> None:
-        resp = auditor.get("/audit/export?format=ndjson&outcome=success")
+        resp = auditor.get("/admin/audit/export?format=ndjson&outcome=success")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/x-ndjson")
         events = [json.loads(line) for line in resp.text.splitlines()]
         assert events and all(e["outcome"] == "success" for e in events)
 
     def test_an_unknown_format_is_refused(self, auditor: TestClient) -> None:
-        assert auditor.get("/audit/export?format=xlsx").status_code == 400
+        assert auditor.get("/admin/audit/export?format=xlsx").status_code == 400

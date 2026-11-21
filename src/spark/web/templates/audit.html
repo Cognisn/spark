@@ -1,11 +1,12 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Audit Trail{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 1300px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Audit trail</h4>
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Audit trail", "Sign-in, administration and security events, newest first. The trail is kept by warden and cannot be changed.") }}
     {% include "_page_messages.html" %}
 
-    <form method="GET" action="/audit" class="app-card mb-4">
+    <form method="GET" action="/admin/audit" class="app-card mb-4">
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-3">
@@ -35,10 +36,10 @@
             </div>
             <div class="d-flex gap-2 mt-3">
                 <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-funnel me-1"></i> Filter</button>
-                <a class="btn btn-app-ghost btn-sm" href="/audit">Clear</a>
+                <a class="btn btn-app-ghost btn-sm" href="/admin/audit">Clear</a>
                 {% if may_export %}
-                <button type="submit" formaction="/audit/export" name="format" value="csv" class="btn btn-app-outline btn-sm ms-auto"><i class="bi bi-filetype-csv me-1"></i> Export CSV</button>
-                <button type="submit" formaction="/audit/export" name="format" value="ndjson" class="btn btn-app-outline btn-sm"><i class="bi bi-filetype-json me-1"></i> Export NDJSON</button>
+                <button type="submit" formaction="/admin/audit/export" name="format" value="csv" class="btn btn-app-outline btn-sm ms-auto"><i class="bi bi-filetype-csv me-1"></i> Export CSV</button>
+                <button type="submit" formaction="/admin/audit/export" name="format" value="ndjson" class="btn btn-app-outline btn-sm"><i class="bi bi-filetype-json me-1"></i> Export NDJSON</button>
                 {% endif %}
             </div>
         </div>
@@ -70,9 +71,9 @@
             <p class="mb-0" style="font-size: 0.875rem; color: var(--app-text-secondary);">No events match.</p>
             {% endif %}
             <div class="d-flex gap-2 mt-3">
-                <a class="btn btn-app-ghost btn-sm" href="/audit?{{ newest }}">Newest</a>
+                <a class="btn btn-app-ghost btn-sm" href="/admin/audit?{{ newest }}">Newest</a>
                 {% if older %}
-                <a class="btn btn-app-ghost btn-sm" href="/audit?{{ older }}">Older <i class="bi bi-chevron-right"></i></a>
+                <a class="btn btn-app-ghost btn-sm" href="/admin/audit?{{ older }}">Older <i class="bi bi-chevron-right"></i></a>
                 {% endif %}
             </div>
         </div>

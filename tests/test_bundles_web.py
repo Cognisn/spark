@@ -367,8 +367,10 @@ def test_server_mode_has_no_export(server: TestClient) -> None:
 def test_the_menu_offers_the_import_to_administrators_only(server: TestClient) -> None:
     admin, _ = _signed_in(server, "root@example.com", ADMINISTRATOR)
     user, _ = _signed_in(server, "ada@example.com", USER)
-    assert 'href="/admin/bundles"' in admin.get("/account").text
+    # The import is in the Administration area, which a user does not have.
+    assert 'href="/admin/bundles"' in admin.get("/admin").text
     assert 'href="/admin/bundles"' not in user.get("/account").text
+    assert user.get("/admin").status_code == 403
 
 
 # -- The upload limit, before the bundle is opened --------------------------------------

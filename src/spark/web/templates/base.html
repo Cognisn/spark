@@ -47,44 +47,50 @@
                 <ul class="navbar-nav ms-auto align-items-center gap-1">
                     {% block nav_items %}
                     <li class="nav-item">
-                        <a class="nav-link" href="/"><i class="bi bi-house me-1"></i> Home</a>
+                        <a class="nav-link" href="/"><i class="bi bi-house me-1" aria-hidden="true"></i> Home</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/conversations"><i class="bi bi-chat-dots me-1"></i> Conversations</a>
+                        <a class="nav-link" href="/conversations"><i class="bi bi-chat-dots me-1" aria-hidden="true"></i> Conversations</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/memories"><i class="bi bi-lightbulb me-1"></i> Memories</a>
+                        <a class="nav-link" href="/memories"><i class="bi bi-lightbulb me-1" aria-hidden="true"></i> Memories</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/skills"><i class="bi bi-stars me-1"></i> Skills</a>
+                        <a class="nav-link" href="/skills"><i class="bi bi-stars me-1" aria-hidden="true"></i> Skills</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/knowledge"><i class="bi bi-diagram-3 me-1"></i> Knowledge</a>
+                        <a class="nav-link" href="/knowledge"><i class="bi bi-diagram-3 me-1" aria-hidden="true"></i> Knowledge</a>
                     </li>
                     {% if actions_enabled() %}
                     <li class="nav-item">
-                        <a class="nav-link" href="/actions"><i class="bi bi-play-circle me-1"></i> Actions</a>
+                        <a class="nav-link" href="/actions"><i class="bi bi-play-circle me-1" aria-hidden="true"></i> Actions</a>
                     </li>
                     {% endif %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="/settings"><i class="bi bi-gear me-1"></i> Settings</a>
-                    </li>
                     {% if not request.app.state.identity_attached|default(false) %}
-                    {# Personal mode's usage view; a server lists it in the Account menu by role. #}
+                    {# Personal mode: one Settings page and the usage view. A server has the
+                       Administration area and each user's Account menu instead. #}
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin/usage"><i class="bi bi-bar-chart me-1"></i> Usage</a>
+                        <a class="nav-link" href="/settings"><i class="bi bi-gear me-1" aria-hidden="true"></i> Settings</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/usage"><i class="bi bi-bar-chart me-1" aria-hidden="true"></i> Usage</a>
+                    </li>
+                    {% endif %}
+                    {% if admin_menu(request) %}
+                    <li class="nav-item">
+                        <a class="nav-link{% if request.url.path == '/admin' or request.url.path.startswith('/admin/') %} active{% endif %}" href="/admin"><i class="bi bi-shield-check me-1" aria-hidden="true"></i> Administration</a>
                     </li>
                     {% endif %}
                     {% endblock %}
                     {% set identity_entries = identity_menu(request) %}
                     {% if identity_entries %}
                     <li class="nav-item dropdown ms-1">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Account">
-                            <i class="bi bi-person-circle me-1"></i> Account
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-person-circle me-1" aria-hidden="true"></i> Account
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             {% for entry in identity_entries %}
-                            <li><a class="dropdown-item" href="{{ entry.href }}"><i class="bi {{ entry.icon }} me-2"></i>{{ entry.label }}</a></li>
+                            <li><a class="dropdown-item" href="{{ entry.href }}"><i class="bi {{ entry.icon }} me-2" aria-hidden="true"></i>{{ entry.label }}</a></li>
                             {% endfor %}
                             <li><hr class="dropdown-divider"></li>
                             <li>
@@ -97,8 +103,8 @@
                     </li>
                     {% endif %}
                     <li class="nav-item dropdown ms-1">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Help" onkeydown="if(event.key==='Enter')this.click()">
-                            <i class="bi bi-question-circle"></i>
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Help" aria-label="Help" aria-expanded="false">
+                            <i class="bi bi-question-circle" aria-hidden="true"></i>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item" href="/help"><i class="bi bi-book me-2"></i>User Guide</a></li>
@@ -129,8 +135,8 @@
                         </div>
                     </li>
                     <li class="nav-item ms-2">
-                        <a class="nav-link" href="#" title="Quit Spark" onclick="showQuitModal(event)">
-                            <i class="bi bi-power"></i>
+                        <a class="nav-link" href="#" role="button" title="Quit Spark" aria-label="Quit Spark" onclick="showQuitModal(event)">
+                            <i class="bi bi-power" aria-hidden="true"></i>
                         </a>
                     </li>
                 </ul>

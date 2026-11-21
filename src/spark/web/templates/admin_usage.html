@@ -1,8 +1,9 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Usage{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 1400px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Usage and credits</h4>
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Usage and credits", "Model usage by user and connection, in tokens and credits, month by month.") }}
     {% include "_page_messages.html" %}
 
     <form method="GET" action="/admin/usage" class="app-card mb-4">

@@ -1,11 +1,9 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Single sign-on{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 900px;">
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Single sign-on</h4>
-        <a class="btn btn-app-ghost btn-sm" href="/admin/users"><i class="bi bi-arrow-left me-1"></i> Users</a>
-    </div>
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Single sign-on", "Let people sign in through your organisation's identity provider.") }}
     {% include "_page_messages.html" %}
 
     {% if confirm_users %}

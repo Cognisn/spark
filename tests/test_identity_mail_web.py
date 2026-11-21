@@ -283,7 +283,7 @@ class TestSettings:
         assert "mail.smtp.password" not in stored
         assert PASSWORD not in repr(stored)
         assert admin.get("/settings/api/secrets").json()["mail.smtp.password"] is True
-        page = admin.get("/settings")
+        page = admin.get("/admin/mail")
         assert 'id="section-mail"' in page.text
         assert 'data-key="mail.smtp.host"' in page.text and "smtp.example.com" in page.text
         assert PASSWORD not in page.text

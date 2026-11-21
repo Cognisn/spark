@@ -76,7 +76,7 @@ row names its content with `blob`, the sha256 of `files/<sha256>`.
 ## Importing (server mode)
 
 An administrator (the `spark.bundles.import` permission, which only the Administrator
-role holds) opens **Import a user bundle** from the Account menu (`/admin/bundles`),
+role holds) opens **User bundles** in the Administration area (`/admin/bundles`),
 chooses the user, uploads the bundle and sees the import report on screen.
 
 ### Checks before anything is written

@@ -129,7 +129,7 @@ in `spark worker`.
   that name with konfig's secrets tooling before the first start (it is not read
   from a `SPARK__` variable). The rest of `mail.smtp` is set only on the page.
   Send a test message from the page to check the settings.
-- **Inviting users**: an administrator invites from **Account > Invitations**
+- **Inviting users**: an administrator invites from **Administration > Invitations**
   (`/admin/invitations`), choosing the roles granted on acceptance. With mail set
   up, the invitation is mailed; it works once and expires after
   `warden.identity.invitation_ttl_seconds` (7 days by default). Password resets
@@ -153,11 +153,11 @@ in `spark worker`.
   single sign-on, and an invitation can be accepted through it. A provider behind
   a private CA needs `SSL_CERT_FILE` naming a bundle that holds it and the public
   CAs.
-- **Roles**: `administrator` (everything), `auditor` (the audit trail at `/audit`
+- **Roles**: `administrator` (everything), `auditor` (the audit trail at `/admin/audit`
   and its export, nothing else), `power_user` and `user`. Users create their own
   API keys at `/account/api-keys`, limited to their own permissions.
 - **Model connections, credits and allowances**: an administrator adds model
-  connections on **Account > Connections** (`/admin/connections`), chooses the
+  connections on **Administration > Connections and models** (`/admin/connections`), chooses the
   models each offers and assigns each connection to roles or named users; a user
   sees only the connections assigned to them or their roles. A metered connection
   charges credits per call (weighted tokens / base rate x tier multiplier) and
@@ -165,7 +165,7 @@ in `spark worker`.
   wins, otherwise the highest of their roles' allowances applies. Users are warned
   from 80%; at 100% new requests on that connection are refused, while a request
   already running finishes. Allowances reset at 00:00 UTC on the first of each
-  month. Usage, with tokens and credits, is at **Account > Usage and budgets**
+  month. Usage, with tokens and credits, is at **Administration > Usage and budgets**
   (`/admin/usage`) and its CSV export. See [Connections](connections.md) and
   [Metering](metering.md). The ElevenLabs character cap is separate and
   instance-wide.

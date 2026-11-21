@@ -230,8 +230,8 @@ async function loadConversations() {
                     : '');
             return `
             <div class="app-card d-flex align-items-center p-3 mb-2">
-                <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${starColor}">
-                    <i class="bi ${starIcon}"></i>
+                <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${starColor}" aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">
+                    <i class="bi ${starIcon}" aria-hidden="true"></i>
                 </button>
                 <a href="${href}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
                     <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}${typeBadge}</div>
@@ -240,10 +240,10 @@ async function loadConversations() {
                         ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
                     </div>
                 </a>
-                <button class="btn btn-app-ghost btn-sm ms-2" style="color: var(--app-danger);" onclick="deleteConversation(${c.id}, '${escapeHtml(c.name)}')" title="Delete">
-                    <i class="bi bi-trash"></i>
+                <button class="btn btn-app-ghost btn-sm ms-2" style="color: var(--app-danger);" onclick="deleteConversation(${c.id}, '${escapeHtml(c.name)}')" title="Delete" aria-label="Delete">
+                    <i class="bi bi-trash" aria-hidden="true"></i>
                 </button>
-                <a href="${href}" class="ms-1" style="color: var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                <a href="${href}" class="ms-1" style="color: var(--app-text-muted);" aria-label="Open conversation"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
             </div>`;
         }).join('');
     } catch (err) {
@@ -366,7 +366,7 @@ function addPanellist() {
             <div class="d-flex align-items-center mb-2">
                 <input type="text" class="form-control form-control-sm" id="panel-p${i}-name" placeholder="Panellist name">
                 <button type="button" class="btn btn-app-ghost btn-sm ms-1 panel-remove-btn" title="Remove"
-                        onclick="removePanellist(${i})"><i class="bi bi-x-lg"></i></button>
+                        onclick="removePanellist(${i})" aria-label="Remove"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
             </div>
             <select class="form-select form-select-sm mb-2" id="panel-p${i}-model">${_modelOptionsHtml}</select>
             <textarea class="form-control form-control-sm" id="panel-p${i}-brief" rows="2"
@@ -647,7 +647,7 @@ function searchConversations(query) {
                         <div style="font-weight:600; color:var(--app-text-primary);">${escapeHtml(c.name)}</div>
                         <div style="font-size:0.8125rem; color:var(--app-text-muted);">${c.model_id || ''}</div>
                     </a>
-                    <a href="${href}" style="color:var(--app-text-muted);"><i class="bi bi-chevron-right"></i></a>
+                    <a href="${href}" style="color:var(--app-text-muted);" aria-label="Open conversation"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
                 </div>`;
             }).join('');
         } catch (err) {}

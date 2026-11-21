@@ -68,7 +68,7 @@ mcp:
 A multi-user server (`mode: server`) treats MCP servers as administrator configuration:
 
 - **HTTP and SSE only.** A stdio server runs a command on the host, so a server refuses one wherever it is configured: the instance page, the `/settings/mcp/*` API and the `mcp.servers` instance setting itself. A stdio entry already stored is ignored with a warning in the log, and the other servers are kept.
-- **Instance settings, not `config.yaml`.** The servers are the `mcp.servers` instance setting, edited by an administrator (`spark.settings.instance`) in the **MCP Servers** section of the instance settings page. `config.yaml`'s `mcp` section is ignored on a server, with a warning. A change reconnects the servers whose entry or credentials changed, on every web replica, without a restart.
+- **Instance settings, not `config.yaml`.** The servers are the `mcp.servers` instance setting, edited by an administrator (`spark.settings.instance`) on **Administration > Tools and MCP servers** (`/admin/tools`). `config.yaml`'s `mcp` section is ignored on a server, with a warning. A change reconnects the servers whose entry or credentials changed, on every web replica, without a restart.
 - **https off this machine.** An entry whose URL is plain `http` to any host but loopback is refused when saved (`url was refused: plain http is accepted on a loopback host only`); one already stored is ignored, with a warning in the log, and the other servers are kept.
 - **Names.** Each server name is lower-case letters, digits, `-` and `_` (at most 63 characters), because it is part of the server's permission.
 - **Grants by role.** Each server lists the roles it is granted to. A signed-in user holds the `spark.mcp.<server>` permission while one of their roles is listed, sees only those servers (tool panel, main menu, action tool lists) and the model is offered only their tools; calling any other server's tool is refused. A server granted to no role is offered to no one, administrators included. Requests made with an API key are granted no MCP server. An autonomous action is offered only the servers the user it runs as holds `spark.mcp.<server>` for (its owner when `spark worker` runs it, the signed-in user for **Run now**), read when the run starts.
@@ -86,7 +86,7 @@ A multi-user server (`mode: server`) treats MCP servers as administrator configu
 
 ## Adding a Server via the UI
 
-1. Go to **Settings > Tools > MCP Servers** (on a server: the instance settings page)
+1. Go to **Settings > MCP Servers** (on a server: **Administration > Tools and MCP servers**)
 2. Click **Add Server**
 3. Fill in the configuration:
    - **Name** -- Unique identifier for the server

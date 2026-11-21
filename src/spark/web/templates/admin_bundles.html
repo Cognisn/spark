@@ -1,15 +1,10 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Import a user bundle{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 1000px;">
-    <div class="mb-4">
-        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Import a user bundle</h4>
-        <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-            Bring a user's data from a personal Spark: the bundle they exported (format version {{ format_version }},
-            up to {{ limit_mb }} MB). Scheduled actions are imported disabled, and anything this server cannot run is
-            left out and listed. A bundle is imported once for each user.
-        </p>
-    </div>
+{% block page %}
+<div class="admin-page-body">
+    {% set bundle_help %}Bring a user's data from a personal Spark: the bundle they exported (format version {{ format_version }}, up to {{ limit_mb }} MB). Scheduled actions are imported disabled, and anything this server cannot run is left out and listed. A bundle is imported once for each user.{% endset %}
+    {{ page_ui.header("Import a user bundle", bundle_help) }}
     {% include "_page_messages.html" %}
 
     {% if report %}

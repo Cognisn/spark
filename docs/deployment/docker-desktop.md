@@ -119,14 +119,14 @@ If every administrator is lost, `spark identity create-admin` restores one: see
 [Restoring an administrator](identity.md#restoring-an-administrator), and run it as
 `docker compose --env-file spark.env -f compose.yaml exec web spark identity create-admin ...`.
 
-Then, on the instance settings page:
+Then, in the **Administration** area:
 
-1. Add a model connection on **Account > Connections** and enter its credential. The
+1. Add a model connection on **Administration > Connections and models** and enter its credential. The
    credential is stored in konfig's encrypted secrets file, never in the database.
 2. Choose the models the connection offers, and assign it to the `user` role (or to
    named users). See [Connections](../connections.md) and
    [Metering](../metering.md).
-3. Optionally set up a real mail server (`mail.smtp`) on the instance settings page, in
+3. Optionally set up a real mail server (`mail.smtp`) on **Administration > Mail**, in
    place of the catcher; see [Identity](identity.md#mail). Until then, every invitation
    and password reset lands in the catcher's inbox.
 

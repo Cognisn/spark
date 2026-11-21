@@ -439,8 +439,8 @@
                         <input type="text" class="form-control form-control-sm" id="action-chat-input"
                                placeholder="Describe how the action should work..."
                                onkeydown="if(event.key==='Enter' && !event.shiftKey) { event.preventDefault(); sendActionChatMessage(); }">
-                        <button class="btn btn-app-primary btn-sm" onclick="sendActionChatMessage()">
-                            <i class="bi bi-send"></i>
+                        <button class="btn btn-app-primary btn-sm" onclick="sendActionChatMessage()" title="Send" aria-label="Send">
+                            <i class="bi bi-send" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>

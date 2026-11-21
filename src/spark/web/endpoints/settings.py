@@ -1,6 +1,12 @@
 """Settings endpoints: the settings page in personal mode, and in server mode the
 administrator's instance settings and each user's preferences.
 
+Server mode shows instance settings in the Administration area as four pages
+(:data:`ADMIN_PAGES`): Instance settings, Tools and MCP servers, Security and
+Mail. Each shows only its own fields and saves them with the same endpoint,
+which stores only the keys a page sends. Preferences are ``/account/preferences``.
+The old ``/settings`` and ``/settings/preferences`` redirect there.
+
 Personal mode keeps one page writing ``config.yaml``. Server mode writes instance
 settings to the database (``/settings/api/instance``, administrators only) and
 preferences per user (``/settings/api/preferences``). Every request is checked
@@ -15,10 +21,11 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import yaml
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import spark.instance_settings as instance_settings
@@ -32,6 +39,10 @@ from spark.web.db import database
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings")
+#: Server mode's instance settings pages and preferences, at their places in the navigation.
+admin_router = APIRouter()
+
+PREFERENCES_PATH = "/account/preferences"
 
 _LOCK_SECRET_KEY = "settings_lock_password"
 
@@ -207,6 +218,7 @@ def _render(
     sections: list[dict[str, Any]],
     tool_categories: list[dict[str, Any]],
     save_url: str,
+    admin_page: AdminPage | None = None,
 ) -> HTMLResponse:
     from spark.web.models import listed
 
@@ -222,9 +234,95 @@ def _render(
             "page": page,
             "save_url": save_url,
             "is_admin": page != "personal" and _is_admin(request),
+            "admin_page": admin_page,
+            "show_mcp": page == "personal" or (admin_page is not None and admin_page.tools),
+            "moved_anchors": MOVED_ANCHORS,
         },
     )
     return response
+
+
+@dataclass(frozen=True, slots=True)
+class AdminPage:
+    """One of server mode's instance settings pages in the Administration area."""
+
+    path: str
+    title: str
+    description: str
+    # The settings sections it shows, in order.
+    sections: tuple[str, ...]
+    # Whether it shows the built-in tools and MCP servers.
+    tools: bool = False
+    # Personal mode's place for the same settings.
+    personal: str = "/settings"
+
+
+ADMIN_PAGES: dict[str, AdminPage] = {
+    page.path: page
+    for page in (
+        AdminPage(
+            "/admin/settings",
+            "Instance settings",
+            "Defaults every user of this Spark shares. Changes apply to every replica at once.",
+            ("default_model", "conversation", "agents", "autonomous_actions", "voice"),
+        ),
+        AdminPage(
+            "/admin/tools",
+            "Tools and MCP servers",
+            "The built-in tools, what happens to their results, and the MCP servers offered to "
+            "users. Secrets are kept in the secrets store and are never shown.",
+            (),
+            tools=True,
+            personal="/settings#section-embedded-tools",
+        ),
+        AdminPage(
+            "/admin/security",
+            "Security",
+            "Prompt inspection, tool permissions and tool result inspection for every user.",
+            ("security",),
+            personal="/settings#section-security",
+        ),
+        AdminPage(
+            "/admin/mail",
+            "Mail",
+            "The mail server Spark sends invitations and password resets through. "
+            "The password is kept in the secrets store and is never shown.",
+            ("mail",),
+        ),
+    )
+}
+
+#: Anchors of the old single instance settings page, and the page each moved to.
+MOVED_ANCHORS: dict[str, str] = {
+    "section-embedded-tools": "/admin/tools",
+    "section-mcp-servers": "/admin/tools",
+    "section-security": "/admin/security",
+    "section-mail": "/admin/mail",
+}
+
+# Personal mode's one page, ordered as the server's Administration area is.
+_PERSONAL_ORDER = (
+    "security",
+    "default_model",
+    "conversation",
+    "agents",
+    "autonomous_actions",
+    "voice",
+    "interface",
+    "database",
+    "logging",
+)
+
+
+def _ordered(sections: list[dict[str, Any]], order: tuple[str, ...]) -> list[dict[str, Any]]:
+    """``sections`` in ``order``; any section ``order`` does not name follows, as it was."""
+    rank = {section_id: n for n, section_id in enumerate(order)}
+    return sorted(sections, key=lambda s: rank.get(s["id"], len(order)))
+
+
+def _with_query(request: Request, path: str) -> str:
+    query = request.url.query
+    return f"{path}?{query}" if query else path
 
 
 @router.get("", response_class=HTMLResponse)
@@ -237,26 +335,60 @@ async def settings_page(request: Request) -> Response:
         return _render(
             request,
             page="personal",
-            sections=_build_sections(view),
+            sections=_ordered(_build_sections(view), _PERSONAL_ORDER),
             tool_categories=_build_tool_categories(view),
             save_url="/settings/api/save",
         )
     if not _is_admin(request):
-        return RedirectResponse(url="/settings/preferences", status_code=303)
+        return RedirectResponse(url=PREFERENCES_PATH, status_code=303)
+    return RedirectResponse(url=_with_query(request, "/admin/settings"), status_code=307)
+
+
+async def _instance_page(request: Request, page: AdminPage) -> Response:
+    """Server mode: one instance settings page, for holders of ``spark.settings.instance``."""
+    if not _server():
+        return RedirectResponse(url=page.personal, status_code=303)
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="forbidden")
+    ctx = request.app.state.ctx
     source = await instance_settings.server_settings(request.app, database(request), ctx.settings)
-    view = _View(_source_value(source), status)
-    sections = _filter_sections(_build_sections(view), {Scope.INSTANCE})
-    sections.append(_mail_section(view))
+    view = _View(_source_value(source), _secret_status(request))
+    available = _filter_sections(_build_sections(view), {Scope.INSTANCE})
+    available.append(_mail_section(view))
+    sections = _ordered([s for s in available if s["id"] in page.sections], page.sections)
     return _render(
         request,
         page="instance",
         sections=sections,
-        tool_categories=_build_tool_categories(view),
+        tool_categories=_build_tool_categories(view) if page.tools else [],
         save_url="/settings/api/instance",
+        admin_page=page,
+    )
+
+
+def _instance_route(page: AdminPage) -> Callable[[Request], Any]:
+    async def show(request: Request) -> Response:
+        return await _instance_page(request, page)
+
+    show.__name__ = "instance_settings_" + page.path.rsplit("/", 1)[-1]
+    return show
+
+
+for _page in ADMIN_PAGES.values():
+    admin_router.add_api_route(
+        _page.path, _instance_route(_page), methods=["GET"], response_class=HTMLResponse
     )
 
 
 @router.get("/preferences", response_class=HTMLResponse)
+async def old_preferences_page(request: Request) -> Response:
+    """The old address of My preferences: redirects to :data:`PREFERENCES_PATH`."""
+    if not _server():
+        return RedirectResponse(url="/settings", status_code=303)
+    return RedirectResponse(url=_with_query(request, PREFERENCES_PATH), status_code=307)
+
+
+@admin_router.get(PREFERENCES_PATH, response_class=HTMLResponse)
 async def preferences_page(request: Request) -> Response:
     """Server mode: the signed-in user's own preferences (A4)."""
     if not _server():
