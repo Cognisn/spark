@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A model's reasoning reaches the chat page as the model produces it, before the answer streams.** The connection service now honours the conversation manager's reasoning callback, passing each reasoning block's readable text on as conduit reports it, instead of the page receiving it only when the call finishes. Redacted reasoning and signatures give nothing. A call that has already reported reasoning is not retried after a transient provider failure, so the page never shows the same reasoning twice, and a callback that fails never breaks the model call. The reasoning text is never logged.
+
 ## [0.3.0rc31] - 2026-11-21
 
 ### Changed

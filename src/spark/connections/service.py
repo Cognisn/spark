@@ -61,6 +61,7 @@ from conduit.core.types import TOOL_NAME_PATTERN
 
 from spark.connections.refs import ModelRef
 from spark.connections.usage import Attribution, UsageSink
+from spark.core.reasoning import block_reasoning
 
 __all__ = [
     "ConnectionService",
@@ -439,7 +440,11 @@ class ConnectionService:
 
         Raises :class:`ModelUnavailable`, :class:`ModelRefused` (conduit's reason) or
         :class:`ModelCallFailed`. A call the provider could not serve is retried
-        (twice, with a short wait) only while none of its output has reached the caller.
+        (twice, with a short wait) only while none of its output has reached the caller;
+        reasoning passed to ``reasoning_callback`` counts as output.
+
+        ``reasoning_callback(text)``, when given, is called with each reasoning block's
+        readable text as conduit reports it, before the answer that follows it streams.
         """
         if self._host.loop.on_loop_thread():
             # Code on conduit's loop (an event sink, a tool executor) awaits the async API;
@@ -476,7 +481,14 @@ class ConnectionService:
             while True:
                 collected = _Collected(blocks=[], text=[], tool_uses=[])
                 try:
-                    self._stream(provider, request, collected, names, stream_callback)
+                    self._stream(
+                        provider,
+                        request,
+                        collected,
+                        names,
+                        stream_callback,
+                        kwargs.get("reasoning_callback"),
+                    )
                     return _response(collected)
                 except ProviderError as error:
                     transient = error.failure in (
@@ -508,6 +520,7 @@ class ConnectionService:
         collected: _Collected,
         names: _Names,
         stream_callback: Callable[[str], Any] | None,
+        reasoning_callback: Callable[[str], Any] | None = None,
     ) -> None:
         # The facade's iterate refuses to run on conduit's own loop thread, too.
         events: Iterator[Any] = self._host.loop.iterate(
@@ -540,9 +553,28 @@ class ConnectionService:
                         "payload": base64.b64encode(state.payload).decode("ascii"),
                     }
                 )
+                if reasoning_callback is not None:
+                    self._report_reasoning(collected, reasoning_callback)
             elif isinstance(event, StreamStopped):
                 collected.stop = event
                 collected.usage = event.usage
+
+    @staticmethod
+    def _report_reasoning(collected: _Collected, callback: Callable[[str], Any]) -> None:
+        """Pass the block just collected to ``callback`` when it holds readable reasoning.
+
+        Reasoning given to the caller has reached it, so the call is no longer retried.
+        A callback that raises never breaks the call; only its exception class is logged,
+        never the reasoning.
+        """
+        text = block_reasoning(collected.blocks[-1])
+        if not text:
+            return
+        collected.streamed = True
+        try:
+            callback(text)
+        except Exception as failure:  # noqa: BLE001 - the caller's hook must not break the call
+            logger.warning("A reasoning callback failed (%s)", type(failure).__name__)
 
     def __repr__(self) -> str:
         return f"ConnectionService({str(self._ref)!r})"

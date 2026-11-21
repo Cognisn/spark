@@ -244,7 +244,9 @@ class TestTurn:
             invoke = service.invoke_model
 
             def invoke_model(msgs: Any, **kw: Any) -> dict[str, Any]:
-                kw["reasoning_callback"](THOUGHT)
+                # This stands in for a service that reports live; the real one, which
+                # now does too, is not given the callback so the text arrives once.
+                kw.pop("reasoning_callback")(THOUGHT)
                 return invoke(msgs, **kw)
 
             service.invoke_model = invoke_model
