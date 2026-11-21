@@ -68,6 +68,12 @@ def _sse_event(evt: dict[str, Any]) -> dict[str, Any] | None:
                 )
             ),
         }
+    elif event_type == "reasoning":
+        # A model's reasoning, shown beside its reply and never as part of it.
+        return {
+            "event": "reasoning",
+            "data": json.dumps({"text": event_data.get("text", "")}),
+        }
     elif event_type == "permission_request":
         return {
             "event": "permission_request",

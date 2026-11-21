@@ -16,6 +16,7 @@ from spark.connections.runtime import ModelSource, UserScope
 from spark.connections.usage import Attribution
 from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import CompactionSettings, ContextCompactor, ordered_for_model
+from spark.core.reasoning import response_reasoning
 from spark.db.bridge import SyncDatabase
 from spark.safety.untrusted import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
@@ -635,6 +636,14 @@ class ConversationManager:
             messages.get_messages, user_guid, conversation_id, include_rolled_up=True
         )
 
+    def get_reasoning(self, conversation_id: int, user_guid: str) -> dict[int, str]:
+        """The reasoning kept beside a conversation's messages, by message id, for the chat
+        page only. It is never part of :meth:`get_messages`, so an export, the model's
+        history and compaction cannot carry it."""
+        from spark.database import message_reasoning
+
+        return self._db.call(message_reasoning.get_reasoning, user_guid, conversation_id)
+
     def send_message(
         self,
         conversation_id: int,
@@ -861,6 +870,15 @@ class ConversationManager:
                         raise RuntimeError(
                             f"the model '{model_id}' is not available on any connection"
                         )
+                    live_reasoning: list[str] = []
+
+                    def _reasoning_arrived(text: str, _seen: list[str] = live_reasoning) -> None:
+                        """Reasoning the service reports as it arrives (before the answer)."""
+                        if text and text.strip():
+                            _seen.append(text)
+                            if status_callback:
+                                status_callback("reasoning", {"text": text})
+
                     response = service.invoke_model(
                         history,
                         max_tokens=self._limits.get_max_output(model_id),
@@ -868,6 +886,7 @@ class ConversationManager:
                         tools=tools if tools else None,
                         system=system,
                         stream_callback=stream_callback,
+                        reasoning_callback=_reasoning_arrived,
                         prompt_caching=use_caching,
                     )
                 except Exception as e:
@@ -928,6 +947,12 @@ class ConversationManager:
 
                 stop_reason = response.get("stop_reason", "end_turn")
 
+                # The model's reasoning is shown beside the reply, never in it. A service
+                # that reported it live has already sent it; otherwise it is sent now.
+                reasoning = response_reasoning(response.get("content_blocks"))
+                if reasoning and not live_reasoning and status_callback:
+                    status_callback("reasoning", {"text": reasoning})
+
                 if stop_reason == "tool_use" and response.get("tool_use"):
                     # Execute tools and continue loop
                     tool_results = self._execute_tools(
@@ -955,6 +980,7 @@ class ConversationManager:
                         assistant_tokens,
                         user_guid,
                     )
+                    self._keep_reasoning(conversation_id, user_guid, asst_msg_id, reasoning)
 
                     # Index tool calls and results in vector store
                     for tc in response["tool_use"]:
@@ -1026,6 +1052,7 @@ class ConversationManager:
                     final_tokens,
                     user_guid,
                 )
+                self._keep_reasoning(conversation_id, user_guid, final_msg_id, reasoning)
 
                 # Index assistant response in vector store
                 self._index_message(
@@ -1058,6 +1085,21 @@ class ConversationManager:
             "status": "completed",
             "budget": self._budget_after(user_guid, roles),
         }
+
+    def _keep_reasoning(
+        self, conversation_id: int, user_guid: str, message_id: int, reasoning: str
+    ) -> None:
+        """Keep a reply's reasoning beside its message (failure never breaks a turn)."""
+        if not reasoning:
+            return
+        from spark.database import message_reasoning
+
+        try:
+            self._db.call(
+                message_reasoning.add_reasoning, user_guid, conversation_id, message_id, reasoning
+            )
+        except Exception:  # noqa: BLE001 - the reasoning is only for display
+            logger.warning("Could not keep a message's reasoning", exc_info=True)
 
     # -- Skills -----------------------------------------------------------------
 

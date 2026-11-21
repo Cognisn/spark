@@ -75,6 +75,12 @@ function openChatStream(url) {
         }
     });
 
+    // The model's reasoning: shown above the reply as it arrives, never as part of it.
+    currentEventSource.addEventListener('reasoning', (e) => {
+        const data = JSON.parse(e.data);
+        addStreamingReasoning(data.text || '');
+    });
+
     currentEventSource.addEventListener('tool_start', (e) => {
         const data = JSON.parse(e.data);
         // Finalise the current streaming bubble as a permanent message so the

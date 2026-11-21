@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.core.conversation_manager import ConnectionNotAssigned
+from spark.core.reasoning import strip_reasoning_blocks
 from spark.identity.access import current_user_guid, request_permissions
 from spark.usage.budgets import BudgetExceeded
 from spark.web import attachments, interactions
@@ -78,10 +79,16 @@ async def get_history(request: Request, conversation_id: int) -> JSONResponse:
     if await owned_conversation(request, conversation_id) is None:
         return not_found()
 
-    messages = await asyncio.to_thread(
-        conv_mgr.get_messages, conversation_id, current_user_guid(request)
+    user_guid = current_user_guid(request)
+    messages = await asyncio.to_thread(conv_mgr.get_messages, conversation_id, user_guid)
+    # Each reply's reasoning travels beside its message, for the page to show collapsed.
+    reasoning = await asyncio.to_thread(conv_mgr.get_reasoning, conversation_id, user_guid)
+    return JSONResponse(
+        [
+            {**m, "reasoning": reasoning[m["id"]]} if m.get("id") in reasoning else m
+            for m in messages
+        ]
     )
-    return JSONResponse(messages)
 
 
 @router.get("/{conversation_id}/api/tool-activity")
@@ -554,6 +561,9 @@ async def _export_response(request: Request, conversation_id: int):  # type: ign
         return JSONResponse({"error": "Not found"}, status_code=404)
 
     msgs = await asyncio.to_thread(conv_mgr.get_messages, conversation_id, user_guid)
+    # A stored tool-use message carries the model's reasoning as provider state: an
+    # export holds what was said, not what the model thought.
+    msgs = [{**m, "content": strip_reasoning_blocks(m.get("content", ""))} for m in msgs]
     name = conv.get("name", "conversation")
 
     # Debates and panels export from their structured turn record, not messages.
