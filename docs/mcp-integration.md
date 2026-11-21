@@ -93,7 +93,7 @@ A multi-user server (`mode: server`) treats MCP servers as administrator configu
    - **Transport** -- stdio, HTTP, or SSE
    - **Command/Args** (stdio) or **URL** (HTTP/SSE)
    - **Environment variables** (stdio) -- passed to the child process
-   - **Authentication** -- none, bearer token, API key, basic auth, or custom headers
+   - **Authentication** -- none, bearer token, API key, basic auth, custom headers, or OAuth (see [OAuth](#oauth))
    - **Timeout** -- Connection timeout in seconds (default: 30)
    - **SSL Verify** -- Whether to verify TLS certificates (default: true)
 4. Click **Test Connection** to verify the server is reachable
@@ -136,6 +136,7 @@ MCP servers can require authentication. Spark supports multiple auth methods:
 | `api_key` | API key in a custom header | `auth_token`, `auth_header_name` (default: X-API-Key) |
 | `basic` | HTTP Basic Authentication | `basic_username`, `basic_password` |
 | `custom` | Custom headers | `custom_headers` (dict) |
+| `oauth` | OAuth 2.1 sign-in (HTTP and SSE) | `oauth_client_id`, `oauth_client_secret`, `oauth_issuer`, `oauth_scopes` |
 
 Any credential field (and, for stdio, any environment variable) may be a `secret://` reference: it is resolved from the secrets store when the server connects, and conduit itself only ever holds references. A reference that cannot be resolved fails that server's connection, which is logged.
 
@@ -150,6 +151,44 @@ mcp:
       auth_type: api_key
       auth_token: secret://server_api_key
       auth_header_name: X-API-Key
+```
+
+### OAuth
+
+An HTTP or SSE server can use OAuth (`auth_type: oauth`). Spark uses conduit's OAuth client, which discovers the authorisation server from the MCP server's protected resource metadata (RFC 9728) and the authorisation server's metadata (RFC 8414), checks that both name the expected resource and issuer, signs in with the authorisation code and PKCE (S256), and refreshes tokens with rotation.
+
+| Field | Description |
+|-------|-------------|
+| Client ID (`oauth_client_id`) | The client the authorisation server issued. Leave it empty to register Spark dynamically (RFC 7591), if the authorisation server offers it. |
+| Client Secret (`oauth_client_secret`) | Optional, for a confidential client. It is written to the secrets store, never shown again, and can be replaced or removed. |
+| Issuer (`oauth_issuer`) | Pins the authorisation server: discovery that names another is refused. Required with a client secret, so the secret is only ever sent to the server that issued it. |
+| Scopes (`oauth_scopes`) | Optional, space-separated on the form, a list in `config.yaml`. |
+
+When you register a client with the authorisation server, give it Spark's callback address: `<Spark's address>/mcp/oauth/callback`, where Spark's address is `server.public_base_url` on a server, and the address your browser uses for Spark in personal mode (set a fixed `interface.port` so it does not change between starts).
+
+**Signing in.** Save the server, then click **Sign in** beside it in the list. Spark opens the authorisation server in a new window; once you have signed in there, it returns to Spark's callback, which completes the sign-in and says how it ended. Reload the list to see the status: **Signed in**, **Needs sign-in**, or **Sign-in failed** with the reason. **Sign out** removes the tokens. Changing the server's URL, client ID or issuer, or removing the server, also removes them.
+
+**Whose tokens.** There is one sign-in per server for the whole instance, made by whoever administers it. Every user the server is granted to uses its tools with those tokens, as with a configured bearer token.
+
+**Where tokens live.** Tokens and a dynamic registration are kept only in the secrets store (the OS keychain in personal mode, the encrypted file or AWS Secrets Manager on a server), in entries of at most 1,000 characters. They are never in `config.yaml`, the instance settings, a log, a page or a user bundle. On a server with several replicas, a sign-in or sign-out reconnects the server on every replica. With the AWS Secrets Manager backend, a replica sees a token another replica has just refreshed only after konfig's cache time; until then a refresh it attempts may be refused, and the server then needs a new sign-in.
+
+**The callback.** The authorisation server returns your browser to Spark from another site, so the browser sends no Spark session cookie (they are all `SameSite=Strict`). The callback is therefore reachable without a session, and is bound instead to the browser that started the sign-in by a short-lived cookie of its own (`SameSite=Lax`, HttpOnly), which names one waiting sign-in, expires after ten minutes and works once. conduit then checks the answer's `state`, issuer and address before it exchanges the code. A web server's access log may record the callback's address, including the authorisation code; the code is single use and worthless without the PKCE verifier, which never leaves Spark.
+
+**A server Spark cannot sign in to.** conduit refuses a server that publishes no OAuth discovery metadata, names another resource or issuer, does not offer PKCE with S256, or names an endpoint that is not https. The status shows conduit's reason; Spark does not work around these checks.
+
+Custom headers are sent to the MCP server's own address only, never to the authorisation server. An OAuth server needs **Verify SSL** on (plain http is accepted on this machine only), because the OAuth requests carry the code, the tokens and the client secret. Autonomous actions run in their own process and do not use OAuth servers.
+
+```yaml
+mcp:
+  servers:
+    - name: docs
+      transport: http
+      url: https://docs.example.com/mcp
+      auth_type: oauth
+      oauth_client_id: spark
+      oauth_client_secret: secret://mcp_server_docs_oauth_client_secret
+      oauth_issuer: https://auth.example.com
+      oauth_scopes: [tools:read]
 ```
 
 ## Per-Conversation Control

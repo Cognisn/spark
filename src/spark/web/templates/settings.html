@@ -566,11 +566,43 @@
                                         <option value="bearer">Bearer Token</option>
                                         <option value="api_key">API Key</option>
                                         <option value="basic">Basic Auth</option>
+                                        <option value="oauth">OAuth</option>
                                     </select>
                                 </div>
                                 <div class="col-md-8 mb-3" id="mcp-auth-token-group" style="display: none;">
                                     <label class="form-label">Token / Key</label>
                                     <input type="password" class="form-control" id="mcp-auth-token">
+                                </div>
+                            </div>
+                            <div id="mcp-auth-oauth-group" style="display: none;">
+                                <div class="row g-3">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="mcp-oauth-client-id">Client ID</label>
+                                        <input type="text" class="form-control" id="mcp-oauth-client-id" autocomplete="off" placeholder="Empty: register dynamically">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="mcp-oauth-client-secret">Client Secret</label>
+                                        <input type="password" class="form-control" id="mcp-oauth-client-secret" autocomplete="new-password" placeholder="Not set">
+                                        <div class="form-check mt-1" id="mcp-oauth-clear-secret-group" style="display: none;">
+                                            <input class="form-check-input" type="checkbox" id="mcp-oauth-clear-secret">
+                                            <label class="form-check-label" for="mcp-oauth-clear-secret" style="font-size:0.8125rem;">Remove the stored secret</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="mcp-oauth-issuer">Issuer</label>
+                                        <input type="text" class="form-control" id="mcp-oauth-issuer" placeholder="https://auth.example.com">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="mcp-oauth-scopes">Scopes</label>
+                                        <input type="text" class="form-control" id="mcp-oauth-scopes" placeholder="Space-separated, optional">
+                                    </div>
+                                </div>
+                                <div style="font-size:0.75rem; color:var(--app-text-muted);" class="mb-2">
+                                    The issuer pins the authorisation server and is required with a client secret.
+                                    Register this callback address with the authorisation server:
+                                    <code id="mcp-oauth-callback"></code>. Save the server, then sign in from the list.
                                 </div>
                             </div>
                             <div class="row g-3" id="mcp-auth-apikey-group" style="display: none;">
@@ -1022,6 +1054,73 @@ function _mcpSecretPlaceholders(set) {
     document.getElementById('mcp-custom-headers').placeholder = set.custom_headers ? 'Set (type to replace)' : '{"X-Custom": "value"}';
 }
 
+function _mcpOAuthSecretState(set) {
+    // Both modes keep the OAuth client secret write-only in the secrets store.
+    const stored = !!(set && set.oauth_client_secret);
+    document.getElementById('mcp-oauth-client-secret').value = '';
+    document.getElementById('mcp-oauth-client-secret').placeholder = stored ? 'Set (type to replace)' : 'Not set';
+    document.getElementById('mcp-oauth-clear-secret').checked = false;
+    document.getElementById('mcp-oauth-clear-secret-group').style.display = stored ? '' : 'none';
+    document.getElementById('mcp-oauth-callback').textContent = window.location.origin + '/mcp/oauth/callback';
+}
+
+function _mcpOAuthBadge(s) {
+    if (s.auth_type !== 'oauth' || !s.oauth) return '';
+    const st = s.oauth.state;
+    if (st === 'signed_in') return '<span class="badge-app badge-app-success" style="font-size:0.55rem;">Signed in</span>';
+    if (st === 'failed') return `<span class="badge-app badge-app-danger" style="font-size:0.55rem;" title="${escapeHtml(s.oauth.message || '')}">Sign-in failed</span>`;
+    return '<span class="badge-app badge-app-warning" style="font-size:0.55rem;">Needs sign-in</span>';
+}
+
+function _mcpOAuthNote(s) {
+    if (s.auth_type !== 'oauth' || !s.oauth || s.oauth.state !== 'failed') return '';
+    return `<div style="font-size:0.75rem; color:var(--app-danger); margin-top:0.125rem;">${escapeHtml(s.oauth.message || '')}</div>`;
+}
+
+function _mcpOAuthButtons(s) {
+    if (s.auth_type !== 'oauth') return '';
+    const name = escapeHtml(s.name);
+    if (s.oauth && s.oauth.state === 'signed_in') {
+        return `<button class="btn btn-app-ghost btn-sm" onclick="signOutMCPServer('${name}')" title="Sign out"><i class="bi bi-box-arrow-right"></i></button>`;
+    }
+    return `<button class="btn btn-app-outline btn-sm" onclick="signInMCPServer('${name}')" title="Sign in"><i class="bi bi-box-arrow-in-right me-1"></i>Sign in</button>`;
+}
+
+async function signInMCPServer(name) {
+    // Open the window inside the click, so a pop-up blocker lets it through.
+    const win = window.open('', '_blank');
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/oauth/sign-in`, {method: 'POST'});
+        const result = await resp.json();
+        if (result.status === 'redirect') {
+            if (win) { win.opener = null; win.location = result.authorization_url; }
+            else { window.location = result.authorization_url; }
+            AppToast.info('Sign in', 'Complete the sign-in in the new window, then reload this list.');
+        } else {
+            if (win) win.close();
+            if (result.status === 'signed_in') AppToast.success('Signed in', `"${name}" is already signed in.`);
+            else AppToast.danger('Sign-in failed', result.message || 'The sign-in could not start.');
+        }
+    } catch (err) {
+        if (win) win.close();
+        AppToast.danger('Error', 'Network error.');
+    }
+    loadMCPServers();
+}
+
+async function signOutMCPServer(name) {
+    if (!confirm(`Sign out of "${name}"? Its tools stop working until you sign in again.`)) return;
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/oauth/sign-out`, {method: 'POST'});
+        const result = await resp.json();
+        if (result.status === 'ok') AppToast.success('Signed out', `Signed out of "${name}".`);
+        else AppToast.danger('Error', result.message || 'Failed to sign out.');
+    } catch (err) {
+        AppToast.danger('Error', 'Network error.');
+    }
+    loadMCPServers();
+}
+
 async function loadMCPServers() {
     const container = document.getElementById('mcp-server-list');
     try {
@@ -1043,14 +1142,17 @@ async function loadMCPServers() {
                             : s.enabled === false
                                 ? '<span class="badge-app badge-app-danger" style="font-size:0.55rem;">Disabled</span>'
                                 : '<span class="status-dot offline"></span>'}
+                        ${_mcpOAuthBadge(s)}
                     </div>
                     <div style="font-size:0.75rem; color:var(--app-text-muted); margin-top:0.125rem;">
                         ${s.connected ? s.tool_count + ' tools — click to view' : s.enabled === false ? 'Disabled' : 'Disconnected'}
                         ${s.url ? ' · ' + escapeHtml(s.url) : ''}
                         ${s.command ? ' · ' + escapeHtml(s.command) : ''}
                     </div>
+                    ${_mcpOAuthNote(s)}
                 </div>
                 <div class="d-flex align-items-center gap-1">
+                    ${_mcpOAuthButtons(s)}
                     <button class="btn btn-app-ghost btn-sm" onclick="editMCPServer('${escapeHtml(s.name)}')" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </button>
@@ -1085,7 +1187,11 @@ function showAddMCPServer() {
     document.getElementById('mcp-timeout').value = '30';
     document.getElementById('mcp-ssl-verify').checked = true;
     document.getElementById('mcp-test-result').style.display = 'none';
+    document.getElementById('mcp-oauth-client-id').value = '';
+    document.getElementById('mcp-oauth-issuer').value = '';
+    document.getElementById('mcp-oauth-scopes').value = '';
     _mcpSecretPlaceholders({});
+    _mcpOAuthSecretState({});
     _renderMCPRoles([]);
     updateMCPTransportFields();
     updateMCPAuthFields();
@@ -1117,7 +1223,11 @@ async function editMCPServer(name) {
         document.getElementById('mcp-timeout').value = config.timeout || 30;
         document.getElementById('mcp-ssl-verify').checked = config.ssl_verify !== false;
         document.getElementById('mcp-test-result').style.display = 'none';
+        document.getElementById('mcp-oauth-client-id').value = config.oauth_client_id || '';
+        document.getElementById('mcp-oauth-issuer').value = config.oauth_issuer || '';
+        document.getElementById('mcp-oauth-scopes').value = (config.oauth_scopes || []).join(' ');
         _mcpSecretPlaceholders(config.secrets_set || {});
+        _mcpOAuthSecretState(config.secrets_set || {});
         _renderMCPRoles(config.roles || []);
         updateMCPTransportFields();
         updateMCPAuthFields();
@@ -1138,6 +1248,7 @@ function updateMCPAuthFields() {
     document.getElementById('mcp-auth-token-group').style.display = (auth === 'bearer' || auth === 'api_key') ? '' : 'none';
     document.getElementById('mcp-auth-apikey-group').style.display = auth === 'api_key' ? '' : 'none';
     document.getElementById('mcp-auth-basic-group').style.display = auth === 'basic' ? '' : 'none';
+    document.getElementById('mcp-auth-oauth-group').style.display = auth === 'oauth' ? '' : 'none';
 }
 
 function _collectMCPConfig() {
@@ -1155,6 +1266,15 @@ function _collectMCPConfig() {
     };
     if (MCP_SERVER_MODE) {
         data.roles = Array.from(document.querySelectorAll('.mcp-role:checked')).map(el => el.value);
+    }
+    if (data.auth_type === 'oauth') {
+        data.oauth_client_id = document.getElementById('mcp-oauth-client-id').value.trim();
+        data.oauth_client_secret = document.getElementById('mcp-oauth-client-secret').value;
+        data.oauth_issuer = document.getElementById('mcp-oauth-issuer').value.trim();
+        data.oauth_scopes = document.getElementById('mcp-oauth-scopes').value.trim().split(/\s+/).filter(Boolean);
+        if (document.getElementById('mcp-oauth-clear-secret').checked && !data.oauth_client_secret) {
+            data.clear_secrets = ['oauth_client_secret'];
+        }
     }
     if (transport === 'stdio') {
         data.command = document.getElementById('mcp-command').value.trim();

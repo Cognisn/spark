@@ -20,6 +20,7 @@ from spark.web.endpoints.identity import router as identity_router
 from spark.web.endpoints.knowledge import router as knowledge_router
 from spark.web.endpoints.lifecycle import router as lifecycle_router
 from spark.web.endpoints.main_menu import router as main_menu_router
+from spark.web.endpoints.mcp_servers import callback_router as mcp_oauth_callback_router
 from spark.web.endpoints.mcp_servers import router as mcp_servers_router
 from spark.web.endpoints.memories import router as memories_router
 from spark.web.endpoints.panel import router as panel_router
@@ -53,6 +54,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(knowledge_router)
     app.include_router(actions_router)
     app.include_router(mcp_servers_router)
+    app.include_router(mcp_oauth_callback_router)
     app.include_router(help_router)
     app.include_router(provider_guides_router)
     app.include_router(usage_router)

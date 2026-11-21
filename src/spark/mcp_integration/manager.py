@@ -27,6 +27,7 @@ from collections.abc import Callable, Coroutine, Iterable
 from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar
 
 from spark.mcp_integration.client import MCPClient, MCPServerConfig, StdioRefused
+from spark.mcp_integration.oauth import SecretsLike, SecretsTokenStore, SignIns, token_store
 
 if TYPE_CHECKING:
     from conduit import SecretResolver
@@ -101,6 +102,26 @@ async def run_on(loop: asyncio.AbstractEventLoop | None, coro: Coroutine[Any, An
     return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coro, loop))
 
 
+def _konfig_store(resolver: Any) -> SecretsLike | None:
+    """The konfig secrets store behind conduit's konfig resolver, if ``resolver`` is one.
+
+    Start-up gives the manager only the resolver; its store also holds the OAuth
+    tokens, so the manager reads it from there.
+    """
+    try:
+        from conduit.integrations.konfig import KonfigSecretResolver
+    except ImportError:  # pragma: no cover - conduit ships the konfig integration
+        return None
+    if not isinstance(resolver, KonfigSecretResolver):
+        return None
+    store = getattr(resolver, "_secrets", None)
+    if store is None or not all(
+        callable(getattr(store, m, None)) for m in ("get", "set", "delete")
+    ):
+        return None
+    return store  # type: ignore[no-any-return]
+
+
 def _server_mode() -> bool:
     from spark import mode
 
@@ -145,6 +166,10 @@ class MCPManager:
     :class:`~spark.mcp_integration.runtime.MCPRuntime`): every coroutine method may
     be awaited from any loop and runs there. ``secrets`` is SPARK's resolver over
     konfig, given to each client for credentials configured as references.
+
+    ``tokens`` is konfig's secrets store, which holds each OAuth server's tokens
+    (:mod:`spark.mcp_integration.oauth`); without it, the store behind a konfig
+    ``secrets`` resolver is used. :attr:`sign_ins` holds the pending OAuth sign-ins.
     """
 
     def __init__(
@@ -152,8 +177,13 @@ class MCPManager:
         client_factory: Callable[[MCPServerConfig], ClientLike] | None = None,
         *,
         secrets: SecretResolver | None = None,
+        tokens: SecretsLike | None = None,
     ) -> None:
         self._secrets = secrets
+        self._token_secrets: SecretsLike | None = (
+            tokens if tokens is not None else _konfig_store(secrets)
+        )
+        self.sign_ins = SignIns()
         self._client_factory: Callable[[MCPServerConfig], ClientLike] = (
             client_factory if client_factory is not None else self._new_client
         )
@@ -162,7 +192,18 @@ class MCPManager:
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def _new_client(self, config: MCPServerConfig) -> ClientLike:
-        return MCPClient(config, secrets=self._secrets)
+        return MCPClient(config, secrets=self._secrets, tokens=self.token_store(config.name))
+
+    def token_store(self, name: str) -> SecretsTokenStore | None:
+        """The OAuth token store of server ``name`` (``None`` without a secrets store)."""
+        if self._token_secrets is None:
+            return None
+        return token_store(self._token_secrets, name)
+
+    @property
+    def token_secrets(self) -> SecretsLike | None:
+        """The secrets store holding the OAuth tokens."""
+        return self._token_secrets
 
     def new_client(self, config: MCPServerConfig) -> ClientLike:
         """A client for ``config`` made as the manager makes its own (not registered)."""
@@ -453,7 +494,11 @@ class MCPManager:
 
     @classmethod
     def from_config(
-        cls, config: dict[str, Any], *, secrets: SecretResolver | None = None
+        cls,
+        config: dict[str, Any],
+        *,
+        secrets: SecretResolver | None = None,
+        tokens: SecretsLike | None = None,
     ) -> MCPManager:
         """Create an MCPManager from a config dict (``config.yaml``; personal mode).
 
@@ -478,7 +523,7 @@ class MCPManager:
         """
         from spark.mcp_integration.servers import to_config
 
-        manager = cls(secrets=secrets)
+        manager = cls(secrets=secrets, tokens=tokens)
         servers = config.get("mcp", {}).get("servers", [])
         if _server_mode():
             if servers:

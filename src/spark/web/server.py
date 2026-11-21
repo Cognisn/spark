@@ -48,7 +48,9 @@ _DATABASE_WAIT_SECONDS = 300
 
 # Personal mode: reachable without a session. Anything else is redirected to
 # /login. Server mode's public paths are warden's (spark.identity.web).
-_PUBLIC_PATHS = frozenset({"/login", "/auto-login", "/api/auth", "/loading", "/favicon.ico"})
+_PUBLIC_PATHS = frozenset(
+    {"/login", "/auto-login", "/api/auth", "/loading", "/favicon.ico", "/mcp/oauth/callback"}
+)
 _PUBLIC_PREFIXES = ("/static/", "/loading/")
 
 

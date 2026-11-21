@@ -16,8 +16,15 @@ every connect, so a changed credential is read again on the next connection:
   for this connection only, under a reference of its own.
 * A bearer token and an API key are conduit's own ``BearerTokenAuth`` and
   ``ApiKeyAuth``. Basic credentials and custom headers, which conduit does not
-  offer, are added to each HTTP request by a transport of SPARK's
-  (:class:`_HeaderTransport`), as is ``ssl_verify: false``.
+  offer, are added to each HTTP request to the server's own origin by a transport
+  of SPARK's (:class:`_HeaderTransport`), never to an authorisation server; the
+  transport also carries ``ssl_verify: false``.
+* OAuth is conduit's ``OAuthAuth`` (:mod:`spark.mcp_integration.oauth`): a
+  pre-registered client id with an optional client secret (a reference, resolved
+  like the others) and the issuer it pins, or dynamic registration; tokens live
+  only in the server's token store. A connection never signs in: with no usable
+  tokens it fails with conduit's ``sign_in_required``, and an administrator signs
+  in from the settings page.
 * conduit names a server ``^[a-z][a-z0-9]*(_[a-z0-9]+)*$`` (at most 32
   characters); SPARK's names are wider, so conduit is given a name derived from
   SPARK's (:func:`conduit_name`). SPARK's own name is what SPARK reports.
@@ -38,16 +45,22 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 import httpx2
 from conduit import ConduitError, SecretRef, SecretResolver
+from conduit.core.backends import TokenStore
 from conduit.mcp import (
     ApiKeyAuth,
     BearerTokenAuth,
+    McpAuthError,
     McpConnection,
     McpError,
     McpServerSettings,
     NoAuth,
+    OAuthAuth,
+    OAuthClient,
+    SignInHook,
     SseTransport,
     StdioTransport,
     StreamableHttpTransport,
@@ -88,12 +101,20 @@ class MCPServerConfig:
     url: str | None = None
 
     # Authentication (credentials are never shown in a repr)
-    auth_type: str = "none"  # none | bearer | api_key | basic | custom
+    auth_type: str = "none"  # none | bearer | api_key | basic | custom | oauth
     auth_token: str | None = field(default=None, repr=False)
     auth_header_name: str = "X-API-Key"
     basic_username: str | None = None
     basic_password: str | None = field(default=None, repr=False)
     custom_headers: dict[str, str] = field(default_factory=dict, repr=False)
+
+    # OAuth (conduit's OAuthAuth): no client id means dynamic registration
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = field(default=None, repr=False)
+    oauth_issuer: str | None = None
+    oauth_scopes: list[str] = field(default_factory=list)
+    #: Changed by each sign-in and sign-out, so every replica reconnects the server.
+    oauth_session: str | None = None
 
     # Connection
     timeout: float = 30.0
@@ -159,31 +180,60 @@ class _References:
 class _HeaderTransport(httpx2.AsyncBaseTransport):
     """Adds the headers conduit's authentication does not send (basic, custom)."""
 
-    def __init__(self, inner: httpx2.AsyncBaseTransport, headers: Mapping[str, str]) -> None:
+    def __init__(
+        self, inner: httpx2.AsyncBaseTransport, headers: Mapping[str, str], origin: str
+    ) -> None:
         self._inner = inner
         self._headers = dict(headers)
+        self._origin = origin
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
-        for name, value in self._headers.items():
-            request.headers[name] = value
+        # Only the MCP server's own origin: an OAuth request to an authorisation
+        # server never carries the server's credentials.
+        if _origin(str(request.url)) == self._origin:
+            for name, value in self._headers.items():
+                request.headers[name] = value
         return await self._inner.handle_async_request(request)
 
     async def aclose(self) -> None:
         await self._inner.aclose()
 
 
+def _origin(url: str) -> str:
+    try:
+        parts = urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return ""
+    return f"{parts.scheme.lower()}://{(parts.hostname or '').lower()}:{port}"
+
+
 class MCPClient:
     """Client for a single MCP server, over :class:`conduit.mcp.McpConnection`.
 
     ``secrets`` is SPARK's resolver over konfig, for credentials configured as
-    ``secret://`` references. :meth:`connect` reports any failure as ``False``
-    (logged with SPARK's name for the server and conduit's failure class).
+    ``secret://`` references; ``tokens`` is the server's OAuth token store
+    (:func:`spark.mcp_integration.oauth.token_store`), needed by an OAuth server.
+    ``http_transport`` replaces the network transport (tests). :meth:`connect`
+    reports any failure as ``False`` (logged with SPARK's name for the server and
+    conduit's failure class, kept as :attr:`last_failure`).
     """
 
-    def __init__(self, config: MCPServerConfig, *, secrets: SecretResolver | None = None) -> None:
+    def __init__(
+        self,
+        config: MCPServerConfig,
+        *,
+        secrets: SecretResolver | None = None,
+        tokens: TokenStore | None = None,
+        http_transport: httpx2.AsyncBaseTransport | None = None,
+    ) -> None:
         self._config = config
         self._secrets = secrets
+        self._tokens = tokens
+        self._network = http_transport
         self._connection: McpConnection | None = None
+        #: conduit's failure class from the last failed connection, or None.
+        self.last_failure: str | None = None
 
     @property
     def name(self) -> str:
@@ -240,7 +290,7 @@ class MCPClient:
         config = self._config
         refs = _References()
         transport: StdioTransport | StreamableHttpTransport | SseTransport
-        auth: NoAuth | BearerTokenAuth | ApiKeyAuth = NoAuth()
+        auth: NoAuth | BearerTokenAuth | ApiKeyAuth | OAuthAuth = NoAuth()
         if config.transport == "stdio":
             if _server_mode():
                 raise StdioRefused(
@@ -265,6 +315,15 @@ class MCPClient:
                 auth = ApiKeyAuth(
                     key=refs("auth_token", config.auth_token), header=config.auth_header_name
                 )
+            elif config.auth_type == "oauth":
+                secret = config.oauth_client_secret
+                auth = OAuthAuth(
+                    client_id=config.oauth_client_id or None,
+                    client_secret=refs("oauth_client_secret", secret) if secret else None,
+                    issuer=config.oauth_issuer or None,
+                    scopes=tuple(config.oauth_scopes),
+                    client_name="Spark",
+                )
         else:
             raise ValueError(f"unknown transport: {config.transport}")
         settings = McpServerSettings(
@@ -283,11 +342,54 @@ class MCPClient:
         if self._config.transport == "stdio":
             return None
         extra = self._extra_headers()
-        if not extra and self._config.ssl_verify:
+        if not extra and self._config.ssl_verify and self._network is None:
             return None
         # verify=False only when the administrator turned certificate checks off.
-        inner = httpx2.AsyncHTTPTransport(verify=bool(self._config.ssl_verify))
-        return _HeaderTransport(inner, extra) if extra else inner
+        inner = self._network or httpx2.AsyncHTTPTransport(verify=bool(self._config.ssl_verify))
+        if not extra:
+            return inner
+        return _HeaderTransport(inner, extra, _origin(self._config.url or ""))
+
+    @property
+    def is_oauth(self) -> bool:
+        return self._config.auth_type == "oauth" and self._config.transport != "stdio"
+
+    def oauth_client(self, sign_in: SignInHook | None) -> OAuthClient:
+        """conduit's OAuth client for this server, with ``sign_in`` as its hook.
+
+        It shares this client's token store, so its lock and its tokens are the
+        server's. Raises ``ValueError`` when the server does not use OAuth.
+        """
+        if not self.is_oauth or self._tokens is None:
+            raise ValueError("this MCP server does not use OAuth")
+        settings, secrets = self.settings()
+        return OAuthClient(
+            settings,
+            resource=str(self._config.url),
+            store=self._tokens,
+            sign_in=sign_in,
+            secrets=secrets,
+            http_transport=self._http_transport(),
+        )
+
+    def _auth_failed(self, reason: str) -> None:
+        """Record an OAuth failure on the store and, past sign-in, audit it."""
+        self.last_failure = reason
+        store = self._tokens
+        if store is not None and hasattr(store, "last_failure"):
+            store.last_failure = reason
+        if reason == "sign_in_required" and not _held(store):
+            return  # never signed in: nothing was refused
+        from spark.identity import audit
+
+        audit.submit(
+            audit.MCP_OAUTH_REFRESH_FAILED,
+            "failure",
+            resource_type="mcp_server",
+            resource_id=self.name,
+            details={"server": self.name, "reason": reason},
+        )
+        logger.warning("MCP server '%s' needs a new OAuth sign-in (%s)", self.name, reason)
 
     # -- Lifecycle -----------------------------------------------------------------
 
@@ -305,10 +407,25 @@ class MCPClient:
         except (ValidationError, ValueError) as exc:
             logger.error("MCP server '%s' (%s) is not usable: %s", self.name, transport, exc)
             return False
-        connection = McpConnection(settings, secrets=secrets, http_transport=self._http_transport())
+        connection = McpConnection(
+            settings,
+            secrets=secrets,
+            tokens=self._tokens if self.is_oauth else None,
+            http_transport=self._http_transport(),
+        )
         try:
             await connection.connect()
+        except McpAuthError as exc:
+            self._auth_failed(exc.reason.value)
+            logger.error(
+                "MCP server '%s' (%s) connection failed: auth (%s)",
+                self.name,
+                transport,
+                exc.reason.value,
+            )
+            return False
         except McpError as exc:
+            self.last_failure = exc.failure.value
             logger.error(
                 "MCP server '%s' (%s) connection failed: %s",
                 self.name,
@@ -328,6 +445,9 @@ class MCPClient:
             )
             return False
         self._connection = connection
+        self.last_failure = None
+        if self.is_oauth and self._tokens is not None and hasattr(self._tokens, "last_failure"):
+            self._tokens.last_failure = None
         logger.info("Connected to MCP server %s (%s)", self.name, transport)
         return True
 
@@ -365,6 +485,9 @@ class MCPClient:
         failure: str | None = None
         try:
             result = await connection.call_tool(tool_name, arguments)
+        except McpAuthError as exc:
+            self._auth_failed(exc.reason.value)
+            failure = exc.failure.value
         except McpError as exc:
             failure = exc.failure.value
         if failure is not None:
@@ -373,3 +496,9 @@ class MCPClient:
             "content": [{"type": "text", "text": result.text}],
             "isError": result.is_error,
         }
+
+
+def _held(store: Any) -> bool:
+    """Whether ``store`` (SPARK's token store) holds tokens; unknown stores count as yes."""
+    signed_in = getattr(store, "signed_in", None)
+    return bool(signed_in()) if callable(signed_in) else store is not None

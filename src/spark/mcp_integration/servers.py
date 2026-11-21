@@ -13,9 +13,16 @@ transport, stdio included, and reads ``config.yaml``. Server mode:
 * grants each server to the roles listed in its ``roles``: a user holds
   ``spark.mcp.<server>`` while one of their roles is listed
   (:func:`grant_permissions`), and a server listing no role is granted to no one;
-* keeps credentials (``auth_token``, ``basic_password``, ``custom_headers``) out of
-  the entry: they live in konfig's secrets store under :func:`secret_name`, and
-  :func:`public_entry` reports only whether each is set.
+* keeps credentials (``auth_token``, ``basic_password``, ``custom_headers``,
+  ``oauth_client_secret``) out of the entry: they live in konfig's secrets store
+  under :func:`secret_name`, and :func:`public_entry` reports only whether each is
+  set.
+
+OAuth (``auth_type: oauth``, either mode, HTTP and SSE only) keeps its client id,
+pinned issuer and scopes in the entry (:data:`OAUTH_FIELDS`, checked by
+:func:`check_oauth` as conduit's ``OAuthAuth`` would); the client secret is a
+credential like the others, and the tokens are never in the entry at all
+(:mod:`spark.mcp_integration.oauth`).
 """
 
 from __future__ import annotations
@@ -27,12 +34,15 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from conduit.mcp.settings import check_endpoint_url
+from conduit import SecretRef
+from conduit.mcp.settings import OAuthAuth, check_endpoint_url
+from pydantic import ValidationError
 
 from spark.mcp_integration.client import MCPServerConfig
 from spark.tools.registry import MCP_PERMISSION_PREFIX, mcp_permission_name
 
 __all__ = [
+    "OAUTH_FIELDS",
     "PERMISSION_PREFIX",
     "SECRET_FIELDS",
     "SERVER_TRANSPORTS",
@@ -40,6 +50,7 @@ __all__ = [
     "TRANSPORTS",
     "SecretLookup",
     "ServerEntryError",
+    "check_oauth",
     "grant_permissions",
     "is_granted",
     "permission_name",
@@ -56,12 +67,13 @@ logger = logging.getLogger(__name__)
 TRANSPORTS: Final = ("stdio", "http", "sse")
 SERVER_TRANSPORTS: Final = ("http", "sse")
 PERMISSION_PREFIX: Final = MCP_PERMISSION_PREFIX
-SECRET_FIELDS: Final = ("auth_token", "basic_password", "custom_headers")
+SECRET_FIELDS: Final = ("auth_token", "basic_password", "custom_headers", "oauth_client_secret")
+OAUTH_FIELDS: Final = ("oauth_client_id", "oauth_issuer", "oauth_scopes", "oauth_session")
 STDIO_REFUSED: Final = (
     "stdio MCP servers run a command on the host and are not available in server mode: "
     "use an HTTP or SSE server"
 )
-_AUTH_TYPES: Final = ("none", "bearer", "api_key", "basic", "custom")
+_AUTH_TYPES: Final = ("none", "bearer", "api_key", "basic", "custom", "oauth")
 _SERVER_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}")
 
 # A secrets-store lookup: name -> value, or None when not set.
@@ -110,6 +122,78 @@ def _has_value(value: Any) -> bool:
     return bool(value) if isinstance(value, (str, dict)) else value is not None
 
 
+def _scopes(name: str, value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        value = value.split()
+    if not isinstance(value, list) or not all(isinstance(s, str) for s in value):
+        raise ServerEntryError(f"server {name!r} OAuth scopes must be a list of scope names")
+    return [s for s in (v.strip() for v in value) if s]
+
+
+def check_oauth(entry: Mapping[str, Any], *, secret_set: bool) -> dict[str, Any]:
+    """The OAuth fields of ``entry``, checked as conduit's ``OAuthAuth`` checks them.
+
+    ``secret_set`` says whether the server has a client secret (given now, or kept
+    in the secrets store). A client secret needs the client id and the issuer it
+    pins, so it is only ever sent to the server that issued it. Messages name
+    fields, never values. Certificate checks stay on: the OAuth requests share the
+    server's HTTP transport, and a code, a token or the client secret must never go
+    to an authorisation server that was not verified. Raises :class:`ServerEntryError`.
+    """
+    name = str(entry.get("name", ""))
+    if entry.get("transport") not in SERVER_TRANSPORTS:
+        raise ServerEntryError(f"server {name!r}: OAuth needs an HTTP or SSE server")
+    if entry.get("ssl_verify", True) is False:
+        raise ServerEntryError(f"server {name!r}: OAuth needs Verify SSL on")
+    client_id = entry.get("oauth_client_id") or None
+    issuer = entry.get("oauth_issuer") or None
+    if client_id is not None and not isinstance(client_id, str):
+        raise ServerEntryError(f"server {name!r} OAuth client id must be text")
+    if issuer is not None and not isinstance(issuer, str):
+        raise ServerEntryError(f"server {name!r} OAuth issuer must be a URL")
+    client_id = client_id.strip() or None if client_id else None
+    issuer = issuer.strip() or None if issuer else None
+    scopes = _scopes(name, entry.get("oauth_scopes"))
+    if secret_set and client_id is None:
+        raise ServerEntryError(
+            f"server {name!r}: an OAuth client secret needs the client id it was issued with"
+        )
+    if secret_set and issuer is None:
+        raise ServerEntryError(
+            f"server {name!r}: an OAuth client secret needs the issuer it was issued by"
+        )
+    if issuer is not None:
+        reason = check_endpoint_url(issuer)
+        if reason is not None:
+            raise ServerEntryError(f"server {name!r} OAuth issuer was refused: {reason}")
+    refused: str | None = None
+    try:
+        OAuthAuth(
+            client_id=client_id,
+            client_secret=SecretRef("spark.mcp.check") if secret_set else None,
+            issuer=issuer,
+            scopes=tuple(scopes),
+        )
+    except ValidationError as exc:
+        fields = sorted({str(e["loc"][0]) for e in exc.errors() if e.get("loc")})
+        refused = ", ".join(fields) or "the OAuth settings"
+    except ValueError:
+        refused = "the OAuth settings"
+    if refused is not None:
+        raise ServerEntryError(f"server {name!r}: OAuth refused {refused}")
+    checked: dict[str, Any] = {
+        "oauth_client_id": client_id,
+        "oauth_issuer": issuer,
+        "oauth_scopes": scopes,
+    }
+    session = entry.get("oauth_session")
+    if isinstance(session, str) and session:
+        checked["oauth_session"] = session
+    return checked
+
+
 def validate_entry(entry: Mapping[str, Any], *, server: bool) -> dict[str, Any]:
     """``entry`` checked for the mode, as stored. Raises :class:`ServerEntryError`."""
     name = entry.get("name")
@@ -120,7 +204,10 @@ def validate_entry(entry: Mapping[str, Any], *, server: bool) -> dict[str, Any]:
         raise ServerEntryError(
             f"server {name!r} transport must be one of {', '.join(SERVER_TRANSPORTS if server else TRANSPORTS)}"
         )
-    checked = dict(entry)
+    checked = {k: v for k, v in entry.items() if k not in OAUTH_FIELDS}
+    if entry.get("auth_type") == "oauth":
+        # Whether a client secret is set is checked where that is known (the endpoint).
+        checked.update(check_oauth(entry, secret_set=False))
     if not server:
         return checked
     if transport == "stdio":
@@ -243,6 +330,14 @@ def to_config(entry: Mapping[str, Any], secrets: SecretLookup | None) -> MCPServ
         auth_token = secrets(secret_name(name, "auth_token"))
         basic_password = secrets(secret_name(name, "basic_password"))
         custom_headers = _headers(name, secrets(secret_name(name, "custom_headers")))
+    oauth = entry.get("auth_type") == "oauth"
+    oauth_secret: Any = None
+    if oauth:
+        oauth_secret = (
+            entry.get("oauth_client_secret")
+            if secrets is None
+            else secrets(secret_name(name, "oauth_client_secret"))
+        )
     return MCPServerConfig(
         name=name,
         transport=str(entry.get("transport", "stdio")),
@@ -259,12 +354,18 @@ def to_config(entry: Mapping[str, Any], secrets: SecretLookup | None) -> MCPServ
         custom_headers=dict(custom_headers),
         timeout=float(entry.get("timeout", 30)),
         ssl_verify=bool(entry.get("ssl_verify", True)),
+        oauth_client_id=(entry.get("oauth_client_id") or None) if oauth else None,
+        oauth_client_secret=(str(oauth_secret) if oauth_secret else None),
+        oauth_issuer=(entry.get("oauth_issuer") or None) if oauth else None,
+        oauth_scopes=_scopes(name, entry.get("oauth_scopes")) if oauth else [],
+        oauth_session=(entry.get("oauth_session") or None) if oauth else None,
     )
 
 
 def public_entry(entry: Mapping[str, Any], secrets: SecretLookup) -> dict[str, Any]:
     """``entry`` as the settings page may see it: no credential, only whether each is set."""
-    shown = {k: v for k, v in entry.items() if k not in (*SECRET_FIELDS, "env", "command", "args")}
+    hidden = (*SECRET_FIELDS, "env", "command", "args", "oauth_session")
+    shown = {k: v for k, v in entry.items() if k not in hidden}
     name = str(entry.get("name", ""))
     shown["secrets_set"] = {f: bool(secrets(secret_name(name, f))) for f in SECRET_FIELDS}
     return shown

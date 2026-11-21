@@ -198,4 +198,5 @@ class TestCredentials:
             "auth_token": True,
             "basic_password": False,
             "custom_headers": False,
+            "oauth_client_secret": False,
         }
