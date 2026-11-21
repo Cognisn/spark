@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc30] - 2026-11-21
+
 ### Added
 
 - **Administrators configure single sign-on in Spark.** A **Single sign-on** page (`/admin/sso`, reached from the Users page's **Single sign-on settings** button, for holders of `spark.users.admin`) sets warden's settings: the issuer URL, the client ID, the client secret and whether single sign-on is on. The secret is written to the secrets store under warden's name for it and is never shown, returned or logged; a blank field keeps it and a new one replaces it. Single sign-on cannot be switched on without a stored secret. The page shows the redirect URI to register with the provider, with a copy button, and a **Test** of the saved settings that checks the secret, the issuer's discovery document (including that it names the same issuer), the signing algorithms and the provider's signing keys, signing nobody in. warden audits each change with field and secret names only (`warden.identity.sso.settings_changed`, `warden.identity.sso.client_secret_set`, `warden.identity.sso.configuration_tested`), and switching single sign-on off ends the sessions it issued. Switching it off while any active, suspended or invited user signs in only through it asks for confirmation first and names them. An administrator can change a user's sign-in method on the user's page. `docs/deployment/identity.md` describes it.
