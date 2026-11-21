@@ -30,6 +30,7 @@ STANDALONE = {"base.html", "login.html", "loading.html", "auth_layout.html"}
 # invitations, password reset, single sign-on) extend this standalone layout:
 # they make no scripted state changes, and each form carries its own token.
 AUTH_LAYOUT = '{% extends "auth_layout.html" %}'
+ADMIN_LAYOUT = '{% extends "admin_layout.html" %}'
 
 UNSAFE_METHOD = re.compile(r"""method\s*:\s*['"`](POST|PUT|PATCH|DELETE)['"`]""", re.I)
 
@@ -61,7 +62,8 @@ class TestPagesLoadTheWrapper:
         if path.name in STANDALONE or path.name.startswith("_"):
             return  # standalone, or a partial included by a page
         text = path.read_text(encoding="utf-8").lstrip()
-        assert text.startswith(('{% extends "base.html" %}', AUTH_LAYOUT))
+        # The Administration layout extends base.html itself (checked here too).
+        assert text.startswith(('{% extends "base.html" %}', ADMIN_LAYOUT, AUTH_LAYOUT))
 
     def test_login_page_makes_no_scripted_state_changes(self) -> None:
         text = (TEMPLATES / "login.html").read_text(encoding="utf-8")
