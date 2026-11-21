@@ -233,5 +233,8 @@ class MemorySecrets:
     def has(self, key: str) -> bool:
         return key in self.data
 
+    def list_keys(self) -> list[str]:
+        return list(self.data)
+
     def resolve_uri(self, value: str) -> str | None:
         return self.data.get(value[len("secret://") :]) if value.startswith("secret://") else value

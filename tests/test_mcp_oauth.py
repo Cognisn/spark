@@ -13,7 +13,9 @@ authorisation server is synthetic (tests.mcp_oauth_helpers).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import secrets as secrets_module
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -148,6 +150,260 @@ class TestTokenStore:
         assert "discovery metadata" in status["message"]
         store.last_failure = "sign_in_required"
         assert oauth.oauth_status(store)["state"] == "signed_in"
+
+
+# -- Records shared by processes ----------------------------------------------------------------
+#
+# Two store objects over one secrets store stand for two processes. konfig's store has
+# no compare-and-swap: a delete re-reads the head and leaves one it did not read, a
+# write takes back its parts when its head was replaced or removed, and forget sweeps
+# parts no head names.
+
+TOKEN_NAME = oauth.entry_name("docs", "mcp:docs")
+CLIENT_NAME = oauth.entry_name("docs", "mcp:docs:client")
+
+
+def _parts(secrets: MemorySecrets) -> list[str]:
+    return [n for n in secrets.data if n.count(".") == 3]
+
+
+def _unnamed(secrets: MemorySecrets) -> list[str]:
+    """Parts that no head names."""
+    named: set[str] = set()
+    for name, raw in secrets.data.items():
+        if name.count(".") == 1:
+            head = json.loads(raw)
+            named.update(f"{name}.{head['generation']}.{i}" for i in range(head["parts"]))
+    return [n for n in _parts(secrets) if n not in named]
+
+
+def _rc33_write(secrets: MemorySecrets, name: str, tokens: TokenSet) -> None:
+    """A record exactly as 0.3.0rc33 and earlier wrote it (their _write, frozen)."""
+    text = json.dumps(tokens.to_storage(), ensure_ascii=False)
+    chunks = [text[i : i + oauth.PART_LIMIT] for i in range(0, len(text), oauth.PART_LIMIT)]
+    generation = secrets_module.token_hex(8)
+    for index, chunk in enumerate(chunks or [""]):
+        secrets.set(f"{name}.{generation}.{index}", chunk)
+    head = {"format": "spark.mcp.oauth/1", "generation": generation, "parts": len(chunks or [""])}
+    secrets.set(name, json.dumps(head))
+
+
+def _rc33_read(secrets: MemorySecrets, name: str) -> TokenSet | None:
+    """A record as 0.3.0rc33 and earlier read it (their _head and _read, frozen)."""
+    raw = secrets.get(name)
+    if not raw:
+        return None
+    head = json.loads(raw)
+    assert head.get("format") == "spark.mcp.oauth/1"
+    assert isinstance(head.get("generation"), str) and isinstance(head.get("parts"), int)
+    chunks = [secrets.get(f"{name}.{head['generation']}.{i}") for i in range(head["parts"])]
+    assert all(c is not None for c in chunks)
+    return TokenSet.from_storage(json.loads("".join(c for c in chunks if c is not None)))
+
+
+class _AfterHead:
+    """A secrets store that runs ``then`` once, right after the head entry is set."""
+
+    def __init__(self, secrets: MemorySecrets, then: Any) -> None:
+        self._secrets = secrets
+        self._then = then
+
+    def get(self, key: str) -> str | None:
+        return self._secrets.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        self._secrets.set(key, value)
+        if key == TOKEN_NAME and self._then is not None:
+            then, self._then = self._then, None
+            then()
+
+    def delete(self, key: str) -> None:
+        self._secrets.delete(key)
+
+
+class TestRecordsAcrossProcesses:
+    async def test_a_delete_leaves_a_head_stored_since_it_was_read(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        secrets = MemorySecrets()
+        web, worker = oauth.SecretsTokenStore(secrets, "docs"), oauth.SecretsTokenStore(
+            secrets, "docs"
+        )
+        await web.put("mcp:docs", _tokens(1))
+        assert await worker.get("mcp:docs") == _tokens(1)  # the stale record, read
+
+        async def web_refreshes() -> None:
+            await web.put("mcp:docs", _tokens(2))
+
+        await asyncio.ensure_future(web_refreshes())  # another task, as another process
+        with caplog.at_level(logging.DEBUG, logger="spark.mcp_integration.oauth"):
+            await worker.delete("mcp:docs")  # conduit's invalid_grant fallback
+        assert await oauth.SecretsTokenStore(secrets, "docs").get("mcp:docs") == _tokens(2)
+        assert _unnamed(secrets) == []
+        assert "dev-only" not in caplog.text
+
+    async def test_a_delete_removes_the_head_it_read(self) -> None:
+        secrets = MemorySecrets()
+        web, worker = oauth.SecretsTokenStore(secrets, "docs"), oauth.SecretsTokenStore(
+            secrets, "docs"
+        )
+        await web.put("mcp:docs", _tokens(1))
+        assert await worker.get("mcp:docs") == _tokens(1)
+        await worker.delete("mcp:docs")
+        assert secrets.data == {}
+
+    async def test_a_delete_after_reading_nothing_leaves_a_record_stored_since(self) -> None:
+        secrets = MemorySecrets()
+        web, worker = oauth.SecretsTokenStore(secrets, "docs"), oauth.SecretsTokenStore(
+            secrets, "docs"
+        )
+        assert await worker.get("mcp:docs") is None
+
+        async def web_signs_in() -> None:
+            await web.put("mcp:docs", _tokens(1))
+
+        await asyncio.ensure_future(web_signs_in())
+        await worker.delete("mcp:docs")
+        assert await web.get("mcp:docs") == _tokens(1)
+
+    async def test_a_sign_out_removes_tokens_another_process_refreshed(self) -> None:
+        # conduit's sign_out deletes without reading: an earlier read by this store
+        # object, in another task, must not keep the newer tokens.
+        secrets = MemorySecrets()
+        web, worker = oauth.SecretsTokenStore(secrets, "docs"), oauth.SecretsTokenStore(
+            secrets, "docs"
+        )
+        await web.put("mcp:docs", _tokens(1))
+
+        async def web_reads() -> None:
+            assert await web.get("mcp:docs") == _tokens(1)
+
+        await asyncio.ensure_future(web_reads())
+        await worker.put("mcp:docs", _tokens(2))
+
+        async def web_signs_out() -> None:
+            await web.delete("mcp:docs")
+
+        await asyncio.ensure_future(web_signs_out())
+        assert secrets.data == {}
+
+    async def test_a_write_whose_head_is_removed_takes_its_parts_back(self) -> None:
+        secrets = MemorySecrets()
+        worker = oauth.SecretsTokenStore(secrets, "docs")
+        web = oauth.SecretsTokenStore(
+            _AfterHead(secrets, lambda: secrets.delete(TOKEN_NAME)), "docs"
+        )
+        await web.put("mcp:docs", _tokens(1))  # the other process's delete lands here
+        assert secrets.data == {}
+        assert await worker.get("mcp:docs") is None
+
+    async def test_a_write_whose_head_is_replaced_takes_its_parts_back(self) -> None:
+        secrets = MemorySecrets()
+        other = oauth.SecretsTokenStore(secrets, "docs")
+        web = oauth.SecretsTokenStore(
+            _AfterHead(secrets, lambda: other._write(TOKEN_NAME, _tokens(2))), "docs"
+        )
+        await web.put("mcp:docs", _tokens(1))
+        assert await other.get("mcp:docs") == _tokens(2)
+        assert _unnamed(secrets) == []
+        assert len(_parts(secrets)) == 1
+
+    async def test_forget_sweeps_parts_no_head_names(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        secrets = MemorySecrets()
+        store = oauth.token_store(secrets, "docs")
+        await store.put("mcp:docs", _tokens(1))
+        await store.put("mcp:docs:client", _tokens(2))
+        secrets.set(f"{TOKEN_NAME}.0123456789abcdef.0", '{"access_token": "orphan-dev-only"')
+        secrets.set(f"{TOKEN_NAME}.0123456789abcdef.1", "}")
+        secrets.set(f"{CLIENT_NAME}.fedcba9876543210.0", "orphan-dev-only")
+        await oauth.token_store(secrets, "other").put("mcp:other", _tokens(3))
+        secrets.set("mcp_server_docs_token", "a configured credential")
+        kept = {k: v for k, v in secrets.data.items() if not k.startswith("mcp_server_docs_oauth")}
+        with caplog.at_level(logging.DEBUG, logger="spark.mcp_integration.oauth"):
+            store.forget()
+        assert secrets.data == kept
+        assert "dev-only" not in caplog.text
+
+    async def test_forget_removes_a_head_stored_since_this_store_read(self) -> None:
+        secrets = MemorySecrets()
+        web, worker = oauth.token_store(secrets, "docs"), oauth.SecretsTokenStore(secrets, "docs")
+        await web.put("mcp:docs", _tokens(1))
+        assert await web.get("mcp:docs") == _tokens(1)
+        await worker.put("mcp:docs", _tokens(2))
+        oauth.forget(secrets, "docs")
+        assert secrets.data == {}
+
+    async def test_the_module_forget_sweeps_unnamed_parts(self) -> None:
+        secrets = MemorySecrets()
+        secrets.set(f"{TOKEN_NAME}.0123456789abcdef.0", "orphan-dev-only")
+        oauth.forget(secrets, "docs")
+        assert secrets.data == {}
+
+    async def test_the_sweep_keeps_a_record_stored_just_after_the_delete(self) -> None:
+        secrets = MemorySecrets()
+        other = oauth.SecretsTokenStore(secrets, "docs")
+
+        class AfterDelete(_AfterHead):
+            def list_keys(self) -> list[str]:
+                return secrets.list_keys()
+
+            def delete(self, key: str) -> None:
+                super().delete(key)
+                if key == TOKEN_NAME and self._then is not None:
+                    then, self._then = self._then, None
+                    then()
+
+        store = oauth.SecretsTokenStore(
+            AfterDelete(secrets, lambda: other._write(TOKEN_NAME, _tokens(2))), "docs"
+        )
+        secrets.set(f"{TOKEN_NAME}.0123456789abcdef.0", "orphan-dev-only")
+        await store.delete("mcp:docs")  # read nothing: removes, then sweeps
+        assert await other.get("mcp:docs") == _tokens(2)
+        assert _unnamed(secrets) == []
+
+    async def test_forget_on_a_store_that_cannot_list_removes_what_heads_name(self) -> None:
+        secrets = MemorySecrets()
+        store = oauth.SecretsTokenStore(_AfterHead(secrets, None), "docs")
+        await store.put("mcp:docs", _tokens(1))
+        store.forget()
+        assert secrets.data == {}
+
+
+class TestEarlierRecords:
+    """Records written by 0.3.0rc33 and earlier, and read by them after the change."""
+
+    async def test_a_signed_in_server_stays_signed_in_after_upgrade(self) -> None:
+        secrets, auth = MemorySecrets(), SyntheticAuthServer(RESOURCE)
+        await _signed_in(secrets, auth)
+        held = await oauth.SecretsTokenStore(secrets, "docs").get("mcp:docs")
+        assert held is not None
+        secrets.data.clear()
+        _rc33_write(secrets, TOKEN_NAME, held)
+        _rc33_write(secrets, CLIENT_NAME, _tokens(9))
+        oauth._stores(secrets).clear()
+        store = oauth.token_store(secrets, "docs")
+        assert store.signed_in()
+        assert await store.get("mcp:docs") == held
+        token = await _client(secrets, auth).oauth_client(None).access_token(interactive=False)
+        assert token.get_secret_value() == held.access_token.get_secret_value()
+
+    async def test_an_earlier_record_is_replaced_and_removed_cleanly(self) -> None:
+        secrets = MemorySecrets()
+        _rc33_write(secrets, TOKEN_NAME, _tokens(1))
+        store = oauth.SecretsTokenStore(secrets, "docs")
+        assert await store.get("mcp:docs") == _tokens(1)
+        await store.put("mcp:docs", _tokens(2))
+        assert _unnamed(secrets) == [] and len(_parts(secrets)) == 1
+        await store.delete("mcp:docs")
+        assert secrets.data == {}
+
+    async def test_a_record_written_now_is_read_by_earlier_releases(self) -> None:
+        secrets = MemorySecrets()
+        long = TokenSet(access_token=SecretStr("a" * 2500), refresh_token=SecretStr("r" * 900))
+        await oauth.SecretsTokenStore(secrets, "docs").put("mcp:docs", long)
+        assert _rc33_read(secrets, TOKEN_NAME) == long
 
 
 # -- The entry -----------------------------------------------------------------------------
@@ -406,6 +662,15 @@ class TestRefresh:
         await _signed_in(secrets, auth)
         await _client(secrets, auth).oauth_client(None).sign_out()
         assert not oauth.token_store(secrets, "docs").signed_in()
+
+    async def test_sign_out_leaves_no_part_of_the_tokens(self) -> None:
+        secrets, auth = MemorySecrets(), SyntheticAuthServer(RESOURCE)
+        await _signed_in(secrets, auth)
+        secrets.set(f"{TOKEN_NAME}.0123456789abcdef.0", "orphan-dev-only")  # a lost write
+        registration = {k: v for k, v in secrets.data.items() if k.startswith(CLIENT_NAME)}
+        assert registration
+        await _client(secrets, auth).oauth_client(None).sign_out()
+        assert secrets.data == registration  # conduit keeps the registration
 
     async def test_a_connection_never_signs_in(self) -> None:
         secrets, auth = MemorySecrets(), SyntheticAuthServer(RESOURCE)

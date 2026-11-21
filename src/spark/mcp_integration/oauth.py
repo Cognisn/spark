@@ -14,6 +14,10 @@ supplies what conduit asks of a product:
   written in parts of at most :data:`PART_LIMIT` characters (the Windows credential
   store holds little more than a thousand), as a new generation before the head
   entry moves to it, so a reader sees the old set or the new one, never a mixture.
+  konfig's store has no compare-and-swap, so the head is re-read instead: a delete
+  leaves a head other than the one its caller read (another process stored newer
+  tokens meanwhile), a write whose head was replaced or removed takes its parts
+  back, and :meth:`SecretsTokenStore.forget` also removes parts no head names.
   There is one store object per server per secrets store in the process
   (:func:`token_store`): conduit's lock is per store object and key, so every
   client of a server, the sign-in's included, shares one lock and one refresh.
@@ -43,6 +47,7 @@ import hmac
 import json
 import logging
 import secrets
+import threading
 import time
 import weakref
 from collections.abc import Callable
@@ -84,6 +89,8 @@ PART_LIMIT: Final = 1000
 _START_SECONDS: Final = 60.0
 _FORMAT: Final = "spark.mcp.oauth/1"
 _KEY_LIMIT: Final = 512
+#: What a deleting task read of the record: nothing, so the current head goes.
+_UNREAD: Final = object()
 
 
 class SecretsLike(Protocol):
@@ -135,6 +142,9 @@ class SecretsTokenStore:
         self._secrets = secrets
         self.server = server
         self.last_failure: str | None = None
+        # The head each task last read or wrote, by entry name (see delete).
+        self._seen: weakref.WeakKeyDictionary[Any, dict[str, Any]] = weakref.WeakKeyDictionary()
+        self._seen_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return f"SecretsTokenStore({self.server!r})"
@@ -169,8 +179,10 @@ class SecretsTokenStore:
     def _part(name: str, generation: str, index: int) -> str:
         return f"{name}.{generation}.{index}"
 
-    def _read(self, name: str) -> TokenSet | None:
+    def _read(self, name: str, seen: dict[str, Any] | None = None) -> TokenSet | None:
         head = self._head(name)
+        if seen is not None:
+            seen[name] = head
         if head is None:
             return None
         chunks: list[str] = []
@@ -194,38 +206,127 @@ class SecretsTokenStore:
         for index in range(head["parts"]):
             self._secrets.delete(self._part(name, head["generation"], index))
 
-    def _write(self, name: str, tokens: TokenSet) -> None:
+    def _current(self, name: str) -> dict[str, Any] | None:
+        """The head as it is now; an unreadable one is treated as none."""
         try:
-            previous = self._head(name)
+            return self._head(name)
         except TokenStoreError:
-            previous = None  # an unreadable record is replaced
+            return None
+
+    @staticmethod
+    def _same(one: dict[str, Any] | None, two: dict[str, Any] | None) -> bool:
+        return one is not None and two is not None and one["generation"] == two["generation"]
+
+    def _write(self, name: str, tokens: TokenSet) -> dict[str, Any] | None:
+        """Store ``tokens`` as a new generation: the head written, or ``None`` if lost.
+
+        Once the head has moved it is read back. If another process replaced or
+        removed it meanwhile, this generation's parts are taken back, so none is left
+        that no head names.
+        """
+        previous = self._current(name)  # an unreadable record is replaced
         text = json.dumps(tokens.to_storage(), ensure_ascii=False)
         chunks = [text[i : i + PART_LIMIT] for i in range(0, len(text), PART_LIMIT)] or [""]
         generation = secrets.token_hex(8)
         for index, chunk in enumerate(chunks):
             self._secrets.set(self._part(name, generation, index), chunk)
-        head = {"format": _FORMAT, "generation": generation, "parts": len(chunks)}
+        head: dict[str, Any] = {"format": _FORMAT, "generation": generation, "parts": len(chunks)}
         self._secrets.set(name, json.dumps(head))
-        self._drop_parts(name, previous)
+        now = self._current(name)
+        if not self._same(now, previous):
+            self._drop_parts(name, previous)
+        if self._same(now, head):
+            return head
+        self._drop_parts(name, head)
+        logger.info(
+            "MCP server %s: new OAuth tokens not kept: the record changed as they were stored",
+            self.server,
+        )
+        return None
 
-    def _remove(self, name: str) -> None:
-        try:
-            head = self._head(name)
-        except TokenStoreError:
-            head = None
+    def _remove(self, name: str, read: Any = _UNREAD) -> None:
+        """Remove the record, unless it is not the one the deleting task read.
+
+        ``read`` is the head that task read (``None`` for no record), or
+        :data:`_UNREAD` if it read none (conduit's sign-out), which removes the current
+        head and every part of the record no head names. The head is re-read
+        immediately before the delete: one whose generation is not the one read was
+        stored by another process since, and stays with its parts.
+        """
+        head = self._current(name)
+        seen = read if isinstance(read, dict) else None
+        if read is not _UNREAD and head is not None and not self._same(head, seen):
+            self._drop_parts(name, seen)
+            logger.info("MCP server %s: OAuth record changed since it was read; kept", self.server)
+            return
         self._secrets.delete(name)
         self._drop_parts(name, head)
+        if seen is not None and not self._same(head, seen):
+            self._drop_parts(name, seen)
+        if read is _UNREAD:
+            removed = self._sweep((name,))
+            if removed:
+                logger.info("MCP server %s: removed %d unnamed OAuth parts", self.server, removed)
+
+    def _sweep(self, names: tuple[str, ...]) -> int:
+        """Remove every part of ``names`` that no head names; the number removed.
+
+        Needs the secrets store's listing (konfig's ``list_keys``); without one,
+        nothing is swept.
+        """
+        listing = getattr(self._secrets, "list_keys", None)
+        if not callable(listing):
+            return 0
+        named: set[str] = set()
+        for name in names:
+            head = self._current(name)
+            if head is not None:
+                named.update(self._part(name, head["generation"], i) for i in range(head["parts"]))
+        removed = 0
+        for key in list(listing()):
+            if not isinstance(key, str) or key in named:
+                continue
+            for name in names:
+                if not key.startswith(name + "."):
+                    continue
+                generation, dot, index = key[len(name) + 1 :].partition(".")
+                if generation and dot and index.isdigit():
+                    self._secrets.delete(key)
+                    removed += 1
+                break
+        return removed
+
+    def _task_seen(self, create: bool) -> dict[str, Any] | None:
+        """The heads the current task has read or written, by entry name."""
+        task = asyncio.current_task()
+        if task is None:
+            return None
+        with self._seen_lock:
+            seen = self._seen.get(task)
+            if seen is None and create:
+                seen = {}
+                self._seen[task] = seen
+            return seen
 
     # -- conduit's TokenStore -----------------------------------------------------------
 
     async def get(self, key: str) -> TokenSet | None:
-        return await asyncio.to_thread(self._read, self._name(key))
+        return await asyncio.to_thread(self._read, self._name(key), self._task_seen(True))
 
     async def put(self, key: str, tokens: TokenSet) -> None:
-        await asyncio.to_thread(self._write, self._name(key), tokens)
+        name = self._name(key)
+        head = await asyncio.to_thread(self._write, name, tokens)
+        seen = self._task_seen(True)
+        if seen is not None:
+            seen[name] = head
 
     async def delete(self, key: str) -> None:
-        await asyncio.to_thread(self._remove, self._name(key))
+        # conduit reads before it deletes (its invalid_grant fallback), in one task: only
+        # the head that task read may go. A task that read nothing (sign-out) removes it.
+        name = self._name(key)
+        seen = self._task_seen(False)
+        read = seen.pop(name, _UNREAD) if seen is not None else _UNREAD
+        await asyncio.to_thread(self._remove, name, read)
 
     # -- SPARK's own questions ----------------------------------------------------------
 
@@ -239,9 +340,11 @@ class SecretsTokenStore:
             return False
 
     def forget(self) -> None:
-        """Remove the tokens and the registration (the server was removed)."""
+        """Remove the tokens and the registration (sign-out, or the server was removed),
+        whatever generation is current, and every part of them no head names, so
+        nothing of the server's tokens stays in the secrets store."""
         for key in _keys(self.server):
-            self._remove(entry_name(self.server, key))
+            self._remove(entry_name(self.server, key))  # read nothing: removes and sweeps
         self.last_failure = None
 
 
@@ -274,7 +377,8 @@ def token_store(secrets: SecretsLike, server: str) -> SecretsTokenStore:
 
 
 def forget(secrets: SecretsLike, server: str) -> None:
-    """Remove ``server``'s tokens and registration, and its store object."""
+    """Remove ``server``'s tokens and registration, every part of them no head names,
+    and its store object."""
     token_store(secrets, server).forget()
     _stores(secrets).pop(server, None)
 
