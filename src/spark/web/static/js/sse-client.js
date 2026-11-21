@@ -20,7 +20,9 @@ function sendMessageWithSSE(conversationId, message, attachmentIds) {
     accumulatedContent = '';
 
     const btn = document.getElementById('btn-send');
-    btn.innerHTML = '<i class="bi bi-stop-circle"></i>';
+    btn.innerHTML = '<i class="bi bi-stop-circle" aria-hidden="true"></i>';
+    btn.title = 'Stop';
+    btn.setAttribute('aria-label', 'Stop the response');
     btn.onclick = cancelCurrentRequest;
 
     // Show typing indicator
@@ -234,7 +236,9 @@ function closeStream() {
 
     const btn = document.getElementById('btn-send');
     if (btn) {
-        btn.innerHTML = '<i class="bi bi-send"></i>';
+        btn.innerHTML = '<i class="bi bi-send" aria-hidden="true"></i>';
+        btn.title = 'Send';
+        btn.setAttribute('aria-label', 'Send');
         btn.onclick = null;
     }
 }

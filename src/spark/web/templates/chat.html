@@ -39,27 +39,27 @@
     <div class="d-flex align-items-center justify-content-between px-3 py-2"
          style="border-bottom: 1px solid var(--app-border);">
         <div>
-            <a href="/conversations" class="btn btn-app-ghost btn-sm me-2"><i class="bi bi-arrow-left"></i></a>
+            <a href="/conversations" class="btn btn-app-ghost btn-sm me-2" title="All conversations" aria-label="Back to all conversations"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
             <strong id="conv-display-name" style="cursor: pointer;" onclick="renameConversation()" onkeydown="if(event.key==='Enter')renameConversation()" tabindex="0" role="button" title="Click to rename">{{ conversation.name }}</strong>
-            <button class="btn btn-app-ghost btn-sm ms-1" onclick="renameConversation()" title="Rename"><i class="bi bi-pencil" style="font-size: 0.7rem;"></i></button>
+            <button class="btn btn-app-ghost btn-sm ms-1" onclick="renameConversation()" title="Rename" aria-label="Rename conversation"><i class="bi bi-pencil" style="font-size: 0.7rem;" aria-hidden="true"></i></button>
             <span class="ms-1" style="font-size: 0.8125rem; color: var(--app-text-muted); cursor: pointer;" onclick="changeModel()" onkeydown="if(event.key==='Enter')changeModel()" tabindex="0" role="button" title="Click to change model" id="conv-display-model">{{ conversation.model_id }}</span>
         </div>
         <div class="d-flex gap-1">
-            <button class="btn btn-app-ghost btn-sm" id="btn-favourite" title="Favourite" onclick="toggleFavourite()"
+            <button class="btn btn-app-ghost btn-sm" id="btn-favourite" title="Favourite" aria-label="Favourite" onclick="toggleFavourite()"
                     style="color: {% if conversation.is_favourite %}var(--app-warning){% else %}var(--app-text-muted){% endif %};">
-                <i class="bi {% if conversation.is_favourite %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                <i class="bi {% if conversation.is_favourite %}bi-star-fill{% else %}bi-star{% endif %}" aria-hidden="true"></i><span class="toolbar-label">Favourite</span>
             </button>
-            <button class="btn btn-app-ghost btn-sm" id="btn-voice-mode" title="Voice Conversation" onclick="toggleVoiceMode()" style="display: none;">
-                <i class="bi bi-headset" id="voice-mode-icon"></i>
+            <button class="btn btn-app-ghost btn-sm" id="btn-voice-mode" title="Voice Conversation" aria-label="Voice conversation" onclick="toggleVoiceMode()" style="display: none;">
+                <i class="bi bi-headset" id="voice-mode-icon" aria-hidden="true"></i><span class="toolbar-label">Voice</span>
             </button>
-            <button class="btn btn-app-ghost btn-sm" title="Tool Activity" onclick="toggleToolPanel()" id="btn-tool-panel">
-                <i class="bi bi-tools"></i>
+            <button class="btn btn-app-ghost btn-sm" title="Tool Activity" aria-label="Tool activity" onclick="toggleToolPanel()" id="btn-tool-panel">
+                <i class="bi bi-tools" aria-hidden="true"></i><span class="toolbar-label">Activity</span>
                 <span id="tool-panel-toolbar-badge" class="badge rounded-pill" style="display: none; position: absolute; top: -2px; right: -2px; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px;"></span>
             </button>
-            <button class="btn btn-app-ghost btn-sm" title="Info" onclick="showInfoModal()"><i class="bi bi-info-circle"></i></button>
-            <button class="btn btn-app-ghost btn-sm" title="Create Action from Conversation" onclick="showCreateActionFromConv()"><i class="bi bi-play-circle"></i></button>
-            <button class="btn btn-app-ghost btn-sm" title="Settings" onclick="showSettingsModal()"><i class="bi bi-gear"></i></button>
-            <button class="btn btn-app-ghost btn-sm" title="Delete" onclick="confirmDeleteConversation()" style="color: var(--app-danger);"><i class="bi bi-trash"></i></button>
+            <button class="btn btn-app-ghost btn-sm" title="Conversation information" aria-label="Conversation information" onclick="showInfoModal()"><i class="bi bi-info-circle" aria-hidden="true"></i><span class="toolbar-label">Info</span></button>
+            <button class="btn btn-app-ghost btn-sm" title="Create Action from Conversation" aria-label="Create an action from this conversation" onclick="showCreateActionFromConv()"><i class="bi bi-play-circle" aria-hidden="true"></i><span class="toolbar-label">Create action</span></button>
+            <button class="btn btn-app-ghost btn-sm" title="Conversation settings" aria-label="Conversation settings" onclick="showSettingsModal()"><i class="bi bi-gear" aria-hidden="true"></i><span class="toolbar-label">Settings</span></button>
+            <button class="btn btn-app-ghost btn-sm toolbar-danger" title="Delete conversation" aria-label="Delete conversation" onclick="confirmDeleteConversation()" style="color: var(--app-danger);"><i class="bi bi-trash" aria-hidden="true"></i><span class="toolbar-label">Delete</span></button>
         </div>
     </div>
 
@@ -102,10 +102,10 @@
                 </button>
                 <input type="file" id="attach-input" multiple hidden>
                 <textarea id="chat-input" class="form-control" rows="1" placeholder="Type a message..." onkeydown="handleKeydown(event)" style="resize: none;"></textarea>
-                <button type="button" class="btn btn-app-ghost" id="btn-mic" onclick="toggleSpeechInput()" title="Voice input" style="display: none; font-size: 1.125rem; padding: 0.25rem 0.5rem;">
+                <button type="button" class="btn btn-app-ghost" id="btn-mic" onclick="toggleSpeechInput()" title="Voice input" aria-label="Voice input" style="display: none; font-size: 1.125rem; padding: 0.25rem 0.5rem;">
                     <i class="bi bi-mic" id="mic-icon"></i>
                 </button>
-                <button type="submit" class="btn btn-app-primary" id="btn-send"><i class="bi bi-send"></i></button>
+                <button type="submit" class="btn btn-app-primary" id="btn-send" title="Send" aria-label="Send"><i class="bi bi-send" aria-hidden="true"></i></button>
             </div>
         </form>
         <div style="font-size: 0.6875rem; color: var(--app-text-muted); margin-top: 0.375rem; padding-left: 0.25rem; display: flex; gap: 1rem;">
@@ -139,7 +139,7 @@
                 <i class="bi bi-robot me-1"></i>Agents
                 <span id="agent-panel-badge" class="badge rounded-pill" style="display: none; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px; vertical-align: top;"></span>
             </button>
-            <button class="btn btn-app-ghost btn-sm" onclick="toggleToolPanel()" style="flex-shrink: 0; padding: 0.5rem;" title="Close">
+            <button class="btn btn-app-ghost btn-sm" onclick="toggleToolPanel()" style="flex-shrink: 0; padding: 0.5rem;" title="Close" aria-label="Close the activity panel">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
@@ -166,7 +166,7 @@
 <div class="modal fade" id="infoModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Conversation Information</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Conversation Information</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body" id="info-content"><div class="text-center py-3"><div class="app-spinner mx-auto"></div></div></div>
         </div>
     </div>
@@ -176,7 +176,7 @@
 <div class="modal fade" id="settingsModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Conversation Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Conversation Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body p-0">
                 <div class="d-flex" style="min-height: 500px;">
                     <!-- Sidebar -->
@@ -373,7 +373,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-cpu me-2" style="color: var(--app-accent);"></i>Change Model</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
@@ -395,7 +395,7 @@
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-trash me-2" style="color: var(--app-danger);"></i>Delete Conversation</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-trash me-2" style="color: var(--app-danger);"></i>Delete Conversation</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong>{{ conversation.name }}</strong>?</p>
                 <p style="color: var(--app-text-muted); font-size: 0.875rem;">This action cannot be undone. All messages, files, and settings will be removed.</p>
@@ -414,7 +414,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-play-circle me-2"></i>Create Autonomous Action</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
                 <!-- Step 1: Name -->
@@ -794,7 +794,7 @@ async function loadLinksTab() {
             data.linked.forEach(c => {
                 html += `<div class="d-flex align-items-center justify-content-between py-2 px-2 mb-1" style="font-size:0.8125rem; border: 1px solid var(--app-border); border-radius: 0.375rem;">
                     <span>${escapeHtml(c.name)} <span style="color:var(--app-text-muted);">(${c.model_id||''})</span></span>
-                    <button class="btn btn-app-ghost btn-sm" onclick="unlinkConversation(${c.id})" style="color:var(--app-danger);"><i class="bi bi-x-lg"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" onclick="unlinkConversation(${c.id})" style="color:var(--app-danger);" title="Unlink" aria-label="Unlink this conversation"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                 </div>`;
             });
         }
@@ -802,7 +802,7 @@ async function loadLinksTab() {
             html += '<div class="mb-2 mt-3"><strong style="font-size:0.875rem;">Add Link</strong></div>';
             html += '<div class="d-flex gap-2"><select class="form-select form-select-sm" id="link-target">';
             data.available.forEach(c => { html += `<option value="${c.id}">${escapeHtml(c.name)}</option>`; });
-            html += '</select><button class="btn btn-app-primary btn-sm" onclick="linkConversation()"><i class="bi bi-plus-lg"></i></button></div>';
+            html += '</select><button class="btn btn-app-primary btn-sm" onclick="linkConversation()" aria-label="Link the selected conversation"><i class="bi bi-plus-lg" aria-hidden="true"></i> Link</button></div>';
         }
         if (!data.linked.length && !data.available.length) html = '<p style="color:var(--app-text-muted);">No conversations available for linking.</p>';
         container.innerHTML = html;

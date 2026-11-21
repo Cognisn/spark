@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Cognisn logo in the web interface.** The header shows the supplied Cognisn logo (dark text on the light theme, light text on the dark theme) beside the product name SPARK, in place of the generic drawn mark. The sign-in pages, the welcome page and the start-up splash use the same logo; every page has the Cognisn favicon and app icon. Loading and waiting indicators show the Cognisn spinner, or the still mark when the browser asks for reduced motion. The assets are the supplied artwork, cropped and resized only, under `src/spark/web/static/img/`.
+- **Keyboard and screen reader use.** Every link, button and menu item shows a visible focus ring in both themes; a "Skip to content" link leads each page; the theme switch is a pair of real buttons with names; icon-only buttons (the conversation toolbar, Send and Stop, modal close buttons, the menu toggle) have accessible names and tooltips, and the conversation toolbar shows a text label beside each icon on wide screens. Muted text is stronger so it meets the WCAG AA contrast ratio in both themes. Animations stop when the browser asks for reduced motion.
+
 ## [0.3.0rc33] - 2026-11-22
 
 ### Added

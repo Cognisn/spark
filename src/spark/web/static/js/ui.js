@@ -58,6 +58,7 @@ const AppTheme = {
     _updateToggles(theme) {
         document.querySelectorAll('.app-theme-toggle .theme-option').forEach(el => {
             el.classList.toggle('active', el.dataset.theme === theme);
+            el.setAttribute('aria-pressed', el.dataset.theme === theme ? 'true' : 'false');
         });
     },
 

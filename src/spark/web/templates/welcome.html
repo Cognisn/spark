@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_brand.html" as brand %}
 
 {% block title %}Spark - Welcome{% endblock %}
 
@@ -7,32 +8,9 @@
 
     <!-- Hero -->
     <div class="text-center mb-5">
-        <svg width="80" height="80" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <linearGradient id="welcome-arc" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stop-color="var(--app-accent-dark)"/>
-                    <stop offset="50%" stop-color="var(--app-accent)"/>
-                    <stop offset="100%" stop-color="var(--app-accent-dark)"/>
-                </linearGradient>
-                <radialGradient id="welcome-dot" cx="40%" cy="35%" r="60%">
-                    <stop offset="0%" stop-color="var(--app-accent-light)"/>
-                    <stop offset="100%" stop-color="var(--app-accent)"/>
-                </radialGradient>
-            </defs>
-            <g transform="translate(65,65)">
-                <line x1="-65" y1="0" x2="-46" y2="0" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.28"/>
-                <line x1="46" y1="0" x2="65" y2="0" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.14"/>
-                <line x1="0" y1="0" x2="33" y2="-42" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.2"/>
-                <line x1="0" y1="0" x2="33" y2="42" stroke="var(--app-accent)" stroke-width="0.8" opacity="0.2"/>
-                <path d="M32 -48 A48 48 0 1 0 32 48" stroke="url(#welcome-arc)" stroke-width="4" fill="none" stroke-linecap="round"/>
-                <circle cx="32" cy="-48" r="5" fill="var(--app-accent-light)"/>
-                <circle cx="32" cy="48" r="5" fill="var(--app-accent)" opacity="0.85"/>
-                <circle cx="12" cy="0" r="9" fill="url(#welcome-dot)"/>
-                <circle cx="12" cy="0" r="4.5" fill="var(--app-accent-light)" opacity="0.9"/>
-            </g>
-        </svg>
+        {{ brand.logo(64, "mx-auto") }}
         <h2 style="font-family: var(--app-font-heading); font-weight: 700; margin-top: 1rem;">
-            Welcome to <i class="bi bi-lightning-charge-fill" style="font-size: 1.25rem;"></i> Spark
+            Welcome to SPARK
         </h2>
         <p style="color: var(--app-text-secondary); font-size: 1.0625rem; max-width: 500px; margin: 0.75rem auto 0;">
             Your secure personal AI research kit is ready. Let's get you set up.
