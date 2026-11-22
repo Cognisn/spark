@@ -121,7 +121,7 @@ somewhere safe.
 | Role | Holds |
 |---|---|
 | `administrator` | Everything: instance settings and secrets, model connections with their metering and assignments (`spark.admin.connections`), users, roles, invitations and API keys, the audit trail, usage, bundle import, and every user capability |
-| `auditor` | The audit trail at `/audit` and its CSV and NDJSON export, and nothing else |
+| `auditor` | The audit trail at `/admin/audit` and its CSV and NDJSON export, and nothing else |
 | `power_user` | A user's capabilities, plus scheduled actions, sub-agents and the instance-wide knowledge graph |
 | `user` | Chat, debates and panels, memories, skills, their own knowledge graphs and files, the built-in tools a server offers, and their own API keys |
 
@@ -129,18 +129,18 @@ A user may hold several roles; their permissions add up. warden never lets the l
 active administrator lose the role or be suspended.
 
 On a server the system command, filesystem and email tools are not available to
-anyone: they act on the host Spark runs on. MCP servers are granted to roles on the
-instance settings page (each server lists its roles), and a user sees only the servers
+anyone: they act on the host Spark runs on. MCP servers are granted to roles on
+**Administration > Tools and MCP servers** (each server lists its roles), and a user sees only the servers
 their roles are granted. A scheduled action runs with its owner's roles as they are
 when it runs.
 
 ## Inviting users
 
-An administrator invites from **Account > Invitations** (`/admin/invitations`),
+An administrator invites from **Administration > Invitations** (`/admin/invitations`),
 choosing the roles granted when the invitation is accepted. An invitation works once
 and expires after seven days (`warden.identity.invitation_ttl_seconds`). Users,
 their roles, suspension, password resets and second factor resets are managed from
-**Account > Users**.
+**Administration > Users**.
 
 With [mail](#mail) set up, invitations and resets are sent by email. Without it the
 link is shown to the administrator once, to pass on privately.
@@ -178,7 +178,7 @@ one at their next password sign-in.
 
 ## API keys
 
-Users create their own API keys at **Account > API keys** (`/account/api-keys`), with
+Users create their own API keys at **Account > My API keys** (`/account/api-keys`), with
 no more than their own permissions. A key is sent as `Authorization: Bearer wdn_...`
 and is never combined with a session cookie. Keys expire after at most 365 days
 (`warden.identity.api_key_max_lifetime_days`). Requests made with an API key are
@@ -249,8 +249,8 @@ ones, mounted into the containers.
 ## Mail
 
 warden sends invitations, resends, password reset links, signed-out reset requests and
-second factor notices by email once an SMTP server is set. Mail is set on the instance
-settings page (**Settings**, as an administrator, the Mail section). On a new server,
+second factor notices by email once an SMTP server is set. Mail is set on
+**Administration > Mail** (`/admin/mail`). On a new server,
 bootstrap stores the `SPARK__MAIL__SMTP__...` start-up values there first, because the
 first administrator's invitation is sent by mail; after that, the page's values are the
 ones used and the start-up values are ignored:
@@ -295,11 +295,11 @@ A server can run like this, but users cannot reset their own passwords.
 A user sees and uses only the model connections assigned to them or to one of their
 roles (a connection assigned to no one is seen by administrators only). Administrators
 assign connections, and on a metered connection set each assignment's monthly credit
-allowance, on **Account > Connections** (`/admin/connections`). Users are warned from
+allowance, on **Administration > Connections and models** (`/admin/connections`). Users are warned from
 80%, and new requests on that connection are refused at 100% until the allowance resets
 at 00:00 UTC on the first of the month. [Connections](../connections.md) and
 [Metering](../metering.md) describe the rules in full. Usage by month, user,
-connection and model, with tokens and credits, is at **Account > Usage and budgets**
+connection and model, with tokens and credits, is at **Administration > Usage and budgets**
 (`/admin/usage`), with a CSV export.
 
 ## The audit trail
@@ -307,6 +307,6 @@ connection and model, with tokens and credits, is at **Account > Usage and budge
 warden keeps an append-only, hash-chained audit trail in `warden.audit_events`:
 sign-ins and administration, and Spark's own events (settings and secret changes by
 name, tool refusals, MCP calls, bundle imports, mail tests). Auditors and
-administrators read it at `/audit` and export it. Details never carry secret values or
+administrators read it at `/admin/audit` and export it. Details never carry secret values or
 message content. Retention and its database grants are on the
 [Database](database.md#wardens-audit-trail-and-its-purge) page.

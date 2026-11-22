@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_page.html" as page_ui %}
 
 {% block title %}Spark - Dashboard{% endblock %}
 
@@ -6,28 +7,20 @@
 <div class="container-fluid" style="max-width: 1100px;">
 
     <!-- Header -->
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <div>
-            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Dashboard</h4>
-            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                Manage conversations, connections, and tools.
-            </p>
-        </div>
-        <div class="d-flex align-items-center gap-2">
+    {% call page_ui.header("Dashboard", "Manage conversations, connections, and tools.") %}
             {% if not request.app.state.identity_attached|default(false) %}
             <a href="/settings#section-connections" class="btn btn-app-outline">
                 <i class="bi bi-plug me-1"></i> Manage connections
             </a>
-            {% elif identity_menu(request)|selectattr('href', 'equalto', '/admin/connections')|list %}
+            {% elif admin_menu(request)|map(attribute='entries')|sum(start=())|selectattr('href', 'equalto', '/admin/connections')|list %}
             <a href="/admin/connections" class="btn btn-app-outline">
                 <i class="bi bi-plug me-1"></i> Manage connections
             </a>
             {% endif %}
             <a href="/conversations" class="btn btn-app-primary">
-                <i class="bi bi-plus-lg me-1"></i> New Conversation
+                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i> New Conversation
             </a>
-        </div>
-    </div>
+    {% endcall %}
 
     <!-- Provider Status -->
     <div class="row g-3 mb-4">
@@ -315,7 +308,7 @@
                     <i class="bi bi-robot me-2" style="color: var(--app-accent);"></i>
                     <span id="providerModelsName">Provider</span> Models
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div id="providerModelsLoading" class="text-center py-4">
@@ -354,7 +347,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-tools me-2"></i><span id="dashboardToolsTitle"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="dashboardToolsContent">
                 <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>

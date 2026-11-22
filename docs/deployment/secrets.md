@@ -2,7 +2,7 @@
 
 A Spark server keeps every secret in konfig's secrets store and nowhere else: never
 in the database, never in `config.yaml`, never in a bundle and never in the browser.
-A secret an administrator types on the instance settings page is written to the
+A secret an administrator types on an Administration settings page is written to the
 store, shown afterwards only as "Set", and cannot be read back.
 
 Server mode accepts two stores, both shared by every web and worker container:
@@ -24,9 +24,9 @@ refuses the encrypted file without `KONFIG_MASTER_KEY`.
 | `warden.totp-key` | The key that encrypts users' authenticator secrets in the database | `spark bootstrap` (or, without it, the first web start) |
 | `spark.csrf-key` | The key that binds CSRF tokens to warden sessions | `spark bootstrap` (or, without it, the first web start) |
 | `connections.<id>.<field>` (for example `connections.work-claude.api_key`) | A model connection's credentials | the Connections page (`/admin/connections`) |
-| `embedded_tools_web_brave_api_key`, `embedded_tools_web_google_api_key`, `embedded_tools_web_bing_api_key` | Web search keys | the instance settings page |
-| `voice_elevenlabs_api_key` | ElevenLabs | the instance settings page |
-| `mail_smtp_password` | The SMTP password for identity mail | the instance settings page, or [placed](#placing-a-secret-in-the-store) |
+| `embedded_tools_web_brave_api_key`, `embedded_tools_web_google_api_key`, `embedded_tools_web_bing_api_key` | Web search keys | **Administration > Tools and MCP servers** |
+| `voice_elevenlabs_api_key` | ElevenLabs | **Administration > Instance settings** |
+| `mail_smtp_password` | The SMTP password for identity mail | **Administration > Mail**, or [placed](#placing-a-secret-in-the-store) |
 | `mcp_server_<name>_<field>` | An MCP server's bearer token, password or header values | the instance page's MCP editor |
 | `warden.sso.client-secret` | The single sign-on client secret | [placed](#placing-a-secret-in-the-store) |
 | `database_url` | The database URL, when `database.url` is `secret://database_url` | [placed](#placing-a-secret-in-the-store) |
@@ -187,7 +187,7 @@ already has it.
 
 ## Placing a secret in the store
 
-Secrets that have no field on the instance settings page (the single sign-on client
+Secrets that have no field on the Administration pages (the single sign-on client
 secret, a `secret://` database URL), or that you want in place before the first
 start (the SMTP password), are written with konfig from a one-off container. Put the
 value alone on one line in a file only you can read, then:

@@ -22,7 +22,7 @@
 <div class="modal fade" id="actionModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title" id="actionModalTitle">New Action</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header"><h5 class="modal-title" id="actionModalTitle">New Action</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body">
                 <input type="hidden" id="act-edit-id">
                 <div class="row g-3">
@@ -60,7 +60,7 @@
 <div class="modal fade" id="runsModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Run History</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Run History</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body" id="runs-content"></div>
         </div>
     </div>
@@ -72,7 +72,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-robot me-2"></i>Create Action with AI</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
                 <!-- Step 1: Name and Model selection -->
@@ -110,7 +110,7 @@
                         <form onsubmit="sendAIMessage(event)">
                             <div class="d-flex gap-2">
                                 <input type="text" class="form-control form-control-sm" id="ai-input" placeholder="Describe what this action should do..." autocomplete="off">
-                                <button type="submit" class="btn btn-app-primary btn-sm" id="ai-send-btn"><i class="bi bi-send"></i></button>
+                                <button type="submit" class="btn btn-app-primary btn-sm" id="ai-send-btn" title="Send" aria-label="Send"><i class="bi bi-send" aria-hidden="true"></i></button>
                             </div>
                         </form>
                     </div>
@@ -146,10 +146,10 @@ async function loadActions() {
                 </div>
                 <div class="d-flex gap-1">
                     <div class="form-switch"><input class="form-check-input" type="checkbox" ${a.is_enabled?'checked':''} onchange="toggleAction(${a.id}, this.checked)"></div>
-                    <button class="btn btn-app-ghost btn-sm" onclick="runActionNow(${a.id}, '${escapeHtml(a.name)}')" title="Run now"><i class="bi bi-play-fill"></i></button>
-                    <button class="btn btn-app-ghost btn-sm" onclick="showRuns(${a.id})" title="Run history"><i class="bi bi-clock-history"></i></button>
-                    <button class="btn btn-app-ghost btn-sm" onclick="editAction(${JSON.stringify(a).replace(/"/g, '&quot;')})" title="Edit"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteAction(${a.id}, '${escapeHtml(a.name)}')" title="Delete"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" onclick="runActionNow(${a.id}, '${escapeHtml(a.name)}')" title="Run now" aria-label="Run now"><i class="bi bi-play-fill" aria-hidden="true"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" onclick="showRuns(${a.id})" title="Run history" aria-label="Run history"><i class="bi bi-clock-history" aria-hidden="true"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" onclick="editAction(${JSON.stringify(a).replace(/"/g, '&quot;')})" title="Edit" aria-label="Edit action"><i class="bi bi-pencil" aria-hidden="true"></i></button>
+                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteAction(${a.id}, '${escapeHtml(a.name)}')" title="Delete" aria-label="Delete action"><i class="bi bi-trash" aria-hidden="true"></i></button>
                 </div>
             </div>
         </div>`).join('');

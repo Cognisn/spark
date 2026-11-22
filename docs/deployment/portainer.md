@@ -158,8 +158,8 @@ set a password, and sign in at your public address, then set up two-step
 verification. [Identity](identity.md#bootstrap) lists the bootstrap settings and what
 the step does, and is safe to run again.
 
-Then add a model connection on **Account > Connections**, choose its models and
-assign it, and set up mail on the instance settings page: [the checklist](index.md#checklist)
+Then add a model connection on **Administration > Connections and models**, choose its models and
+assign it, and set up mail on **Administration > Mail**: [the checklist](index.md#checklist)
 gives the order, and [Identity](identity.md) covers roles, invitations and single
 sign-on.
 
@@ -179,7 +179,7 @@ sends plain-text mail only to a loopback host, so it also publishes the web port
 
 For real mail, set the `SPARK__MAIL__SMTP__*` variables to your mail server (port
 587 with `starttls`, or 465 with `implicit`) before the first deployment, or set mail
-on the instance settings page afterwards. The password goes in the secrets store as
+on **Administration > Mail** afterwards. The password goes in the secrets store as
 `mail_smtp_password` ([Secrets](secrets.md)). [A real mail
 server](compose.md#a-real-mail-server) explains when to drop the catcher.
 

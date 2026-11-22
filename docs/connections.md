@@ -23,7 +23,7 @@ Where connections live:
 | Mode | Screen | Stored in |
 |---|---|---|
 | Personal | **Settings > Connections** (the first section of Settings) | `config.yaml`'s `connections` list |
-| Server | **Account > Connections** (`/admin/connections`), and a link on the dashboard | the database (`connections`, `connection_models`) |
+| Server | **Administration > Connections and models** (`/admin/connections`), and a link on the dashboard | the database (`connections`, `connection_models`) |
 
 On a server the Connections page needs the `spark.admin.connections` permission, which
 the `administrator` role holds. Metering and assignment are server mode only (see

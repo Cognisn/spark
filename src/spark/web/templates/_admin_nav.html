@@ -1,0 +1,21 @@
+{#- The Administration area's side navigation: the entries this user may open
+    (spark.web.menu.admin_menu), the current page marked. Expects admin_groups. -#}
+{% set here = request.url.path %}
+<nav class="admin-nav" aria-label="Administration">
+    <a class="admin-nav-title{% if here == '/admin' %} active{% endif %}" href="/admin"{% if here == '/admin' %} aria-current="page"{% endif %}>
+        <i class="bi bi-shield-check" aria-hidden="true"></i> Administration
+    </a>
+    {% for group in admin_groups %}
+    {% if group.label %}<div class="admin-nav-heading" id="admin-nav-group-{{ loop.index }}">{{ group.label }}</div>{% endif %}
+    <ul class="admin-nav-list"{% if group.label %} aria-labelledby="admin-nav-group-{{ loop.index }}"{% endif %}>
+        {% for entry in group.entries %}
+        {% set current = here == entry.href or here.startswith(entry.href ~ '/') %}
+        <li>
+            <a class="admin-nav-link{% if group.label %} admin-nav-child{% endif %}{% if current %} active{% endif %}" href="{{ entry.href }}"{% if current %} aria-current="page"{% endif %}>
+                <i class="bi {{ entry.icon }}" aria-hidden="true"></i><span>{{ entry.label }}</span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+</nav>

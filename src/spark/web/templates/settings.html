@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_page.html" as page_ui %}
 
 {% block title %}Spark - Settings{% endblock %}
 
@@ -24,112 +25,93 @@
 </div>
 {% endif %}
 
-<div class="container-fluid" style="max-width: 1000px;">
+{% set admin_groups = admin_menu(request) if page == 'instance' else [] %}
+<div class="container-fluid{% if admin_groups %} admin-container{% endif %}"{% if not admin_groups %} style="max-width: 1000px;"{% endif %}>
+{% if admin_groups %}<div class="admin-shell">{% include "_admin_nav.html" %}<div class="admin-page">{% endif %}
 
-    <!-- Header -->
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <div>
-            {% if page == 'instance' %}
-            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Instance settings</h4>
-            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                Settings every user of this Spark shares. Changes apply to every replica at once.
-                Secrets are kept in the secrets store and are never shown.
-            </p>
-            {% elif page == 'preferences' %}
-            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">My preferences</h4>
-            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                Your own defaults. They do not change anyone else's.
-            </p>
-            {% else %}
-            <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0.25rem;">Settings</h4>
-            <p class="mb-0" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-                Configure providers, database, and application behaviour.
-                Changes are saved to <code>config.yaml</code>; secrets go to the keychain and are never shown.
-            </p>
-            {% endif %}
-        </div>
-        {% if page == 'instance' %}
-        <a class="btn btn-app-ghost btn-sm" href="/settings/preferences"><i class="bi bi-person me-1"></i>My preferences</a>
-        {% elif page == 'preferences' and is_admin %}
-        <a class="btn btn-app-ghost btn-sm" href="/settings"><i class="bi bi-sliders me-1"></i>Instance settings</a>
-        {% elif page == 'personal' %}
-        <div class="d-flex align-items-center gap-2">
-            <a class="btn btn-app-ghost btn-sm" href="/bundles/export" download
-               title="Download your conversations, memories, skills, knowledge graphs, scheduled actions and preferences as one bundle, to import into a Spark server. No secrets or provider and MCP settings are included.">
-                <i class="bi bi-box-arrow-up me-1"></i>Export my data
-            </a>
-            <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock/unlock settings">
-                <i class="bi bi-lock{% if is_locked %}-fill{% endif %}" id="lock-icon"></i>
-            </button>
-        </div>
-        {% endif %}
-    </div>
+    {% if page == 'instance' %}
+    {% call page_ui.header(admin_page.title, admin_page.description) %}
+        <button class="btn btn-app-secondary btn-sm" id="btn-discard" onclick="window.location.reload()" disabled>
+            <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i> Discard
+        </button>
+        <button class="btn btn-app-primary btn-sm" id="btn-save" onclick="saveSettings()" disabled>
+            <i class="bi bi-check-lg me-1" aria-hidden="true"></i> Save
+        </button>
+    {% endcall %}
+    {% elif page == 'preferences' %}
+    {% include "_account_tabs.html" %}
+    {{ page_ui.header("My preferences", "Your own defaults. They do not change anyone else's.") }}
+    {% else %}
+    {% set personal_help %}Configure connections, tools, and application behaviour. Changes are saved to <code>config.yaml</code>; secrets go to the keychain and are never shown.{% endset %}
+    {% call page_ui.header("Settings", personal_help) %}
+        <a class="btn btn-app-ghost btn-sm" href="/bundles/export" download
+           title="Download your conversations, memories, skills, knowledge graphs, scheduled actions and preferences as one bundle, to import into a Spark server. No secrets or provider and MCP settings are included.">
+            <i class="bi bi-box-arrow-up me-1" aria-hidden="true"></i>Export my data
+        </a>
+        <button class="btn btn-app-ghost btn-sm" onclick="showLockSettings()" title="Lock or unlock settings">
+            <i class="bi bi-lock{% if is_locked %}-fill{% endif %} me-1" id="lock-icon" aria-hidden="true"></i>Lock
+        </button>
+    {% endcall %}
+    {% endif %}
 
     <div class="row g-4">
+        {% if page != 'instance' %}
         <!-- Section Nav -->
         <div class="col-md-3">
           <div style="position: sticky; top: calc(var(--app-navbar-height) + 1.5rem);">
             <div class="app-card mb-3">
                 <div class="card-body p-2">
-                    <nav class="nav flex-column">
+                    <nav class="nav flex-column" aria-label="Settings sections">
                         {% if page == 'personal' %}
                         <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded active"
                            href="#section-connections"
                            style="font-size: 0.875rem; color: var(--app-text-secondary);">
-                            <i class="bi bi-plug"></i>
+                            <i class="bi bi-plug" aria-hidden="true"></i>
                             Connections
+                        </a>
+                        {% endif %}
+                        {% if tool_categories %}
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
+                           href="#section-embedded-tools"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi bi-puzzle" aria-hidden="true"></i>
+                            Embedded Tools
+                        </a>
+                        {% endif %}
+                        {% if show_mcp %}
+                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
+                           href="#section-mcp-servers"
+                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
+                            <i class="bi bi-hdd-network" aria-hidden="true"></i>
+                            MCP Servers
                         </a>
                         {% endif %}
                         {% for section in sections %}
                         <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded {% if loop.first and page != 'personal' %}active{% endif %}"
                            href="#section-{{ section.id }}"
                            style="font-size: 0.875rem; color: var(--app-text-secondary);">
-                            <i class="bi {{ section.icon }}"></i>
+                            <i class="bi {{ section.icon }}" aria-hidden="true"></i>
                             {{ section.title }}
                         </a>
                         {% endfor %}
                     </nav>
                 </div>
             </div>
-            {% if tool_categories %}
-            <div class="app-card">
-                <div class="card-header d-flex align-items-center gap-2" style="font-size: 0.875rem;">
-                    <i class="bi bi-tools"></i> Tools
-                </div>
-                <div class="card-body p-2">
-                    <nav class="nav flex-column">
-                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
-                           href="#section-embedded-tools"
-                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
-                            <i class="bi bi-puzzle"></i>
-                            Embedded Tools
-                        </a>
-                        {% if page in ('personal', 'instance') %}
-                        <a class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded"
-                           href="#section-mcp-servers"
-                           style="font-size: 0.875rem; color: var(--app-text-secondary);">
-                            <i class="bi bi-hdd-network"></i>
-                            MCP Servers
-                        </a>
-                        {% endif %}
-                    </nav>
-                </div>
-            </div>
-            {% endif %}
             <!-- Save/Discard buttons -->
             <div class="d-flex gap-2 mt-3">
                 <button class="btn btn-app-primary btn-sm flex-grow-1" id="btn-save" onclick="saveSettings()" disabled>
-                    <i class="bi bi-check-lg me-1"></i> Save
+                    <i class="bi bi-check-lg me-1" aria-hidden="true"></i> Save
                 </button>
                 <button class="btn btn-app-secondary btn-sm flex-grow-1" id="btn-discard" onclick="window.location.reload()" disabled>
-                    <i class="bi bi-arrow-counterclockwise me-1"></i> Discard
+                    <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i> Discard
                 </button>
             </div>
           </div>
         </div>
+        {% endif %}
 
         <!-- Section Content -->
-        <div class="col-md-9">
+        <div class="{% if page == 'instance' %}col-12{% else %}col-md-9{% endif %}">
             {% if page == 'personal' %}
             <!-- Connections: the model services this Spark uses (connections.js) -->
             <div id="section-connections" class="mb-4">
@@ -151,144 +133,6 @@
                 </div>
             </div>
             {% endif %}
-            {% for section in sections %}
-            <div id="section-{{ section.id }}" class="mb-4">
-                <div class="app-card">
-                    <div class="card-header d-flex align-items-center gap-2">
-                        <i class="bi {{ section.icon }}"></i>
-                        {{ section.title }}
-                    </div>
-                    <div class="card-body">
-                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-4">
-                            {{ section.description }}
-                        </p>
-
-                        {% for group in section.groups %}
-                        {% if section.groups|length > 1 %}
-                        <div class="d-flex align-items-center justify-content-between mb-3 mt-4">
-                            <h6 class="mb-0" style="font-weight: 600; color: var(--app-text-primary);">
-                                {{ group.title }}
-                            </h6>
-                            {% if group.help_url %}
-                            <a href="{{ group.help_url }}"
-                               class="btn btn-app-ghost btn-sm d-flex align-items-center gap-1"
-                               style="font-size: 0.75rem; color: var(--app-accent);"
-                               title="Open setup guide for {{ group.title }}">
-                                <i class="bi bi-question-circle"></i> Setup Guide
-                            </a>
-                            {% endif %}
-                        </div>
-                        {% endif %}
-
-                        {% for field in group.fields %}
-                        <div class="mb-3 row align-items-center"
-                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}
-                             {% if field.bedrock_auth is defined and field.bedrock_auth %}data-bedrock-auth="{{ field.bedrock_auth }}"{% endif %}>
-                            <label class="col-sm-4 form-label mb-0" for="field-{{ field.key|replace('.', '-') }}">
-                                {{ field.label }}
-                            </label>
-                            <div class="col-sm-8">
-                                {% if field.type == 'toggle' %}
-                                <div class="form-switch">
-                                    <input class="form-check-input setting-input"
-                                           type="checkbox"
-                                           role="switch"
-                                           id="field-{{ field.key|replace('.', '-') }}"
-                                           data-key="{{ field.key }}"
-                                           {% if field.value %}checked{% endif %}>
-                                </div>
-
-                                {% elif field.type == 'select' %}
-                                <select class="form-select form-select-sm setting-input"
-                                        id="field-{{ field.key|replace('.', '-') }}"
-                                        data-key="{{ field.key }}">
-                                    {% for opt in field.options %}
-                                    <option value="{{ opt }}" {% if field.value == opt %}selected{% endif %}>{{ opt }}</option>
-                                    {% endfor %}
-                                </select>
-
-                                {% elif field.type == 'model_select' %}
-                                <select class="form-select form-select-sm setting-input"
-                                        id="field-{{ field.key|replace('.', '-') }}"
-                                        data-key="{{ field.key }}">
-                                    <option value="">None (no default)</option>
-                                    {% for model in available_models %}
-                                    <option value="{{ model.id }}" {% if field.value == model.id %}selected{% endif %}>
-                                        {{ model.name }} ({{ model.provider }})
-                                    </option>
-                                    {% endfor %}
-                                </select>
-
-                                {% elif field.type == 'secret' %}
-                                <div class="input-group input-group-sm">
-                                    <input type="password"
-                                           class="form-control setting-input"
-                                           id="field-{{ field.key|replace('.', '-') }}"
-                                           data-key="{{ field.key }}"
-                                           data-is-secret="true"
-                                           data-secret-set="{{ 'true' if field.has_value else 'false' }}"
-                                           {% if field.has_value %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
-                                           placeholder="{% if field.has_value %}Set (type to replace){% else %}Not set{% endif %}"
-                                           autocomplete="off">
-                                    <button class="btn btn-app-ghost" type="button"
-                                            onclick="togglePasswordVisibility(this)" title="Show what you typed">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                </div>
-                                <div class="secret-status" style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
-                                    {% if field.has_value %}<i class="bi bi-check-circle me-1"></i>Set{% else %}<i class="bi bi-circle me-1"></i>Not set{% endif %}
-                                </div>
-
-                                {% elif field.type == 'number' %}
-                                <input type="number"
-                                       class="form-control form-control-sm setting-input"
-                                       id="field-{{ field.key|replace('.', '-') }}"
-                                       data-key="{{ field.key }}"
-                                       value="{{ field.value }}"
-                                       step="any">
-
-                                {% elif field.type == 'textarea' %}
-                                <textarea class="form-control form-control-sm setting-input"
-                                          id="field-{{ field.key|replace('.', '-') }}"
-                                          data-key="{{ field.key }}"
-                                          rows="{{ field.rows or 4 }}"
-                                          style="font-size: 0.8125rem;">{{ field.value }}</textarea>
-                                {% if field.help %}
-                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
-                                    {{ field.help }}
-                                </div>
-                                {% endif %}
-
-                                {% else %}
-                                <input type="text"
-                                       class="form-control form-control-sm setting-input"
-                                       id="field-{{ field.key|replace('.', '-') }}"
-                                       data-key="{{ field.key }}"
-                                       value="{{ field.value }}">
-                                {% endif %}
-
-                                {% if field.help is defined and field.help and field.type != 'textarea' %}
-                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
-                                    {{ field.help }}
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                        {% endfor %}
-                        {% if section.id == 'mail' %}
-                        <div class="d-flex align-items-center gap-2 mt-3">
-                            <button class="btn btn-app-outline btn-sm" type="button" id="btn-mail-test" onclick="sendTestMail()">
-                                <i class="bi bi-send me-1"></i>Send test message
-                            </button>
-                            <span id="mail-test-result" style="font-size: 0.8125rem;"></span>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-
             {% if tool_categories %}
             <!-- Embedded Tools -->
             <div id="section-embedded-tools" class="mb-4">
@@ -388,8 +232,8 @@
                                                        autocomplete="off">
                                                 <button class="btn btn-app-ghost" type="button"
                                                         onclick="togglePasswordVisibility(this)"
-                                                        title="Show what you typed">
-                                                    <i class="bi bi-eye"></i>
+                                                        title="Show what you typed" aria-label="Show what you typed">
+                                                    <i class="bi bi-eye" aria-hidden="true"></i>
                                                 </button>
                                             </div>
                                             <div class="secret-status" style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
@@ -401,8 +245,8 @@
                                                     {% for p in field.value %}
                                                     <div class="path-list-entry d-flex align-items-center gap-2 mb-1">
                                                         <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p }}</code>
-                                                        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
-                                                            <i class="bi bi-dash-circle"></i>
+                                                        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove" aria-label="Remove">
+                                                            <i class="bi bi-dash-circle" aria-hidden="true"></i>
                                                         </button>
                                                     </div>
                                                     {% endfor %}
@@ -464,7 +308,7 @@
 
             {% endif %}
 
-            {% if page in ('personal', 'instance') %}
+            {% if show_mcp %}
             <!-- MCP Servers -->
             <div id="section-mcp-servers" class="mb-4">
                 <div class="app-card">
@@ -492,13 +336,151 @@
             </div>
             {% endif %}
 
+            {% for section in sections %}
+            <div id="section-{{ section.id }}" class="mb-4">
+                <div class="app-card">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi {{ section.icon }}"></i>
+                        {{ section.title }}
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--app-text-secondary); font-size: 0.875rem;" class="mb-4">
+                            {{ section.description }}
+                        </p>
+
+                        {% for group in section.groups %}
+                        {% if section.groups|length > 1 %}
+                        <div class="d-flex align-items-center justify-content-between mb-3 mt-4">
+                            <h6 class="mb-0" style="font-weight: 600; color: var(--app-text-primary);">
+                                {{ group.title }}
+                            </h6>
+                            {% if group.help_url %}
+                            <a href="{{ group.help_url }}"
+                               class="btn btn-app-ghost btn-sm d-flex align-items-center gap-1"
+                               style="font-size: 0.75rem; color: var(--app-accent);"
+                               title="Open setup guide for {{ group.title }}">
+                                <i class="bi bi-question-circle"></i> Setup Guide
+                            </a>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
+                        {% for field in group.fields %}
+                        <div class="mb-3 row align-items-center"
+                             {% if field.db_requires is defined and field.db_requires %}data-db-requires="{{ field.db_requires }}"{% endif %}
+                             {% if field.bedrock_auth is defined and field.bedrock_auth %}data-bedrock-auth="{{ field.bedrock_auth }}"{% endif %}>
+                            <label class="col-sm-4 form-label mb-0" for="field-{{ field.key|replace('.', '-') }}">
+                                {{ field.label }}
+                            </label>
+                            <div class="col-sm-8">
+                                {% if field.type == 'toggle' %}
+                                <div class="form-switch">
+                                    <input class="form-check-input setting-input"
+                                           type="checkbox"
+                                           role="switch"
+                                           id="field-{{ field.key|replace('.', '-') }}"
+                                           data-key="{{ field.key }}"
+                                           {% if field.value %}checked{% endif %}>
+                                </div>
+
+                                {% elif field.type == 'select' %}
+                                <select class="form-select form-select-sm setting-input"
+                                        id="field-{{ field.key|replace('.', '-') }}"
+                                        data-key="{{ field.key }}">
+                                    {% for opt in field.options %}
+                                    <option value="{{ opt }}" {% if field.value == opt %}selected{% endif %}>{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+
+                                {% elif field.type == 'model_select' %}
+                                <select class="form-select form-select-sm setting-input"
+                                        id="field-{{ field.key|replace('.', '-') }}"
+                                        data-key="{{ field.key }}">
+                                    <option value="">None (no default)</option>
+                                    {% for model in available_models %}
+                                    <option value="{{ model.id }}" {% if field.value == model.id %}selected{% endif %}>
+                                        {{ model.name }} ({{ model.provider }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+
+                                {% elif field.type == 'secret' %}
+                                <div class="input-group input-group-sm">
+                                    <input type="password"
+                                           class="form-control setting-input"
+                                           id="field-{{ field.key|replace('.', '-') }}"
+                                           data-key="{{ field.key }}"
+                                           data-is-secret="true"
+                                           data-secret-set="{{ 'true' if field.has_value else 'false' }}"
+                                           {% if field.has_value %}value="&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;"{% endif %}
+                                           placeholder="{% if field.has_value %}Set (type to replace){% else %}Not set{% endif %}"
+                                           autocomplete="off">
+                                    <button class="btn btn-app-ghost" type="button"
+                                            onclick="togglePasswordVisibility(this)" title="Show what you typed" aria-label="Show what you typed">
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                <div class="secret-status" style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {% if field.has_value %}<i class="bi bi-check-circle me-1"></i>Set{% else %}<i class="bi bi-circle me-1"></i>Not set{% endif %}
+                                </div>
+
+                                {% elif field.type == 'number' %}
+                                <input type="number"
+                                       class="form-control form-control-sm setting-input"
+                                       id="field-{{ field.key|replace('.', '-') }}"
+                                       data-key="{{ field.key }}"
+                                       value="{{ field.value }}"
+                                       step="any">
+
+                                {% elif field.type == 'textarea' %}
+                                <textarea class="form-control form-control-sm setting-input"
+                                          id="field-{{ field.key|replace('.', '-') }}"
+                                          data-key="{{ field.key }}"
+                                          rows="{{ field.rows or 4 }}"
+                                          style="font-size: 0.8125rem;">{{ field.value }}</textarea>
+                                {% if field.help %}
+                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {{ field.help }}
+                                </div>
+                                {% endif %}
+
+                                {% else %}
+                                <input type="text"
+                                       class="form-control form-control-sm setting-input"
+                                       id="field-{{ field.key|replace('.', '-') }}"
+                                       data-key="{{ field.key }}"
+                                       value="{{ field.value }}">
+                                {% endif %}
+
+                                {% if field.help is defined and field.help and field.type != 'textarea' %}
+                                <div style="font-size: 0.75rem; color: var(--app-text-muted); margin-top: 0.25rem;">
+                                    {{ field.help }}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endfor %}
+                        {% if section.id == 'mail' %}
+                        <div class="d-flex align-items-center gap-2 mt-3">
+                            <button class="btn btn-app-outline btn-sm" type="button" id="btn-mail-test" onclick="sendTestMail()">
+                                <i class="bi bi-send me-1"></i>Send test message
+                            </button>
+                            <span id="mail-test-result" style="font-size: 0.8125rem;"></span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
             <!-- MCP Server Modal -->
             <div class="modal fade" id="mcpServerModal" tabindex="-1">
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title" id="mcpModalTitle"><i class="bi bi-hdd-network me-2"></i>Add MCP Server</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <div class="row g-3">
@@ -659,7 +641,7 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title"><i class="bi bi-hdd-network me-2"></i><span id="mcpToolsServerName"></span> — Tools</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body" id="mcpToolsContent">
                             <div class="text-center py-3"><div class="app-spinner mx-auto"></div></div>
@@ -674,7 +656,7 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title"><i class="bi bi-lock me-2"></i>Lock Settings</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <div id="lock-current-group" style="display: none;" class="mb-3">
@@ -707,12 +689,12 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title"><i class="bi bi-folder2-open me-2"></i>Select Directory</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
                             <div class="d-flex align-items-center gap-2 mb-3">
-                                <button class="btn btn-app-ghost btn-sm" onclick="pathBrowserUp()" title="Parent directory" id="pathBrowserUpBtn">
-                                    <i class="bi bi-arrow-up"></i>
+                                <button class="btn btn-app-ghost btn-sm" onclick="pathBrowserUp()" title="Parent directory" id="pathBrowserUpBtn" aria-label="Parent directory">
+                                    <i class="bi bi-arrow-up" aria-hidden="true"></i>
                                 </button>
                                 <code id="pathBrowserCurrent" class="flex-grow-1" style="font-size: 0.75rem; padding: 0.375rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></code>
                             </div>
@@ -734,6 +716,7 @@
             <div class="mb-5"></div>
         </div>
     </div>
+{% if admin_groups %}</div></div>{% endif %}
 </div>
 <!-- Email Test Results Modal -->
 <div class="modal fade" id="emailTestModal" tabindex="-1">
@@ -741,7 +724,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-envelope me-2"></i>Email Connection Test</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="emailTestBody">
                 <div class="text-center py-3"><div class="app-spinner mx-auto"></div><p class="mt-2" style="font-size: 0.875rem; color: var(--app-text-muted);">Testing connection...</p></div>
@@ -756,6 +739,16 @@
 {% endblock %}
 
 {% block scripts %}
+{% if admin_page and admin_page.path == '/admin/settings' %}
+<script>
+// Bookmarks to sections of the old instance settings page lead to the page that holds them now.
+(function () {
+    const moved = {{ moved_anchors|tojson }};
+    const target = moved[window.location.hash.slice(1)];
+    if (target) window.location.replace(target + window.location.hash);
+})();
+</script>
+{% endif %}
 <script>
 function toggleSecretField(btn) {
     const input = btn.parentElement.querySelector('input');
@@ -1081,7 +1074,7 @@ function _mcpOAuthButtons(s) {
     if (s.auth_type !== 'oauth') return '';
     const name = escapeHtml(s.name);
     if (s.oauth && s.oauth.state === 'signed_in') {
-        return `<button class="btn btn-app-ghost btn-sm" onclick="signOutMCPServer('${name}')" title="Sign out"><i class="bi bi-box-arrow-right"></i></button>`;
+        return `<button class="btn btn-app-ghost btn-sm" onclick="signOutMCPServer('${name}')" title="Sign out" aria-label="Sign out of this MCP server"><i class="bi bi-box-arrow-right" aria-hidden="true"></i></button>`;
     }
     return `<button class="btn btn-app-outline btn-sm" onclick="signInMCPServer('${name}')" title="Sign in"><i class="bi bi-box-arrow-in-right me-1"></i>Sign in</button>`;
 }
@@ -1153,15 +1146,15 @@ async function loadMCPServers() {
                 </div>
                 <div class="d-flex align-items-center gap-1">
                     ${_mcpOAuthButtons(s)}
-                    <button class="btn btn-app-ghost btn-sm" onclick="editMCPServer('${escapeHtml(s.name)}')" title="Edit">
-                        <i class="bi bi-pencil"></i>
+                    <button class="btn btn-app-ghost btn-sm" onclick="editMCPServer('${escapeHtml(s.name)}')" title="Edit" aria-label="Edit">
+                        <i class="bi bi-pencil" aria-hidden="true"></i>
                     </button>
                     <div class="form-switch">
                         <input class="form-check-input" type="checkbox" ${s.enabled !== false ? 'checked' : ''}
                                onchange="toggleMCPServer('${escapeHtml(s.name)}', this.checked)" title="Enable/disable">
                     </div>
-                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteMCPServer('${escapeHtml(s.name)}')" title="Remove">
-                        <i class="bi bi-trash"></i>
+                    <button class="btn btn-app-ghost btn-sm" style="color:var(--app-danger);" onclick="deleteMCPServer('${escapeHtml(s.name)}')" title="Remove" aria-label="Remove">
+                        <i class="bi bi-trash" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>`).join('');
@@ -1475,8 +1468,8 @@ function selectCurrentPath() {
     entry.className = 'path-list-entry d-flex align-items-center gap-2 mb-1';
     entry.innerHTML = `
         <code class="flex-grow-1" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--app-bg-deep); border: 1px solid var(--app-border); border-radius: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(_pathBrowserCurrentPath)}</code>
-        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove">
-            <i class="bi bi-dash-circle"></i>
+        <button class="btn btn-app-ghost btn-sm" style="color: var(--app-danger); padding: 0.125rem 0.375rem;" onclick="removePathEntry(this)" title="Remove" aria-label="Remove">
+            <i class="bi bi-dash-circle" aria-hidden="true"></i>
         </button>
     `;
     items.appendChild(entry);

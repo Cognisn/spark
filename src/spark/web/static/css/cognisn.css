@@ -51,7 +51,7 @@
     /* Text */
     --app-text-primary: #e8f0fa;
     --app-text-secondary: rgba(232, 240, 250, 0.7);
-    --app-text-muted: rgba(232, 240, 250, 0.4);
+    --app-text-muted: rgba(232, 240, 250, 0.6); /* WCAG AA 4.5:1 on the page backgrounds */
     --app-text-on-accent: #080e1e;
 
     /* Borders & Surfaces */
@@ -146,7 +146,7 @@
     /* Text */
     --app-text-primary: #0c1428;
     --app-text-secondary: rgba(12, 20, 40, 0.7);
-    --app-text-muted: rgba(12, 20, 40, 0.4);
+    --app-text-muted: rgba(12, 20, 40, 0.6); /* WCAG AA 4.5:1 on the page backgrounds */
     --app-text-on-accent: #ffffff;
 
     /* Borders & Surfaces */

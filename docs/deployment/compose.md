@@ -158,8 +158,8 @@ services:
     network_mode: !reset null
 ```
 
-The mail settings are stored on the first start only; after that change them on the
-instance settings page. (This override was not run for this guide.)
+The mail settings are stored on the first start only; after that change them on
+**Administration > Mail**. (This override was not run for this guide.)
 
 The first chat or memory search on a new `spark-models` volume downloads the
 embedding model (`all-MiniLM-L6-v2`, about 90 MB, from Hugging Face), so the host needs outbound https

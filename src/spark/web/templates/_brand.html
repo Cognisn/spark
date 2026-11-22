@@ -1,0 +1,21 @@
+{#- Cognisn brand assets (supplied artwork in /static/img, never redrawn).
+
+    favicon_links(): the favicon and app icon links for a page's <head>.
+    logo(height, extra_class): the full Cognisn logo, dark text on the light
+    theme and light text on the dark theme; the hidden variant is display:none,
+    so a screen reader announces "Cognisn" once.
+-#}
+{% macro favicon_links() -%}
+    <link rel="icon" href="/static/img/cognisn-mark.svg" type="image/svg+xml">
+    <link rel="icon" href="/static/img/cognisn-mark-64.png" type="image/png" sizes="64x64">
+    <link rel="apple-touch-icon" href="/static/img/cognisn-appicon-180.png">
+{%- endmacro %}
+
+{% macro logo(height=28, extra_class="") -%}
+    {%- set width = (height * 753 / 192)|round|int -%}
+    {%- set size = 192 if height > 48 else 96 -%}
+    <img class="brand-logo brand-logo-for-light {{ extra_class }}" src="/static/img/cognisn-logo-dark-text-{{ size }}.png"
+         alt="Cognisn" width="{{ width }}" height="{{ height }}">
+    <img class="brand-logo brand-logo-for-dark {{ extra_class }}" src="/static/img/cognisn-logo-light-text-{{ size }}.png"
+         alt="Cognisn" width="{{ width }}" height="{{ height }}">
+{%- endmacro %}

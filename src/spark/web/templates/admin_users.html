@@ -1,14 +1,12 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Users{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 1100px;">
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Users</h4>
-        <div class="d-flex gap-2">
-            <a class="btn btn-app-ghost btn-sm" href="{{ sso_path }}"><i class="bi bi-building-lock me-1"></i> Single sign-on settings</a>
-            <a class="btn btn-app-outline btn-sm" href="/admin/invitations"><i class="bi bi-envelope-plus me-1"></i> Invite a user</a>
-        </div>
-    </div>
+{% block page %}
+<div class="admin-page-body">
+    {% call page_ui.header("Users", "Who can sign in to this Spark, their roles and their status.") %}
+        <a class="btn btn-app-ghost btn-sm" href="{{ sso_path }}"><i class="bi bi-building-lock me-1" aria-hidden="true"></i> Single sign-on settings</a>
+        <a class="btn btn-app-primary btn-sm" href="/admin/invitations"><i class="bi bi-envelope-plus me-1" aria-hidden="true"></i> Invite a user</a>
+    {% endcall %}
     {% include "_page_messages.html" %}
 
     <form method="GET" action="/admin/users" class="d-flex align-items-center gap-2 mb-3">

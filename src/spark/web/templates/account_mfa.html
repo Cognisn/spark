@@ -1,8 +1,9 @@
 {% extends "base.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Two-Step Verification{% endblock %}
 {% block content %}
 <div class="container-fluid" style="max-width: 520px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Two-step verification</h4>
+    {{ page_ui.header("Two-step verification", "Set up an authenticator app for signing in.") }}
     {% include "_page_messages.html" %}
     <div class="app-card">
         <div class="card-body">

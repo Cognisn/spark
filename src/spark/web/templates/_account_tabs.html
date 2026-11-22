@@ -1,0 +1,18 @@
+{#- The tab row shared by the signed-in user's own pages (server mode): the
+    Account menu's entries (spark.web.menu.identity_menu), the current one marked. -#}
+{% set here = request.url.path %}
+{% set account_entries = identity_menu(request) %}
+{% if account_entries %}
+<nav class="app-tabs mb-4" aria-label="My account">
+    <ul class="nav nav-tabs">
+        {% for entry in account_entries %}
+        {% set current = here == entry.href or (entry.href != '/account' and here.startswith(entry.href ~ '/')) or (entry.href == '/account' and here.startswith('/account/mfa')) %}
+        <li class="nav-item">
+            <a class="nav-link{% if current %} active{% endif %}" href="{{ entry.href }}"{% if current %} aria-current="page"{% endif %}>
+                <i class="bi {{ entry.icon }} me-1" aria-hidden="true"></i>{{ entry.label }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}

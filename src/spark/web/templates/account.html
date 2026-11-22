@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - My Account{% endblock %}
 {% block content %}
 <div class="container-fluid" style="max-width: 800px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">My account</h4>
+    {% include "_account_tabs.html" %}
+    {{ page_ui.header("My account", "Your profile, password and two-step verification.") }}
     {% include "_page_messages.html" %}
 
     <div class="app-card mb-4">

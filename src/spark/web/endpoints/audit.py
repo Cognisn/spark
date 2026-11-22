@@ -1,10 +1,10 @@
 """The audit trail viewer and export (server mode).
 
-* ``GET /audit`` (``spark.audit.read``): warden's audit events, newest first,
+* ``GET /admin/audit`` (``spark.audit.read``): warden's audit events, newest first,
   :data:`PAGE_SIZE` at a time, filtered by actor (an email address or a user
   id), action, outcome and time range (dates, UTC; ``until`` includes its
   day). Actors are shown by email address where they are users.
-* ``GET /audit/export`` (``spark.audit.export``): every matching event, in
+* ``GET /admin/audit/export`` (``spark.audit.export``): every matching event, in
   chain order, as CSV or NDJSON, through warden's export, which records the
   export itself (filter, actor and client address) before the first line.
 
@@ -37,7 +37,8 @@ from spark.web.endpoints.identity import identity_runtime
 
 router = APIRouter()
 
-AUDIT_PATH = "/audit"
+# In the Administration area; the old /audit paths redirect (endpoints/navigation.py).
+AUDIT_PATH = "/admin/audit"
 PAGE_SIZE = 50
 BAD_FILTER = "A filter is not valid: dates are YYYY-MM-DD and the outcome is success or failure."
 _MEDIA = {"csv": "text/csv; charset=utf-8", "ndjson": "application/x-ndjson"}

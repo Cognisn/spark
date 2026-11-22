@@ -1,0 +1,18 @@
+{#- One page header for every page: title, a short description, and the page's
+    actions (primary action last) at the top right. Use with {% call %} to add
+    actions:
+
+        {% import "_page.html" as page_ui %}
+        {% call page_ui.header("Users", "Who can sign in.") %}
+            <a class="btn btn-app-primary btn-sm" href="...">Invite a user</a>
+        {% endcall %}
+-#}
+{% macro header(title, description="") -%}
+<header class="page-header">
+    <div class="page-header-text">
+        <h1 class="page-title">{{ title }}</h1>
+        {% if description %}<p class="page-description">{{ description }}</p>{% endif %}
+    </div>
+    {% if caller %}<div class="page-actions">{{ caller() }}</div>{% endif %}
+</header>
+{%- endmacro %}

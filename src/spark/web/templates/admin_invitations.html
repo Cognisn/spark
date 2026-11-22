@@ -1,8 +1,9 @@
-{% extends "base.html" %}
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
 {% block title %}Spark - Invitations{% endblock %}
-{% block content %}
-<div class="container-fluid" style="max-width: 1000px;">
-    <h4 class="mb-4" style="font-family: var(--app-font-heading); font-weight: 700;">Invitations</h4>
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Invitations", "Invite people to this Spark, and follow the invitations still pending.") }}
     {% include "_page_messages.html" %}
     {% include "_mailed_link.html" %}
 

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{#- The Administration area's layout: side navigation and the page. A page
+    extending it fills {% block page %}. In personal mode (no Administration
+    area, for example the Usage page) the page shows on its own. -#}
+{% block content %}
+{% set admin_groups = admin_menu(request) %}
+<div class="container-fluid admin-container">
+    <div class="{% if admin_groups %}admin-shell{% endif %}">
+        {% if admin_groups %}{% include "_admin_nav.html" %}{% endif %}
+        <div class="admin-page">
+            {% block page %}{% endblock %}
+        </div>
+    </div>
+</div>
+{% endblock %}

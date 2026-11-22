@@ -153,7 +153,7 @@ use their other connections.
 
 ## The usage view and CSV
 
-Administrators (`spark.usage.admin`) open the usage view from **Account > Usage and
+Administrators (`spark.usage.admin`) open the usage view from **Administration > Usage and
 budgets** (`/admin/usage`). For a chosen month (UTC), or all months, it shows:
 
 - usage by user, connection and model: requests, the four token counts (input, output,

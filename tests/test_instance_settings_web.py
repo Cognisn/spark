@@ -116,6 +116,9 @@ def _signed_in(client: TestClient) -> TestClient:
     return client
 
 
+INSTANCE_PAGES = ["/admin/settings", "/admin/tools", "/admin/security", "/admin/mail"]
+
+
 def _page_keys(html: str) -> set[str]:
     import re
 
@@ -352,34 +355,39 @@ def _rows(client: TestClient) -> list[str]:
 
 @pytest.mark.postgres
 class TestServerPages:
-    def test_administrator_gets_the_instance_page(self, server: TestClient) -> None:
-        resp = server.get("/settings")
-        assert resp.status_code == 200
-        assert "Instance settings" in resp.text
-        # Model connections replaced the providers section (M3).
-        assert "LLM Providers" not in resp.text
-        assert 'data-key="conversation.global_instructions"' not in resp.text  # a preference
-        assert 'data-key="mode"' not in resp.text  # start-up configuration, not editable here
-        _no_secret(resp)
+    def test_administrator_gets_the_instance_pages(self, server: TestClient) -> None:
+        assert "Instance settings" in server.get("/admin/settings").text
+        for path in INSTANCE_PAGES:
+            resp = server.get(path)
+            assert resp.status_code == 200, path
+            # Model connections replaced the providers section (M3).
+            assert "LLM Providers" not in resp.text
+            assert 'data-key="conversation.global_instructions"' not in resp.text  # a preference
+            assert 'data-key="mode"' not in resp.text  # start-up configuration, not editable here
+            _no_secret(resp)
 
     def test_instance_page_fields_are_instance_settings(self, server: TestClient) -> None:
-        keys = _page_keys(server.get("/settings").text)
+        keys: set[str] = set()
+        for path in INSTANCE_PAGES:
+            keys |= _page_keys(server.get(path).text)
         assert keys
         assert {registry.spec(k).scope for k in keys} == {registry.Scope.INSTANCE}
 
     def test_preferences_page_fields_are_preferences(self, server: TestClient) -> None:
-        keys = _page_keys(server.get("/settings/preferences").text)
+        keys = _page_keys(server.get("/account/preferences").text)
         assert {registry.spec(k).scope for k in keys} == {registry.Scope.USER}
 
     def test_non_administrator_is_sent_to_preferences(self, server: TestClient) -> None:
         access.set_access_check(Deny())
         resp = server.get("/settings", follow_redirects=False)
         assert resp.status_code == 303
-        assert resp.headers["location"] == "/settings/preferences"
+        assert resp.headers["location"] == "/account/preferences"
+        for path in INSTANCE_PAGES:
+            assert server.get(path, follow_redirects=False).status_code == 403, path
 
     def test_preferences_page(self, server: TestClient) -> None:
         access.set_access_check(Deny())
-        resp = server.get("/settings/preferences")
+        resp = server.get("/account/preferences")
         assert resp.status_code == 200
         assert 'data-key="conversation.global_instructions"' in resp.text
         assert 'data-key="default_model.model_id"' in resp.text
@@ -444,7 +452,8 @@ class TestServerInstanceSave:
         assert resp.status_code == 400
         assert resp.json()["keys"] == ["bootstrap.bedrock.seeded"]
         assert _rows(server) == []
-        assert "bootstrap.bedrock.seeded" not in server.get("/settings").text
+        for path in INSTANCE_PAGES:
+            assert "bootstrap.bedrock.seeded" not in server.get(path).text
 
     def test_preference_and_startup_keys_refused_on_the_instance_endpoint(
         self, server: TestClient
@@ -476,14 +485,15 @@ class TestServerInstanceSave:
         assert "embedded_tools_email_password" not in store.data
 
     def test_instance_page_has_no_local_tool_fields(self, server: TestClient) -> None:
-        resp = server.get("/settings")
-        assert resp.status_code == 200
-        for key in (
-            "embedded_tools.system_commands",
-            "embedded_tools.email.host",
-            "embedded_tools.filesystem.allowed_paths",
-        ):
-            assert key not in resp.text
+        for path in INSTANCE_PAGES:
+            resp = server.get(path)
+            assert resp.status_code == 200, path
+            for key in (
+                "embedded_tools.system_commands",
+                "embedded_tools.email.host",
+                "embedded_tools.filesystem.allowed_paths",
+            ):
+                assert key not in resp.text, (path, key)
 
     def test_secret_status_and_clear_are_administrator_only(
         self, server: TestClient, store: MemorySecrets
@@ -587,12 +597,16 @@ class TestServerRoles:
     def test_settings_page(self, server: TestClient, signed_in_as: Holder, role: str) -> None:
         signed_in_as.identity = identity_for(role)
         resp = server.get("/settings", follow_redirects=False)
+        page = server.get("/admin/settings", follow_redirects=False)
         if role == ADMINISTRATOR:
-            assert resp.status_code == 200
-            assert "Instance settings" in resp.text
+            assert resp.status_code == 307
+            assert resp.headers["location"] == "/admin/settings"
+            assert page.status_code == 200
+            assert "Instance settings" in page.text
         else:
             assert resp.status_code == 303
-            assert resp.headers["location"] == "/settings/preferences"
+            assert resp.headers["location"] == "/account/preferences"
+            assert page.status_code == 403
 
     @pytest.mark.parametrize("role", ROLES)
     def test_every_role_saves_its_own_preferences(

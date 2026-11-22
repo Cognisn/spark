@@ -42,7 +42,7 @@
         return el;
     }
 
-    function icon(name) { return h('i', { class: 'bi ' + name }); }
+    function icon(name) { return h('i', { class: 'bi ' + name, 'aria-hidden': 'true' }); }
 
     async function call(method, path, body) {
         const options = { method, headers: { Accept: 'application/json' } };
@@ -159,9 +159,10 @@
 
     function actionsFor(item) {
         const button = (label, iconName, handler, extra) => h('button', {
-            type: 'button', class: 'btn btn-app-ghost btn-sm', title: label, 'aria-label': label + ' ' + item.name,
+            type: 'button', class: 'btn btn-app-ghost btn-sm' + (label === 'Delete' ? ' conn-action-danger' : ''),
+            title: label, 'aria-label': label + ' ' + item.name,
             onclick: handler, ...(extra || {}),
-        }, icon(iconName));
+        }, icon(iconName), h('span', { class: 'conn-action-label', text: label }));
         return h('div', { class: 'd-flex flex-wrap gap-1' },
             button('Edit', 'bi-pencil', () => openModal(null, item.id)),
             button('Models', 'bi-list-check', () => openModels(item)),

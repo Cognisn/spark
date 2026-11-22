@@ -42,7 +42,7 @@ roles they should have on the server; a bundle grants nothing.
 Signed in as an administrator (only the Administrator role holds
 `spark.bundles.import`):
 
-1. Open **Account > Import a user bundle** (`/admin/bundles`).
+1. Open **Administration > User bundles** (`/admin/bundles`).
 2. Choose the person's account and the bundle file, and import.
 3. Read the report on screen: rows imported per table, knowledge graph entities
    merged, actions imported disabled, skills kept, and what was left out and why.

@@ -37,7 +37,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="skill-view-title"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div id="skill-view-body"></div>
@@ -99,8 +99,8 @@ async function loadSkills() {
                 </a>
                 ${s.source === 'user' ? `
                 <button class="btn btn-app-ghost btn-sm ms-1" style="color: var(--app-danger);"
-                        onclick="deleteSkill('${escapeHtml(s.name)}')" title="Delete">
-                    <i class="bi bi-trash"></i>
+                        onclick="deleteSkill('${escapeHtml(s.name)}')" title="Delete" aria-label="Delete">
+                    <i class="bi bi-trash" aria-hidden="true"></i>
                 </button>` : ''}
             </div>`).join('');
     } catch (err) {

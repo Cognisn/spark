@@ -228,6 +228,8 @@ class TestAudit:
 
 class TestMenu:
     def test_only_an_administrator_is_offered_the_usage_view(self, admin: TestClient) -> None:
-        assert 'href="/admin/usage"' in admin.get("/account", headers=NAVIGATE).text
+        # The usage view is in the Administration area, which a power user does not have.
+        assert 'href="/admin/usage"' in admin.get("/admin", headers=NAVIGATE).text
         ada = _signed_in(admin, ADA, POWER_USER)
         assert 'href="/admin/usage"' not in ada.get("/account", headers=NAVIGATE).text
+        assert ada.get("/admin", headers=NAVIGATE).status_code == 403

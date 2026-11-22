@@ -207,12 +207,21 @@ class TestMenu:
     @pytest.mark.parametrize(
         ("role", "shown", "hidden"),
         [
-            (USER, {"/account", "/account/api-keys"}, {"/admin/users", "/audit"}),
-            (AUDITOR, {"/account", "/audit"}, {"/admin/users", "/account/api-keys"}),
+            # The Account menu holds the user's own pages; administration is in its own area.
+            (
+                USER,
+                {"/account", "/account/api-keys", "/account/preferences"},
+                {"/admin/users", "/admin/audit"},
+            ),
+            (
+                AUDITOR,
+                {"/account", "/account/preferences"},
+                {"/admin/users", "/admin/audit", "/account/api-keys"},
+            ),
             (
                 ADMINISTRATOR,
-                {"/account", "/account/api-keys", "/admin/users", "/admin/invitations", "/audit"},
-                set(),
+                {"/account", "/account/api-keys", "/account/preferences"},
+                {"/admin/users", "/admin/invitations", "/admin/audit"},
             ),
         ],
     )
@@ -226,6 +235,8 @@ class TestMenu:
         assert shown <= links, links
         assert not hidden & links, links
         assert 'action="/auth/sign-out"' in page.text
+        # The Administration link: only for a role holding an administrative permission.
+        assert ('href="/admin"' in page.text) == (role != USER)
 
     def test_personal_mode_has_no_entries(self) -> None:
         request = MagicMock()
