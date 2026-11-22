@@ -1,0 +1,11 @@
+# Accepted vulnerability findings for the Spark image (the vulnerability gate,
+# docs/deployment/release-images.md). Trivy's own syntax, so a local `trivy image`
+# honours it too. Every entry needs, directly above it with no blank line between:
+#
+#   # reason: why the finding is accepted (for example, not reachable from Spark)
+#   # accepted-by: the person accepting it
+#   CVE-YYYY-NNNNN exp:YYYY-MM-DD
+#
+# The gate fails on an entry without a reason, a person or an expiry, on one listed
+# twice, and on one whose expiry date has passed, whether or not the finding is still
+# present. Remove an entry once the finding is fixed. There are no entries yet.

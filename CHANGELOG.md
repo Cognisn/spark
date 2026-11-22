@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Release images.** `docs/deployment/release-images.md` describes the path of a release image end to end: the vulnerability gate and how to accept a finding, the central push, signing, and verifying an image with `scripts/verify-image.sh`, which operators run before changing a client instance's image tag. `docs/deployment/aws.md` gives the release role's trust (plain and immutable subject forms) and least-privilege permissions, the `spark-release` variables, the test deploy role's read access to the central repository, and the lifecycle rule caveat for signature tags.
+
+### Security
+
+- **A vulnerability gate in every image build.** `container.yml` scans the built image with Trivy (pinned action and Trivy version) after `deploy/check-image.sh` and before anything is pushed, and pushes that same image. A critical finding with a fixed version fails the build unless `.trivyignore` accepts it with a reason, the person accepting it and an expiry; an incomplete, duplicated or expired entry fails the build too. Critical findings with no fix and every high finding are listed in the job summary.
+- **Release images are pushed to the central repository and signed.** A new `publish-central` job runs for every `v*` tag in the GitHub environment `spark-release`: it signs in through OIDC as the release role, copies the ghcr.io image byte for byte to `CENTRAL_ECR_REPOSITORY_URI` under its version tag (re-runs are accepted, another digest is refused, the copy is read back), signs that digest with cosign v2 and the KMS key `IMAGE_SIGNING_KEY` without the public transparency log, verifies it, and prints the digest and public key in the job summary. The release-candidate test deploy now waits for it and verifies the signed digest first; it needs the `spark-test` variables `CENTRAL_ECR_REPOSITORY_URI` and `IMAGE_SIGNING_PUBLIC_KEY`. Every third-party action in the container workflows is pinned by commit, and crane and cosign are installed by shared actions under `.github/actions/`.
+- **Release images are verified before they are deployed.** `scripts/verify-image.sh <repository>:<tag>` checks that the tag names the expected digest and that the digest carries a valid cosign signature by the release key (a public key file, or the KMS key), exiting non-zero otherwise and changing nothing. `scripts/deploy-test.sh` now runs it first on every path: the test copy's digest must be the digest signed in the central repository, or the test stack is not touched. `scripts/copy-image.sh` makes the central copy as well as the test copy, byte for byte with crane, and hides ARNs in its messages.
+
 ## [0.3.0rc38] - 2026-11-22
 
 ### Security

@@ -458,36 +458,46 @@ task shows `"schema": "failed"` on `/ready`.
 
 A release-candidate tag (`v0.3.0rcN`) deploys itself to the test environment at
 `https://test.spark.cognisn.net`, with no manual step. The `deploy-test` job of
-`.github/workflows/container-publish.yml` runs after the image is published to ghcr.io, only for a
-tag push whose version is a release candidate (never a final version, never a manual dispatch),
+`.github/workflows/container-publish.yml` runs after the image is published to ghcr.io and the
+`publish-central` job has copied it to the central repository and signed it
+([Release images](release-images.md)), only for a tag push whose version is a release candidate
+(never a final version, never a manual dispatch),
 in the GitHub environment `spark-test`, one deploy at a time (a second waits, it is not
 cancelled). It signs in to AWS with GitHub's OIDC token, so the repository holds no AWS secret.
 
 The repository is public, so its run logs are public: the job masks every AWS identifier before
 a step can print one, and prints and summarises none. The identifiers live only in the
 environment's variables: `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_URI`,
-`SPARK_TEST_STACK_NAME` (the service stack) and `SPARK_TEST_SERVICE_ROLE_NAME` (the
-CloudFormation execution role the change sets run as).
+`SPARK_TEST_STACK_NAME` (the service stack), `SPARK_TEST_SERVICE_ROLE_NAME` (the
+CloudFormation execution role the change sets run as), `CENTRAL_ECR_REPOSITORY_URI` (the central
+repository, without a tag) and `IMAGE_SIGNING_PUBLIC_KEY` (the release key's public key, PEM; it
+is not secret, and every `publish-central` job summary prints it).
 
 ### What it does
 
 1. Copies `ghcr.io/cognisn/spark:<version>` to the ECR repository by version tag, without a
    rebuild, with `scripts/copy-image.sh <version>` (see [The image copy](#the-image-copy)).
    The same digest already in ECR is success; a different digest fails.
-2. `scripts/deploy-test.sh <version>` reads the service stack, which must be in
+2. `scripts/deploy-test.sh <version>` first verifies the image, before any other call and on
+   every path, a re-run included: the test copy's digest must be the digest `publish-central`
+   signed, and the central tag of the version must name that digest with a valid signature by
+   the release key (`scripts/verify-image.sh`, see
+   [Verifying an image](release-images.md#verifying-an-image)). If it does not verify, the job
+   fails and nothing is changed, so the test stack only ever runs a signed digest.
+3. It reads the service stack, which must be in
    `CREATE_COMPLETE`, `UPDATE_COMPLETE` or `UPDATE_ROLLBACK_COMPLETE`. If `RunningImageTag`
    already equals the version (a re-run), it goes straight to the checks.
-3. **Change set one** sets `MigrateImageTag`, so the one-off migrate task definition points at
+4. **Change set one** sets `MigrateImageTag`, so the one-off migrate task definition points at
    the new image. Only `MigrateTaskDefinition` may change.
-4. **The migrate task** runs from the stack's outputs (cluster, task definition, subnets and
+5. **The migrate task** runs from the stack's outputs (cluster, task definition, subnets and
    security group, Fargate, no public IP) and must stop with exit code 0 from its
    `spark-migrate` container: `spark migrate && spark bootstrap`. If it fails, the job stops
    with the stop reason and exit code, and the services are not touched. The job's role cannot
    read the task's log; read the migrate log group.
-5. **Change set two** sets `ImageTag`. Only the web and worker task definitions and the two
+6. **Change set two** sets `ImageTag`. Only the web and worker task definitions and the two
    services may change. The job waits up to 30 minutes for the stack to finish updating and
    fails, printing the failed stack events, on anything but `UPDATE_COMPLETE`.
-6. The checks: `RunningImageTag` equals the version; each service's primary deployment uses the
+7. The checks: `RunningImageTag` equals the version; each service's primary deployment uses the
    stack's task definition, rollout `COMPLETED`, running count equal to desired count and at
    least 1; and `GET /ready` answers 200 with the version, retried for a bounded time. The job
    summary reports these checks and no identifier.
@@ -502,7 +512,8 @@ definition, updates a service or updates the stack without a change set.
 ### The image copy
 
 The job installs `crane` (go-containerregistry) from a pinned release, checked against its
-published sha256 before it is unpacked, and `scripts/copy-image.sh` uses it to copy the image.
+published sha256 before it is unpacked (`.github/actions/install-crane`, which the central copy
+uses too), and `scripts/copy-image.sh` uses it to copy the image.
 `crane copy` moves the manifest and every blob exactly as they are, so the digest in ECR equals
 the digest in ghcr.io. The digest must match because it is the image's identity: the digest
 that was built, checked and published is the one that runs in the test environment, and a
@@ -566,3 +577,128 @@ which keeps the newest 10 images, through a change set in the console or the CLI
 are not rolled back: the earlier image runs against the database as it now is, so check that
 the earlier version accepts the current schema first (Spark's web start refuses a database that
 is not at its head).
+
+## The central repository and the release role
+
+Release images for client instances come from the central repository in the shared services
+account, not from ghcr.io or the test account. The `publish-central` job pushes and signs them
+there; [Release images](release-images.md) describes the whole path. This section is the AWS
+contract the job needs. The account IDs, key ID and names below are placeholders: `123456789012` is the
+shared services account, and `CHANGEME` stands for the key ID and for GitHub's numeric owner and
+repository IDs.
+
+### The spark-release environment
+
+A GitHub environment `spark-release`, with deployments limited to tags matching `v*`, holds four
+variables (the job masks each before a step can print it):
+
+| Variable | Holds |
+|---|---|
+| `AWS_REGION` | The central repository's Region, for example `ap-southeast-2` |
+| `AWS_RELEASE_ROLE_ARN` | The release role, for example `arn:aws:iam::123456789012:role/spark-release` |
+| `CENTRAL_ECR_REPOSITORY_URI` | `123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/spark` |
+| `IMAGE_SIGNING_KEY` | cosign's key reference, `awskms:///arn:aws:kms:ap-southeast-2:123456789012:key/CHANGEME` |
+
+### The release role's trust
+
+The role trusts GitHub's OIDC provider in the shared services account, for this repository in
+the `spark-release` environment only, in both the plain subject form and the immutable form
+that carries GitHub's numeric owner and repository IDs (as the test deploy role does):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubReleaseEnvironmentOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": [
+            "repo:Cognisn/spark:environment:spark-release",
+            "repo:Cognisn@CHANGEME/spark@CHANGEME:environment:spark-release"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+### The release role's permissions
+
+Push to the one repository, sign with the one key, and nothing else: no delete, lifecycle,
+repository policy or key administration actions.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrSignIn",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PushToTheCentralSparkRepository",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage"
+      ],
+      "Resource": "arn:aws:ecr:ap-southeast-2:123456789012:repository/spark"
+    },
+    {
+      "Sid": "SignWithTheReleaseKey",
+      "Effect": "Allow",
+      "Action": ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"],
+      "Resource": "arn:aws:kms:ap-southeast-2:123456789012:key/CHANGEME"
+    }
+  ]
+}
+```
+
+The read actions (`BatchGetImage`, `GetDownloadUrlForLayer`) let the job read the tag back and
+verify the signature. `kms:DescribeKey` is needed as well as `kms:Sign` and `kms:GetPublicKey`:
+cosign v2.6.5's AWS KMS provider reads the key's signing algorithm with `DescribeKey` before it
+signs, verifies or prints the public key. The key is an asymmetric `SIGN_VERIFY` key; its key
+policy grants the release role the same three actions and no others.
+
+### The test deploy role reads the central repository
+
+`scripts/deploy-test.sh` verifies the signature in the central repository before it changes the
+test stack, so the test deploy role (in the test account) needs to read that one repository:
+
+- in the test deploy role's policy, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on
+  `arn:aws:ecr:ap-southeast-2:123456789012:repository/spark` (it already has
+  `ecr:GetAuthorizationToken`);
+- in the central repository's policy, the same two actions for the test account (already the
+  case if the policy allows pulls by every workload account of the organisation).
+
+The test deploy does not use the KMS key: it verifies with the public key in the `spark-test`
+variable `IMAGE_SIGNING_PUBLIC_KEY`.
+
+### Lifecycle rules
+
+Signatures are kept as tags named `sha256-<digest>.sig` beside each version tag. A rule that
+expires untagged images (for example after 7 days) leaves them alone. A rule that counts or
+ages tagged images would count those tags too and could remove a release's signature, after
+which `verify-image.sh` refuses the release: exclude the `sha256-` tag prefix from any such
+rule.
+
+### Before changing a client instance's image
+
+Run `scripts/verify-image.sh` against the central reference before changing a Spark instance's
+image tag, and change it only if it exits 0; see
+[Verifying an image](release-images.md#verifying-an-image).

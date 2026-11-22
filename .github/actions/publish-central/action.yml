@@ -1,0 +1,62 @@
+name: Publish to the central repository
+description: >-
+  Signs in to AWS through GitHub's OIDC token as the release role, copies the published
+  ghcr.io image to the central ECR repository byte for byte (scripts/copy-image.sh, as the
+  test copy), signs that digest with cosign and the KMS key without the public transparency
+  log, and verifies it (scripts/verify-image.sh). The caller masks every AWS identifier
+  first. docs/deployment/release-images.md describes it.
+
+inputs:
+  version:
+    description: The version to publish (a final version or a release candidate)
+    required: true
+  role-to-assume:
+    description: The release role (AWS_RELEASE_ROLE_ARN of the spark-release environment)
+    required: true
+  aws-region:
+    description: The central repository's Region
+    required: true
+  github-token:
+    description: A token that can read the package on ghcr.io
+    required: true
+
+outputs:
+  digest:
+    description: The digest now tagged and signed in the central repository
+    value: ${{ steps.publish.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC, release role)
+      uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+        role-session-name: spark-release-${{ github.run_id }}
+        mask-aws-account-id: true
+
+    # The release role lives in the account that holds the central repository, so the
+    # default registry of the signed-in account is the central one.
+    - name: Log in to the central repository
+      uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
+      with:
+        mask-password: true
+
+    - name: Log in to ghcr.io
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github-token }}
+
+    - uses: ./.github/actions/install-crane
+
+    - uses: ./.github/actions/install-cosign
+
+    - name: Copy, sign and verify
+      id: publish
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/publish-central.sh" "$VERSION"
