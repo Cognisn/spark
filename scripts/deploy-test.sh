@@ -14,6 +14,11 @@
 #      release key (scripts/verify-image.sh). A failure stops here and nothing is changed, so
 #      the test stack only ever runs a signed digest.
 #   1. Read the service stack. A re-run with the version already running goes to step 5.
+#   1a. The hardening check, read only and on every path: each Spark container of the
+#      migrate, web and worker task definitions runs as 10001, with a read-only root, no
+#      privilege, every capability dropped, an init process and a writable /tmp task volume,
+#      and neither service has ECS Exec on (docs/deployment/container-hardening.md). Enforced,
+#      a failure stops here and nothing is changed; otherwise it is a warning (HARDENING_CHECK).
 #   2. Change set one: MigrateImageTag=<version>. Only MigrateTaskDefinition may change.
 #   3. Run the one-off migrate task (spark migrate && spark bootstrap) on the stack's own
 #      outputs and require exit code 0. A failure stops here; the services are untouched.
@@ -35,6 +40,8 @@
 #   POLL_INTERVAL          seconds between polls (default 10)
 #   CHANGESET_TIMEOUT, MIGRATE_STACK_TIMEOUT, TASK_TIMEOUT, STACK_TIMEOUT, SERVICE_TIMEOUT,
 #   READY_TIMEOUT          bounds in seconds (defaults 300, 900, 1200, 1800, 600, 600)
+#   HARDENING_CHECK        enforce, warn, or enforce-from:YYYY-MM-DD (warn before that UTC
+#                          date, enforce from it); default HARDENING_CHECK_DEFAULT below
 #
 # Every identifier read from AWS is masked (::add-mask::) before it can be printed, and
 # nothing prints an identifier on purpose: the Actions log of a public repository is public.
@@ -43,6 +50,8 @@ set -euo pipefail
 TARGET_TYPES=(AWS::ECS::TaskDefinition AWS::ECS::Service)
 MIGRATE_IDS=" MigrateTaskDefinition "
 SERVICE_IDS=" WebTaskDefinition WorkerTaskDefinition WebService WorkerService "
+# What the hardening check does when a control is missing (see HARDENING_CHECK above).
+HARDENING_CHECK_DEFAULT="warn"
 
 version="${1:-}"
 if [[ ! "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
@@ -59,6 +68,35 @@ for name in ECR_REPOSITORY_URI CENTRAL_ECR_REPOSITORY_URI IMAGE_SIGNING_PUBLIC_K
         exit 2
     fi
 done
+hardening_policy="${HARDENING_CHECK:-$HARDENING_CHECK_DEFAULT}"
+case "$hardening_policy" in
+    enforce)
+        hardening_enforce=1
+        hardening_note="enforced"
+        ;;
+    warn)
+        hardening_enforce=0
+        hardening_note="warning only, not enforced"
+        ;;
+    enforce-from:*)
+        hardening_from="${hardening_policy#enforce-from:}"
+        if [[ ! "$hardening_from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::HARDENING_CHECK must be enforce, warn or enforce-from:YYYY-MM-DD"
+            exit 2
+        fi
+        if [[ "$(date -u +%F)" < "$hardening_from" ]]; then
+            hardening_enforce=0
+            hardening_note="warning only until $hardening_from, enforced from that date"
+        else
+            hardening_enforce=1
+            hardening_note="enforced since $hardening_from"
+        fi
+        ;;
+    *)
+        echo "::error::HARDENING_CHECK must be enforce, warn or enforce-from:YYYY-MM-DD"
+        exit 2
+        ;;
+esac
 export AWS_PAGER=""
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -196,6 +234,158 @@ summary "## Deploy to the test environment"
 summary ""
 summary "Version: \`$version\` (running before: \`$running_tag\`)"
 summary "Image: \`$test_digest\`, verified as signed by the release key."
+
+# ---- 1a. the hardening check ------------------------------------------------------
+
+# The change sets reuse the stack's current template, so the task definitions they register
+# carry the same container settings as the ones the stack holds now. Checking those, and the
+# services' ECS Exec setting, before any change shows whether the deploy keeps the controls
+# of docs/deployment/container-hardening.md. Every call here only reads.
+
+# One tab-separated item per container, its fields joined by '|' so that an empty field keeps
+# its place.
+# shellcheck disable=SC2016 # the backticks are JMESPath literals, not command substitution
+CONTAINER_QUERY='taskDefinition.containerDefinitions[].join(`"|"`, [name, image, to_string(user), to_string(readonlyRootFilesystem), to_string(privileged), join(`","`, linuxParameters.capabilities.drop || `[]`), join(`","`, linuxParameters.capabilities.add || `[]`), to_string(linuxParameters.initProcessEnabled), join(`","`, (mountPoints || `[]`)[?containerPath==`"/tmp"`].sourceVolume), to_string(length((mountPoints || `[]`)[?containerPath==`"/tmp"` && readOnly]))])'
+# One item per task volume: its name, whether it names a host path, whether it is EFS, Docker
+# or FSx storage. No identifier (a file system ID) is read.
+# shellcheck disable=SC2016 # as above
+VOLUME_QUERY='taskDefinition.volumes[].join(`"|"`, [name, to_string(host.sourcePath != `null`), to_string(efsVolumeConfiguration != `null` || dockerVolumeConfiguration != `null` || fsxWindowsFileServerVolumeConfiguration != `null`)])'
+
+hardening_problems=()
+problem() { hardening_problems+=("$*"); }
+
+# hardening_read ARGS...: run a read-only AWS call into $reply; on failure $reply holds the
+# scrubbed message and the call returns 1 (a hardening problem, not the end of the deploy).
+hardening_read() {
+    if ! reply="$(aws "$@" 2>&1)"; then
+        reply="$(printf '%s\n' "$reply" | scrub_registry | tr '\n' ' ')"
+        return 1
+    fi
+}
+
+# check_task_definition LABEL ARN
+check_task_definition() {
+    local label="$1" arn="$2" containers volumes row found=0 where
+    local name image user ro priv drop add init tmp_source tmp_read_only
+    local vname vhost vother tmp_kind
+    mask "$arn" "${arn##*/}" "$(basename "${arn%:*}")"
+    if ! hardening_read ecs describe-task-definition --task-definition "$arn" \
+        --query "$CONTAINER_QUERY" --output text; then
+        problem "the $label task definition could not be read ($reply)"
+        return 0
+    fi
+    containers="$reply"
+    if ! hardening_read ecs describe-task-definition --task-definition "$arn" \
+        --query "$VOLUME_QUERY" --output text; then
+        problem "the $label task definition's volumes could not be read ($reply)"
+        return 0
+    fi
+    volumes="$reply"
+    local -a rows=()
+    IFS=$'\t' read -r -a rows <<<"$containers" || true
+    for row in "${rows[@]}"; do
+        IFS='|' read -r name image user ro priv drop add init tmp_source tmp_read_only <<<"$row"
+        case "$image" in
+            "$ECR_REPOSITORY_URI:"* | "$ECR_REPOSITORY_URI@"*) ;;
+            *) continue ;; # not a Spark container
+        esac
+        found=1
+        where="the $label task's container $name"
+        case "$user" in
+            10001 | 10001:10001) ;;
+            *) problem "$where does not run as user 10001:10001" ;;
+        esac
+        [ "$ro" = true ] || problem "$where does not have readonlyRootFilesystem true"
+        [ "$priv" != true ] || problem "$where is privileged"
+        case ",$drop," in
+            *,ALL,*) ;;
+            *) problem "$where does not drop ALL capabilities (linuxParameters.capabilities.drop)" ;;
+        esac
+        [ -z "$add" ] || problem "$where adds capabilities ($add)"
+        [ "$init" = true ] || problem "$where does not have linuxParameters.initProcessEnabled true"
+        if [ -z "$tmp_source" ]; then
+            problem "$where mounts no task volume at /tmp"
+            continue
+        fi
+        if [ "$tmp_read_only" != 0 ]; then
+            problem "$where mounts /tmp read-only"
+            continue
+        fi
+        tmp_kind=missing
+        while IFS='|' read -r vname vhost vother; do
+            [ "$vname" = "$tmp_source" ] || continue
+            if [ "$vhost" != false ]; then
+                tmp_kind=host
+            elif [ "$vother" != false ]; then
+                tmp_kind=shared
+            else
+                tmp_kind=task
+            fi
+        done < <(printf '%s\n' "$volumes" | tr '\t' '\n')
+        case "$tmp_kind" in
+            task) ;;
+            host) problem "$where mounts /tmp from a host path, not a task volume" ;;
+            shared) problem "$where mounts /tmp from EFS, Docker or FSx storage, not a task volume on the task's ephemeral storage" ;;
+            *) problem "$where mounts /tmp from a volume the task definition does not declare" ;;
+        esac
+    done
+    [ "$found" = 1 ] || problem "the $label task definition has no container running the Spark image"
+}
+
+# check_exec LABEL SERVICE: the service must have ECS Exec off.
+check_exec() {
+    local label="$1" service="$2"
+    if ! hardening_read ecs describe-services --cluster "$cluster" --services "$service" \
+        --query 'services[0].enableExecuteCommand' --output text; then
+        problem "the $label service could not be read ($reply)"
+        return 0
+    fi
+    [ "$reply" = False ] || problem "the $label service does not have ECS Exec off (enableExecuteCommand is $reply)"
+}
+
+# check_stack_task_definition LABEL LOGICAL_ID: check one of the stack's task definitions.
+check_stack_task_definition() {
+    local label="$1" logical="$2"
+    if ! hardening_read cloudformation describe-stack-resources --stack-name "$STACK_NAME" \
+        --logical-resource-id "$logical" --query 'StackResources[0].PhysicalResourceId' \
+        --output text; then
+        problem "the stack's $label task definition could not be found ($reply)"
+        return 0
+    fi
+    case "$reply" in
+        "" | None) problem "the stack's $label task definition could not be found" ;;
+        *) check_task_definition "$label" "$reply" ;;
+    esac
+}
+
+check_task_definition migrate "$migrate_task_def"
+check_stack_task_definition web WebTaskDefinition
+check_stack_task_definition worker WorkerTaskDefinition
+check_exec web "$web_service"
+check_exec worker "$worker_service"
+
+hardening_doc="docs/deployment/container-hardening.md (ECS on Fargate)"
+if [ "${#hardening_problems[@]}" = 0 ]; then
+    echo "check: hardening: every Spark container of the migrate, web and worker task definitions carries the controls, and ECS Exec is off on both services"
+    summary "Hardening check: passed ($hardening_note). Every Spark container in the migrate, web and worker task definitions runs as 10001:10001 with a read-only root, no privilege, every capability dropped, an init process and a writable /tmp task volume; ECS Exec is off on both services."
+else
+    if [ "$hardening_enforce" = 1 ]; then
+        level=error
+        summary "Hardening check: FAILED ($hardening_note), nothing was changed:"
+    else
+        level=warning
+        summary "Hardening check: NOT MET ($hardening_note); the deploy continues:"
+    fi
+    for item in "${hardening_problems[@]}"; do
+        echo "::$level::hardening: $item" | scrub_registry
+        summary "- $(printf '%s\n' "$item" | scrub_registry)"
+    done
+    summary "The settings to apply are in $hardening_doc."
+    if [ "$hardening_enforce" = 1 ]; then
+        fail "the test stack does not carry the container hardening controls (${#hardening_problems[@]} problems, listed above; see $hardening_doc); nothing was changed"
+    fi
+    echo "the hardening check is not enforced ($hardening_note); continuing"
+fi
 
 # ---- change sets ------------------------------------------------------------------
 
@@ -338,10 +528,10 @@ else
         fi
     fi
 
-    # 3. the one-off migrate task, from the stack's own outputs only
+    # 3. the one-off migrate task, from the stack's own outputs only, with ECS Exec off
     echo "running the migrate task"
     run_out="$(aws_text ecs run-task --cluster "$cluster" --task-definition "$migrate_task_def" \
-        --launch-type FARGATE --count 1 \
+        --launch-type FARGATE --count 1 --no-enable-execute-command \
         --network-configuration "awsvpcConfiguration={subnets=[$migrate_subnets],securityGroups=[$migrate_sg],assignPublicIp=DISABLED}" \
         --query '[tasks[0].taskArn, failures[0].reason]' --output text)"
     IFS=$'\t' read -r task_arn run_failure <<<"$run_out"

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Container hardening on ECS on Fargate.** The AWS guide's web, worker and migrate task definitions now carry the container hardening controls (user `10001:10001`, a read-only root filesystem, no privilege, every capability dropped, an init process, and `/tmp` on a `spark-tmp` task volume), the services and the migrate `run-task` have ECS Exec off, and no task role grants `ssmmessages`. `docs/deployment/container-hardening.md` is the reference for the settings, as fragments to add to each container definition, task definition and service; `docs/deployment/aws.md` shows them in place and links to it.
+- **The test deploy checks the hardening before it changes anything.** `scripts/deploy-test.sh` reads the test stack's migrate, web and worker task definitions and both services (read only) after verifying the image and before any change set, on every path. Every Spark container must have each control, and neither service may have ECS Exec on; the migrate task is started with `--no-enable-execute-command`. Each missing control is listed in the log and the job summary under "Hardening check", with no AWS identifier. `HARDENING_CHECK` (`enforce`, `warn`, or `enforce-from:YYYY-MM-DD`; default in the script) decides whether a missing control fails the deploy or is a warning. The deploy role needs `ecs:DescribeTaskDefinition`.
 
 ## [0.3.0rc41] - 2026-11-22
 
