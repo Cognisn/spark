@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc40] - 2026-11-22
+
 ### Added
 
 - **Bootstrap can create the Bedrock connection already curated.** `bootstrap.bedrock.models` (`SPARK__BOOTSTRAP__BEDROCK__MODELS`, comma-separated model ids, or a JSON list in a settings document) makes the connection bootstrap creates offer exactly those models at the Standard tier, with every other model off, so the first sign-in sees only what the deployment chose and no Cognisn account is needed to curate it afterwards. The ids are checked for form only (discovery may not have run); one the service does not list, or conduit refuses under the residency policy, stays stored, is shown in the Models dialog with the reason and is not offered. Unset, nothing changes. It applies only when bootstrap creates the connection and never to one that exists, was changed, disabled or deleted. Bootstrap's audit event records the list. `docs/deployment/identity.md` and `docs/connections.md` describe it.
