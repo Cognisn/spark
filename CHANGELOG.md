@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Hardened containers.** Every Spark service in `deploy/compose.yaml`, the Portainer stack, the Docker Desktop stack and the live end-to-end overlay (`migrate`, `web`, `worker`, and the overlay's second web replica and MCP server) now runs with a read-only root filesystem, every Linux capability dropped, `no-new-privileges`, Docker's default seccomp profile and an init process. Spark writes only to its three volumes and to `/tmp`, a tmpfs mounted `noexec,nosuid,nodev` (2 GiB for web, which spools uploads and bundle imports there; 256 MiB for the worker; 64 MiB for migrate). The image declares `/tmp` as a volume, so ECS on Fargate gives the unprivileged user a writable `/tmp` under a read-only root, and keeps tiktoken's encoding cache on the model cache volume (`TIKTOKEN_CACHE_DIR`) instead of `/tmp`. `docs/deployment/container-hardening.md` explains each control, the writable paths and how to check a running container, and gives the equivalent ECS task definition settings (`readonlyRootFilesystem`, `linuxParameters` capabilities and `initProcessEnabled`, a task volume at `/tmp`, ECS Exec off). `tests/deploy/test_container_hardening.py` fails if a Spark service loses any of these controls.
+
 ## [0.3.0rc35] - 2026-11-22
 
 ### Changed

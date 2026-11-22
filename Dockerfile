@@ -105,7 +105,9 @@ COPY --from=rds-ca --chmod=0644 /rds-global-bundle.pem /etc/ssl/certs/rds-global
 # Configuration, data, logs and secrets live under /var/lib/spark (one volume,
 # shared by the web and worker containers); users' file areas live under
 # /var/lib/spark-files (server mode sets files.root to it); the embedding model
-# cache has its own.
+# cache, and tiktoken's encoding cache beside it, have their own. Nothing else is
+# written but /tmp, so the root filesystem can be mounted read-only
+# (docs/deployment/container-hardening.md).
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -114,6 +116,7 @@ ENV PATH=/opt/venv/bin:$PATH \
     XDG_DATA_HOME=/var/lib/spark/data \
     XDG_STATE_HOME=/var/lib/spark/state \
     HF_HOME=/var/cache/spark/huggingface \
+    TIKTOKEN_CACHE_DIR=/var/cache/spark/huggingface/tiktoken \
     SPARK__INTERFACE__HOST=0.0.0.0 \
     SPARK__INTERFACE__PORT=8000 \
     SPARK__INTERFACE__OPEN_BROWSER=false \
@@ -121,7 +124,11 @@ ENV PATH=/opt/venv/bin:$PATH \
 
 USER 10001:10001
 WORKDIR /var/lib/spark
-VOLUME ["/var/lib/spark", "/var/lib/spark-files", "/var/cache/spark/huggingface"]
+# /tmp is declared too, so a platform that copies a volume's ownership and mode
+# from the image (ECS on Fargate, for a bind-mount task volume) gives the
+# unprivileged user a writable /tmp under a read-only root. Compose mounts a
+# tmpfs over it instead.
+VOLUME ["/var/lib/spark", "/var/lib/spark-files", "/var/cache/spark/huggingface", "/tmp"]
 EXPOSE 8000
 
 # For the web role; the worker and migrate services disable it.

@@ -27,9 +27,24 @@
 # The web port is published on 127.0.0.1 unless SPARK_BIND says otherwise: put
 # a TLS reverse proxy in front, and never let users reach port 8000 directly.
 
-x-spark: &spark
-  image: ${SPARK_IMAGE:?set SPARK_IMAGE, for example ghcr.io/cognisn/spark:0.3.0rc1}
+# Container hardening for every Spark service (docs/deployment/container-hardening.md):
+# a read-only root filesystem, every Linux capability dropped, no privilege gain
+# through setuid files, Docker's default seccomp profile (none is named), and an
+# init process. Spark writes only to its three volumes and to /tmp, a tmpfs that
+# allows no programs to run from it. The web role's /tmp is larger, for uploads
+# and bundle imports (up to 1 GiB) that pass through it.
+x-spark-hardening: &spark-hardening
   init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=256m
+
+x-spark: &spark
+  <<: *spark-hardening
+  image: ${SPARK_IMAGE:?set SPARK_IMAGE, for example ghcr.io/cognisn/spark:0.3.0rc1}
   environment:
     SPARK__MODE: server
     SPARK__DATABASE__URL: postgresql://${POSTGRES_USER:-spark}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-spark}
@@ -104,6 +119,8 @@ services:
     <<: *spark
     entrypoint: ["/bin/sh", "-c"]
     command: ["spark migrate && spark bootstrap"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     restart: "no"
     healthcheck:
       disable: true
@@ -116,6 +133,8 @@ services:
   web:
     <<: *spark
     command: ["web"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=2g
     depends_on:
       migrate:
         condition: service_completed_successfully
