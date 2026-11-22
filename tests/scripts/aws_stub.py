@@ -126,6 +126,7 @@ def initial_state(**overrides: Any) -> dict[str, Any]:
         "migrate_exit_code": 0,
         "migrate_stopped_reason": "Essential container in task exited",
         "run_task_fails": False,
+        "deny_run_task": False,  # RunTask is refused with an access denied error
         "rollback_on": None,  # a parameter key whose change set ends in UPDATE_ROLLBACK_COMPLETE
         "service_wrong_taskdef": None,  # "web" or "worker"
         "rollout_state": "COMPLETED",
@@ -323,8 +324,32 @@ def cloudformation(state: dict[str, Any], command: str, args: list[str]) -> None
         unsupported(state, "cloudformation", command)
 
 
+# The AWS CLI renames --no-enable-execute-command to --disable-execute-command for every ecs
+# command (awscli/customizations/argrename.py, 'ecs.*.no-enable-execute-command'), so it
+# rejects the old spelling with "Unknown options" (exit 252). The stub does the same, and
+# also refuses --enable-execute-command, which the CLI accepts but no deploy step may use.
+REFUSED_ECS_OPTIONS = ("--no-enable-execute-command", "--enable-execute-command")
+
+
+def refuse_renamed_options(args: list[str]) -> None:
+    for name in REFUSED_ECS_OPTIONS:
+        if name in args:
+            print(f"Unknown options: {name}", file=sys.stderr)
+            sys.exit(252)
+
+
 def ecs(state: dict[str, Any], command: str, args: list[str]) -> None:
+    refuse_renamed_options(args)
     if command == "run-task":
+        if state["deny_run_task"]:
+            print(
+                "An error occurred (AccessDeniedException) when calling the RunTask operation: "
+                f"User: arn:aws:sts::{ACCOUNT}:assumed-role/example-deploy/run is not authorized "
+                f"to perform: ecs:RunTask on resource: arn:aws:ecs:{REGION}:{ACCOUNT}:"
+                "task-definition/example-migrate:2",
+                file=sys.stderr,
+            )
+            sys.exit(254)
         if state["run_task_fails"]:
             respond(args, {"tasks": [], "failures": [{"reason": "RESOURCE:CPU"}]})
             return

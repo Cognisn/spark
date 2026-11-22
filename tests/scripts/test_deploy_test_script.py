@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -206,7 +207,9 @@ def _check_rules(run: Run, initial: dict[str, Any]) -> None:
             f"securityGroups=[{outputs['MigrateSecurityGroupId']}],assignPublicIp=DISABLED}}"
         )
         assert "--overrides" not in call and "--platform-version" not in call
-        assert "--no-enable-execute-command" in call and "--enable-execute-command" not in call
+        assert "--disable-execute-command" in call
+        assert "--enable-execute-command" not in call
+        assert "--no-enable-execute-command" not in call
 
     masked = "\n".join(line for line in run.output.splitlines() if line.startswith("::add-mask::"))
     visible = "\n".join(
@@ -234,7 +237,8 @@ def _check_rules(run: Run, initial: dict[str, Any]) -> None:
     after_outputs += [aws_stub.WEB_SERVICE, aws_stub.WORKER_SERVICE]
     read_outputs = run.count("cloudformation", "describe-stacks") > 1
     expected = always + (after_outputs if read_outputs else [])
-    if run.count("ecs", "run-task") and not run.state["run_task_fails"]:
+    started = not run.state["run_task_fails"] and not run.state["deny_run_task"]
+    if run.count("ecs", "run-task") and started:
         expected.append(aws_stub.TASK_ID)
     for identifier in expected:
         assert identifier in masked, f"{identifier} was never masked"
@@ -407,6 +411,42 @@ def test_a_migrate_task_that_cannot_start_stops_before_the_services(tmp_path: Pa
     assert "RESOURCE:CPU" in run.output
     assert run.count("cloudformation", "create-change-set") == 1
     assert run.state["params"]["ImageTag"] == "0.3.0rc16"
+
+
+def test_a_refused_run_task_shows_the_scrubbed_message_and_leaves_the_services_alone(
+    tmp_path: Path,
+) -> None:
+    # aws_text runs inside run_out="$(...)": its messages must reach the log, not the variable.
+    run = deploy(tmp_path, deny_run_task=True)
+    assert run.returncode != 0
+    assert "AWS refused or failed a call (aws ecs run-task):" in run.output
+    assert "AccessDeniedException" in run.output
+    assert "is not authorized to perform: ecs:RunTask" in run.output
+    assert "::error::the call aws ecs run-task failed; see the message above" in run.output
+    assert "arn:***" in run.output
+    visible = [line for line in run.output.splitlines() if not line.startswith("::add-mask::")]
+    assert aws_stub.ACCOUNT not in chr(10).join(visible)
+    assert "Deploy FAILED: the call aws ecs run-task failed" in run.summary
+    assert run.count("ecs", "describe-tasks") == 0
+    assert run.count("cloudformation", "execute-change-set") == 1  # the migrate change set only
+    assert run.state["params"]["ImageTag"] == "0.3.0rc16"
+    assert run.service_checks() == 0
+
+
+@pytest.mark.parametrize("option", ["--no-enable-execute-command", "--enable-execute-command"])
+def test_the_stub_refuses_the_options_the_cli_renames(tmp_path: Path, option: str) -> None:
+    # What let --no-enable-execute-command through to a real run: the stub now refuses it.
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(aws_stub.initial_state()), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(Path(aws_stub.__file__)), "aws", "ecs", "run-task", option],
+        env={**os.environ, "STUB_STATE": state_path.as_posix()},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 252
+    assert f"Unknown options: {option}" in result.stderr
 
 
 # ---- the stack update -------------------------------------------------------------

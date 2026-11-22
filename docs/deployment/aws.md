@@ -263,7 +263,7 @@ starting the services. `spark migrate` is safe to repeat:
 
 ```bash
 aws ecs run-task --cluster spark --task-definition spark-migrate --launch-type FARGATE \
-  --count 1 --no-enable-execute-command \
+  --count 1 --disable-execute-command \
   --network-configuration "awsvpcConfiguration={subnets=[subnet-0123456789abcdef0],securityGroups=[sg-0123456789abcdef0],assignPublicIp=DISABLED}"
 ```
 
@@ -573,7 +573,7 @@ the same settings as the ones it reads. Every container that runs the image from
   storage).
 
 Each service must have `enableExecuteCommand` false, and the script starts the migrate task
-with `--no-enable-execute-command`. Other containers (a log router, for example) are not
+with `--disable-execute-command`. Other containers (a log router, for example) are not
 checked. A task definition or service the job cannot read counts as a failure.
 
 Every missing control is listed, by task and container name, in the log and in the job
@@ -586,8 +586,9 @@ summary under **Hardening check**, with no identifier. What happens next is set 
 | `warn` | is a warning (`Hardening check: NOT MET ...`); the deploy goes on |
 | `enforce-from:YYYY-MM-DD` | is a warning before that UTC date, and fails the job from it |
 
-The job's role needs `ecs:DescribeTaskDefinition` (which takes `Resource: "*"` only) besides
-the `ecs:DescribeServices` it already has.
+The job's role needs `ecs:DescribeTaskDefinition` (which takes `Resource: "*"` only; see
+[The test deploy role reads task definitions](#the-test-deploy-role-reads-task-definitions))
+besides the `ecs:DescribeServices` it already has.
 
 ### The image copy
 
@@ -768,6 +769,27 @@ test stack, so the test deploy role (in the test account) needs to read that one
 
 The test deploy does not use the KMS key: it verifies with the public key in the `spark-test`
 variable `IMAGE_SIGNING_PUBLIC_KEY`.
+
+### The test deploy role reads task definitions
+
+The hardening check ([above](#the-hardening-check)) reads the migrate, web and worker task
+definitions with `aws ecs describe-task-definition`. Add this statement to the test deploy
+role's policy (in the test account):
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "ecs:DescribeTaskDefinition",
+  "Resource": "*"
+}
+```
+
+`ecs:DescribeTaskDefinition` supports no resource-level permission and no condition key (its
+row in the Service Authorization Reference's "Actions, resources, and condition keys for Amazon
+Elastic Container Service" lists neither), so `Resource` must be `"*"`; a statement that names
+the task-definition families does not match the call. Without it the check reports each task
+definition as unreadable (a warning while `HARDENING_CHECK` is `warn`, a failure when it
+enforces).
 
 ### Lifecycle rules
 

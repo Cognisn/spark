@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The test deploy's migrate step starts the task with a valid option.** `scripts/deploy-test.sh` passed `--no-enable-execute-command` to `aws ecs run-task`, which the AWS CLI renames to `--disable-execute-command` for every `ecs` command and so rejects; the v0.3.0rc42 deploy stopped there. It now passes `--disable-execute-command`, and the AWS and container hardening guides show the same option. The AWS stub in `tests/scripts` now refuses the options the CLI renames, so a test fails if the old spelling returns.
+- **A refused AWS call inside a command substitution is no longer silent.** `aws_text` and `fail` in `scripts/deploy-test.sh` write their messages (scrubbed as before) to standard error, so the AWS message and the `::error::` line show in the log when the call runs inside `$( )`. Previously they were captured into the variable and the job ended with no explanation. New tests cover a refused `RunTask`.
+
+### Documentation
+
+- The AWS guide gives the statement the test deploy role needs for the hardening check (`ecs:DescribeTaskDefinition` on `*`, the only resource it supports).
+
 ## [0.3.0rc42] - 2026-11-22
 
 ### Security
