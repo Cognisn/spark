@@ -116,7 +116,7 @@ ADMIN_GROUPS: tuple[MenuGroup, ...] = (
                 "bi-tools",
                 "Tools and MCP servers",
                 SETTINGS_INSTANCE,
-                "Built-in tools, tool results and the MCP servers offered to users.",
+                "Built-in tools and the MCP servers offered to users.",
             ),
             MenuEntry(
                 "/admin/mail",

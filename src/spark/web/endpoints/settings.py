@@ -269,8 +269,8 @@ ADMIN_PAGES: dict[str, AdminPage] = {
         AdminPage(
             "/admin/tools",
             "Tools and MCP servers",
-            "The built-in tools, what happens to their results, and the MCP servers offered to "
-            "users. Secrets are kept in the secrets store and are never shown.",
+            "The built-in tools and the MCP servers offered to users. "
+            "Secrets are kept in the secrets store and are never shown.",
             (),
             tools=True,
             personal="/settings#section-embedded-tools",

@@ -282,7 +282,7 @@ class TestServerAccess:
 
     def test_instance_page_has_the_editor_without_stdio(self, server: Any) -> None:
         client, _, _ = server
-        page = client.get("/settings")
+        page = client.get("/admin/tools")
         assert page.status_code == 200
         assert 'id="section-mcp-servers"' in page.text
         assert 'value="stdio"' not in page.text

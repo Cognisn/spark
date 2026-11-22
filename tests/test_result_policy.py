@@ -159,15 +159,19 @@ class TestRegistryView:
 @pytest.mark.postgres
 class TestResultPolicyOnAServer:
     def test_instance_page_shows_an_action_per_source(self, server: TestClient) -> None:
-        html = server.get("/settings").text
+        # The result actions are in the Security section, on Administration > Security.
+        html = server.get("/admin/security").text
         for source in SOURCES:
             assert f'data-key="embedded_tools.tool_results.{source}"' in html
 
     def test_instance_page_and_secret_view_have_no_local_tool_keys(
         self, server: TestClient
     ) -> None:
-        html = server.get("/settings").text
-        assert not re.search(r"embedded_tools\.(system_commands|filesystem|email)\.", html)
+        for path in ("/admin/settings", "/admin/tools", "/admin/security", "/admin/mail"):
+            html = server.get(path).text
+            assert not re.search(
+                r"embedded_tools\.(system_commands|filesystem|email)\.", html
+            ), path
         status = server.get("/settings/api/secrets").json()
         assert "embedded_tools.email.password" not in status
         assert "voice.elevenlabs.api_key" in status
