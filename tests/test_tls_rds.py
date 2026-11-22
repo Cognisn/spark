@@ -28,7 +28,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -168,12 +167,12 @@ _CURRENT: list[FakePostgresTLS] = []
 
 
 def _wait_outcome(fake: FakePostgresTLS) -> None:
-    """Wait until the stand-in has seen a handshake succeed or fail (or time runs out)."""
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        if fake.handshakes_ok + fake.handshakes_failed >= 1:
-            return
-        time.sleep(0.05)
+    """Wait until the stand-in has seen a handshake succeed or fail (or time runs out).
+
+    Waits on the stand-in's event, not a counter on a poll, and for longer than a cold first
+    connection can take on a busy machine; the test's own assertions then judge the outcome.
+    """
+    fake.wait_outcome()
 
 
 async def _run(name: str, fake: FakePostgresTLS, url: str) -> None:

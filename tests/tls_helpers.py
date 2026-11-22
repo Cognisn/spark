@@ -92,7 +92,18 @@ def make_authority(directory: Path, name: str) -> Authority:
 
 
 class FakePostgresTLS:
-    """Answers SSLRequest with ``S`` and handshakes with ``authority``'s server certificate."""
+    """Answers SSLRequest with ``S`` and handshakes with ``authority``'s server certificate.
+
+    A client on a busy machine (cold imports, antivirus scanning, other test runs) can take
+    many seconds between connecting and sending its ClientHello. The stand-in therefore gives
+    each connection ``connection_timeout`` seconds per step, far longer than any healthy client
+    needs, so a slow client is never miscounted as a failed handshake; it only ever waits on
+    the client, never on a clock the tests race. Tests wait for the outcome with
+    :meth:`wait_outcome`, which blocks on an event set after the counters are updated.
+    """
+
+    #: Seconds a connection may take per step (header, handshake). A hung client still ends.
+    connection_timeout = 60.0
 
     def __init__(self, authority: Authority) -> None:
         self._context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -104,6 +115,7 @@ class FakePostgresTLS:
         self.port: int = self._listener.getsockname()[1]
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._outcome = threading.Event()
         self.ssl_requests = 0
         self.handshakes_ok = 0
         self.handshakes_failed = 0
@@ -134,9 +146,15 @@ class FakePostgresTLS:
             time.sleep(0.05)
         return False
 
+    def wait_outcome(self, timeout: float = 40.0) -> bool:
+        """Block until a handshake has succeeded or failed (True), or ``timeout`` passes (False)."""
+        return self._outcome.wait(timeout)
+
     def _bump(self, name: str) -> None:
         with self._lock:
             setattr(self, name, getattr(self, name) + 1)
+            if name in ("handshakes_ok", "handshakes_failed"):
+                self._outcome.set()
 
     def _serve(self) -> None:
         while not self._stop.is_set():
@@ -147,7 +165,7 @@ class FakePostgresTLS:
             threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
 
     def _handle(self, conn: socket.socket) -> None:
-        conn.settimeout(5)
+        conn.settimeout(self.connection_timeout)
         try:
             header = conn.recv(8)
             if len(header) == 8 and struct.unpack("!ii", header)[1] == SSL_REQUEST_CODE:
