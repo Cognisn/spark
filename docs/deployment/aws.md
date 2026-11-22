@@ -161,6 +161,12 @@ host and a generous health check start period.
 Three task definitions from one image, `123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/spark:0.3.0`
 (example). Fargate ignores the image's `HEALTHCHECK`, so the web task declares its own.
 
+Every Spark container carries the container hardening controls: user `10001:10001`, a
+read-only root filesystem, no privilege, every Linux capability dropped, an init process, and
+`/tmp` on a task volume (`spark-tmp`) of the task's own ephemeral storage. [Container
+hardening](container-hardening.md#ecs-on-fargate) is the reference for these settings and
+what each stops; the task definitions below carry them in place.
+
 ### Web
 
 ```json
@@ -178,6 +184,13 @@ Three task definitions from one image, `123456789012.dkr.ecr.ap-southeast-2.amaz
       "name": "web",
       "image": "123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/spark:0.3.0",
       "essential": true,
+      "user": "10001:10001",
+      "readonlyRootFilesystem": true,
+      "privileged": false,
+      "linuxParameters": {
+        "capabilities": { "drop": ["ALL"] },
+        "initProcessEnabled": true
+      },
       "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
       "environment": [
         { "name": "KONFIG_AWS_SETTINGS", "value": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:spark/settings-AbCdEf" },
@@ -189,7 +202,8 @@ Three task definitions from one image, `123456789012.dkr.ecr.ap-southeast-2.amaz
       "mountPoints": [
         { "sourceVolume": "spark-data", "containerPath": "/var/lib/spark" },
         { "sourceVolume": "spark-files", "containerPath": "/var/lib/spark-files" },
-        { "sourceVolume": "hf-cache", "containerPath": "/var/cache/spark/huggingface" }
+        { "sourceVolume": "hf-cache", "containerPath": "/var/cache/spark/huggingface" },
+        { "sourceVolume": "spark-tmp", "containerPath": "/tmp", "readOnly": false }
       ],
       "healthCheck": {
         "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)\""],
@@ -204,13 +218,15 @@ Three task definitions from one image, `123456789012.dkr.ecr.ap-southeast-2.amaz
   "volumes": [
     { "name": "spark-data", "efsVolumeConfiguration": { "fileSystemId": "fs-0123456789abcdef0", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "fsap-0123456789abcdef0", "iam": "ENABLED" } } },
     { "name": "spark-files", "efsVolumeConfiguration": { "fileSystemId": "fs-0123456789abcdef0", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "fsap-0123456789abcdef1", "iam": "ENABLED" } } },
-    { "name": "hf-cache", "efsVolumeConfiguration": { "fileSystemId": "fs-0123456789abcdef0", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "fsap-0123456789abcdef2", "iam": "ENABLED" } } }
+    { "name": "hf-cache", "efsVolumeConfiguration": { "fileSystemId": "fs-0123456789abcdef0", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "fsap-0123456789abcdef2", "iam": "ENABLED" } } },
+    { "name": "spark-tmp" }
   ]
 }
 ```
 
 Size memory for the embedding model and your users; 8 GiB is a starting point, not a
-measurement. The execution role is the standard ECS task execution role (image pull and log
+measurement. `/tmp` takes its room from the task's ephemeral storage (20 GiB by default), which
+holds a bundle being imported (up to 1 GiB) and large uploads while they are read. The execution role is the standard ECS task execution role (image pull and log
 delivery). Nothing in the task definition is a secret: the database URL is a reference and
 the credentials come from the task role.
 
@@ -219,7 +235,8 @@ the credentials come from the task role.
 The same as the web task with these differences: family `spark-worker`, task role
 `spark-worker-task`, `SPARK__DATABASE__URL` set to `secret://database_url_worker`, the
 container `command` set to `["worker"]` (the image's entry point is `spark`), no port
-mapping and no `healthCheck`. Run one task or more: one is active at a time (it holds a
+mapping and no `healthCheck`. Everything else is as in the web task, the hardening settings,
+the three EFS volumes and the `spark-tmp` volume at `/tmp` included. Run one task or more: one is active at a time (it holds a
 PostgreSQL advisory lock) and the others stand by. Start the worker service after the web
 service is healthy, or at least after the migrate and bootstrap task: the worker's role cannot
 write the bundle, and bootstrap creates warden's signing keys in it (a worker started earlier
@@ -234,11 +251,35 @@ Run this task to completion before the web and worker services, and again for ea
 - `entryPoint` `["/bin/sh", "-c"]` and `command` `["spark migrate && spark bootstrap"]`, which
   brings both schemas (Spark's and warden's) to head and then runs the headless bootstrap
   (which creates the restricted logins `spark_web` and `spark_worker`);
-- mount `/spark-data` only; no port, no health check.
+- the same hardening settings as the web container (`user`, `readonlyRootFilesystem`,
+  `privileged`, `linuxParameters`);
+- mount `/spark-data` and the `spark-tmp` volume at `/tmp` only (volumes `spark-data` and
+  `spark-tmp`); no port, no health check. Its `/bin/sh -c` entry point needs nothing writable
+  beyond `/tmp`.
 
 Run it with `aws ecs run-task` on the same cluster, subnets and security group as the
-services, and check that the task's container exit code is 0 before starting the services.
-`spark migrate` is safe to repeat.
+services, with ECS Exec off, and check that the task's container exit code is 0 before
+starting the services. `spark migrate` is safe to repeat:
+
+```bash
+aws ecs run-task --cluster spark --task-definition spark-migrate --launch-type FARGATE \
+  --count 1 --no-enable-execute-command \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-0123456789abcdef0],securityGroups=[sg-0123456789abcdef0],assignPublicIp=DISABLED}"
+```
+
+### The services and ECS Exec
+
+Create the `spark-web` and `spark-worker` services with ECS Exec off, set explicitly so that
+turning it on is a deliberate change (in CloudFormation, `EnableExecuteCommand: false` on each
+`AWS::ECS::Service`):
+
+```json
+{ "serviceName": "spark-web", "enableExecuteCommand": false }
+```
+
+With ECS Exec off and no `ssmmessages` permission on any task role (below), nobody opens a
+shell in a running task. Read the settings back with `aws ecs describe-services` (the
+services' `enableExecuteCommand`) and `aws ecs describe-task-definition`.
 
 ## The load balancer
 
@@ -362,8 +403,9 @@ console still apply.
 
 ## IAM: one role per task
 
-Each task has its own task role. Nothing grants `secretsmanager:*` or `*` anywhere. The
-examples use example ARNs.
+Each task has its own task role. Nothing grants `secretsmanager:*` or `*` anywhere, and no
+task role grants any `ssmmessages:` action (the channel ECS Exec opens a shell through), so a
+task cannot be entered even if ECS Exec were turned on. The examples use example ARNs.
 
 **Web task role** (`spark-web-task`):
 
@@ -486,19 +528,21 @@ is not secret, and every `publish-central` job summary prints it).
    [Verifying an image](release-images.md#verifying-an-image)). If it does not verify, the job
    fails and nothing is changed, so the test stack only ever runs a signed digest.
 3. It reads the service stack, which must be in
-   `CREATE_COMPLETE`, `UPDATE_COMPLETE` or `UPDATE_ROLLBACK_COMPLETE`. If `RunningImageTag`
-   already equals the version (a re-run), it goes straight to the checks.
-4. **Change set one** sets `MigrateImageTag`, so the one-off migrate task definition points at
+   `CREATE_COMPLETE`, `UPDATE_COMPLETE` or `UPDATE_ROLLBACK_COMPLETE`.
+4. **The hardening check**, on every path and before any change (see
+   [The hardening check](#the-hardening-check)). If `RunningImageTag` already equals the
+   version (a re-run), it then goes straight to the checks.
+5. **Change set one** sets `MigrateImageTag`, so the one-off migrate task definition points at
    the new image. Only `MigrateTaskDefinition` may change.
-5. **The migrate task** runs from the stack's outputs (cluster, task definition, subnets and
-   security group, Fargate, no public IP) and must stop with exit code 0 from its
+6. **The migrate task** runs from the stack's outputs (cluster, task definition, subnets and
+   security group, Fargate, no public IP, ECS Exec off) and must stop with exit code 0 from its
    `spark-migrate` container: `spark migrate && spark bootstrap`. If it fails, the job stops
    with the stop reason and exit code, and the services are not touched. The job's role cannot
    read the task's log; read the migrate log group.
-6. **Change set two** sets `ImageTag`. Only the web and worker task definitions and the two
+7. **Change set two** sets `ImageTag`. Only the web and worker task definitions and the two
    services may change. The job waits up to 30 minutes for the stack to finish updating and
    fails, printing the failed stack events, on anything but `UPDATE_COMPLETE`.
-7. The checks: `RunningImageTag` equals the version; each service's primary deployment uses the
+8. The checks: `RunningImageTag` equals the version; each service's primary deployment uses the
    stack's task definition, rollout `COMPLETED`, running count equal to desired count and at
    least 1; and `GET /ready` answers 200 with the version, retried for a bounded time. The job
    summary reports these checks and no identifier.
@@ -509,6 +553,41 @@ Both change sets reuse the stack's current template (`--use-previous-template`),
 `UsePreviousValue`. Each change is checked before execution, and a change set with anything
 else, or any removal, is deleted and the deploy fails. The job never registers a task
 definition, updates a service or updates the stack without a change set.
+
+### The hardening check
+
+Before it changes anything, `scripts/deploy-test.sh` reads the stack's three task definitions
+(migrate from the stack's outputs, web and worker from its resources) with
+`aws ecs describe-task-definition`, and both services with `aws ecs describe-services`. Both
+change sets reuse the stack's current template, so the task definitions they register carry
+the same settings as the ones it reads. Every container that runs the image from
+`ECR_REPOSITORY_URI` must have each control of
+[Container hardening](container-hardening.md#ecs-on-fargate):
+
+- `user` `10001:10001` (or `10001`);
+- `readonlyRootFilesystem` true, and `privileged` not true;
+- `linuxParameters.capabilities.drop` including `ALL`, and nothing in `capabilities.add`;
+- `linuxParameters.initProcessEnabled` true;
+- a mount at `/tmp`, not read-only, of a volume the task definition declares with no host
+  path and no EFS, Docker or FSx configuration (a task volume on the task's ephemeral
+  storage).
+
+Each service must have `enableExecuteCommand` false, and the script starts the migrate task
+with `--no-enable-execute-command`. Other containers (a log router, for example) are not
+checked. A task definition or service the job cannot read counts as a failure.
+
+Every missing control is listed, by task and container name, in the log and in the job
+summary under **Hardening check**, with no identifier. What happens next is set by
+`HARDENING_CHECK`, whose default is `HARDENING_CHECK_DEFAULT` in the script:
+
+| Value | A missing control |
+|---|---|
+| `enforce` | fails the job with `Hardening check: FAILED ..., nothing was changed`, before any change set |
+| `warn` | is a warning (`Hardening check: NOT MET ...`); the deploy goes on |
+| `enforce-from:YYYY-MM-DD` | is a warning before that UTC date, and fails the job from it |
+
+The job's role needs `ecs:DescribeTaskDefinition` (which takes `Resource: "*"` only) besides
+the `ecs:DescribeServices` it already has.
 
 ### The image copy
 

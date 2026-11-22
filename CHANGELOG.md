@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Container hardening on ECS on Fargate.** The AWS guide's web, worker and migrate task definitions now carry the container hardening controls (user `10001:10001`, a read-only root filesystem, no privilege, every capability dropped, an init process, and `/tmp` on a `spark-tmp` task volume), the services and the migrate `run-task` have ECS Exec off, and no task role grants `ssmmessages`. `docs/deployment/container-hardening.md` is the reference for the settings, as fragments to add to each container definition, task definition and service; `docs/deployment/aws.md` shows them in place and links to it.
+
 ## [0.3.0rc41] - 2026-11-22
 
 ### Documentation
