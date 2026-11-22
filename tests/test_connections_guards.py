@@ -38,6 +38,10 @@ def _runtime(sync_db: Any, assignments: list[Assignment]) -> ConnectionRuntime:
 
 def _turn(sync_db: Any, runtime: ConnectionRuntime, **kwargs: Any) -> dict[str, Any]:
     mgr = ConversationManager(sync_db, runtime, user_guid="process-guid")
+    # The vector index is not under test here, and a turn would otherwise load the real embedding
+    # model (sentence-transformers, torch and scipy), a multi-second one-off import that counts
+    # against whichever test is first to need it and trips the per-test timeout on a busy machine.
+    mgr._get_vector_index = lambda conversation_id, user_guid: None  # type: ignore[method-assign]
     cid = sync_db.call(conversations.create_conversation, "Ada's", MODEL, ADA)
     sync_db.call(conversations.update_conversation, cid, ADA, memory_enabled=0, rag_enabled=0)
     result: dict[str, Any] = mgr.send_message(cid, "hello", ADA, tools=[], **kwargs)
