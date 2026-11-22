@@ -10,8 +10,10 @@ When Docker is unavailable those tests are skipped locally, but fail when
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
@@ -28,6 +30,42 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "integration: needs a live external service (run by hand; CI deselects it)",
     )
+
+
+def _can_load_embeddings(items: list[pytest.Item]) -> bool:
+    """True when the session runs a test outside ``tests/scripts/`` (which never loads the model)."""
+    scripts = Path(__file__).parent / "scripts"
+    return any(scripts not in Path(str(item.path)).parents for item in items)
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Load the embedding model once, before the first test, outside any test's timeout.
+
+    Importing sentence_transformers and loading the model takes tens of seconds on a busy
+    machine; whichever test first indexed a message would be charged that and could exceed
+    pytest-timeout's limit. The model and device are the defaults a vector index uses, so
+    the class-wide cache key matches. A failure never fails the session: the tests load the
+    model themselves, as they would without this hook.
+    """
+    log = logging.getLogger("spark.tests.warmup")
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+
+    def say(message: str) -> None:
+        log.info(message)
+        if reporter is not None:
+            reporter.write_line(message)
+
+    if not _can_load_embeddings(list(session.items)):
+        return
+    started = time.perf_counter()
+    try:
+        from spark.index.embeddings import DEFAULT_MODEL, SentenceTransformerEmbedding
+
+        SentenceTransformerEmbedding(DEFAULT_MODEL, device="cpu").encode("warmup")
+    except Exception as exc:  # noqa: BLE001 - warm-up is best effort
+        say(f"embedding warm-up skipped after {time.perf_counter() - started:.1f} s: {exc!r}")
+        return
+    say(f"embedding warm-up: model loaded in {time.perf_counter() - started:.1f} s")
 
 
 def _new_loop() -> asyncio.AbstractEventLoop:
