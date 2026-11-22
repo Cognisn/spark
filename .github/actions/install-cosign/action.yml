@@ -1,0 +1,19 @@
+name: Install cosign
+description: >-
+  Installs cosign v2.6.5 through sigstore/cosign-installer, pinned by commit SHA. cosign v2
+  keeps each signature as a manifest tagged sha256-<digest hex>.sig in the image's own
+  repository, so a lifecycle rule that expires untagged images never removes it. cosign v3
+  stores signatures as OCI referrers (untagged manifests) by default, which such a rule
+  would expire: do not move to it without keeping the tag-based format.
+
+runs:
+  using: composite
+  steps:
+    - name: Install cosign
+      uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      with:
+        cosign-release: v2.6.5
+
+    - name: Show the cosign version
+      shell: bash
+      run: cosign version
