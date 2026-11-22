@@ -69,7 +69,7 @@ ending in `-dev-only`:
 | `SPARK_WEB_PORT` | The port Spark is published on, on `127.0.0.1` (default `8000`) |
 | `SPARK__BOOTSTRAP__ADMIN__EMAIL` | The first administrator's address: `spark bootstrap` invites them by mail on the first start. Use your own address |
 | `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME`, `SPARK__BOOTSTRAP__ADMIN__LAST_NAME` | Their name, as the invitation shows it |
-| `SPARK__BOOTSTRAP__BEDROCK__REGION`, `SPARK__BOOTSTRAP__BEDROCK__NAME`, `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | Optional, AWS only, commented out in the compose file: add an Amazon Bedrock connection that uses the task role. Not useful on a laptop; see [AWS](aws.md#bedrock-through-the-task-role) |
+| `SPARK__BOOTSTRAP__BEDROCK__REGION`, `SPARK__BOOTSTRAP__BEDROCK__NAME`, `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS`, `SPARK__BOOTSTRAP__BEDROCK__MODELS` | Optional, AWS only, commented out in the compose file: add an Amazon Bedrock connection that uses the task role. Not useful on a laptop; see [AWS](aws.md#bedrock-through-the-task-role) |
 | `SPARK_MAIL_PORT` | The port of the mail catcher's inbox, on `127.0.0.1` (default `8025`) |
 | `SPARK__MAIL__SMTP__HOST`, `PORT`, `TLS`, `SENDER_ADDRESS`, `SENDER_NAME` | Optional: where the invitation is sent. They default to the mail catcher, so leave them unset to try Spark |
 

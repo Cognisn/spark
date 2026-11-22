@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Bootstrap can create the Bedrock connection already curated.** `bootstrap.bedrock.models` (`SPARK__BOOTSTRAP__BEDROCK__MODELS`, comma-separated model ids, or a JSON list in a settings document) makes the connection bootstrap creates offer exactly those models at the Standard tier, with every other model off, so the first sign-in sees only what the deployment chose and no Cognisn account is needed to curate it afterwards. The ids are checked for form only (discovery may not have run); one the service does not list, or conduit refuses under the residency policy, stays stored, is shown in the Models dialog with the reason and is not offered. Unset, nothing changes. It applies only when bootstrap creates the connection and never to one that exists, was changed, disabled or deleted. Bootstrap's audit event records the list. `docs/deployment/identity.md` and `docs/connections.md` describe it.
+
+### Fixed
+
+- **Discovered models can be chosen like catalogue models.** The Models dialog is one list of every chat model the connection offers or could offer, catalogue and discovered alike (for example Amazon Bedrock's `au.` inference profiles), each with its Enabled switch, tier, where it is processed and conduit's residency verdict; a model conduit refuses stays visible with the reason and cannot be switched on. Before, only catalogue rows had a switch, and the first change curated the connection with the catalogue rows alone, which dropped every discovered model from the picker, including the working older Claude profiles. The first change now keeps every model offered until then, a model the service lists for the first time on a curated connection is off until an administrator switches it on (the dialog says so), and a choice survives a restart, a fresh discovery and a model leaving the listing. A conversation pinned to a switched-off or unlisted model behaves as before.
+
 ## [0.3.0rc39] - 2026-11-22
 
 ### Documentation

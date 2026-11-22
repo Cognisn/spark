@@ -40,6 +40,11 @@ from tests.test_bootstrap_settings import ADMIN, _collect, _complete, _konfig, _
 
 REGION = "ap-southeast-2"
 AU = "ap-southeast-2,ap-southeast-4"
+MODELS = (
+    "amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,"
+    "au.anthropic.claude-sonnet-4-6,au.anthropic.claude-haiku-4-5-20251001-v1:0,"
+    "au.anthropic.claude-opus-4-6-v1"
+)
 
 
 def _found(**extra: Any) -> bs.BedrockSeed | None:
@@ -72,6 +77,44 @@ class TestSettings:
             bootstrap__bedrock__residency_regions=["ap-southeast-4", REGION],
         )
         assert seed is not None and seed.residency_regions == ("ap-southeast-2", "ap-southeast-4")
+
+    def test_models_are_read_as_text_or_a_list(self) -> None:
+        text = _found(bootstrap__bedrock__region=REGION, bootstrap__bedrock__models=MODELS)
+        listed = _found(
+            bootstrap__bedrock__region=REGION, bootstrap__bedrock__models=MODELS.split(",")
+        )
+        assert text is not None and text.models == tuple(MODELS.split(","))
+        assert listed == text
+
+    @pytest.mark.parametrize("empty", ["", " ", []])
+    def test_no_models_leave_the_connection_uncurated(self, empty: Any) -> None:
+        seed = _found(bootstrap__bedrock__region=REGION, bootstrap__bedrock__models=empty)
+        assert seed is not None and seed.models is None
+        seed = _found(bootstrap__bedrock__region=REGION)
+        assert seed is not None and seed.models is None
+
+    @pytest.mark.parametrize(
+        ("listed", "fragment"),
+        [
+            ("amazon.nova-lite-v1:0,not a model", "must be model ids separated by commas"),
+            ("amazon.nova-lite-v1:0,,au.x", "must be model ids separated by commas"),
+            ("a/b", "must be model ids separated by commas"),
+            ("a.b,a.b", "more than once"),
+            (5, "must be a list of model ids"),
+        ],
+    )
+    def test_a_bad_model_list_is_reported_without_its_value(
+        self, listed: Any, fragment: str
+    ) -> None:
+        problems = _problems(
+            _konfig(
+                **_complete(bootstrap__bedrock__region=REGION, bootstrap__bedrock__models=listed)
+            )
+        )
+        assert len(problems) == 1
+        assert "bootstrap.bedrock.models (SPARK__BOOTSTRAP__BEDROCK__MODELS)" in problems[0]
+        assert fragment in problems[0]
+        assert "not a model" not in problems[0]
 
     @pytest.mark.parametrize("empty", ["", " ", []])
     def test_an_empty_list_keeps_the_default(self, empty: Any) -> None:
@@ -314,6 +357,43 @@ class TestSeed:
             "scopes": ["cross_region", "in_region", "local"],
             "regions": ["ap-southeast-2", "ap-southeast-4"],
         }
+
+    async def test_no_models_setting_stores_no_model_rows(
+        self, spark_db: Any, audited: list[dict[str, Any]]
+    ) -> None:
+        await bc.seed_bedrock(spark_db, bs.BedrockSeed(REGION), actor="spark-bootstrap")
+        assert await DatabaseConnectionStore(spark_db).list_models("aws-bedrock") == []
+        assert "models" not in audited[0]["details"]
+
+    async def test_the_models_setting_creates_the_connection_curated(
+        self, spark_db: Any, audited: list[dict[str, Any]]
+    ) -> None:
+        ids = tuple(MODELS.split(","))
+        seed = bs.BedrockSeed(REGION, models=ids)
+        assert await bc.seed_bedrock(spark_db, seed, actor="spark-bootstrap") == "created"
+        rows = await DatabaseConnectionStore(spark_db).list_models("aws-bedrock")
+        assert sorted((m.model_id, m.enabled, m.tier) for m in rows) == sorted(
+            (i, True, "standard") for i in ids
+        )
+        assert await _marked(spark_db)
+        assert audited[0]["details"]["models"] == list(ids)
+
+    async def test_the_models_setting_never_changes_an_existing_connection(
+        self, spark_db: Any, audited: list[dict[str, Any]]
+    ) -> None:
+        await _store_one(spark_db)
+        seed = bs.BedrockSeed(REGION, models=("amazon.nova-lite-v1:0",))
+        assert await bc.seed_bedrock(spark_db, seed, actor="spark-bootstrap") == "exists"
+        assert await DatabaseConnectionStore(spark_db).list_models("aws-bedrock") == []
+
+    async def test_a_deleted_curated_connection_is_not_curated_again(
+        self, spark_db: Any, audited: list[dict[str, Any]]
+    ) -> None:
+        seed = bs.BedrockSeed(REGION, models=("amazon.nova-lite-v1:0",))
+        await bc.seed_bedrock(spark_db, seed, actor="spark-bootstrap")
+        assert await DatabaseConnectionStore(spark_db).delete_connection("aws-bedrock")
+        assert await bc.seed_bedrock(spark_db, seed, actor="spark-bootstrap") == "declined"
+        assert await DatabaseConnectionStore(spark_db).list_models("aws-bedrock") == []
 
     async def test_a_second_run_changes_nothing(
         self, spark_db: Any, audited: list[dict[str, Any]]
