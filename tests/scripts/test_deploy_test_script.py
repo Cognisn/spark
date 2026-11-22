@@ -4,8 +4,10 @@ Every run, whatever the scenario, asserts the standing rules (``_check_rules``):
 CreateChangeSet reuses the template, runs as the execution role, lists the two resource
 types and passes UsePreviousValue for every parameter but the one it changes; RunTask uses
 only the stack's outputs; no task definition is registered, no service updated and the stack
-never updated outside a change set; and no identifier appears in the log or the job summary
-except in an ``::add-mask::`` line.
+never updated outside a change set; no identifier appears in the log or the job summary
+except in an ``::add-mask::`` line; and no AWS call is made before the image is verified: the
+test copy's digest is read, and a signature by the release key on that digest in the central
+repository is accepted (``crane`` and ``cosign`` are tests/scripts/registry_stub.py).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from typing import Any
 import pytest
 
 from tests.scripts import aws_stub
+from tests.scripts import image_helpers as images
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent.parent / "scripts" / "deploy-test.sh"
@@ -47,7 +50,26 @@ IDENTIFIERS = [
     aws_stub.TASK_ID,
     STACK_NAME,
     ROLE_NAME,
+    images.TEST_HOST,
+    images.CENTRAL_HOST,
+    images.CENTRAL_ACCOUNT,
 ]
+TEST_COPY = f"{images.TEST_URI}:{VERSION}"
+CENTRAL = f"{images.CENTRAL_URI}:{VERSION}"
+
+
+def published(
+    test_digest: str = images.DIGEST_A,
+    central_digest: str | None = None,
+    signer: str | None = "release",
+) -> dict[str, Any]:
+    """The registries after publish-central and the test copy: both tags, one signature."""
+    model = images.registry()
+    model["tags"][TEST_COPY] = test_digest
+    model["tags"][CENTRAL] = central_digest or test_digest
+    if signer:
+        images.signed(model, images.CENTRAL_URI, central_digest or test_digest, signer)
+    return model
 
 
 @dataclass
@@ -64,25 +86,29 @@ class Run:
     def count(self, service: str, command: str) -> int:
         return self.names().count((service, command))
 
-
-def _shim(directory: Path, tool: str) -> None:
-    shim = directory / tool
-    python = Path(shutil.which("python") or "python").resolve().as_posix()
-    stub = (HERE / "aws_stub.py").as_posix()
-    shim.write_text(f'#!/usr/bin/env bash\nexec "{python}" "{stub}" {tool} "$@"\n', newline="\n")
-    shim.chmod(0o755)
+    def cosign_calls(self) -> list[list[str]]:
+        return [c for c in self.calls if c[0] == "cosign"]
 
 
 def deploy(
-    tmp_path: Path, version: str = VERSION, env: dict[str, str] | None = None, **state: Any
+    tmp_path: Path,
+    version: str = VERSION,
+    env: dict[str, str] | None = None,
+    registry: dict[str, Any] | None = None,
+    **state: Any,
 ) -> Run:
-    """Run the script against a stack in ``state`` (see ``aws_stub.initial_state``)."""
+    """Run the script against a stack in ``state`` (see ``aws_stub.initial_state``) and the
+    registries in ``registry`` (by default published and signed by the release key)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _shim(bin_dir, "aws")
-    _shim(bin_dir, "curl")
+    for tool in ("aws", "curl"):
+        images.shim(bin_dir, tool, "aws_stub.py")
+    for tool in ("crane", "cosign"):
+        images.shim(bin_dir, tool, "registry_stub.py")
     state_path = tmp_path / "state.json"
-    state_path.write_text(json.dumps(aws_stub.initial_state(**state)), encoding="utf-8")
+    full_state = aws_stub.initial_state(**state)
+    full_state["registry"] = registry if registry is not None else published()
+    state_path.write_text(json.dumps(full_state), encoding="utf-8")
     summary_path = tmp_path / "summary.md"
     environment = {
         **os.environ,
@@ -97,8 +123,13 @@ def deploy(
         "POLL_INTERVAL": "0",
         "READY_TIMEOUT": "0",
         "TASK_TIMEOUT": "30",
-        **(env or {}),
+        "ECR_REPOSITORY_URI": images.TEST_URI,
+        "CENTRAL_ECR_REPOSITORY_URI": images.CENTRAL_URI,
+        "IMAGE_SIGNING_PUBLIC_KEY": images.RELEASE_PEM,
     }
+    environment.pop("GITHUB_ACTIONS", None)
+    environment.pop("EXPECTED_DIGEST", None)
+    environment.update(env or {})
     bash = shutil.which("bash")
     assert bash, "bash is required"
     result = subprocess.run(
@@ -169,7 +200,19 @@ def _check_rules(run: Run, initial: dict[str, Any]) -> None:
         assert identifier not in run.summary, f"{identifier} is in the job summary"
     if run.returncode == 2:  # refused before reading anything
         return
+
+    # No AWS call before the image is verified, on every path.
+    aws_calls = [n for n, c in enumerate(run.calls) if c[0] == "aws"]
+    if aws_calls:
+        before = run.calls[: aws_calls[0]]
+        assert ["crane", "digest", TEST_COPY] in before, "the test copy was not read first"
+        verifies = [c for c in before if c[:2] == ["cosign", "verify"]]
+        assert verifies, "AWS was called before the image was verified"
+        test_digest = run.state["registry"]["tags"][TEST_COPY]
+        assert verifies[-1][-1] == f"{images.CENTRAL_URI}@{test_digest}"
+        assert "--insecure-ignore-tlog=true" in verifies[-1]
     always = [aws_stub.ACCOUNT, STACK_NAME, ROLE_NAME]
+    always += [images.TEST_HOST, images.CENTRAL_HOST, images.CENTRAL_ACCOUNT]
     after_outputs = [aws_stub.CLUSTER, *aws_stub.SUBNETS, aws_stub.SECURITY_GROUP]
     after_outputs += [aws_stub.WEB_SERVICE, aws_stub.WORKER_SERVICE]
     read_outputs = run.count("cloudformation", "describe-stacks") > 1
@@ -394,3 +437,74 @@ def test_a_bad_version_is_refused(tmp_path: Path) -> None:
     run = deploy(tmp_path, version="bad version;rm")
     assert run.returncode == 2
     assert run.calls == []
+
+
+# ---- verification -----------------------------------------------------------------
+
+
+def test_a_deploy_summarises_the_verified_digest(tmp_path: Path) -> None:
+    run = deploy(tmp_path)
+    assert run.returncode == 0, run.output
+    assert f"Image: `{images.DIGEST_A}`, verified as signed by the release key." in run.summary
+
+
+@pytest.mark.parametrize(
+    "registry",
+    [
+        pytest.param(published(signer=None), id="unsigned"),
+        pytest.param(published(signer="other"), id="signed-by-another-key"),
+        pytest.param(
+            published(images.DIGEST_A, images.DIGEST_B), id="test-copy-is-not-the-signed-digest"
+        ),
+        pytest.param(
+            {**published(), "claim_digest": images.DIGEST_C}, id="signature-names-another-digest"
+        ),
+    ],
+)
+def test_an_image_that_does_not_verify_changes_nothing(
+    tmp_path: Path, registry: dict[str, Any]
+) -> None:
+    run = deploy(tmp_path, registry=registry)
+    assert run.returncode == 1
+    assert run.names() == [], "AWS was called"
+    assert "nothing was changed" in run.output
+    assert "Deploy FAILED" in run.summary
+
+
+def test_a_rerun_also_verifies_first(tmp_path: Path) -> None:
+    params = {**aws_stub.initial_state()["params"], "ImageTag": VERSION, "MigrateImageTag": VERSION}
+    run = deploy(tmp_path, params=params, registry=published(signer=None))
+    assert run.returncode == 1
+    assert run.names() == []
+
+
+def test_a_missing_test_copy_changes_nothing(tmp_path: Path) -> None:
+    registry = published()
+    del registry["tags"][TEST_COPY]
+    run = deploy(tmp_path, registry=registry)
+    assert run.returncode == 1
+    assert run.names() == []
+    assert run.cosign_calls() == []
+
+
+def test_the_digest_publish_central_signed_must_be_the_test_copy(tmp_path: Path) -> None:
+    run = deploy(tmp_path, env={"EXPECTED_DIGEST": images.DIGEST_B})
+    assert run.returncode == 1
+    assert run.names() == []
+    assert run.cosign_calls() == []
+    assert "not the digest publish-central signed" in run.output
+
+
+def test_the_digest_publish_central_signed_is_accepted(tmp_path: Path) -> None:
+    run = deploy(tmp_path, env={"EXPECTED_DIGEST": images.DIGEST_A})
+    assert run.returncode == 0, run.output
+
+
+@pytest.mark.parametrize(
+    "name", ["IMAGE_SIGNING_PUBLIC_KEY", "CENTRAL_ECR_REPOSITORY_URI", "ECR_REPOSITORY_URI"]
+)
+def test_the_verification_settings_are_required(tmp_path: Path, name: str) -> None:
+    run = deploy(tmp_path, env={name: ""})
+    assert run.returncode == 2
+    assert run.calls == []
+    assert f"{name} is not set" in run.output

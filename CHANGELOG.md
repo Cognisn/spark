@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Release images are verified before they are deployed.** `scripts/verify-image.sh <repository>:<tag>` checks that the tag names the expected digest and that the digest carries a valid cosign signature by the release key (a public key file, or the KMS key), exiting non-zero otherwise and changing nothing. `scripts/deploy-test.sh` now runs it first on every path: the test copy's digest must be the digest signed in the central repository, or the test stack is not touched. `scripts/copy-image.sh` makes the central copy as well as the test copy, byte for byte with crane, and hides ARNs in its messages.
+
 ## [0.3.0rc35] - 2026-11-22
 
 ### Changed

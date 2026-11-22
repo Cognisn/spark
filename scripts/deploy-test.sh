@@ -4,10 +4,15 @@
 #   scripts/deploy-test.sh <version>      for example 0.3.0rc17
 #
 # Called by the deploy-test job of .github/workflows/container-publish.yml after the image
-# is in ECR. It never registers a task definition, updates a service or updates the stack
+# is in the test account's ECR repository and the publish-central job has pushed and signed it
+# in the central repository. It never registers a task definition, updates a service or updates the stack
 # directly: CloudFormation is the only thing that changes the services, through change sets
 # that reuse the stack's current template and change one parameter each.
 #
+#   0. Verify, before anything else on every path: the test copy's digest (and EXPECTED_DIGEST,
+#      when given) is the digest the central tag names, and that digest is signed by the
+#      release key (scripts/verify-image.sh). A failure stops here and nothing is changed, so
+#      the test stack only ever runs a signed digest.
 #   1. Read the service stack. A re-run with the version already running goes to step 5.
 #   2. Change set one: MigrateImageTag=<version>. Only MigrateTaskDefinition may change.
 #   3. Run the one-off migrate task (spark migrate && spark bootstrap) on the stack's own
@@ -21,6 +26,10 @@
 #   AWS_REGION             used by the AWS CLI
 #   STACK_NAME             the service stack
 #   EXECUTION_ROLE_ARN     the CloudFormation execution role the change sets run as
+#   ECR_REPOSITORY_URI     the test account's ECR repository the stack pulls from
+#   CENTRAL_ECR_REPOSITORY_URI   the central repository holding the signed image
+#   IMAGE_SIGNING_PUBLIC_KEY     the release key's public key, PEM
+#   EXPECTED_DIGEST        optional: the digest publish-central signed (the release job sets it)
 #   GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT   named in the change sets (default 0 and 1)
 #   READY_URL              default https://test.spark.cognisn.net/ready
 #   POLL_INTERVAL          seconds between polls (default 10)
@@ -43,7 +52,15 @@ fi
 : "${STACK_NAME:?STACK_NAME is not set}"
 : "${EXECUTION_ROLE_ARN:?EXECUTION_ROLE_ARN is not set}"
 : "${AWS_REGION:?AWS_REGION is not set}"
+# The verification needs these; without them nothing is read or changed.
+for name in ECR_REPOSITORY_URI CENTRAL_ECR_REPOSITORY_URI IMAGE_SIGNING_PUBLIC_KEY; do
+    if [ -z "${!name:-}" ]; then
+        echo "::error::$name is not set; the image cannot be verified, so nothing is deployed"
+        exit 2
+    fi
+done
 export AWS_PAGER=""
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 run_id="${GITHUB_RUN_ID:-0}"
 run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
@@ -85,6 +102,10 @@ fail() {
 mask "$STACK_NAME" "$EXECUTION_ROLE_ARN" "${EXECUTION_ROLE_ARN##*/}"
 account="${EXECUTION_ROLE_ARN#arn:*:iam::}"
 mask "${account%%:*}"
+test_host="${ECR_REPOSITORY_URI%%/*}"
+central_host="${CENTRAL_ECR_REPOSITORY_URI%%/*}"
+mask "$ECR_REPOSITORY_URI" "$test_host" "${test_host%%.*}" \
+    "$CENTRAL_ECR_REPOSITORY_URI" "$central_host" "${central_host%%.*}"
 
 # aws_text ARGS...: run the AWS CLI; on failure print its (scrubbed) message and stop.
 aws_text() {
@@ -108,6 +129,43 @@ stack_output() {
 
 # Deadline helper: deadline SECONDS prints the epoch second to stop at.
 deadline() { echo $((SECONDS + $1)); }
+
+# ---- 0. verify the image ----------------------------------------------------------
+
+# scrub_registry: print registry text with both repository addresses replaced, and any ARN.
+scrub_registry() {
+    local text
+    while IFS= read -r text; do
+        text="${text//"$ECR_REPOSITORY_URI"/***}"
+        text="${text//"$test_host"/***}"
+        text="${text//"$CENTRAL_ECR_REPOSITORY_URI"/***}"
+        text="${text//"$central_host"/***}"
+        printf '%s\n' "$text"
+    done | scrub
+}
+
+# The digest the stack will run is the one the test copy's tag names; it must be the digest
+# the central tag names and the release key signed.
+test_digest=""
+if ! test_digest="$(crane digest "$ECR_REPOSITORY_URI:$version" 2>&1)"; then
+    printf '%s\n' "$test_digest" | scrub_registry
+    fail "could not read the test copy of $version; nothing was changed"
+fi
+[[ "$test_digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || fail "the test copy of $version has no sha256 digest; nothing was changed"
+if [ -n "${EXPECTED_DIGEST:-}" ] && [ "$test_digest" != "$EXPECTED_DIGEST" ]; then
+    fail "the test copy of $version is $test_digest, not the digest publish-central signed ($EXPECTED_DIGEST); nothing was changed"
+fi
+key_file="$(mktemp)"
+printf '%s\n' "$IMAGE_SIGNING_PUBLIC_KEY" >"$key_file"
+verify_status=0
+verify_out="$(bash "$here/verify-image.sh" --key "$key_file" --digest "$test_digest" \
+    "$CENTRAL_ECR_REPOSITORY_URI:$version" 2>&1)" || verify_status=$?
+rm -f "$key_file"
+printf '%s\n' "$verify_out" | scrub_registry
+if [ "$verify_status" != 0 ]; then
+    fail "$version ($test_digest) is not verified as signed by the release key in the central repository; nothing was changed"
+fi
 
 # ---- 1. read the stack ------------------------------------------------------------
 
@@ -137,6 +195,7 @@ read_outputs
 summary "## Deploy to the test environment"
 summary ""
 summary "Version: \`$version\` (running before: \`$running_tag\`)"
+summary "Image: \`$test_digest\`, verified as signed by the release key."
 
 # ---- change sets ------------------------------------------------------------------
 

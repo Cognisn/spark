@@ -87,6 +87,7 @@ def copy_image(
     fail_source: bool = False,
     fail_copy: bool = False,
     fail_ecr_read: bool = False,
+    target_name: str | None = None,
 ) -> Run:
     bin_dir = tmp_path / "bin"
     state = tmp_path / "state"
@@ -117,6 +118,9 @@ def copy_image(
         "ECR_REPOSITORY_URI": ECR_URI,
         "GITHUB_REPOSITORY": REPOSITORY,
     }
+    environment.pop("COPY_TARGET_NAME", None)
+    if target_name is not None:
+        environment["COPY_TARGET_NAME"] = target_name
     bash = shutil.which("bash")
     assert bash, "bash is required"
     result = subprocess.run(
@@ -234,3 +238,10 @@ def test_the_script_names_no_identifier() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     assert not re.search(r"\b\d{12}\b", text)
     assert "amazonaws.com" not in text
+
+
+def test_the_central_copy_names_its_repository(tmp_path: Path) -> None:
+    run = copy_image(tmp_path, ecr_digest=DIGEST_B, target_name="the central repository")
+    assert run.returncode == 1
+    assert "the central repository already holds" in run.output
+    assert copies(run) == []
