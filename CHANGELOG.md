@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc35] - 2026-11-22
+
 ### Changed
 
 - **One Administration area, and a personal Account menu (server mode).** The Account menu now holds only the signed-in user's own pages: My account, My API keys, My preferences and Sign out. Administration has its own link in the top bar and its own pages with side navigation: Users and access (Users, Invitations, Single sign-on, API keys), Connections and models, Tools and MCP servers, Mail, Security, Instance settings, Usage and budgets, Audit trail and User bundles, with a landing page at `/admin`. The link and each entry are shown only to a user holding the permission that page already requires (an auditor sees the Audit trail alone); a user holding none has no Administration area, and `/admin` answers 403. No permission changes.
