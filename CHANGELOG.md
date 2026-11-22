@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc39] - 2026-11-22
+
 ### Documentation
 
 - **Release images.** `docs/deployment/release-images.md` describes the path of a release image end to end: the vulnerability gate and how to accept a finding, the central push, signing, and verifying an image with `scripts/verify-image.sh`, which operators run before changing a client instance's image tag. `docs/deployment/aws.md` gives the release role's trust (plain and immutable subject forms) and least-privilege permissions, the `spark-release` variables, the test deploy role's read access to the central repository, and the lifecycle rule caveat for signature tags.
