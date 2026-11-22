@@ -114,7 +114,7 @@ off, and start every one-off task (migrate and bootstrap) with it off:
 ```
 
 ```bash
-aws ecs run-task ... --no-enable-execute-command
+aws ecs run-task ... --disable-execute-command
 ```
 
 In a CloudFormation template that is `EnableExecuteCommand: false` on each

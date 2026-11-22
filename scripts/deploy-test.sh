@@ -132,8 +132,10 @@ scrub() {
     sed -E 's#arn:aws[a-z-]*:[^[:space:]"'"'"',;)]*#arn:***#g'
 }
 
+# fail MESSAGE: print the error (to stderr, so that it still shows when fail runs inside a
+# command substitution, whose standard output is captured), note it in the job summary, stop.
 fail() {
-    echo "::error::$*" | scrub
+    echo "::error::$*" | scrub >&2
     summary "Deploy FAILED: $(printf '%s' "$*" | scrub)"
     exit 1
 }
@@ -147,12 +149,14 @@ central_host="${CENTRAL_ECR_REPOSITORY_URI%%/*}"
 mask "$ECR_REPOSITORY_URI" "$test_host" "${test_host%%.*}" \
     "$CENTRAL_ECR_REPOSITORY_URI" "$central_host" "${central_host%%.*}"
 
-# aws_text ARGS...: run the AWS CLI; on failure print its (scrubbed) message and stop.
+# aws_text ARGS...: run the AWS CLI and print its output; on failure print its (scrubbed)
+# message and stop. The messages go to stderr: aws_text is mostly called inside $( ), where
+# standard output is the value being captured and a message printed there is lost.
 aws_text() {
     local out
     if ! out="$(aws "$@" 2>&1)"; then
-        echo "AWS refused or failed a call (aws $1 $2):"
-        printf '%s\n' "$out" | scrub
+        echo "AWS refused or failed a call (aws $1 $2):" >&2
+        printf '%s\n' "$out" | scrub >&2
         fail "the call aws $1 $2 failed; see the message above"
     fi
     printf '%s' "$out"
@@ -533,7 +537,7 @@ else
     # 3. the one-off migrate task, from the stack's own outputs only, with ECS Exec off
     echo "running the migrate task"
     run_out="$(aws_text ecs run-task --cluster "$cluster" --task-definition "$migrate_task_def" \
-        --launch-type FARGATE --count 1 --no-enable-execute-command \
+        --launch-type FARGATE --count 1 --disable-execute-command \
         --network-configuration "awsvpcConfiguration={subnets=[$migrate_subnets],securityGroups=[$migrate_sg],assignPublicIp=DISABLED}" \
         --query '[tasks[0].taskArn, failures[0].reason]' --output text)"
     IFS=$'\t' read -r task_arn run_failure <<<"$run_out"
