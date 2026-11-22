@@ -28,6 +28,9 @@ SECURITY_GROUP = "sg-0ccc3333"
 WEB_SERVICE = "example-web"
 WORKER_SERVICE = "example-worker"
 TASK_ID = "0123456789abcdef0123456789abcdef"
+# The test account's repository the stack pulls from (tests/scripts/image_helpers.TEST_URI).
+SPARK_REPOSITORY = f"{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/example-spark-test"
+FILE_SYSTEM = "fs-0123456789abcdef0"
 
 TASK_DEFINITIONS = {
     "MigrateTaskDefinition": "example-migrate",
@@ -43,6 +46,48 @@ CHANGES_FOR = {
         ("Modify", "WorkerService", "AWS::ECS::Service"),
     ],
 }
+
+
+CONTAINER_NAMES = {
+    "MigrateTaskDefinition": "spark-migrate",
+    "WebTaskDefinition": "web",
+    "WorkerTaskDefinition": "worker",
+}
+
+
+def hardened_container(name: str, tag: str = "0.3.0rc16") -> dict[str, Any]:
+    """A Spark container definition with every control of container-hardening.md."""
+    return {
+        "name": name,
+        "image": f"{SPARK_REPOSITORY}:{tag}",
+        "essential": True,
+        "user": "10001:10001",
+        "readonlyRootFilesystem": True,
+        "privileged": False,
+        "linuxParameters": {"capabilities": {"drop": ["ALL"]}, "initProcessEnabled": True},
+        "mountPoints": [
+            {"sourceVolume": "spark-data", "containerPath": "/var/lib/spark"},
+            {"sourceVolume": "spark-tmp", "containerPath": "/tmp", "readOnly": False},
+        ],
+    }
+
+
+def hardened_task_definition(logical_id: str) -> dict[str, Any]:
+    """A task definition as ``describe-task-definition`` returns it, fully hardened."""
+    return {
+        "family": TASK_DEFINITIONS[logical_id],
+        "containerDefinitions": [hardened_container(CONTAINER_NAMES[logical_id])],
+        "volumes": [
+            {
+                "name": "spark-data",
+                "efsVolumeConfiguration": {
+                    "fileSystemId": FILE_SYSTEM,
+                    "transitEncryption": "ENABLED",
+                },
+            },
+            {"name": "spark-tmp", "host": {}},
+        ],
+    }
 
 
 def task_definition_arn(logical_id: str, revision: int) -> str:
@@ -86,6 +131,12 @@ def initial_state(**overrides: Any) -> dict[str, Any]:
         "rollout_state": "COMPLETED",
         "ready_code": 200,
         "ready_version": None,
+        # the task definitions describe-task-definition returns, by logical id
+        "task_definitions": {
+            logical_id: hardened_task_definition(logical_id) for logical_id in TASK_DEFINITIONS
+        },
+        "exec_enabled": {"web": False, "worker": False},
+        "deny_describe_task_definition": False,
     }
     state.update(overrides)
     return state
@@ -302,6 +353,20 @@ def ecs(state: dict[str, Any], command: str, args: list[str]) -> None:
                 ]
             },
         )
+    elif command == "describe-task-definition":
+        if state["deny_describe_task_definition"]:
+            print(
+                f"An error occurred (AccessDeniedException) when calling the "
+                f"DescribeTaskDefinition operation: User: arn:aws:sts::{ACCOUNT}:assumed-role/"
+                f"example-deploy/run is not authorized to perform: ecs:DescribeTaskDefinition "
+                f"on resource: *",
+                file=sys.stderr,
+            )
+            sys.exit(254)
+        arn = option(args, "--task-definition") or ""
+        family = arn.rsplit("/", 1)[-1].rsplit(":", 1)[0]
+        by_family = {name: logical_id for logical_id, name in TASK_DEFINITIONS.items()}
+        respond(args, {"taskDefinition": state["task_definitions"][by_family[family]]})
     elif command == "describe-services":
         service = option(args, "--services") or ""
         which = "web" if service == WEB_SERVICE else "worker"
@@ -315,6 +380,7 @@ def ecs(state: dict[str, Any], command: str, args: list[str]) -> None:
             {
                 "services": [
                     {
+                        "enableExecuteCommand": state["exec_enabled"][which],
                         "desiredCount": count,
                         "runningCount": count,
                         "deployments": [

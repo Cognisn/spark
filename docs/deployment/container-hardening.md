@@ -67,67 +67,65 @@ you add. Volumes and the tmpfs are not part of the layer.
 
 ## ECS on Fargate
 
-The same controls for the task definitions in [Running on AWS](aws.md). Names below are
-placeholders: replace `<...>` with your own. Fargate does not support `linuxParameters.tmpfs`,
-so `/tmp` is a task volume with no `host` (a bind mount on the task's ephemeral storage, never
-a host path) and no size of its own; it shares the task's ephemeral storage (20 GiB by
-default). The image declares `/tmp` as a `VOLUME`, which makes Fargate give that volume the
-image's `/tmp` mode (`1777`), so the unprivileged user can write to it.
+This section is the reference for the controls on ECS with the Fargate launch type: what
+each task definition, service and `run-task` must carry. [Running on AWS](aws.md) shows them
+in place, in complete task definitions for the web, worker and migrate tasks; keep the two in
+step by changing this section first.
+
+Fargate does not support `linuxParameters.tmpfs`, so `/tmp` is a task volume with no `host`
+(a bind mount on the task's ephemeral storage, never a host path or EFS) and no size of its
+own; it shares the task's ephemeral storage (20 GiB by default). The image declares `/tmp` as
+a `VOLUME`, which makes Fargate give that volume the image's `/tmp` mode (`1777`), so the
+unprivileged user can write to it.
+
+**Every Spark container** (web, worker, and migrate and bootstrap) adds these settings to its
+container definition, beside its own image, environment, health check and logging, and adds
+the `/tmp` mount to its own `mountPoints`:
 
 ```json
 {
-  "family": "<spark-web>",
-  "requiresCompatibilities": ["FARGATE"],
-  "networkMode": "awsvpc",
-  "containerDefinitions": [
-    {
-      "name": "web",
-      "image": "<registry>/spark:<version>",
-      "essential": true,
-      "user": "10001:10001",
-      "readonlyRootFilesystem": true,
-      "privileged": false,
-      "linuxParameters": {
-        "capabilities": { "drop": ["ALL"] },
-        "initProcessEnabled": true
-      },
-      "mountPoints": [
-        { "sourceVolume": "spark-data", "containerPath": "/var/lib/spark" },
-        { "sourceVolume": "spark-files", "containerPath": "/var/lib/spark-files" },
-        { "sourceVolume": "hf-cache", "containerPath": "/var/cache/spark/huggingface" },
-        { "sourceVolume": "spark-tmp", "containerPath": "/tmp", "readOnly": false }
-      ]
-    }
-  ],
-  "volumes": [
-    { "name": "spark-data", "efsVolumeConfiguration": { "fileSystemId": "<file-system-id>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<spark-data-access-point-id>", "iam": "ENABLED" } } },
-    { "name": "spark-files", "efsVolumeConfiguration": { "fileSystemId": "<file-system-id>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<spark-files-access-point-id>", "iam": "ENABLED" } } },
-    { "name": "hf-cache", "efsVolumeConfiguration": { "fileSystemId": "<file-system-id>", "transitEncryption": "ENABLED", "authorizationConfig": { "accessPointId": "<hf-cache-access-point-id>", "iam": "ENABLED" } } },
-    { "name": "spark-tmp" }
+  "user": "10001:10001",
+  "readonlyRootFilesystem": true,
+  "privileged": false,
+  "linuxParameters": {
+    "capabilities": { "drop": ["ALL"] },
+    "initProcessEnabled": true
+  },
+  "mountPoints": [
+    { "sourceVolume": "spark-tmp", "containerPath": "/tmp", "readOnly": false }
   ]
 }
 ```
 
-Keep the rest of each task definition (environment, health check, logging, roles) as
-[Running on AWS](aws.md) gives it. For the other tasks:
+Add no capabilities (`capabilities.add` stays empty), and use no host path for any volume.
 
-- **Worker** (`<spark-worker>`): the same `user`, `readonlyRootFilesystem`,
-  `linuxParameters` and `spark-tmp` volume at `/tmp`.
-- **Migrate and bootstrap** (`<spark-migrate>`): the same settings, mounting `spark-data` and
-  `spark-tmp` only. Its entry point `/bin/sh -c` needs nothing writable beyond `/tmp`.
+**Every task definition** adds the `/tmp` volume to its `volumes`, beside its EFS volumes,
+which stay as they are (web and worker mount all three, migrate `spark-data` only):
 
-No shell access into running tasks: create each service with ECS Exec off, and leave it off
-on every `run-task`:
+```json
+{ "name": "spark-tmp" }
+```
+
+**No shell access into running tasks.** Create each service (web and worker) with ECS Exec
+off, and start every one-off task (migrate and bootstrap) with it off:
 
 ```json
 { "serviceName": "<spark-web>", "enableExecuteCommand": false }
 ```
 
-`enableExecuteCommand` defaults to `false`; set it explicitly in the template so a later
-change has to be deliberate, and do not grant the task roles `ssmmessages:*`. The checks
-above (`docker inspect`, `docker exec`) are for Compose hosts; on Fargate, read the task's
-settings with `aws ecs describe-task-definition` and `aws ecs describe-services`
-(`enableExecuteCommand`).
+```bash
+aws ecs run-task ... --no-enable-execute-command
+```
+
+In a CloudFormation template that is `EnableExecuteCommand: false` on each
+`AWS::ECS::Service`. ECS Exec is off by default; set it explicitly so a later change has to be
+deliberate, and grant no task role `ssmmessages:*` (the channel ECS Exec uses), so it could
+not work even if switched on.
+
+The checks above (`docker inspect`, `docker exec`) are for Compose hosts. On Fargate, read
+the settings with `aws ecs describe-task-definition` and `aws ecs describe-services`
+(`enableExecuteCommand`). The test environment's deploy does this before every change
+([Deploying to the test environment](aws.md#the-hardening-check)).
 
 ## How this was checked
 
