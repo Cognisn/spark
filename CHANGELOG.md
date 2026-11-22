@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Release images.** `docs/deployment/release-images.md` describes the path of a release image end to end: the vulnerability gate and how to accept a finding, the central push, signing, and verifying an image with `scripts/verify-image.sh`, which operators run before changing a client instance's image tag. `docs/deployment/aws.md` gives the release role's trust (plain and immutable subject forms) and least-privilege permissions, the `spark-release` variables, the test deploy role's read access to the central repository, and the lifecycle rule caveat for signature tags.
+
 ### Security
 
 - **A vulnerability gate in every image build.** `container.yml` scans the built image with Trivy (pinned action and Trivy version) after `deploy/check-image.sh` and before anything is pushed, and pushes that same image. A critical finding with a fixed version fails the build unless `.trivyignore` accepts it with a reason, the person accepting it and an expiry; an incomplete, duplicated or expired entry fails the build too. Critical findings with no fix and every high finding are listed in the job summary.

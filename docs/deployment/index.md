@@ -18,6 +18,7 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 | [Docker Desktop](docker-desktop.md) | Trying server mode on your own computer (`deploy/docker-desktop/compose.yaml`), on `http://localhost` or with Caddy on `https://localhost:8443` |
 | [Secrets](secrets.md) | konfig's encrypted store and `KONFIG_MASTER_KEY` off AWS, AWS Secrets Manager and its IAM policy on AWS, and how a saved secret reaches every replica |
 | [Running on AWS](aws.md) | ECS on Fargate with RDS, EFS, Secrets Manager and Bedrock: task definitions, the settings document and bundle, TLS to RDS, `/health` and `/ready`, and each task role's policy |
+| [Release images](release-images.md) | The vulnerability gate, the central repository push, cosign signing with the KMS key, and verifying an image with `scripts/verify-image.sh` before deploying it |
 | [Reverse proxy and TLS](reverse-proxy.md) | `server.public_base_url`, what the Origin check and the sign-in cookies need from the proxy, with Caddy and nginx examples |
 | [Identity](identity.md) | The first run (`spark bootstrap` and its settings), restoring an administrator (`spark identity create-admin`), roles, two-step verification, single sign-on through warden's settings, and identity mail (`mail.smtp`) |
 | [Database](database.md) | An external PostgreSQL, database roles, and the grants warden's audit purge needs on `warden.audit_events` |
