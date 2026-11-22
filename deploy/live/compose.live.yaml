@@ -19,6 +19,16 @@ x-live-environment: &live-environment
   # The second replica answers on its own origin.
   SPARK__INTERFACE__ALLOWED_ORIGINS: "http://127.0.0.1:${LIVE_WEB2_PORT}"
 
+# deploy/compose.yaml's container hardening, for the services this overlay adds that
+# run the Spark image (anchors do not cross files): read-only root, no capabilities,
+# no privilege gain, Docker's default seccomp profile, init, and a tmpfs /tmp.
+x-live-hardening: &live-hardening
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
 x-live-volumes: &live-volumes
   - ${LIVE_CERTS}:/etc/spark-live:ro
   - ${LIVE_TOOLS}:/opt/spark-live:ro
@@ -59,9 +69,11 @@ services:
         condition: service_started
 
   web2:
+    <<: *live-hardening
     image: ${SPARK_IMAGE}
-    init: true
     command: ["web"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=2g
     env_file:
       - path: ${SPARK_ENV_FILE}
         required: true
@@ -128,9 +140,12 @@ services:
   # shares, so web reaches it on loopback (conduit allows plain http only there).
   # Only web connects to it; web2 and the workers cannot reach it.
   mcp:
+    <<: *live-hardening
     image: ${SPARK_IMAGE}
     entrypoint: ["python", "-I", "/opt/spark-live/mcp_server.py"]
     command: []
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     network_mode: "service:mailpit"
     volumes:
       - ${LIVE_TOOLS}:/opt/spark-live:ro

@@ -50,6 +50,15 @@ request.
 | `/var/lib/spark-files` (volume) | Users' file areas: uploads and documents Spark creates. Server mode needs `files.root` set to it (`SPARK__FILES__ROOT`). Share it between the web and worker containers. |
 | `/var/cache/spark/huggingface` (volume) | The sentence-transformers embedding model, downloaded on first use. |
 | `/opt/venv` | Spark and its dependencies. |
+| `/tmp` (volume; a tmpfs in the deploy files) | Scratch only: large uploads while they are read, bundle imports and exports. |
+
+Spark writes nowhere else, so the deploy files run every Spark container with a
+read-only root filesystem, every capability dropped, no new privileges, Docker's
+default seccomp profile and a size-limited tmpfs `/tmp`:
+[Container hardening](deployment/container-hardening.md) explains each control, the
+writable paths and how to check a running container, and gives the ECS on Fargate
+equivalents. tiktoken's encoding cache is kept beside the embedding model
+(`TIKTOKEN_CACHE_DIR`), so it survives a restart.
 
 The image sets `SPARK__INTERFACE__HOST=0.0.0.0`, `SPARK__INTERFACE__PORT=8000`,
 `SPARK__INTERFACE__OPEN_BROWSER=false` and turns off the browser heartbeat (which

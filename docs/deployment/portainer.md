@@ -42,6 +42,12 @@ own registry) and give its tag as `SPARK_IMAGE`:
 docker build -t spark:0.3.0rc1 .
 ```
 
+Like `deploy/compose.yaml`, the stack runs `migrate`, `web` and `worker` with a read-only
+root filesystem, every capability dropped, `no-new-privileges`, Docker's default seccomp
+profile and a tmpfs `/tmp` ([Container hardening](container-hardening.md)). Portainer
+applies them as written; do not add capabilities or turn on privileged mode for these
+services in Portainer's container editor.
+
 ## The variables
 
 | Variable | Required | Purpose |

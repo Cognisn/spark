@@ -58,6 +58,16 @@ for the secrets and shared storage for the files only.
 The image runs as the unprivileged user `spark` (uid and gid 10001); a bind mount
 used instead of a named volume must be writable by that uid.
 
+### Hardening
+
+`migrate`, `web` and `worker` run with a read-only root filesystem (`read_only: true`),
+every Linux capability dropped (`cap_drop: [ALL]`), `no-new-privileges`, Docker's default
+seccomp profile and an init process. Besides the volumes above, they write only to `/tmp`,
+a tmpfs mounted `noexec,nosuid,nodev`: 2 GiB for `web` (uploads and bundle imports pass
+through it), 256 MiB for `worker`, 64 MiB for `migrate`. Keep these settings in any
+override; [Container hardening](container-hardening.md) explains each one and how to
+check a running container.
+
 ## The env file
 
 Credentials come only from an env file you write. Copy the example and replace every

@@ -16,6 +16,7 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 | [Compose deployment](compose.md) | The services, roles, volumes and replicas in `deploy/compose.yaml`, the env file, the migrate step, the files volume and pgvector |
 | [Portainer](portainer.md) | The same server as a Portainer stack (`deploy/portainer/stack.yaml`): its variables, the web editor and Git deployments, a proxy container, the first administrator invited by `spark bootstrap`, backups and upgrades |
 | [Docker Desktop](docker-desktop.md) | Trying server mode on your own computer (`deploy/docker-desktop/compose.yaml`), on `http://localhost` or with Caddy on `https://localhost:8443` |
+| [Container hardening](container-hardening.md) | The read-only root, dropped capabilities, no new privileges, seccomp and tmpfs `/tmp` every Spark container runs with, its writable paths, how to check a container, and the ECS on Fargate equivalents |
 | [Secrets](secrets.md) | konfig's encrypted store and `KONFIG_MASTER_KEY` off AWS, AWS Secrets Manager and its IAM policy on AWS, and how a saved secret reaches every replica |
 | [Running on AWS](aws.md) | ECS on Fargate with RDS, EFS, Secrets Manager and Bedrock: task definitions, the settings document and bundle, TLS to RDS, `/health` and `/ready`, and each task role's policy |
 | [Reverse proxy and TLS](reverse-proxy.md) | `server.public_base_url`, what the Origin check and the sign-in cookies need from the proxy, with Caddy and nginx examples |
