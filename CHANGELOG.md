@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- The AWS, Compose and Portainer deployment guides list `SPARK__BOOTSTRAP__BEDROCK__MODELS` beside the other bootstrap Bedrock settings.
+
 ## [0.3.0rc40] - 2026-11-22
 
 ### Added

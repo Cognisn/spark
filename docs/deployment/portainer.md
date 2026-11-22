@@ -58,7 +58,7 @@ services in Portainer's container editor.
 | `KONFIG_MASTER_KEY` | yes | The key to konfig's encrypted secrets file; see [the master key](secrets.md#the-master-key) |
 | `SPARK__BOOTSTRAP__ADMIN__EMAIL` | yes | The first administrator's address: `spark bootstrap` invites them by mail on the first start ([Identity](identity.md#bootstrap)) |
 | `SPARK__BOOTSTRAP__ADMIN__FIRST_NAME`, `SPARK__BOOTSTRAP__ADMIN__LAST_NAME` | yes | Their name, as the invitation shows it |
-| `SPARK__BOOTSTRAP__BEDROCK__REGION`, `SPARK__BOOTSTRAP__BEDROCK__NAME`, `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | no | AWS only, commented out in the stack: add an Amazon Bedrock connection that uses the task role ([AWS](aws.md#bedrock-through-the-task-role)) |
+| `SPARK__BOOTSTRAP__BEDROCK__REGION`, `SPARK__BOOTSTRAP__BEDROCK__NAME`, `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS`, `SPARK__BOOTSTRAP__BEDROCK__MODELS` | no | AWS only, commented out in the stack: add an Amazon Bedrock connection that uses the task role ([AWS](aws.md#bedrock-through-the-task-role)) |
 | `POSTGRES_USER`, `POSTGRES_DB` | no | The database owner and database name (default `spark` for both) |
 | `SPARK_BIND` | no | The host address the web port is published on (default `127.0.0.1`) |
 | `SPARK_WEB_PORT` | no | The published web port (default `8000`) |

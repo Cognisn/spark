@@ -302,6 +302,7 @@ only; personal mode has no bootstrap, so it ignores them.
 | `bootstrap.bedrock.region` | `SPARK__BOOTSTRAP__BEDROCK__REGION` | An AWS Region, for example `ap-southeast-2`. Set, it turns the step on; unset or empty, nothing happens |
 | `bootstrap.bedrock.name` | `SPARK__BOOTSTRAP__BEDROCK__NAME` | Optional display name (default Amazon Bedrock (task role)) |
 | `bootstrap.bedrock.residency_regions` | `SPARK__BOOTSTRAP__BEDROCK__RESIDENCY_REGIONS` | Optional, comma-separated Regions (a JSON list in a settings document also works), for example `ap-southeast-2,ap-southeast-4`. It must include the Region above |
+| `bootstrap.bedrock.models` | `SPARK__BOOTSTRAP__BEDROCK__MODELS` | Optional, comma-separated model ids (a JSON list in a settings document also works), for example `amazon.nova-lite-v1:0,au.anthropic.claude-sonnet-4-6`. Set, the connection bootstrap creates offers exactly those models at the Standard tier and every other model is off until an administrator switches it on. Ids are checked for form only; one the service does not list, or conduit refuses under the residency policy, stays stored and is not offered. Never applied to a connection that exists |
 
 What is created is one connection, `aws-bedrock`, service Amazon Bedrock, enabled, with
 authentication credential chain, no profile and no secret reference. A Region or name
