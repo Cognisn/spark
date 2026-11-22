@@ -215,17 +215,42 @@ the models view. The list shows the result of the last run and when it ran.
 
 ## The models view
 
-**Models** on a connection lists every chat model conduit's catalogue (with Spark's own
-declarations) has for the connection's service and Region, with its context window and
-output limit, its capabilities (tools, vision, prompt caching, structured output), its
-residency scope or refusal, an **Enabled** switch and a **Tier**.
+**Models** on a connection is one list of every chat model the connection offers or
+could offer: the catalogue's models (conduit's, with Spark's own declarations) for the
+connection's service and Region, and the models the service lists under their own ids,
+such as an Amazon Bedrock inference profile (`au.anthropic.claude-sonnet-4-6`). Each row
+shows its context window and output limit, its capabilities (tools, vision, prompt
+caching, structured output), where it is processed, conduit's residency verdict, an
+**Enabled** switch and a **Tier**. Embedding models are not in the list, and the
+chat picker offers only the models switched on here that conduit allows.
 
 ### Enabling models
 
-Until you change anything, a connection offers every catalogue model its residency
-policy allows. Your first change (a switch or a tier) keeps every other model as it was
-and stores the connection's choices from then on, so curating a connection never drops
-models silently. Turn off the models you do not want to offer.
+Until you change anything, a connection offers every model in the list that its
+residency policy allows. Your first change (a switch or a tier) keeps every other model,
+discovered ones included, as it was and stores the connection's choices from then on, so
+curating a connection never drops models silently. Turn off the models you do not want
+to offer.
+
+From then on the connection is **curated**: it offers only the models switched on. A
+model the service lists for the first time after that is off until you switch it on, so a
+new provider model never appears to users unasked. A choice is stored per model id, so
+it survives a restart and a fresh discovery; a model that leaves the service's listing
+keeps its choice (shown as not offered, with the reason) and is offered again, as you
+left it, when the service lists it again. A conversation already using a model you have
+switched off or that is no longer listed keeps working with it. The choices are stored
+with the connection (`config.yaml` in personal mode, the database in server mode), so
+the web and worker processes, and every replica, read the same choices.
+
+A model's list is the one the connection's provider was built on, so a model the
+service starts listing is added to it when the provider is next built (a restart, or any
+change to the connection).
+
+A deployment can create its Bedrock connection already curated with
+`bootstrap.bedrock.models` (see [AWS](deployment/aws.md#bedrock-through-the-task-role)):
+exactly the model ids it names are on, at the Standard tier, and every other model is off.
+It applies only when bootstrap creates the connection, never to one that exists, and an id
+the service does not list, or conduit refuses, stays stored and is not offered.
 
 ### Tiers
 

@@ -410,11 +410,17 @@
         const d = data.discovery;
         const status = h('p', { class: 'conn-muted' },
             d ? ('Last discovery ' + since(d.ran_at) + ': ' + d.summary) : 'Discovery has not run on this connection yet.');
-        const note = data.curated ? null : h('p', { class: 'conn-muted', text: 'Every catalogue model is offered until you change one; your first change keeps the others as they are.' });
+        const note = h('p', { class: 'conn-muted', text: (data.curated
+            ? 'Only the models switched on here are offered. '
+            : 'Every model listed here that conduit allows is offered until you change one; your first change keeps the others as they are. ')
+            + 'This list holds the catalogue models and the models the service lists (for example an Amazon Bedrock inference profile). '
+            + 'A model the service lists for the first time after you have changed this list is off until you switch it on, so a new model never appears to users unasked. '
+            + 'A model that conduit refuses under the connection residency policy is shown with the reason and cannot be switched on.' });
         const rows = data.models.map((m) => {
             const toggle = h('input', { type: 'checkbox', class: 'form-check-input', role: 'switch', 'aria-label': 'Enable ' + m.model_id });
             toggle.checked = m.enabled && !m.refused;
-            toggle.disabled = Boolean(m.refused);
+            // A refused model cannot be switched on; a stored choice for one can still be switched off.
+            toggle.disabled = Boolean(m.refused) && !m.enabled;
             const tier = h('select', { class: 'form-select form-select-sm conn-tier', 'aria-label': 'Tier of ' + m.model_id },
                 tiers.map((t) => h('option', { value: t, text: TIER_LABELS[t] || t })));
             tier.value = m.tier;
@@ -429,16 +435,16 @@
                 h('td', {}, h('div', { class: 'conn-model', text: m.model_id }),
                     m.overlay ? h('span', { class: 'badge-app badge-app-primary', text: 'Declared in SPARK' }) : null),
                 h('td', {}, reachBadge(m.reachable)),
-                h('td', { class: 'conn-muted', text: m.context_window.toLocaleString() + ' / ' + (m.output_limit ? m.output_limit.toLocaleString() : '') }),
+                h('td', { class: 'conn-muted', text: m.context_window ? m.context_window.toLocaleString() + ' / ' + (m.output_limit ? m.output_limit.toLocaleString() : '') : '' }),
                 h('td', { class: 'conn-muted', text: caps.join(', ') }),
-                h('td', {}, m.refused ? h('div', { class: 'conn-refusal', text: 'Refused: ' + m.refused })
+                h('td', {}, m.refused ? h('div', { class: 'conn-refusal', text: (m.absent ? 'Not offered: ' : 'Refused: ') + m.refused })
                     : h('span', { class: 'conn-muted', text: processedText(m.residency_scope, m.regions) })),
                 h('td', {}, h('div', { class: 'form-check form-switch' }, toggle)),
                 h('td', {}, tier));
         });
         const table = rows.length ? h('div', { class: 'app-table-responsive' }, h('table', { class: 'app-table conn-table' },
             h('thead', {}, h('tr', {}, ['Model', 'Discovery', 'Context / output', 'Capabilities', 'Residency', 'Enabled', 'Tier'].map((t) => h('th', { text: t })))),
-            h('tbody', {}, rows))) : h('p', { class: 'conn-muted', text: 'The catalogue declares no models for this service in its Region.' });
+            h('tbody', {}, rows))) : h('p', { class: 'conn-muted', text: 'This connection offers no model for this service in its Region yet. Check the models it can reach, or add one below.' });
         const undeclared = data.undeclared.length ? h('div', { class: 'mt-4' },
             h('h6', { text: 'Reachable but not in the catalogue' }),
             h('p', { class: 'conn-muted', text: 'Declare a model to add it to SPARK\'s catalogue for this service. Check its limits with the service first.' }),

@@ -453,14 +453,48 @@ def models_view(
         )
     if record is not None and record.ok:
         view.undeclared.extend(u for u in record.undeclared if u.model_id not in declared)
+    models = [r.as_dict() for r in view.rows]
+    shown = {m["model_id"] for m in models}
+    for row in sorted(stored or (), key=lambda r: r.model_id):
+        if row.model_id not in shown:
+            models.append(_absent(row, listed))
     return {
         "catalogue_provider": catalogue_provider,
         "curated": stored is not None,
-        "models": [r.as_dict() for r in view.rows],
+        "models": models,
         "undeclared": [{"model_id": u.model_id, "label": u.label} for u in view.undeclared],
         "discovery": record.as_dict() if record is not None else None,
         "discovered": _discovered(listed),
         "drift": [d.as_dict() for d in listed.drift] if listed is not None else [],
+    }
+
+
+def _absent(row: ConnectionModel, listed: DiscoveryRecord | None) -> dict[str, Any]:
+    """A stored choice for a model this connection does not serve now (for example one the
+    service no longer lists, or one a deployment named before discovery ran): shown with the
+    reason, kept as it is, never offered. It returns with the model."""
+    if listed is not None and row.model_id in listed.reachable:
+        reason = "the catalogue has no entry for this model, so it cannot be offered yet"
+    elif listed is not None:
+        reason = "the service does not list this model"
+    else:
+        reason = "this connection does not serve this model now (run discovery to check)"
+    return {
+        "model_id": row.model_id,
+        "context_window": None,
+        "output_limit": None,
+        "tools": None,
+        "vision": None,
+        "prompt_caching": None,
+        "structured_output": None,
+        "residency_scope": None,
+        "regions": [],
+        "overlay": False,
+        "enabled": row.enabled,
+        "tier": row.tier,
+        "refused": reason,
+        "reachable": False if listed is not None else None,
+        "absent": True,
     }
 
 

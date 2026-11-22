@@ -15,9 +15,10 @@ every problem by its dotted and ``SPARK__`` names, never a value:
 * ``mail.smtp.*``: instance settings that bootstrap fills in from the start-up
   values while the database holds none (:func:`mail_to_seed`), so the invitation
   can be sent; a host and a sender address are required from one or the other;
-* ``bootstrap.bedrock.region``, ``name`` and ``residency_regions``: an optional Amazon
-  Bedrock connection that uses the task's IAM role, added once by bootstrap
-  (:mod:`spark.bootstrap.connections`); a Region turns it on;
+* ``bootstrap.bedrock.region``, ``name``, ``residency_regions`` and ``models``: an optional
+  Amazon Bedrock connection that uses the task's IAM role, added once by bootstrap
+  (:mod:`spark.bootstrap.connections`); a Region turns it on, and ``models`` (model ids,
+  comma-separated or a list) makes it offer only those models from the start;
 * ``bootstrap.wait_seconds`` and ``bootstrap.wait_interval_seconds``: how long web
   and worker wait for bootstrap (:mod:`spark.bootstrap.wait`).
 
@@ -46,6 +47,7 @@ __all__ = [
     "ADMIN_EMAIL",
     "ADMIN_FIRST_NAME",
     "ADMIN_LAST_NAME",
+    "BEDROCK_MODELS",
     "BEDROCK_NAME",
     "BEDROCK_REGION",
     "BEDROCK_RESIDENCY_REGIONS",
@@ -87,6 +89,7 @@ DEFAULT_WAIT_INTERVAL_SECONDS: Final = 5.0
 BEDROCK_REGION: Final = "bootstrap.bedrock.region"
 BEDROCK_NAME: Final = "bootstrap.bedrock.name"
 BEDROCK_RESIDENCY_REGIONS: Final = "bootstrap.bedrock.residency_regions"
+BEDROCK_MODELS: Final = "bootstrap.bedrock.models"
 DEFAULT_BEDROCK_NAME: Final = "Amazon Bedrock (task role)"
 
 DATABASE_URL: Final = "database.url"
@@ -108,6 +111,9 @@ _NAME_MAX: Final = 100
 _CONNECTION_NAME_MAX: Final = 128
 #: An AWS Region's shape: ``ap-southeast-2``, ``us-gov-west-1``, ``eu-central-1``.
 _REGION: Final = re.compile(r"^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$")
+#: A Bedrock model or inference profile id's shape: ``amazon.nova-lite-v1:0``,
+#: ``au.anthropic.claude-sonnet-4-6``. Checked for form only: discovery may not have run.
+_MODEL_ID: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,255}$")
 
 
 class KonfigLike(Protocol):
@@ -170,6 +176,9 @@ class BedrockSeed:
     #: The Regions the connection may process in beyond its own (cross-Region inference
     #: profiles); None keeps the service's in-Region default.
     residency_regions: tuple[str, ...] | None = None
+    #: The model ids the connection offers (each enabled at the standard tier, every other
+    #: model off); None leaves the connection uncurated, offering every model it can.
+    models: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,9 +467,31 @@ def _bedrock(settings: KonfigLike, problems: list[str]) -> BedrockSeed | None:
             )
         else:
             residency = tuple(sorted(found))
+    models = _models(settings, problems)
     if len(problems) > start:
         return None
-    return BedrockSeed(region, name, residency)
+    return BedrockSeed(region, name, residency, models)
+
+
+def _models(settings: KonfigLike, problems: list[str]) -> tuple[str, ...] | None:
+    """The ``bootstrap.bedrock.models`` ids, in the order given; None when none are set."""
+    raw = settings.get(BEDROCK_MODELS, None)
+    listed = _region_list(raw)  # comma-separated text or a list, as the Regions are
+    if raw is not None and listed is None:
+        problems.append(f"{named(BEDROCK_MODELS)} must be a list of model ids")
+        return None
+    if listed is None or not any(listed):
+        return None
+    if not all(_MODEL_ID.fullmatch(item) for item in listed):
+        problems.append(
+            f"{named(BEDROCK_MODELS)} must be model ids separated by commas "
+            "(for example amazon.nova-lite-v1:0,au.anthropic.claude-sonnet-4-6)"
+        )
+    elif len(set(listed)) != len(listed):
+        problems.append(f"{named(BEDROCK_MODELS)} names a model more than once")
+    else:
+        return tuple(listed)
+    return None
 
 
 def collect(

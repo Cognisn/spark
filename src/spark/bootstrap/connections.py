@@ -21,6 +21,15 @@ The rule, once only and never against an administrator:
 connection's Bedrock processing choice (conduit's ``processing``, without
 ``allow_global``); a Region conduit refuses fails bootstrap with conduit's reason.
 
+``bootstrap.bedrock.models`` curates the connection from the start: when it is set, the
+connection is created with a model row for each listed id (enabled, standard tier), and a
+curated connection offers only its enabled rows (:meth:`ConnectionRuntime._offered`), so
+every other model, listed by the service now or later, is off until an administrator
+enables it. The ids are checked for form only (discovery may not have run yet); one the
+service does not list, or the residency policy refuses, stays stored and is not offered,
+and the Models dialog shows it with the reason. The rows are written with the connection
+and the marker in one transaction, so a deployment is never left half curated.
+
 The connection is built and validated by :mod:`spark.connections.model`, saved through
 :class:`spark.connections.store.DatabaseConnectionStore`, and audited as the Connections
 page audits a created connection (names and kinds only), attributed to bootstrap.
@@ -40,6 +49,7 @@ from pydantic import SecretStr
 from spark.bootstrap.settings import BedrockSeed
 from spark.connections.model import (
     Connection,
+    ConnectionModel,
     default_residency,
     validate,
 )
@@ -130,17 +140,26 @@ async def seed_bedrock(database: Database, seed: BedrockSeed, *, actor: str) -> 
     connection = build(seed)
     registry = ProviderRegistry(secrets=_NoSecrets(), factories=production_factories())
     validate(connection, registry)
-    await store.save_connection(connection)
-    await _mark(database, actor)
+    async with database.transaction() as conn:
+        unit = DatabaseConnectionStore(conn)
+        await unit.save_connection(connection)
+        for model_id in seed.models or ():
+            await unit.save_model(ConnectionModel(connection.id, model_id))
+        await conn.execute(
+            _MARKER_UPSERT, (MARKER, json.dumps(True), datetime.now(UTC).isoformat(), actor)
+        )
+    details: dict[str, Any] = {
+        "connection_id": connection.id,
+        "change": "created",
+        "fields": sorted([*_fields(connection.settings), "name", "residency"]),
+    }
+    if seed.models is not None:
+        details["models"] = list(seed.models)
     await audit.emit(
         audit.SETTING_CHANGED,
         actor=actor,
         resource_type="connection",
         resource_id=connection.id,
-        details={
-            "connection_id": connection.id,
-            "change": "created",
-            "fields": sorted([*_fields(connection.settings), "name", "residency"]),
-        },
+        details=details,
     )
     return "created"

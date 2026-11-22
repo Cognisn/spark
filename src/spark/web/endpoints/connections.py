@@ -665,12 +665,14 @@ async def _stored_models(
 
 
 async def _view(request: Request, runtime: Any, connection: Connection) -> dict[str, Any]:
-    """The connection's models view, from its own catalogue and overlay entries."""
+    """The connection's models view: what its provider serves (its own catalogue and overlay
+    entries, with each model the service lists under its own id, such as a Bedrock inference
+    profile), so the list holds every model the picker can offer."""
     store = _store(request)
     overlays = await store.list_overlays(connection.id)
     return discovery.models_view(
         connection,
-        runtime.catalogue_for(connection.id),
+        runtime.served_for(connection.id),
         _catalogue_provider(runtime, connection),
         await _stored_models(store, connection.id),
         discovery.RESULTS.get(connection.id),
@@ -1106,15 +1108,18 @@ async def save_model(connection_id: str, request: Request) -> JSONResponse:
     view = await _view(request, runtime, connection)
     rows = {m["model_id"]: m for m in view["models"]}
     if model_id not in rows:
-        return _error("That model is not in the catalogue for this connection.", 404)
+        return _error("That model is not one this connection offers.", 404)
     current = rows[model_id]
     tier = data.get("tier", current["tier"])
     if tier not in TIERS:
         return _error("A tier is lower, standard or higher.")
     enabled = bool(data.get("enabled", current["enabled"]))
+    if enabled and not current["enabled"] and current["refused"]:
+        return _error(f"That model cannot be enabled: {current['refused']}")
     store = _store(request)
     if not view["curated"]:
-        # The first choice curates the connection: keep every model it offered so far.
+        # The first choice curates the connection: keep every model it offered so far,
+        # discovered models included (the list is the one the picker is built from).
         for row in view["models"]:
             if row["model_id"] != model_id:
                 await store.save_model(ConnectionModel(connection_id, row["model_id"]))
