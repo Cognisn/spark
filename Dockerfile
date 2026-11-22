@@ -115,7 +115,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     XDG_CONFIG_HOME=/var/lib/spark/config \
     XDG_DATA_HOME=/var/lib/spark/data \
     XDG_STATE_HOME=/var/lib/spark/state \
-    HF_HOME=/var/cache/spark/huggingface     TIKTOKEN_CACHE_DIR=/var/cache/spark/huggingface/tiktoken \
+    HF_HOME=/var/cache/spark/huggingface \
+    TIKTOKEN_CACHE_DIR=/var/cache/spark/huggingface/tiktoken \
     SPARK__INTERFACE__HOST=0.0.0.0 \
     SPARK__INTERFACE__PORT=8000 \
     SPARK__INTERFACE__OPEN_BROWSER=false \
