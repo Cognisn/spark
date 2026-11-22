@@ -51,6 +51,8 @@ TARGET_TYPES=(AWS::ECS::TaskDefinition AWS::ECS::Service)
 MIGRATE_IDS=" MigrateTaskDefinition "
 SERVICE_IDS=" WebTaskDefinition WorkerTaskDefinition WebService WorkerService "
 # What the hardening check does when a control is missing (see HARDENING_CHECK above).
+# It warns until a test deploy's job summary shows "Hardening check: passed"; the next change
+# after that sets it to enforce.
 HARDENING_CHECK_DEFAULT="warn"
 
 version="${1:-}"
