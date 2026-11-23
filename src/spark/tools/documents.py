@@ -7,25 +7,29 @@ from typing import Any
 
 from spark.files.scope import ToolScope
 
+# Said in every path-based file tool's definition (archives.py uses them too).
+ATTACHED = " Files attached in chat are read with read_my_file by file id."
+AREA_KEY = " In server mode, a key in the user's own file area as list_my_files shows it."
+
 _TOOLS = [
     {
         "name": "read_word",
-        "description": "Extract text from a Word (.docx) document.",
+        "description": "Extract text from a Word (.docx) document." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the .docx file."},
+                "path": {"type": "string", "description": "Path to the .docx file." + AREA_KEY},
             },
             "required": ["path"],
         },
     },
     {
         "name": "read_excel",
-        "description": "Read data from an Excel (.xlsx) spreadsheet.",
+        "description": "Read data from an Excel (.xlsx) spreadsheet." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the .xlsx file."},
+                "path": {"type": "string", "description": "Path to the .xlsx file." + AREA_KEY},
                 "sheet": {"type": "string", "description": "Sheet name. Default: first sheet."},
                 "max_rows": {"type": "integer", "description": "Max rows to read. Default: 1000."},
             },
@@ -34,11 +38,11 @@ _TOOLS = [
     },
     {
         "name": "read_pdf",
-        "description": "Extract text from a PDF document.",
+        "description": "Extract text from a PDF document." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the PDF file."},
+                "path": {"type": "string", "description": "Path to the PDF file." + AREA_KEY},
                 "max_pages": {"type": "integer", "description": "Max pages to read. Default: 100."},
             },
             "required": ["path"],
@@ -46,11 +50,11 @@ _TOOLS = [
     },
     {
         "name": "read_powerpoint",
-        "description": "Extract text from a PowerPoint (.pptx) presentation.",
+        "description": "Extract text from a PowerPoint (.pptx) presentation." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the .pptx file."},
+                "path": {"type": "string", "description": "Path to the .pptx file." + AREA_KEY},
             },
             "required": ["path"],
         },
@@ -66,20 +70,26 @@ def get_tools(mode: str = "read") -> list[dict[str, Any]]:
 def execute(tool_name: str, tool_input: dict[str, Any], *, scope: ToolScope) -> str:
     """Execute a document tool on a path inside ``scope``.
 
-    Raises :class:`~spark.files.paths.PathRefused` for a path outside it.
+    Raises :class:`~spark.files.paths.PathRefused` for a path outside it. In
+    server mode a bare file name is found among the user's own files
+    (:meth:`~spark.files.scope.ToolScope.locate`), and the result then starts
+    with a line naming the file read.
     """
-    path = scope.resolve(str(tool_input["path"]))
-    if not path.is_file():
-        return f"File not found: {scope.show(path)}"
+    located = scope.locate(str(tool_input["path"]))
+    path = located.path
+    if path is None:
+        return located.answer
 
     if tool_name == "read_word":
-        return _read_word(path)
+        return located.report(_read_word(path))
     elif tool_name == "read_excel":
-        return _read_excel(path, tool_input.get("sheet"), tool_input.get("max_rows", 1000))
+        return located.report(
+            _read_excel(path, tool_input.get("sheet"), tool_input.get("max_rows", 1000))
+        )
     elif tool_name == "read_pdf":
-        return _read_pdf(path, tool_input.get("max_pages", 100))
+        return located.report(_read_pdf(path, tool_input.get("max_pages", 100)))
     elif tool_name == "read_powerpoint":
-        return _read_powerpoint(path)
+        return located.report(_read_powerpoint(path))
 
     return f"Unknown document tool: {tool_name}"
 

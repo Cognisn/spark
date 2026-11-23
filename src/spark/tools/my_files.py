@@ -6,10 +6,18 @@ with these tools. Both act for the turn's user only (``_user_guid``), through
 :mod:`spark.files` and the bridge the turn carries. Another user's file id is
 answered exactly as an id that does not exist. Personal mode reads the
 personal area (``<data dir>/files``), whatever allowed_paths says.
+
+The attachment note lives here too, beside the tool it names: the send routes
+end a message with it (:mod:`spark.web.attachments`), :func:`split_note` reads
+it back (the current marker and every earlier one), and a turn that carries
+attachments offers these tools first with one line naming the files
+(:func:`attached_files`, :func:`attachment_context`, :func:`attachment_tools_first`).
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from typing import Any, Final
 
 from spark import files as files_pkg
@@ -18,9 +26,36 @@ from spark.db.engine import Row
 from spark.files.area import BridgeLike, FileArea
 from spark.files.scope import ToolScope, ToolScopeUnavailable
 
-__all__ = ["TOOL_NAMES", "execute", "get_tools"]
+__all__ = [
+    "ATTACHMENT_TOOLS",
+    "EARLIER_NOTE_MARKERS",
+    "NOTE_MARKER",
+    "NOTE_MARKERS",
+    "TOOL_NAMES",
+    "attached_files",
+    "attachment_context",
+    "attachment_tools_first",
+    "execute",
+    "get_tools",
+    "note_name",
+    "split_note",
+]
 
 TOOL_NAMES: Final = frozenset({"list_my_files", "read_my_file"})
+
+# The tools a turn with attachments offers first, in this order.
+ATTACHMENT_TOOLS: Final = ("read_my_file", "list_my_files")
+
+# The line that opens the attachment note, and the lines it opened before (still
+# stored in conversations, so still read back).
+NOTE_MARKER: Final = "[Attached files: call read_my_file with the file id to read each one]"
+EARLIER_NOTE_MARKERS: Final = ("[Attached files: read them with the read_my_file tool]",)
+NOTE_MARKERS: Final = (NOTE_MARKER, *EARLIER_NOTE_MARKERS)
+_NOTE_LINE: Final = re.compile(r"^- file (\d+): (.+)$")
+_LINE_BREAKS: Final = re.compile(r"[\x00-\x1f\x7f  ]+")
+
+# At most this many files are named in a turn's attachment line.
+MAX_NAMED: Final = 20
 
 DEFAULT_MAX_CHARS: Final = 20_000
 MAX_CHARS: Final = 100_000
@@ -136,7 +171,10 @@ def _list(user: str, db: BridgeLike, args: dict[str, Any], config: dict[str, Any
         here = (
             " [this conversation]" if cid is not None and row["conversation_id"] == int(cid) else ""
         )
-        lines.append(f"- file {row['id']}: {_describe(row)}, added {row['created_at']}{here}")
+        lines.append(
+            f"- file {row['id']}: {_describe(row)}, added {row['created_at']}, "
+            f"key {row['storage_key']}{here}"
+        )
     return "\n".join(lines)
 
 
@@ -183,6 +221,79 @@ def _read(user: str, db: BridgeLike, args: dict[str, Any]) -> tuple[str, bool]:
         content = read_document(reader, {"path": key}, scope=ToolScope.server(area, user))
         return f"File {row['id']}: {_describe(row)}.\n\n{content}", False
     return _read_text(area, user, row, args)
+
+
+# -- The attachment note and the turn's attachments ---------------------------------------
+
+
+def note_name(filename: object) -> str:
+    """A file name as one line of the note: control and line separator characters replaced."""
+    return _LINE_BREAKS.sub(" ", str(filename)).strip() or "file"
+
+
+def split_note(content: str) -> tuple[str, list[tuple[int, str]]]:
+    """The message text and the (file id, name) pairs of the note that ends it.
+
+    The note counts only when it ends the message and every line after its
+    marker names a file; the marker may be the current one or an earlier one.
+    Anything else is plain text with no files (as ``attachments.js`` parse()).
+    """
+    text = str(content or "")
+    for marker in NOTE_MARKERS:
+        if text.startswith(marker + "\n"):
+            start, body = 0, text[len(marker) + 1 :]
+        else:
+            at = text.rfind("\n\n" + marker + "\n")
+            if at < 0:
+                continue
+            start, body = at, text[at + 2 + len(marker) + 1 :]
+        files: list[tuple[int, str]] = []
+        for line in body.split("\n"):
+            match = _NOTE_LINE.match(line)
+            if match is None:
+                files = []
+                break
+            files.append((int(match.group(1)), match.group(2)))
+        if files:
+            return text[:start], files
+    return text, []
+
+
+def attached_files(
+    db: BridgeLike, user_guid: str, conversation_id: int | None, message: str
+) -> list[Row]:
+    """The user's own files this turn carries: named by the message's note, or uploaded
+    to this conversation. Ids that are not the user's own are dropped."""
+    named = {fid for fid, _ in split_note(message)[1]}
+    rows: list[Row] = db.call(files_db.list_user_files, user_guid)
+    return [
+        r
+        for r in rows
+        if r["id"] in named
+        or (
+            conversation_id is not None
+            and r["conversation_id"] == conversation_id
+            and r["source"] == "upload"
+        )
+    ]
+
+
+def attachment_context(rows: Sequence[Row]) -> str:
+    """One line naming the turn's attached files by id, and the call that reads them."""
+    if not rows:
+        return ""
+    named = ", ".join(f"file {r['id']} ({note_name(r['filename'])})" for r in rows[:MAX_NAMED])
+    more = f" and {len(rows) - MAX_NAMED} more" if len(rows) > MAX_NAMED else ""
+    return (
+        f"Attached files: {named}{more}. Read each with read_my_file and its file id "
+        "(list_my_files lists them all)."
+    )
+
+
+def attachment_tools_first(tools: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """``tools`` with read_my_file and list_my_files first; every other tool kept, in order."""
+    first = [t for name in ATTACHMENT_TOOLS for t in tools if t.get("name") == name]
+    return first + [t for t in tools if t.get("name") not in ATTACHMENT_TOOLS]
 
 
 def execute(tool_name: str, tool_input: dict[str, Any], config: dict[str, Any]) -> tuple[str, bool]:

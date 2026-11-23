@@ -13,15 +13,16 @@ from typing import IO, Any
 
 from spark.files.paths import PathRefused, contain
 from spark.files.scope import ToolScope, Writer
+from spark.tools.documents import AREA_KEY, ATTACHED
 
 _TOOLS = [
     {
         "name": "list_archive",
-        "description": "List the contents of a ZIP or TAR archive.",
+        "description": "List the contents of a ZIP or TAR archive." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the archive file."},
+                "path": {"type": "string", "description": "Path to the archive file." + AREA_KEY},
             },
             "required": ["path"],
         },
@@ -31,11 +32,11 @@ _TOOLS = [
 _EXTRACT_TOOLS = [
     {
         "name": "extract_archive",
-        "description": "Extract files from a ZIP or TAR archive.",
+        "description": "Extract files from a ZIP or TAR archive." + ATTACHED,
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path to the archive."},
+                "path": {"type": "string", "description": "Path to the archive." + AREA_KEY},
                 "destination": {"type": "string", "description": "Directory to extract to."},
             },
             "required": ["path", "destination"],
@@ -59,19 +60,22 @@ def execute(
 
     Raises :class:`~spark.files.paths.PathRefused` for a path outside it, or for
     an archive with a member that would land outside the destination or is a
-    link or special file; nothing is extracted then.
+    link or special file; nothing is extracted then. In server mode a bare file
+    name is found among the user's own files, as for the document tools.
     """
-    path = scope.resolve(str(tool_input["path"]))
     if tool_name == "extract_archive" and mode != "extract":
+        scope.resolve(str(tool_input["path"]))
         return "Archive extraction is not enabled."
-    if not path.is_file():
-        return f"File not found: {scope.show(path)}"
+    located = scope.locate(str(tool_input["path"]))
+    path = located.path
+    if path is None:
+        return located.answer
 
     if tool_name == "list_archive":
-        return _list_archive(path)
+        return located.report(_list_archive(path))
     elif tool_name == "extract_archive":
         dest = scope.resolve(str(tool_input["destination"]))
-        return _extract_archive(path, dest, scope)
+        return located.report(_extract_archive(path, dest, scope))
 
     return f"Unknown archive tool: {tool_name}"
 

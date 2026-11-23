@@ -135,20 +135,50 @@ def _stream(client: TestClient, cid: int, message: str, ids: str | None) -> Any:
 # -- The note -------------------------------------------------------------------------------
 
 
+OLD_MARKER = "[Attached files: read them with the read_my_file tool]"
+
+
 class TestNote:
     def test_names_each_file_by_id_after_the_message(self) -> None:
         rows = [{"id": 3, "filename": "a.txt"}, {"id": 5, "filename": "b.pdf"}]
         assert attachments.with_attachments("Please summarise.", rows) == (
             "Please summarise.\n\n"
-            "[Attached files: read them with the read_my_file tool]\n"
+            "[Attached files: call read_my_file with the file id to read each one]\n"
             "- file 3: a.txt\n"
             "- file 5: b.pdf"
         )
 
     def test_a_message_of_attachments_alone_is_only_the_note(self) -> None:
         assert attachments.with_attachments("", [{"id": 7, "filename": "c.txt"}]) == (
-            "[Attached files: read them with the read_my_file tool]\n- file 7: c.txt"
+            "[Attached files: call read_my_file with the file id to read each one]\n"
+            "- file 7: c.txt"
         )
+
+    def test_the_server_reads_back_the_note_it_writes(self) -> None:
+        rows = [{"id": 3, "filename": "a.txt"}, {"id": 5, "filename": "b (final).pdf"}]
+        note = attachments.with_attachments("Please summarise.", rows)
+        assert attachments.split_note(note) == (
+            "Please summarise.",
+            [(3, "a.txt"), (5, "b (final).pdf")],
+        )
+
+    def test_the_server_reads_a_note_saved_under_the_earlier_marker(self) -> None:
+        assert OLD_MARKER in attachments.EARLIER_MARKERS
+        saved = f"Summarise this.\n\n{OLD_MARKER}\n- file 12: report.pdf"
+        assert attachments.split_note(saved) == ("Summarise this.", [(12, "report.pdf")])
+        assert attachments.split_note(f"{OLD_MARKER}\n- file 4: x.txt") == ("", [(4, "x.txt")])
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "plain words",
+            f"{OLD_MARKER}\n- file 1: x.txt\nthen more words",
+            f"Quoted:\n{attachments.MARKER}\n- file 1: x.txt\n\nand a reply after it",
+            f"{OLD_MARKER}\n",
+        ],
+    )
+    def test_text_that_is_not_a_closing_note_has_no_files(self, content: str) -> None:
+        assert attachments.split_note(content) == (content, [])
 
     def test_no_attachments_leaves_the_message_alone(self) -> None:
         assert attachments.with_attachments("hello", []) == "hello"

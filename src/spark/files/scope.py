@@ -5,6 +5,12 @@ files the tools write are charged to the user's quota and recorded. Personal
 mode: the configured allowed roots (``embedded_tools.filesystem.allowed_paths``),
 by absolute path or relative to the first root. Both go through the one
 resolved-path check in :mod:`spark.files.paths`.
+
+A model often names a chat attachment by its bare file name, while uploads are
+stored under ``uploads/<id>/<name>``. In server mode :meth:`ToolScope.locate`
+looks such a name up among the scope's user's own recorded files (through the
+database layer for that user, never a walk of the volume), and uses it only
+when exactly one file matches.
 """
 
 from __future__ import annotations
@@ -14,19 +20,57 @@ import shutil
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Any, Final
 
-from spark.files.area import FileArea
+from spark.database import files as files_db
+from spark.db.engine import Row
+from spark.files.area import BridgeLike, FileArea
 from spark.files.paths import contain, contain_any
 
-__all__ = ["ToolScope", "ToolScopeUnavailable", "Writer", "tool_scope"]
+__all__ = ["Located", "ToolScope", "ToolScopeUnavailable", "Writer", "tool_scope"]
+
+# How many of the user's most recent files a name that matches nothing lists.
+RECENT_FILES: Final = 5
+
+GUIDANCE: Final = (
+    "Files attached in chat are read with read_my_file and their file id; "
+    "list_my_files lists all your files."
+)
 
 Writer = Callable[[Path], None]
 
 
 class ToolScopeUnavailable(RuntimeError):
     """The tool has nowhere it may read or write."""
+
+
+@dataclass(frozen=True)
+class Located:
+    """What :meth:`ToolScope.locate` found: a file to use, or the answer to give instead.
+
+    ``header`` names a file found by its name (one line, area key only); it is
+    empty when the path itself resolved.
+    """
+
+    path: Path | None
+    header: str = ""
+    answer: str = ""
+
+    def report(self, result: str) -> str:
+        """The tool's ``result``, after the header when there is one."""
+        return f"{self.header}\n\n{result}" if self.header else result
+
+
+def _bare_name(text: str) -> str | None:
+    """``text`` when it is a file name with no directory part, else None."""
+    name = PurePosixPath(text.replace("\\", "/")).name
+    return name if name and name == text else None
+
+
+def _file_line(row: Row) -> str:
+    return f"- file {row['id']}: {row['filename']}"
 
 
 class ToolScope:
@@ -39,11 +83,13 @@ class ToolScope:
         area: FileArea | None = None,
         user_guid: str | None = None,
         conversation_id: int | None = None,
+        db: BridgeLike | None = None,
     ) -> None:
         self.roots = tuple(roots)
         self.area = area
         self.user_guid = user_guid
         self.conversation_id = conversation_id
+        self.db = db
 
     @classmethod
     def personal(cls, roots: Sequence[Path]) -> ToolScope:
@@ -55,13 +101,20 @@ class ToolScope:
 
     @classmethod
     def server(
-        cls, area: FileArea, user_guid: str, *, conversation_id: int | None = None
+        cls,
+        area: FileArea,
+        user_guid: str,
+        *,
+        conversation_id: int | None = None,
+        db: BridgeLike | None = None,
     ) -> ToolScope:
+        """The user's area. With ``db`` (the turn's bridge), bare names are looked up."""
         return cls(
             [area.store.area(user_guid)],
             area=area,
             user_guid=user_guid,
             conversation_id=conversation_id,
+            db=db,
         )
 
     @property
@@ -77,6 +130,76 @@ class ToolScope:
         if self.is_server:
             return contain(self.area_root, path)
         return contain_any(self.roots, path)
+
+    def locate(self, text: str) -> Located:
+        """The existing file ``text`` names, or the answer to give when there is none.
+
+        Raises :class:`~spark.files.paths.PathRefused` for a path outside the
+        scope, before any lookup. A path that resolves to a file is used as it
+        is. In server mode a bare file name that does not resolve is looked up
+        among the scope's user's own recorded files: exact names before
+        case-insensitive ones, this conversation's files before others. One
+        match is used; several, or none, are answered with file ids.
+        """
+        path = self.resolve(text)
+        if path.is_file():
+            return Located(path)
+        not_found = f"File not found: {self.show(path)}"
+        if not self.is_server:
+            return Located(None, answer=not_found)
+        name = _bare_name(text)
+        if name is None or self.db is None or self.user_guid is None:
+            return Located(None, answer=f"{not_found}\n{GUIDANCE}")
+        return self._by_name(name)
+
+    def _by_name(self, name: str) -> Located:
+        """Look ``name`` up among this scope's user's own files, and no one else's."""
+        assert self.db is not None and self.user_guid is not None
+        rows: list[Row] = self.db.call(files_db.list_user_files, self.user_guid)
+        folded = name.casefold()
+        exact = [r for r in rows if r["filename"] == name]
+        loose = [r for r in rows if str(r["filename"]).casefold() == folded]
+        for matches in (exact, loose):
+            if not matches:
+                continue
+            chosen = [r for r in matches if self._in_conversation(r)] or matches
+            if len(chosen) > 1:
+                return Located(None, answer=self._several(name, chosen))
+            return self._use(chosen[0], rows)
+        return Located(None, answer=self._none(name, rows))
+
+    def _in_conversation(self, row: Row) -> bool:
+        return self.conversation_id is not None and row["conversation_id"] == self.conversation_id
+
+    def _use(self, row: Row, rows: list[Row]) -> Located:
+        key = str(row["storage_key"])
+        path = self.resolve(key)
+        if not path.is_file():
+            return Located(None, answer=self._none(str(row["filename"]), rows))
+        return Located(path, header=f"Read file {row['id']}: {row['filename']} ({key})")
+
+    @staticmethod
+    def _several(name: str, rows: list[Row]) -> str:
+        lines = [
+            f"Several of your files are named {name}, so none was read. "
+            "Call read_my_file with the file id of the one you mean:"
+        ]
+        lines.extend(
+            f"{_file_line(r)}, {int(r['size_bytes']):,} bytes, uploaded {r['created_at']}"
+            for r in rows
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _none(name: str, rows: list[Row]) -> str:
+        lines = [f"{name} is not in your file area."]
+        if rows:
+            lines.append("Your most recent files:")
+            lines.extend(_file_line(r) for r in rows[:RECENT_FILES])
+        else:
+            lines.append("You have no files.")
+        lines.append(GUIDANCE)
+        return "\n".join(lines)
 
     def show(self, path: Path) -> str:
         """How to name ``path`` to the model: the key in server mode (never the volume path)."""
@@ -143,5 +266,5 @@ def tool_scope(config: dict[str, Any], *, server: bool) -> ToolScope:
 
     cid = config.get("_kg_conversation_id")
     return ToolScope.server(
-        files_pkg.file_area(db), str(user), conversation_id=int(cid) if cid else None
+        files_pkg.file_area(db), str(user), conversation_id=int(cid) if cid else None, db=db
     )

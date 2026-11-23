@@ -14,7 +14,7 @@ The user's file area holds the files they attach in chat and the documents Spark
 
 ## Return Value
 
-One line per file, newest first: `- file <id>: <name> (<type>, <size> bytes), added <time>`, with `[this conversation]` after files belonging to the current conversation. "You have no files." when the area is empty.
+One line per file, newest first: `- file <id>: <name> (<type>, <size> bytes), added <time>, key <key>`, with `[this conversation]` after files belonging to the current conversation. "You have no files." when the area is empty. The key is the path the document and archive tools take in server mode; `read_my_file` takes the file id.
 
 ## Examples
 
@@ -30,7 +30,7 @@ One line per file, newest first: `- file <id>: <name> (<type>, <size> bytes), ad
 
 ## Best Practices
 
-- Files the user attached to the current message are already named in it, with their ids, after the line `[Attached files: read them with the read_my_file tool]`; there is no need to list them first.
+- Files the user attached to the current message are already named in it, with their ids, after the line `[Attached files: call read_my_file with the file id to read each one]` (older messages say `[Attached files: read them with the read_my_file tool]`); there is no need to list them first. Read them with `read_my_file`.
 - Use the list when the user refers to a file from an earlier conversation.
 
 ## Related Tools
