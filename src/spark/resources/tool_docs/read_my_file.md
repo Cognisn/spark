@@ -4,7 +4,9 @@ Read one of the user's own files by its file id.
 
 ## Purpose
 
-Reads a file from the user's file area: a file attached in chat or a document Spark created. The id comes from the attachment note in the user's message or from `list_my_files`. Only the signed-in user's own files can be read; any other id answers that the file was not found.
+Reads a file from the user's file area: a file attached in chat or a document Spark created. The id comes from the attachment note in the user's message (`[Attached files: call read_my_file with the file id to read each one]`, then `- file <id>: <name>` lines) or from `list_my_files`. Only the signed-in user's own files can be read; any other id answers that the file was not found.
+
+This is the tool for files attached in chat, whatever their type. `read_pdf`, `read_word`, `read_excel` and `read_powerpoint` take a path instead (in server mode, the key `list_my_files` shows), not the attachment's name.
 
 Word (.docx), Excel (.xlsx), PowerPoint (.pptx) and PDF files are read as text with the document readers. Other text files are returned in pages of characters. Binary files are refused.
 

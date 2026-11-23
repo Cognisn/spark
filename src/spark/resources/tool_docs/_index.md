@@ -36,8 +36,10 @@ This directory contains comprehensive documentation for all embedded tools avail
 ### Your Files (attachments)
 | Tool | Description |
 |------|-------------|
-| `list_my_files` | List the files in your own file area, with their ids |
+| `list_my_files` | List the files in your own file area, with their ids and keys |
 | `read_my_file` | Read one of your own files by id (attachments and created documents) |
+
+Files attached in chat are named at the end of the message by file id: read them with `read_my_file` and the id. In server mode the document and archive tools take a key in the user's own file area, as `list_my_files` shows it, not an attachment's bare name.
 
 ### Office Documents — Creating (when read_write mode enabled)
 | Tool | Description |

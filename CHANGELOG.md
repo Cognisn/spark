@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file attached in chat is read even when the model names it instead of using its id.** In server mode a chat upload is stored under `uploads/<id>/<name>` in the user's area, so a model that called `read_pdf` with the attachment's bare name got "File not found" and never saw the file. `read_pdf`, `read_word`, `read_excel`, `read_powerpoint`, `list_archive` and `extract_archive` now look a bare file name that does not resolve up among the signed-in user's own recorded files (exact names first, then case-insensitive, files of the current conversation first). One match is read, and the result starts with `Read file <id>: <name> (<key>)`; several matches are listed by file id, name, size and upload time and none is read; no match lists up to five of the user's most recent files and points to `read_my_file` and `list_my_files`. The lookup is for the turn's user only, through the database, never across areas. A path with a folder part is never looked up, containment still applies first, keys that resolve read exactly as before, and personal mode is unchanged.
+- **A turn that carries attachments offers the file tools first.** When the message names attached files, or the conversation has uploads, `read_my_file` and `list_my_files` come first in the tools the model receives (no tool is added or removed), and the system prompt gains one line naming the files by id with the `read_my_file` call, never their content.
+
+### Changed
+
+- **The attachment note names the call to make.** A message's note now opens with `[Attached files: call read_my_file with the file id to read each one]`. Messages saved under the earlier marker (`[Attached files: read them with the read_my_file tool]`) still show their files as chips, and the server reads both.
+- The four document tools and the two archive tools say that a server-mode path is a key in the user's own file area, as `list_my_files` shows it, and that files attached in chat are read with `read_my_file` by file id; `list_my_files` now shows each file's key. The matching tool documents and the tool index say the same.
+
 ## [0.3.0rc43] - 2026-11-22
 
 ### Fixed

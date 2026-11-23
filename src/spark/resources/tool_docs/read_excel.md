@@ -4,6 +4,12 @@
 
 Reads data from Excel files (.xlsx, .xls) with support for pagination, column selection, cell ranges, and filtering. Designed for efficient handling of large spreadsheets through selective data loading.
 
+## Paths, Server Mode and Attachments
+
+- In server mode, `path` is a key in the user's own file area, as `list_my_files` shows it (for example `uploads/<id>/report.pdf`). In personal mode it is a path inside the allowed folders.
+- Files the user attached in chat are read with `read_my_file` and the file id from the attachment note; call that rather than this tool.
+- In server mode a bare file name (no folder) that is not found is looked up among the user's own files. One match is read, and the result starts with `Read file <id>: <name> (<key>)`. Several matches are listed by file id and nothing is read; no match lists the user's most recent files. Either way, use `read_my_file` with the file id.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |

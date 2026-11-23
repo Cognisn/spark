@@ -5,13 +5,14 @@ The chat composer uploads each attached file to the user's area
 :func:`attach`: every id must be one of the signed-in user's own files (another
 user's id, or one that does not exist, answers 404 and the turn never runs).
 The message then ends with a note naming each file by id and name, never its
-content; the model reads a file with the read_my_file tool. The chat page
-parses the same note back into chips (``static/js/attachments.js``).
+content, with the call that reads them (read_my_file and the file id). The chat
+page parses the same note back into chips (``static/js/attachments.js``) and
+:func:`split_note` reads it on the server; both accept every marker the note
+has carried (:data:`spark.tools.my_files.NOTE_MARKERS`).
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
@@ -19,22 +20,24 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from spark.database import files as files_db
+from spark.tools.my_files import EARLIER_NOTE_MARKERS, NOTE_MARKER, note_name, split_note
 from spark.web.db import database
 from spark.web.scope import not_found
 
 __all__ = [
+    "EARLIER_MARKERS",
     "MARKER",
     "MAX_ATTACHMENTS",
     "AttachmentError",
     "attach",
     "parse_ids",
+    "split_note",
     "with_attachments",
 ]
 
-MARKER: Final = "[Attached files: read them with the read_my_file tool]"
+MARKER: Final = NOTE_MARKER
+EARLIER_MARKERS: Final = EARLIER_NOTE_MARKERS
 MAX_ATTACHMENTS: Final = 20
-
-_LINE_BREAKS = re.compile(r"[\x00-\x1f\x7f  ]+")
 
 
 class AttachmentError(ValueError):
@@ -67,15 +70,11 @@ def parse_ids(raw: object) -> list[int]:
     return ids
 
 
-def _name(filename: object) -> str:
-    return _LINE_BREAKS.sub(" ", str(filename)).strip() or "file"
-
-
 def with_attachments(message: str, files: Sequence[Mapping[str, Any]]) -> str:
     """``message`` followed by the note naming ``files`` (each with ``id`` and ``filename``)."""
     if not files:
         return message
-    lines = [MARKER, *(f"- file {int(f['id'])}: {_name(f['filename'])}" for f in files)]
+    lines = [MARKER, *(f"- file {int(f['id'])}: {note_name(f['filename'])}" for f in files)]
     note = "\n".join(lines)
     return f"{message}\n\n{note}" if message else note
 

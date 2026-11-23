@@ -708,6 +708,12 @@ class ConversationManager:
         if tools is None:
             tools = self._get_all_tools(permissions)
 
+        # Files the turn carries (attached to the message or to the conversation):
+        # read_my_file and list_my_files go first, and one line names the files.
+        tools, attachments_line = self._present_attachments(
+            tools, conversation_id, user_guid, user_message
+        )
+
         # Prompt inspection (if enabled)
         try:
             from spark.safety.inspector import PromptInspector
@@ -797,6 +803,7 @@ class ConversationManager:
             conv,
             retrieved_context=retrieved_context,
             kg_block=kg_block,
+            attachments_line=attachments_line,
         )
         system = self._with_skills(base_system, skills)
         logger.debug(
@@ -1103,6 +1110,36 @@ class ConversationManager:
 
     # -- Skills -----------------------------------------------------------------
 
+    def _present_attachments(
+        self,
+        tools: list[dict[str, Any]],
+        conversation_id: int,
+        user_guid: str,
+        user_message: str,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """The turn's tools, with read_my_file and list_my_files first when the turn
+        carries files, and the line naming those files by id (empty when none).
+
+        The files are the turn's user's own: those the message's note names and
+        those uploaded to this conversation. No tool is added or removed. Failure
+        never breaks a turn.
+        """
+        if not any(t.get("name") == "read_my_file" for t in tools):
+            return tools, ""
+        uid = self._turn_user(user_guid)
+        if uid is None:
+            return tools, ""
+        try:
+            from spark.tools import my_files
+
+            attached = my_files.attached_files(self._db, uid, conversation_id, user_message)
+        except Exception:  # noqa: BLE001 - attachments must never break a turn
+            logger.warning("Attached files unavailable for this turn", exc_info=True)
+            return tools, ""
+        if not attached:
+            return tools, ""
+        return my_files.attachment_tools_first(tools), my_files.attachment_context(attached)
+
     def _turn_skills(self, user_guid: str, conversation_id: int) -> Any:
         """This turn's skills (:class:`spark.skills.session.TurnSkills`): the skills the
         user has enabled, globally and for the conversation, with the skills the
@@ -1277,6 +1314,7 @@ class ConversationManager:
         retrieved_context: str | None = None,
         skills_block: str = "",
         kg_block: str = "",
+        attachments_line: str = "",
     ) -> str:
         """Assemble system instructions from all sources."""
         parts: list[str] = []
@@ -1316,6 +1354,10 @@ class ConversationManager:
         conv_instructions = conv.get("instructions")
         if conv_instructions:
             parts.append(conv_instructions)
+
+        # The files this turn carries, by id, and the call that reads them (never content)
+        if attachments_line:
+            parts.append(attachments_line)
 
         # 4. Retrieved context from vector index and linked conversations
         if retrieved_context:

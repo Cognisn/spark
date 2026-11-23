@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from spark.web.attachments import MARKER, with_attachments
+from spark.web.attachments import EARLIER_MARKERS, MARKER, with_attachments
 
 WEB = Path(__file__).resolve().parents[1] / "src" / "spark" / "web"
 STATIC_JS = WEB / "static" / "js"
@@ -31,6 +31,8 @@ CSRF_JS = STATIC_JS / "csrf.js"
 ATTACH_JS = STATIC_JS / "attachments.js"
 CHAT_HTML = WEB / "templates" / "chat.html"
 MB = 1024 * 1024
+# The marker every note carried up to 0.3.0rc43.
+OLD_MARKER = "[Attached files: read them with the read_my_file tool]"
 
 _HARNESS = r"""
 const calls = [];
@@ -101,6 +103,7 @@ function file(name, size) {
   out.limitsRequest = calls.pop().input;
 
   out.parsed = cases.map((c) => A.parse(c));
+  out.markers = { current: A.MARKER, earlier: A.EARLIER_MARKERS };
   out.chips = A.chipsHtml([{ id: 3, name: '<img src=x onerror=alert(1)>.txt' }]);
   out.size = [A.formatBytes(512), A.formatBytes(1536), A.formatBytes(50 * 1024 * 1024)];
   console.log(JSON.stringify(out));
@@ -118,6 +121,10 @@ def _cases() -> list[str]:
         "plain words",
         f"{MARKER}\n- file 1: x.txt\nthen more words",
         f"Quoted:\n{MARKER}\n- file 1: x.txt\n\nand a reply after it",
+        # Saved before the note's wording changed: still read into chips.
+        f"Summarise this.\n\n{OLD_MARKER}\n- file 12: report.pdf\n- file 13: notes.docx",
+        f"{OLD_MARKER}\n- file 14: alone.txt",
+        f"{OLD_MARKER}\n- file 1: x.txt\nthen more words",
     ]
 
 
@@ -187,7 +194,7 @@ class TestUnderNode:
         assert results["limits"] == {"usage_bytes": 5, "quota_bytes": 10, "max_upload_bytes": 20}
 
     def test_reads_back_the_note_the_send_routes_write(self, results: dict[str, Any]) -> None:
-        both, alone, plain, trailing, quoted = results["parsed"]
+        both, alone, plain, trailing, quoted = results["parsed"][:5]
         assert both == {
             "text": "Please summarise.",
             "files": [{"id": 3, "name": "a.txt"}, {"id": 5, "name": "b (final).pdf"}],
@@ -195,6 +202,21 @@ class TestUnderNode:
         assert alone == {"text": "", "files": [{"id": 7, "name": "c.txt"}]}
         assert plain == {"text": "plain words", "files": []}
         assert trailing["files"] == [] and quoted["files"] == []
+
+    def test_reads_back_a_note_saved_under_the_earlier_marker(
+        self, results: dict[str, Any]
+    ) -> None:
+        old_both, old_alone, old_trailing = results["parsed"][5:]
+        assert old_both == {
+            "text": "Summarise this.",
+            "files": [{"id": 12, "name": "report.pdf"}, {"id": 13, "name": "notes.docx"}],
+        }
+        assert old_alone == {"text": "", "files": [{"id": 14, "name": "alone.txt"}]}
+        assert old_trailing["files"] == []
+
+    def test_the_markers_match_the_send_routes(self, results: dict[str, Any]) -> None:
+        assert results["markers"] == {"current": MARKER, "earlier": list(EARLIER_MARKERS)}
+        assert OLD_MARKER in EARLIER_MARKERS and OLD_MARKER != MARKER
 
     def test_chip_names_are_escaped_and_link_to_the_download(self, results: dict[str, Any]) -> None:
         chips = results["chips"]

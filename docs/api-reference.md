@@ -147,9 +147,11 @@ SSE endpoint for streaming chat responses.
 - `attachments` (string, optional) -- Comma-separated ids of the user's own files (uploaded first with `POST /files/api`), at most 20. Another user's id, or one that does not exist, answers 404 and nothing runs; ids that are not numbers answer 400. The message the model receives ends with a note naming each file by id and name (never its content):
 
   ```
-  [Attached files: read them with the read_my_file tool]
+  [Attached files: call read_my_file with the file id to read each one]
   - file 12: report.pdf
   ```
+
+  Messages stored by 0.3.0rc43 and earlier open the note with `[Attached files: read them with the read_my_file tool]`; the chat page reads both into chips.
 
 **SSE Events:**
 

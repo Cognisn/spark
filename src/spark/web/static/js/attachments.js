@@ -7,18 +7,21 @@
  * above the composer; sending the message passes their ids to the send route,
  * which names them at the end of the message the model receives:
  *
- *   [Attached files: read them with the read_my_file tool]
+ *   [Attached files: call read_my_file with the file id to read each one]
  *   - file 12: report.pdf
  *
  * parse() reads that note back, so the message (live or from history) shows
- * its text with the files as chips linking to their downloads. A file over the
+ * its text with the files as chips linking to their downloads. Messages stored
+ * before the note's wording changed open with an earlier marker
+ * (EARLIER_MARKERS); parse() reads those too. A file over the
  * upload limit is refused before it is sent; refusals from the server (upload
  * limit, quota, storage) are shown above the composer, naming the file.
  */
 (function (root) {
     'use strict';
 
-    const MARKER = '[Attached files: read them with the read_my_file tool]';
+    const MARKER = '[Attached files: call read_my_file with the file id to read each one]';
+    const EARLIER_MARKERS = ['[Attached files: read them with the read_my_file tool]'];
     const LINE = /^- file (\d+): (.+)$/;
 
     function formatBytes(n) {
@@ -45,19 +48,28 @@
     /** The message text and its attached files, from content the send routes wrote. */
     function parse(content) {
         const text = String(content || '');
+        for (const marker of [MARKER].concat(EARLIER_MARKERS)) {
+            const found = parseWith(text, marker);
+            if (found) return found;
+        }
+        return { text: text, files: [] };
+    }
+
+    /** The note opened by ``marker`` that ends ``text``, or null. */
+    function parseWith(text, marker) {
         let start = -1;
-        if (text.startsWith(MARKER + '\n')) {
+        if (text.startsWith(marker + '\n')) {
             start = 0;
         } else {
-            start = text.lastIndexOf('\n\n' + MARKER + '\n');
+            start = text.lastIndexOf('\n\n' + marker + '\n');
         }
-        if (start < 0) return { text: text, files: [] };
+        if (start < 0) return null;
         const noteAt = start === 0 ? 0 : start + 2;
-        const lines = text.slice(noteAt + MARKER.length + 1).split('\n');
+        const lines = text.slice(noteAt + marker.length + 1).split('\n');
         const files = [];
         for (const line of lines) {
             const match = LINE.exec(line);
-            if (!match) return { text: text, files: [] };
+            if (!match) return null;
             files.push({ id: Number(match[1]), name: match[2] });
         }
         return { text: text.slice(0, start), files: files };
@@ -259,6 +271,7 @@
     }
 
     root.SparkAttachments = {
+        EARLIER_MARKERS: EARLIER_MARKERS,
         MARKER: MARKER,
         busy: busy,
         chipsHtml: chipsHtml,
