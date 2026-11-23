@@ -228,9 +228,9 @@
     "semantic_hash": ""
   },
   "src/spark/core/conversation_manager.py": {
-    "mtime": 1795259143.7560773,
-    "seen": 1795296686.9627738,
-    "ast_hash": "ae6583ab732b15f05c2c43a549d7b7ea",
+    "mtime": 1795408373.069256,
+    "seen": 1795410615.9117868,
+    "ast_hash": "512f26be951551e979a432b7d689453c",
     "semantic_hash": ""
   },
   "src/spark/core/debate/__init__.py": {
@@ -528,10 +528,10 @@
     "semantic_hash": "10850a0b3844fa17bd722e5ca3520eba"
   },
   "src/spark/files/scope.py": {
-    "mtime": 1793316947.3828979,
-    "seen": 1794786212.600967,
-    "ast_hash": "f136110271cfd6279ff829d02d2fcd31",
-    "semantic_hash": "f136110271cfd6279ff829d02d2fcd31"
+    "mtime": 1795408373.070515,
+    "seen": 1795410615.9117868,
+    "ast_hash": "40960d1c98613166bfe47c989cbd7648",
+    "semantic_hash": ""
   },
   "src/spark/files/store.py": {
     "mtime": 1793316947.3828979,
@@ -984,10 +984,10 @@
     "semantic_hash": "cf7ddcfdd30e1b62fc50698a1524038b"
   },
   "src/spark/tools/archives.py": {
-    "mtime": 1793316947.3862202,
-    "seen": 1794786212.600967,
-    "ast_hash": "341e55c2428b72a3395ff4e5017945db",
-    "semantic_hash": "341e55c2428b72a3395ff4e5017945db"
+    "mtime": 1795408373.0767393,
+    "seen": 1795410615.9117868,
+    "ast_hash": "9dcae46dd1b3cb5f3c0e80fdcf710297",
+    "semantic_hash": ""
   },
   "src/spark/tools/command_policy.py": {
     "mtime": 1793315296.6428835,
@@ -1008,10 +1008,10 @@
     "semantic_hash": "3547f7f9129391401fe90f2095aa505b"
   },
   "src/spark/tools/documents.py": {
-    "mtime": 1793316947.3862202,
-    "seen": 1794786212.600967,
-    "ast_hash": "98d6d84c88f309fe9131d0ad76208bd8",
-    "semantic_hash": "98d6d84c88f309fe9131d0ad76208bd8"
+    "mtime": 1795408373.0774157,
+    "seen": 1795410615.9117868,
+    "ast_hash": "25047d57f9ddfd3feaf0c24409ede203",
+    "semantic_hash": ""
   },
   "src/spark/tools/email_tool.py": {
     "mtime": 1793174545.9448688,
@@ -1032,10 +1032,10 @@
     "semantic_hash": "12326d6c0a86dd3e93e2462a2053662c"
   },
   "src/spark/tools/my_files.py": {
-    "mtime": 1793757337.4511518,
-    "seen": 1794786212.600967,
-    "ast_hash": "4a7497dfcc70c24d82727e7e374e7069",
-    "semantic_hash": "4a7497dfcc70c24d82727e7e374e7069"
+    "mtime": 1795408373.0781002,
+    "seen": 1795410615.9117868,
+    "ast_hash": "eab3b1c11ea0d2c49a1ebb754ae3c4a7",
+    "semantic_hash": ""
   },
   "src/spark/tools/registry.py": {
     "mtime": 1794993679.6389294,
@@ -1116,10 +1116,10 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "src/spark/web/attachments.py": {
-    "mtime": 1793757337.4531846,
-    "seen": 1794786212.600967,
-    "ast_hash": "cb184d64d4a97991a52c3ef86ac2acdb",
-    "semantic_hash": "cb184d64d4a97991a52c3ef86ac2acdb"
+    "mtime": 1795408373.0784972,
+    "seen": 1795410615.9117868,
+    "ast_hash": "e01591f17ef76852a006ac3fe9190264",
+    "semantic_hash": ""
   },
   "src/spark/web/auth.py": {
     "mtime": 1793658631.8092737,
@@ -1338,10 +1338,10 @@
     "semantic_hash": "b8222213cc151ab642b40660900bf3d0"
   },
   "src/spark/web/static/js/attachments.js": {
-    "mtime": 1793757337.4551482,
-    "seen": 1794786212.600967,
-    "ast_hash": "573435c30f29d80d416b2acfabaf4d9d",
-    "semantic_hash": "573435c30f29d80d416b2acfabaf4d9d"
+    "mtime": 1795408373.0791059,
+    "seen": 1795410615.9117868,
+    "ast_hash": "6e140655971d18d90a5e3ea8cd383c6b",
+    "semantic_hash": ""
   },
   "src/spark/web/static/js/budget.js": {
     "mtime": 1794821728.696704,
@@ -1620,16 +1620,16 @@
     "semantic_hash": "cbfe2f90a54b6cc5f84d44e9404606f1"
   },
   "tests/test_chat_attachments.py": {
-    "mtime": 1794780409.2018726,
-    "seen": 1794786212.600967,
-    "ast_hash": "1ae975a629c86af1118ed27d2ca8be4e",
-    "semantic_hash": "1ae975a629c86af1118ed27d2ca8be4e"
+    "mtime": 1795408373.080498,
+    "seen": 1795410615.9117868,
+    "ast_hash": "426a55645fcd64c4b8a5e2f408dc799c",
+    "semantic_hash": ""
   },
   "tests/test_chat_attachments_server.py": {
-    "mtime": 1794780409.2018726,
-    "seen": 1794786212.600967,
-    "ast_hash": "9a5e98ced64f0607b446a6ec80a34737",
-    "semantic_hash": "9a5e98ced64f0607b446a6ec80a34737"
+    "mtime": 1795408373.0814989,
+    "seen": 1795410615.9117868,
+    "ast_hash": "768b25a5b772b8e18cc97193d3143398",
+    "semantic_hash": ""
   },
   "tests/test_chat_endpoints.py": {
     "mtime": 1794780409.2018726,
@@ -1902,10 +1902,10 @@
     "semantic_hash": "8707e4cd0d239785cc4d68a99ddcf4ac"
   },
   "tests/test_frontend_attachments.py": {
-    "mtime": 1793757337.4623456,
-    "seen": 1794786212.600967,
-    "ast_hash": "e98f501143a3630cad7de394f6a4e947",
-    "semantic_hash": "e98f501143a3630cad7de394f6a4e947"
+    "mtime": 1795408373.0821178,
+    "seen": 1795410615.9117868,
+    "ast_hash": "43e55aec50810015da46e578ab909482",
+    "semantic_hash": ""
   },
   "tests/test_frontend_csrf.py": {
     "mtime": 1795305761.4094753,
@@ -2778,9 +2778,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1795338852.7407296,
-    "seen": 1795341110.8286252,
-    "ast_hash": "6322a22eab1fc1cb78ee6f095688d76e",
+    "mtime": 1795408377.4679449,
+    "seen": 1795410615.912797,
+    "ast_hash": "b5e916a88634d05a2199ceb37cb722d2",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2826,15 +2826,15 @@
     "semantic_hash": "a2872c1510dd8624e7f3b72957c6a08d"
   },
   "docs/api-reference.md": {
-    "mtime": 1795051395.3920174,
-    "seen": 1795058750.3832536,
-    "ast_hash": "b20b1f7cb7af76271e0ec4aaa5e68ba1",
+    "mtime": 1795408373.0673733,
+    "seen": 1795410615.912797,
+    "ast_hash": "c3493523813d5f325102b908e17e9a3e",
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1795305761.3406074,
-    "seen": 1795317807.7031348,
-    "ast_hash": "503c25d9c6676eca55c34eef3aa709d6",
+    "mtime": 1795408373.0677164,
+    "seen": 1795410615.912797,
+    "ast_hash": "0cf3a592da32cb02d193a1b3079e5558",
     "semantic_hash": ""
   },
   "docs/auto-update.md": {
@@ -2994,9 +2994,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795338852.7407296,
-    "seen": 1795341110.8286252,
-    "ast_hash": "6334fe2daad4643bf9cea68b08eb1b94",
+    "mtime": 1795408377.4673452,
+    "seen": 1795410615.912797,
+    "ast_hash": "cbe8fa0299e6c278a93d4e8f0e899fc4",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3006,10 +3006,10 @@
     "semantic_hash": "8cd19844c2b026e6db568d0942af0e6b"
   },
   "src/spark/resources/tool_docs/_index.md": {
-    "mtime": 1793757337.4470935,
-    "seen": 1794786212.600967,
-    "ast_hash": "6a3bfcadbda6c0f3821ca9a5a72b843d",
-    "semantic_hash": "6a3bfcadbda6c0f3821ca9a5a72b843d"
+    "mtime": 1795408373.0712378,
+    "seen": 1795410615.912797,
+    "ast_hash": "83298b2d1e465bf0474a0aeb3b103d5d",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/_template.md": {
     "mtime": 1793171739.2033381,
@@ -3048,10 +3048,10 @@
     "semantic_hash": "741f26915d0270c05e82bc978a997bf7"
   },
   "src/spark/resources/tool_docs/extract_archive.md": {
-    "mtime": 1793171739.2053094,
-    "seen": 1794786212.600967,
-    "ast_hash": "5bb87a8cda7622ea335de2553576dbfd",
-    "semantic_hash": "5bb87a8cda7622ea335de2553576dbfd"
+    "mtime": 1795408373.0715482,
+    "seen": 1795410615.912797,
+    "ast_hash": "0fa8777e55cb44048a9f3e2895d0df6f",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/find_in_file.md": {
     "mtime": 1793171739.2053094,
@@ -3084,10 +3084,10 @@
     "semantic_hash": "817a6336cd01c673e68e6e5b17e7fab2"
   },
   "src/spark/resources/tool_docs/list_archive.md": {
-    "mtime": 1793171739.2073994,
-    "seen": 1794786212.600967,
-    "ast_hash": "6e30a99f1ab5e6fa55e6d6217e9f1f15",
-    "semantic_hash": "6e30a99f1ab5e6fa55e6d6217e9f1f15"
+    "mtime": 1795408373.0725493,
+    "seen": 1795410615.912797,
+    "ast_hash": "0cc346bdefb7555cd64f86014ee9ec4d",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/list_directory.md": {
     "mtime": 1793171739.2081268,
@@ -3102,10 +3102,10 @@
     "semantic_hash": "40feede178177f44629a6b244e18b7ef"
   },
   "src/spark/resources/tool_docs/list_my_files.md": {
-    "mtime": 1793757337.447478,
-    "seen": 1794786212.600967,
-    "ast_hash": "1dc5bee414663592a061591053ba9e40",
-    "semantic_hash": "1dc5bee414663592a061591053ba9e40"
+    "mtime": 1795408373.073233,
+    "seen": 1795410615.912797,
+    "ast_hash": "9e7835b8facebda769e60da1c7119672",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/list_provider_models.md": {
     "mtime": 1793174545.9378095,
@@ -3120,10 +3120,10 @@
     "semantic_hash": "dd6dc307198fa0b722afdb9cd7530083"
   },
   "src/spark/resources/tool_docs/read_excel.md": {
-    "mtime": 1793171739.2081268,
-    "seen": 1794786212.600967,
-    "ast_hash": "ed8e06c69898b2d63897d4906e9a9e02",
-    "semantic_hash": "ed8e06c69898b2d63897d4906e9a9e02"
+    "mtime": 1795408373.0735488,
+    "seen": 1795410615.912797,
+    "ast_hash": "e74757bfaf55637a12dfa1ac0d8ceec4",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/read_file.md": {
     "mtime": 1793171739.2094305,
@@ -3132,28 +3132,28 @@
     "semantic_hash": "8e2fe02d2f1d6cee3c16228a21414d2f"
   },
   "src/spark/resources/tool_docs/read_my_file.md": {
-    "mtime": 1793757337.4491198,
-    "seen": 1794786212.600967,
-    "ast_hash": "fc553673c290c78f09ed8fc171ebca5f",
-    "semantic_hash": "fc553673c290c78f09ed8fc171ebca5f"
+    "mtime": 1795408373.0742326,
+    "seen": 1795410615.912797,
+    "ast_hash": "4f43e9b034a0db23f6477fcd4d6fec7a",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/read_pdf.md": {
-    "mtime": 1793171739.2094305,
-    "seen": 1794786212.600967,
-    "ast_hash": "25367b12b2330773828981b142682e6a",
-    "semantic_hash": "25367b12b2330773828981b142682e6a"
+    "mtime": 1795408373.0746264,
+    "seen": 1795410615.912797,
+    "ast_hash": "64e3508d5d84501a7414cc32a7df3f76",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/read_powerpoint.md": {
-    "mtime": 1793171739.2100976,
-    "seen": 1794786212.600967,
-    "ast_hash": "d4d519007fceb8321796e7ad0b23c164",
-    "semantic_hash": "d4d519007fceb8321796e7ad0b23c164"
+    "mtime": 1795408373.0755472,
+    "seen": 1795410615.912797,
+    "ast_hash": "6b93e042ba24253655b1bde825a387aa",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/read_word.md": {
-    "mtime": 1793171739.2100976,
-    "seen": 1794786212.600967,
-    "ast_hash": "b9d13533a26dd1dd60f137f1ef120c66",
-    "semantic_hash": "b9d13533a26dd1dd60f137f1ef120c66"
+    "mtime": 1795408373.0755472,
+    "seen": 1795410615.912797,
+    "ast_hash": "c3a27ee66267ad6fde39dec8ec0c407d",
+    "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/run_command.md": {
     "mtime": 1793315296.640398,
@@ -4221,6 +4221,12 @@
     "mtime": 1795325171.8511975,
     "seen": 1795329369.127712,
     "ast_hash": "4f9a082e66061759df2f47211f152860",
+    "semantic_hash": ""
+  },
+  "tests/test_attachment_name_resolution.py": {
+    "mtime": 1795408373.0800958,
+    "seen": 1795410615.9117868,
+    "ast_hash": "4ce6704907792c5ff2f0e33277615d34",
     "semantic_hash": ""
   }
 }
