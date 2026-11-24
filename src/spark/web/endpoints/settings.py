@@ -1516,7 +1516,9 @@ def _appearance_section(settings: _SettingsGetter) -> dict[str, Any]:
                 "id": "appearance",
                 "title": "Theme",
                 "fields": [
-                    _select("interface.theme", "Theme", settings, ["dark", "light"], "dark")
+                    _select(
+                        "interface.theme", "Theme", settings, ["device", "light", "dark"], "device"
+                    )
                 ],
             }
         ],

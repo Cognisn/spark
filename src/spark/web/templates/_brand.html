@@ -1,6 +1,9 @@
 {#- Cognisn brand assets (supplied artwork in /static/img, never redrawn).
 
     favicon_links(): the favicon and app icon links for a page's <head>.
+    mark(size, extra_class): SPARK's bolt alone (spark-bolt.svg), decorative.
+    endorsement(): "A product of" with the Cognisn logo and the copyright line,
+    shown under the card on every page before sign-in (CS1, CS7).
     logo(height, extra_class): the full Cognisn logo, dark text on the light
     theme and light text on the dark theme; the hidden variant is display:none,
     so a screen reader announces "Cognisn" once.
@@ -18,4 +21,15 @@
          alt="Cognisn" width="{{ width }}" height="{{ height }}">
     <img class="brand-logo brand-logo-for-dark {{ extra_class }}" src="/static/img/cognisn-logo-light-text-{{ size }}.png"
          alt="Cognisn" width="{{ width }}" height="{{ height }}">
+{%- endmacro %}
+
+{% macro mark(size=28, extra_class="") -%}
+    <img class="brand-mark {{ extra_class }}" src="/static/img/spark-bolt.svg" alt="" width="{{ size }}" height="{{ size }}">
+{%- endmacro %}
+
+{% macro endorsement() -%}
+    <div class="auth-endorse">
+        <div class="auth-endorse-line"><span>A product of</span> {{ logo(20, "auth-endorse-logo") }}</div>
+        <div class="auth-copyright">&copy; {{ current_year() }} Cognisn Pty Ltd</div>
+    </div>
 {%- endmacro %}

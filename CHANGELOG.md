@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Cognisn sign-in standard (rulings CS1 to CS11, CS19 and CS20).** Every page before sign-in (sign-in, second factor, forgotten password, reset, invitation, forced password change, passkey registration link, MCP sign-in and the personal-mode code page) shares one frame in `auth_layout.html`: the bolt in a 72 px slot, SPARK, the descriptor SECURE PERSONAL AI RESEARCH KIT, one h1, labelled 44 px fields with a Show toggle on passwords, a full-width primary action, the passkey and single sign-on buttons only when warden offers them under one "or" divider, Forgotten your password? last, and "A product of" the Cognisn logo with the copyright line below the card. The loading splash takes the same mark, name, descriptor and footer and keeps its pulse and progress bar (both stop under reduced motion).
+- **`static/img/spark-bolt.svg`**, the bolt alone, taken unchanged from the polygon in the loading page and cropped to it. The tile stays the favicon and app icon.
+- **Inter, self-hosted.** Four weights (400 to 700) of the Latin subset under `static/fonts/`, used only on the pages before sign-in, the splash, the header and the footer; no page asks a third party for a font. The SIL Open Font Licence text ships beside it, `THIRD-PARTY-NOTICES.md` names it, and `scripts/licence_audit.py` now checks bundled assets as well as dependencies.
+- **Light and dark follow the device before sign-in.** The theme is set before the stylesheets paint, from the saved browser choice or else `prefers-color-scheme`; the pages used to fall back to dark.
+
+### Changed
+
+- **The header is the bolt and SPARK** (Inter Bold, capitals), linking home: no Cognisn logo and no version. **The footer** on every signed-in page reads SPARK v<version>, A product of the Cognisn logo, and the copyright line with the current year. The version stays in Help.
+- **The theme control is a Theme row in the Account menu** (Device, Light, Dark, a radio group with arrow keys) in place of the header toggle. `interface.theme` now accepts `device`, the new default, which follows the device's colour scheme live; the choice is mirrored to the browser's `app-theme`. Personal mode has the Account menu too, holding the Theme row.
+- **Quit, Open Log Folder and Open Data Folder are hidden in server mode** and kept in personal mode; `/api/quit` and `/api/open-folder` still refuse on a server.
+- **A failed sign-in says "The email address or password is incorrect."**
+
 ## [0.3.0rc49] - 2026-11-24
 
 ### Added

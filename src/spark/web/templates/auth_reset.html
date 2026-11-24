@@ -1,8 +1,9 @@
 {% extends "auth_layout.html" %}
 {% block title %}Choose a New Password{% endblock %}
+{% block heading %}Choose a new password{% endblock %}
 {% block content %}
 {% if token %}
-<p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+<p class="auth-help">
     Choose a new password of at least {{ min_length }} characters. Changing it signs you out everywhere.
 </p>
 <form method="POST" action="/auth/reset">
@@ -13,17 +14,17 @@
         <input type="password" id="password" name="password" class="form-control"
                autocomplete="new-password" minlength="{{ min_length }}" required autofocus>
     </div>
-    <div class="mb-3">
+    <div class="mb-4">
         <label for="confirm" class="form-label">New password again</label>
         <input type="password" id="confirm" name="confirm" class="form-control"
                autocomplete="new-password" minlength="{{ min_length }}" required>
     </div>
     <button type="submit" class="btn btn-app-primary w-100">
-        <i class="bi bi-key me-1"></i> Change password
+        Save and continue
     </button>
 </form>
 {% endif %}
-<div class="mt-4 text-center" style="font-size: 0.8125rem;">
+<p class="auth-links">
     <a href="/auth/password-reset">Ask for a new link</a> &middot; <a href="/auth/sign-in">Back to sign-in</a>
-</div>
+</p>
 {% endblock %}

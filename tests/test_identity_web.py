@@ -39,6 +39,7 @@ from spark.identity.web import (
     SESSION_HEADER,
 )
 from spark.mode import DatabaseSettings, Dialect
+from spark.web.endpoints.identity import SIGN_IN_FAILED
 from spark.web.security import CSRF_HEADER, CSRF_REFUSED, ORIGIN_REFUSED, OriginPolicy
 from tests.identity_web_helpers import (
     PASSWORD,
@@ -172,7 +173,7 @@ class TestSignIn:
         wrong = sign_in(client, ADA, "wrong-password-dev-only")
         unknown = sign_in(client, "nobody@example.com")
         assert unknown.status_code == wrong.status_code == 401
-        assert "Sign-in failed" in unknown.text and "Sign-in failed" in wrong.text
+        assert SIGN_IN_FAILED in unknown.text and SIGN_IN_FAILED in wrong.text
 
     def test_sign_in_post_needs_its_form_token(self, client: TestClient) -> None:
         make_user(client, ADA)

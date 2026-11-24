@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="61 61 390 390" width="390" height="390">
+    <defs>
+        <linearGradient id="bolt-grad" x1="0" y1="0" x2="0.5" y2="1">
+            <stop offset="0%" stop-color="#7ac0f8"/>
+            <stop offset="100%" stop-color="#5aaae8"/>
+        </linearGradient>
+    </defs>
+    <polygon points="282,61 143,241 241,241 200,451 369,225 271,225" fill="url(#bolt-grad)"/>
+</svg>

@@ -1,15 +1,16 @@
 {% extends "auth_layout.html" %}
 {% block title %}Single Sign-On{% endblock %}
+{% block heading %}Single sign-on{% endblock %}
 {% block head %}
 {% if signed_in %}<meta http-equiv="refresh" content="1;url=/">{% endif %}
 {% endblock %}
 {% block content %}
 {% if signed_in %}
-<p class="mb-3 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+<p class="auth-help">
     You are signed in.
 </p>
-<a class="btn btn-app-primary w-100" href="/"><i class="bi bi-arrow-right me-1"></i> Continue</a>
+<a class="btn btn-app-primary w-100" href="/">Continue</a>
 {% else %}
-<a class="btn btn-app-primary w-100" href="/auth/sign-in"><i class="bi bi-arrow-left me-1"></i> Back to sign-in</a>
+<a class="btn btn-app-primary w-100" href="/auth/sign-in">Back to sign-in</a>
 {% endif %}
 {% endblock %}

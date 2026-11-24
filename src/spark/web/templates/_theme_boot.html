@@ -1,0 +1,12 @@
+{#- Sets the theme before any stylesheet paints (CS8): the saved browser choice
+    (light or dark) wins, otherwise the device's colour scheme. "device" and an
+    empty value both follow the device. Kept inline so it runs first. -#}
+<script>(function () {
+    var choice = null;
+    try { choice = window.localStorage.getItem('app-theme'); } catch (e) {}
+    var theme = choice;
+    if (theme !== 'light' && theme !== 'dark') {
+        theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-bs-theme', theme);
+}());</script>

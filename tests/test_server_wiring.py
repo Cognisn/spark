@@ -374,7 +374,7 @@ class TestServerTheme:
         monkeypatch.setattr(app_mod, "_get_config_path", lambda: tmp_path / "a.yaml")
         with _server_app(tmp_path, "a", server_db) as client:
             before = (tmp_path / "a.yaml").read_bytes()
-            assert client.get("/api/theme").json() == {"theme": "dark"}
+            assert client.get("/api/theme").json() == {"theme": "device"}
             assert client.post("/api/theme", json={"theme": "light"}).status_code == 200
             assert client.get("/api/theme").json() == {"theme": "light"}
             assert (tmp_path / "a.yaml").read_bytes() == before
