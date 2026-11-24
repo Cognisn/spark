@@ -1773,7 +1773,17 @@ main[tabindex="-1"]:focus-visible {
     background: var(--app-card-bg);
 }
 
+/* The details box is as wide as the card's visible area and stays in view while the
+   table scrolls sideways, so long JSON scrolls inside its own box, never the table. */
+.app-table-responsive:has(.audit-table) {
+    container-type: inline-size;
+}
+
 .audit-details {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    width: calc(100cqw - 1.5rem);
     margin-left: 1.5rem;
 }
 

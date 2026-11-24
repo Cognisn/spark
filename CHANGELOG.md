@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Wide tables stay inside their card.** One shared rule in `base.css` makes every `app-table-responsive` wrapper scroll sideways inside its card (the connections page used to be the only one that did), so the Total tokens and Credits columns on Usage and credits no longer spill out of the card.
 - **The audit trail keeps each event on one line.** The Details column shows a View button that opens the event's details under its row as indented JSON, with a Copy button that announces its result to screen readers; the details are no longer broken after every character. Export CSV and NDJSON are unchanged.
+- **Every other table now has the wrapper too.** The role table on a user's page and the single sign-on checks table sat outside it and pushed the page wider than a phone; the two tables the connections page builds in script do the same. An open audit details box is now as wide as the card and scrolls its JSON inside itself, rather than stretching the table.
 
 ## [0.3.0rc47] - 2026-11-24
 

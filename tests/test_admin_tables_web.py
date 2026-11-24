@@ -74,3 +74,12 @@ def test_details_containing_markup_are_escaped() -> None:
     assert "<script>alert(1)" not in page
     assert "<img src=x" not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+
+
+def test_every_table_in_a_template_or_built_in_script_sits_in_the_shared_wrapper() -> None:
+    sources = [*(WEB / "templates").glob("*.html"), WEB / "static" / "js" / "connections.js"]
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        tables = len(re.findall(r"<table\b|h\('table'", text))
+        wrapped = len(re.findall(r"app-table-responsive", text))
+        assert tables == wrapped, f"{source.name}: {tables} tables, {wrapped} wrappers"
