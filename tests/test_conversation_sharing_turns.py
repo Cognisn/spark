@@ -2,8 +2,9 @@
 
 CS28: a turn runs as its sender, and personal memories are left out of a shared
 conversation. While a conversation has any member besides its owner, every turn
-(the owner's too) is offered no memory tool, has a memory call refused however it
-was asked for, searches no linked conversation and gets no knowledge graph context.
+(the owner's too) is offered no memory or knowledge graph tool, has such a call
+refused however it was asked for, searches no linked conversation and gets no
+knowledge graph context.
 Unshared, nothing changes. Each check was mutation-checked by turning ``shared``
 off in the conversation manager: the shared cases then fail.
 """
@@ -14,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from spark.core.conversation_manager import MEMORY_TOOLS, ConversationManager
+from spark.core.conversation_manager import PRIVATE_TOOLS, ConversationManager
 from spark.database import conversation_links, conversation_members, messages
 from spark.database.scope import NotOwned, NotPermitted, Role
 from tests.model_helpers import FakeModels
@@ -88,7 +89,7 @@ def test_a_shared_turn_offers_no_memory_tool(sync_db: Any, recorders: None, send
     mgr, stub = _manager(sync_db)
     cid = _conversation(sync_db, mgr, shared=True)
     mgr.send_message(cid, "hello", sender)
-    assert stub.offered and not (set(stub.offered[0]) & MEMORY_TOOLS)
+    assert stub.offered and not (set(stub.offered[0]) & PRIVATE_TOOLS)
     assert "Shared conversation" in str(stub.last_system)
     assert "store_memory" not in str(stub.last_system)
 
@@ -97,7 +98,7 @@ def test_an_unshared_turn_keeps_its_memory_tools(sync_db: Any, recorders: None) 
     mgr, stub = _manager(sync_db)
     cid = _conversation(sync_db, mgr, shared=False)
     mgr.send_message(cid, "hello", ADA)
-    assert MEMORY_TOOLS <= set(stub.offered[0])
+    assert PRIVATE_TOOLS <= set(stub.offered[0])
     assert "Shared conversation" not in str(stub.last_system)
 
 
@@ -112,6 +113,10 @@ def test_a_memory_call_in_a_shared_turn_is_refused(sync_db: Any, recorders: None
     )
     assert is_error and "shared conversation" in text
     assert RecordingMemoryIndex.stored == []
+    text, is_error = mgr._call_tool(
+        "query_knowledge_graph", {"query": "tea"}, conversation_id=cid, user_guid=CORA
+    )
+    assert is_error and "knowledge graphs are not available" in text
 
 
 def test_the_turn_is_the_senders(sync_db: Any, recorders: None) -> None:
@@ -180,14 +185,14 @@ def test_no_knowledge_graph_context_while_shared(
     assert asked == [alone]
 
 
-def test_server_permissions_lose_the_memory_category() -> None:
-    from spark.core.conversation_manager import _without_memory
+def test_server_permissions_lose_the_private_categories() -> None:
+    from spark.core.conversation_manager import _without_private
     from spark.tools.registry import ANY_ROLE, permission_name
 
-    held = frozenset({permission_name("memory"), permission_name("web")})
-    assert _without_memory(held) == frozenset({permission_name("web")})
-    assert _without_memory(ANY_ROLE) is ANY_ROLE
-    assert _without_memory(None) is None
+    held = frozenset({permission_name(c) for c in ("memory", "knowledge", "web")})
+    assert _without_private(held) == frozenset({permission_name("web")})
+    assert _without_private(ANY_ROLE) is ANY_ROLE
+    assert _without_private(None) is None
 
 
 def test_model_refusal_is_none_in_personal_mode(sync_db: Any) -> None:

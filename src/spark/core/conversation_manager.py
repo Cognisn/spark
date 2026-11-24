@@ -32,18 +32,21 @@ from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
 
-# The memory tools: never offered or run in a shared conversation (CS28).
-MEMORY_TOOLS = frozenset(_REGISTRY_CATEGORIES["memory"])
+# Tools over a person's own memories and knowledge graphs: never offered or run in a
+# shared conversation, whose every member reads the answer (CS28, CS31).
+PRIVATE_CATEGORIES = ("memory", "knowledge")
+PRIVATE_TOOLS = frozenset(name for c in PRIVATE_CATEGORIES for name in _REGISTRY_CATEGORIES[c])
 
 
-def _without_memory(permissions: Permissions) -> Permissions:
-    """A user's permissions without the memory category (a server user's are a set)."""
+def _without_private(permissions: Permissions) -> Permissions:
+    """A user's permissions without the memory and knowledge categories (a server user's
+    are a set)."""
     from collections.abc import Set
 
     from spark.tools.registry import permission_name
 
     if isinstance(permissions, Set):
-        return frozenset(permissions) - {permission_name("memory")}
+        return frozenset(permissions) - {permission_name(c) for c in PRIVATE_CATEGORIES}
     return permissions
 
 
@@ -699,8 +702,8 @@ class ConversationManager:
         turn is theirs throughout (CS28): their credits and budget, their tools and
         prompts, their usage. While the conversation has any member besides its owner,
         every turn (the owner's too, since every member reads the answer) runs without
-        memory tools, without retrieval from linked conversations and without knowledge
-        graph context.
+        memory or knowledge graph tools, without retrieval from linked conversations and
+        without knowledge graph context.
         """
         from spark.database import conversation_members, conversations
         from spark.database import messages as msg_db
@@ -712,8 +715,9 @@ class ConversationManager:
             raise ValueError(f"Conversation {conversation_id} not found")
         shared = bool(self._db.call(conversation_members.is_shared, user_guid, conversation_id))
         if shared:
-            # The memory category is withheld from the whole turn, its sub-agents included.
-            permissions = _without_memory(permissions)
+            # Memories and knowledge graphs are withheld from the whole turn, its
+            # sub-agents included.
+            permissions = _without_private(permissions)
 
         # The conversation's model, as a (connection, model) pair. On a server the
         # user may use only a connection assigned to them (M9): checked every turn.
@@ -741,8 +745,8 @@ class ConversationManager:
         if tools is None:
             tools = self._get_all_tools(permissions)
         if shared:
-            # Personal memories are left out of a shared conversation (CS28).
-            tools = [t for t in tools if t.get("name") not in MEMORY_TOOLS]
+            # Personal memories and knowledge graphs are left out (CS28, CS31).
+            tools = [t for t in tools if t.get("name") not in PRIVATE_TOOLS]
 
         # Files the turn carries (attached to the message or to the conversation):
         # read_my_file and list_my_files go first, and one line names the files.
@@ -2270,8 +2274,12 @@ class ConversationManager:
 
         # Personal memories are left out of a shared conversation (CS28), however the
         # call was asked for.
-        if tool_name in MEMORY_TOOLS and self._is_shared(conversation_id, uid):
-            return "Memory tools are not available in a shared conversation.", True
+        if tool_name in PRIVATE_TOOLS and self._is_shared(conversation_id, uid):
+            return (
+                "Personal memories and knowledge graphs are not available in a shared "
+                "conversation.",
+                True,
+            )
 
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):
