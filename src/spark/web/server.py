@@ -584,7 +584,6 @@ class _ServerConsumers:
             key.split(".", 1)[1]: self.source.get(key)
             for key in (
                 "conversation.max_tool_iterations",
-                "conversation.max_tool_selections",
                 "conversation.max_tool_result_tokens",
                 "conversation.rollup_threshold",
                 "conversation.rollup_summary_ratio",
@@ -724,11 +723,6 @@ def _background_init(app: FastAPI, ctx: AppContext) -> None:
                     conv_settings.get("max_tool_iterations", 25)
                     if isinstance(conv_settings, dict)
                     else 25
-                ),
-                max_tool_selections=(
-                    conv_settings.get("max_tool_selections", 30)
-                    if isinstance(conv_settings, dict)
-                    else 30
                 ),
                 max_tool_result_tokens=(
                     conv_settings.get("max_tool_result_tokens", 4000)

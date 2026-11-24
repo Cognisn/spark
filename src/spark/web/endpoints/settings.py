@@ -1144,12 +1144,6 @@ def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
                             25,
                         ),
                         _number(
-                            "conversation.max_tool_selections",
-                            "Max Tool Selections",
-                            settings,
-                            30,
-                        ),
-                        _number(
                             "conversation.max_tool_result_tokens",
                             "Max Result Tokens",
                             settings,

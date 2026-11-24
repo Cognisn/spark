@@ -174,7 +174,6 @@ conversation:
   rollup_summary_ratio: 0.3       # Compress to 30% of original size
   emergency_rollup_threshold: 0.95 # Force compaction at 95%
   max_tool_iterations: 25         # Max tool use loops per message
-  max_tool_selections: 30         # Max tools to send to model
   max_tool_result_tokens: 4000    # Max tokens per tool result
   global_instructions: |          # Prepended to all conversations
     You are a helpful AI assistant.

@@ -351,7 +351,6 @@ def _default_settings() -> dict:
             "rollup_summary_ratio": 0.3,
             "emergency_rollup_threshold": 0.95,
             "max_tool_iterations": 25,
-            "max_tool_selections": 30,
             "max_tool_result_tokens": 4000,
         },
         "tool_permissions": {"auto_approve": False},

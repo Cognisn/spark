@@ -80,8 +80,7 @@ spark/
 │   │   ├── memory_tools.py           # Memory CRUD tools
 │   │   └── datetime_tool.py          # Current date/time
 │   ├── mcp_integration/
-│   │   ├── manager.py                # MCP server connection manager
-│   │   └── tool_selector.py          # Intelligent tool selection
+│   │   └── manager.py                # MCP server connection manager
 │   ├── safety/
 │   │   ├── inspector.py              # Prompt inspection engine
 │   │   └── patterns.py               # Attack pattern definitions

@@ -153,7 +153,7 @@ class TestConversationManagerUpdates:
     def test_tool_limits(self) -> None:
         mgr = self._manager()
         mgr.update_tool_limits(max_tool_iterations=3, max_tool_result_tokens=100)
-        assert (mgr._max_tool_iterations, mgr._max_tool_selections) == (3, 30)
+        assert mgr._max_tool_iterations == 3
         assert mgr._max_tool_result_tokens == 100
 
 

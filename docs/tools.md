@@ -361,14 +361,3 @@ Tool results are automatically:
 2. **Indexed** in the conversation's vector store for RAG retrieval
 3. **Recorded** in the `mcp_transactions` table with execution time and error status
 4. **Streamed** to the UI as real-time status events
-
-## Tool Selection
-
-When many tools are available (especially with multiple MCP servers), Spark uses intelligent tool selection to reduce the number of tool definitions sent to the model:
-
-1. Analyses the user message for category keywords
-2. Prioritises tools matching detected categories
-3. Always includes utility tools (datetime)
-4. Backfills remaining slots up to `max_tool_selections` (default: 30)
-
-This reduces token usage from tool definitions while keeping relevant tools available.
