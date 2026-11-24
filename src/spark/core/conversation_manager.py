@@ -105,7 +105,6 @@ class ConversationManager:
         *,
         global_instructions: str | None = None,
         max_tool_iterations: int = 25,
-        max_tool_selections: int = 30,
         max_tool_result_tokens: int = 4000,
         rollup_threshold: float = 0.7,
         rollup_summary_ratio: float = 0.3,
@@ -128,7 +127,6 @@ class ConversationManager:
         self._limits = _CatalogueLimits(models)
         self._global_instructions = global_instructions
         self._max_tool_iterations = max_tool_iterations
-        self._max_tool_selections = max_tool_selections
         self._max_tool_result_tokens = max_tool_result_tokens
         self._mcp_manager = mcp_manager
         self._user_guid = user_guid
@@ -240,14 +238,11 @@ class ConversationManager:
         self,
         *,
         max_tool_iterations: int | None = None,
-        max_tool_selections: int | None = None,
         max_tool_result_tokens: int | None = None,
     ) -> None:
         """Apply new tool execution limits from the next turn on (a settings change)."""
         if max_tool_iterations is not None:
             self._max_tool_iterations = max_tool_iterations
-        if max_tool_selections is not None:
-            self._max_tool_selections = max_tool_selections
         if max_tool_result_tokens is not None:
             self._max_tool_result_tokens = max_tool_result_tokens
 

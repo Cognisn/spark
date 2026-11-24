@@ -320,7 +320,6 @@ _SPECS: tuple[SettingSpec, ...] = (
     _ratio("conversation.emergency_rollup_threshold", 0.95),
     _toggle("conversation.prompt_caching", default=True),
     _int_spec("conversation.max_tool_iterations", 25, 1),
-    _int_spec("conversation.max_tool_selections", 30, 1),
     _int_spec("conversation.max_tool_result_tokens", 4000, 1),
     # Agents and actions (administrator)
     _toggle("embedded_tools.agents.enabled"),

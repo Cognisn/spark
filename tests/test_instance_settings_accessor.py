@@ -54,6 +54,17 @@ class TestFileSettings:
         with pytest.raises(UnknownSettingError):
             FileSettings(FakeKonfig({})).get("not.a.key")
 
+    def test_a_stored_max_tool_selections_is_ignored(self) -> None:
+        # The setting was removed; an old config.yaml may still carry it.
+        source = FileSettings(
+            FakeKonfig(
+                {"conversation.max_tool_selections": 12, "conversation.max_tool_iterations": 7}
+            )
+        )
+        assert source.get("conversation.max_tool_iterations") == 7
+        with pytest.raises(UnknownSettingError):
+            source.get("conversation.max_tool_selections")
+
     def test_secret_keys_are_not_read_through_the_accessor(self) -> None:
         source = FileSettings(FakeKonfig({"voice.elevenlabs.api_key": "secret://x"}))
         with pytest.raises(SettingsError):
@@ -65,6 +76,20 @@ class TestServerSettings:
         source = ServerSettings(spark_db, FakeKonfig({}))
         await source.reload()
         assert source.get("voice.engine") == "browser"
+
+    async def test_a_stored_max_tool_selections_row_is_ignored(self, spark_db: Any) -> None:
+        # The setting was removed; an old database may still hold its row.
+        await spark_db.execute(
+            "INSERT INTO instance_settings (key, value, updated_at, updated_by) "
+            "VALUES (?, ?, ?, ?)",
+            ("conversation.max_tool_selections", "12", "2026-11-20T00:00:00+00:00", "a"),
+        )
+        await repository.save_instance(spark_db, "conversation.max_tool_iterations", 7, actor="a")
+        source = ServerSettings(spark_db, FakeKonfig({}))
+        await source.reload()
+        assert source.get("conversation.max_tool_iterations") == 7
+        with pytest.raises(UnknownSettingError):
+            source.get("conversation.max_tool_selections")
 
     async def test_reads_instance_values_from_the_database_not_the_config(
         self, spark_db: Any

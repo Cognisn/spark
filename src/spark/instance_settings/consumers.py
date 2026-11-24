@@ -51,7 +51,6 @@ logger = logging.getLogger(__name__)
 _EMBEDDED = "embedded_tools."
 _LIMITS = {
     "max_tool_iterations": "conversation.max_tool_iterations",
-    "max_tool_selections": "conversation.max_tool_selections",
     "max_tool_result_tokens": "conversation.max_tool_result_tokens",
 }
 

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig
-from spark.mcp_integration.tool_selector import ToolSelector
 
 # -- MCPServerConfig ----------------------------------------------------------
 
@@ -213,101 +211,3 @@ class TestMCPManagerAsync:
         mgr.add_server(MCPServerConfig(name="srv"))
         with pytest.raises(RuntimeError, match="not connected"):
             await mgr.call_tool("tool", {}, server_name="srv")
-
-
-# -- ToolSelector -------------------------------------------------------------
-
-
-class TestToolSelector:
-    def _make_tools(self, names: list[str]) -> list[dict[str, Any]]:
-        return [{"name": n, "description": f"Tool {n}"} for n in names]
-
-    def test_returns_all_when_under_limit(self) -> None:
-        selector = ToolSelector(max_tools=10)
-        tools = self._make_tools(["a", "b", "c"])
-        result = selector.select_tools(tools, "hello")
-        assert len(result) == 3
-
-    def test_limits_output(self) -> None:
-        selector = ToolSelector(max_tools=3)
-        tools = self._make_tools([f"tool_{i}" for i in range(20)])
-        result = selector.select_tools(tools, "hello")
-        assert len(result) == 3
-
-    def test_detects_filesystem_category(self) -> None:
-        selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(
-            [
-                "read_file",
-                "web_search",
-                "get_current_datetime",
-                "unrelated_1",
-                "unrelated_2",
-                "unrelated_3",
-                "unrelated_4",
-                "unrelated_5",
-                "unrelated_6",
-            ]
-        )
-        result = selector.select_tools(tools, "Please read the file at /tmp/test.txt")
-        names = {t["name"] for t in result}
-        assert "read_file" in names
-
-    def test_detects_web_category(self) -> None:
-        selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(
-            [
-                "read_file",
-                "web_search",
-                "fetch_url",
-                "unrelated_1",
-                "unrelated_2",
-                "unrelated_3",
-                "unrelated_4",
-                "unrelated_5",
-            ]
-        )
-        result = selector.select_tools(tools, "search the web for python tutorials")
-        names = {t["name"] for t in result}
-        assert "web_search" in names
-
-    def test_detects_datetime_category(self) -> None:
-        selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(
-            [
-                "get_current_datetime",
-                "read_file",
-                "other1",
-                "other2",
-                "other3",
-                "other4",
-                "other5",
-                "other6",
-            ]
-        )
-        result = selector.select_tools(tools, "what time is it now?")
-        names = {t["name"] for t in result}
-        assert "get_current_datetime" in names
-
-    def test_uses_history_for_detection(self) -> None:
-        selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(
-            ["read_file", "web_search", "other1", "other2", "other3", "other4", "other5", "other6"]
-        )
-        history = [{"role": "user", "content": "I need to read some files"}]
-        result = selector.select_tools(tools, "please continue", history)
-        names = {t["name"] for t in result}
-        assert "read_file" in names
-
-    def test_no_categories_still_returns_tools(self) -> None:
-        selector = ToolSelector(max_tools=5)
-        tools = self._make_tools(["a", "b", "c", "d", "e", "f", "g"])
-        result = selector.select_tools(tools, "hello there")
-        assert len(result) == 5
-
-    def test_always_includes_datetime(self) -> None:
-        selector = ToolSelector(max_tools=3)
-        tools = self._make_tools(["get_current_datetime", "a", "b", "c", "d", "e"])
-        result = selector.select_tools(tools, "do something unrelated to time")
-        names = {t["name"] for t in result}
-        assert "get_current_datetime" in names

@@ -152,7 +152,6 @@ conversation:
 
   # Tool execution
   max_tool_iterations: 25
-  max_tool_selections: 30
   max_tool_result_tokens: 4000
 
   # Web search (Anthropic models)
