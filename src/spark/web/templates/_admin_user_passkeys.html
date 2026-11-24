@@ -1,0 +1,42 @@
+{# The user's passkeys and security keys on the administrator's user page, a passkey
+   registration link, and a reset of every second factor. Included by admin_user.html.
+   Expects user, passkeys, key_kind and webauthn. #}
+<div class="app-card mb-4" id="user-passkeys">
+    <div class="card-header"><i class="bi bi-fingerprint me-2" aria-hidden="true"></i> Passkeys and security keys</div>
+    <div class="card-body">
+        {% if passkeys %}
+        <div class="app-table-responsive">
+        <table class="app-table mb-3" style="font-size: 0.8125rem;">
+            <thead><tr><th>Name</th><th>Kind</th><th>Added</th><th>Last used</th></tr></thead>
+            <tbody>
+            {% for key in passkeys %}
+            <tr>
+                <td>{{ key.nickname or "Unnamed" }}</td>
+                <td>{{ key_kind(key) }}</td>
+                <td>{{ key.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td>{{ key.last_used_at.strftime("%Y-%m-%d %H:%M") if key.last_used_at else "never" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <p style="font-size: 0.875rem; color: var(--app-text-secondary);">No passkeys or security keys.</p>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-2">
+            {% if webauthn and user.status == "active" and user.sign_in_method != "sso_only" %}
+            <form method="POST" action="/admin/users/{{ user.id }}/passkey-link">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-envelope me-1" aria-hidden="true"></i>Send a passkey registration link</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="/admin/users/{{ user.id }}/mfa-reset" onsubmit="return confirm('Remove every passkey, security key, authenticator app and recovery code of this user, and end their sessions? Confirm who they are some other way first.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm" style="color: var(--app-danger);"><i class="bi bi-shield-x me-1" aria-hidden="true"></i>Reset every second factor</button>
+            </form>
+        </div>
+        <p class="mt-2 mb-0" style="font-size: 0.8125rem; color: var(--app-text-muted);">
+            To remove a lost passkey, reset every second factor, then send a registration link or let the user set one up at their next sign-in.
+        </p>
+    </div>
+</div>

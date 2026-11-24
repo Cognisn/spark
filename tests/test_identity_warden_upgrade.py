@@ -393,17 +393,18 @@ class TestPasswordAlone:
 
 @pytest.mark.postgres
 class TestForcedEnrolment:
-    def test_without_totp_named_nothing_is_offered_and_nothing_signs_in(
+    def test_without_a_kind_named_nothing_is_offered_and_nothing_signs_in(
         self, mfa_client: TestClient
     ) -> None:
         make_user(mfa_client, ADA)
         password_step(mfa_client, ADA)
         purpose, kinds, token = (mfa_client.cookies.get(CHALLENGE_COOKIE) or "").split(":")
         assert (purpose, kinds) == ("enrol", "totp+webauthn")
-        # As if warden had named only security keys, which this page cannot enrol.
+        # As if warden had named no kind this page can enrol. (Security keys and
+        # passkeys alone are enrolled here since wave 26: test_identity_screens_passkeys.)
         mfa_client.cookies.set(
             CHALLENGE_COOKIE,
-            f"enrol:webauthn:{token}",
+            f"enrol::{token}",
             domain="spark.example.com",
             path="/auth/challenge",
         )
@@ -412,8 +413,9 @@ class TestForcedEnrolment:
         assert NO_ENROLMENT in page.text
         assert 'id="totp-secret"' not in page.text
         assert 'action="/auth/challenge/enrol"' not in page.text
+        assert 'action="/auth/challenge/webauthn"' not in page.text
         # A forged confirmation, with the challenge's own form token, starts the user over.
-        csrf = csrf_token_for(runtime(mfa_client).csrf_key, "challenge", f"enrol:webauthn:{token}")
+        csrf = csrf_token_for(runtime(mfa_client).csrf_key, "challenge", f"enrol::{token}")
         confirm = mfa_client.post(
             "/auth/challenge/enrol",
             data={CSRF_FORM_FIELD: csrf, "code": "123456"},

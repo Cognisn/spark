@@ -7,7 +7,12 @@ the database is open, :meth:`IdentityRuntime.start` builds:
   settings: warden's public address is ``server.public_base_url`` (one
   setting, Q17), its routers' prefixes sit under :data:`IDENTITY_PREFIX`, and
   its mailed links point at SPARK's own screens; everything else comes from the
-  ``warden`` section of konfig, with warden's defaults;
+  ``warden`` section of konfig, with warden's defaults. Passkeys and security
+  keys (WebAuthn) follow the same address: the relying party id is its host
+  and the only origin a ceremony may come from is its origin, unless
+  ``warden.webauthn`` names others, which must still include it
+  (:func:`check_webauthn`); on an address whose host is an IP address,
+  WebAuthn is off;
 * warden's database handle over SPARK's psycopg pool;
 * the audit recorder, installed process-wide before ``Identity`` (which
   registers its actions on it), carrying SPARK's own action catalogue
@@ -52,11 +57,13 @@ __all__ = [
     "ACCEPT_INVITATION_LINK",
     "CSRF_KEY_SECRET",
     "IDENTITY_PREFIX",
+    "PASSKEY_REGISTRATION_LINK",
     "RESET_PASSWORD_LINK",
     "SSO_COMPLETION_LINK",
     "IdentityRuntime",
     "SecretsLike",
     "SettingsLike",
+    "check_webauthn",
     "warden_config",
 ]
 
@@ -75,6 +82,7 @@ _PREFIXES = {
 ACCEPT_INVITATION_LINK = "/auth/invitation?token={token}"
 RESET_PASSWORD_LINK = "/auth/reset?token={token}"
 SSO_COMPLETION_LINK = "/auth/sso/complete"
+PASSKEY_REGISTRATION_LINK = "/auth/passkey-registration?token={token}"
 
 # konfig secret holding the key that binds CSRF tokens to warden sessions.
 CSRF_KEY_SECRET = "spark.csrf-key"  # noqa: S105 - a secret's name, not a secret
@@ -130,12 +138,35 @@ def warden_config(settings: SettingsLike, secrets: SecretsLike, base_url: str) -
             "accept_invitation_link": ACCEPT_INVITATION_LINK,
             "reset_password_link": RESET_PASSWORD_LINK,
             "sso_completion_link": SSO_COMPLETION_LINK,
+            "passkey_registration_link": PASSKEY_REGISTRATION_LINK,
         },
     }
     try:
-        return parse_config(data, secrets)
+        config = parse_config(data, secrets)
     except ConfigError as exc:
         raise StartupConfigError(str(exc)) from None
+    check_webauthn(config)
+    return config
+
+
+def check_webauthn(config: WardenConfig) -> None:
+    """Refuse WebAuthn settings that would leave passkeys unusable on Spark's own address.
+
+    Spark is reached only at ``server.public_base_url`` (its cookies and Origin
+    pin follow it), so the origin of that address is the one a passkey
+    ceremony comes from. With nothing set, warden takes the relying party id
+    from its host and allows only its origin. ``warden.webauthn.allowed_origins``,
+    when set, must include it; warden itself checks that ``rp_id`` covers every
+    allowed origin. Raises :class:`StartupConfigError` naming the settings.
+    """
+    webauthn, http = config.webauthn, config.http
+    if not webauthn.allowed_origins or webauthn.relying_party_id(http) is None:
+        return
+    if http.public_base_url not in webauthn.origins(http):
+        raise StartupConfigError(
+            "warden.webauthn.allowed_origins must include server.public_base_url "
+            f"({http.public_base_url}): passkeys are used on the address users reach Spark on"
+        )
 
 
 def _refresh(secrets: SecretsLike) -> None:
