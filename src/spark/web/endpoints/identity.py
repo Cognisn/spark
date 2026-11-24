@@ -114,7 +114,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-SIGN_IN_FAILED = "Sign-in failed. Check your email address and password and try again."
+SIGN_IN_FAILED = "The email address or password is incorrect."
 VERIFICATION_FAILED = (
     "Verification failed. Check the code and try again; if it keeps failing, start again."
 )

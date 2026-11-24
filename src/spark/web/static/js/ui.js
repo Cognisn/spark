@@ -12,53 +12,85 @@ const AppTheme = {
     STORAGE_KEY: 'app-theme',
     DARK: 'dark',
     LIGHT: 'light',
+    DEVICE: 'device',
+    CHOICES: ['device', 'light', 'dark'],
 
+    // The choice (device, light or dark) is saved with the user (interface.theme) and mirrored to
+    // localStorage "app-theme". Device follows prefers-color-scheme, live. Pages before sign-in
+    // (body[data-auth-page]) only read the browser's copy: nothing is fetched or saved there.
     init() {
-        // Load from server (persists across port changes), fall back to localStorage
-        fetch('/api/theme').then(r => r.json()).then(data => {
-            if (data.theme && data.theme !== this.get()) {
-                this.set(data.theme);
-            }
-            localStorage.setItem(this.STORAGE_KEY, data.theme || this.DARK);
-        }).catch(() => {});
-
-        const saved = localStorage.getItem(this.STORAGE_KEY);
-        const preferred = window.matchMedia('(prefers-color-scheme: light)').matches ? this.LIGHT : this.DARK;
-        this.set(saved || preferred);
-
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-            if (!localStorage.getItem(this.STORAGE_KEY)) {
-                this.set(e.matches ? this.DARK : this.LIGHT);
-            }
+        this._query = window.matchMedia('(prefers-color-scheme: light)');
+        this._query.addEventListener('change', () => {
+            if (this.choice() === this.DEVICE) this._apply(this.DEVICE);
         });
+
+        this._apply(this.choice());
+        this._wireControls();
+
+        if (document.body && document.body.hasAttribute('data-auth-page')) return;
+        // The saved choice wins over the browser's copy (it survives port changes and new browsers).
+        fetch('/api/theme').then(r => r.json()).then(data => {
+            if (this.CHOICES.includes(data.theme) && data.theme !== this.choice()) {
+                this._mirror(data.theme);
+                this._apply(data.theme);
+            }
+        }).catch(() => {});
     },
 
+    // The saved choice in this browser; Device when there is none.
+    choice() {
+        let saved = null;
+        try { saved = localStorage.getItem(this.STORAGE_KEY); } catch (e) {}
+        return this.CHOICES.includes(saved) ? saved : this.DEVICE;
+    },
+
+    // The theme in force: light or dark.
     get() {
         return document.documentElement.getAttribute('data-bs-theme') || this.DARK;
     },
 
-    set(theme) {
-        document.documentElement.setAttribute('data-bs-theme', theme);
-        localStorage.setItem(this.STORAGE_KEY, theme);
-        this._updateToggles(theme);
-        this._updateCharts(theme);
-        document.dispatchEvent(new CustomEvent('app-theme-changed', { detail: { theme } }));
-        // Persist to server config so it survives port changes
+    resolve(choice) {
+        if (choice === this.LIGHT || choice === this.DARK) return choice;
+        return window.matchMedia('(prefers-color-scheme: light)').matches ? this.LIGHT : this.DARK;
+    },
+
+    // The person picks one: apply it, mirror it to the browser and save it.
+    set(choice) {
+        if (!this.CHOICES.includes(choice)) return;
+        this._mirror(choice);
+        this._apply(choice);
+        if (document.body && document.body.hasAttribute('data-auth-page')) return;
         fetch('/api/theme', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ theme }),
+            body: JSON.stringify({ theme: choice }),
         }).catch(() => {});
     },
 
-    toggle() {
-        this.set(this.get() === this.DARK ? this.LIGHT : this.DARK);
+    _mirror(choice) {
+        try { localStorage.setItem(this.STORAGE_KEY, choice); } catch (e) {}
     },
 
-    _updateToggles(theme) {
-        document.querySelectorAll('.app-theme-toggle .theme-option').forEach(el => {
-            el.classList.toggle('active', el.dataset.theme === theme);
-            el.setAttribute('aria-pressed', el.dataset.theme === theme ? 'true' : 'false');
+    _apply(choice) {
+        const theme = this.resolve(choice);
+        const changed = theme !== this.get();
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        this._updateControls(choice);
+        if (changed) {
+            this._updateCharts(theme);
+            document.dispatchEvent(new CustomEvent('app-theme-changed', { detail: { theme } }));
+        }
+    },
+
+    _wireControls() {
+        document.querySelectorAll('input[name="app-theme-choice"]').forEach(el => {
+            el.addEventListener('change', () => { if (el.checked) this.set(el.value); });
+        });
+    },
+
+    _updateControls(choice) {
+        document.querySelectorAll('input[name="app-theme-choice"]').forEach(el => {
+            el.checked = el.value === choice;
         });
     },
 
@@ -579,8 +611,4 @@ const AppSidebar = {
 document.addEventListener('DOMContentLoaded', () => {
     AppTheme.init();
     AppSidebar.init();
-
-    document.querySelectorAll('.app-theme-toggle .theme-option').forEach(el => {
-        el.addEventListener('click', () => AppTheme.set(el.dataset.theme));
-    });
 });

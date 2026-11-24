@@ -1,0 +1,439 @@
+/* ==========================================================================
+   Cognisn sign-in and app chrome standard (CS1 to CS11, CS20)
+
+   One frame for every page before sign-in, the splash, the app header and the
+   footer. Inter is self-hosted (SIL Open Font Licence, static/fonts/Inter-OFL.txt)
+   and used only here: the rest of the app keeps its fonts. Colours come from the
+   theme tokens in cognisn.css, which carry both a dark and a light value.
+   ========================================================================== */
+
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Inter';
+    src: url('../fonts/inter-latin-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --chrome-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+
+/* --------------------------------------------------------------------------
+   Pages before sign-in
+   -------------------------------------------------------------------------- */
+
+body.auth-page {
+    font-family: var(--chrome-font);
+    background: var(--app-body-bg);
+    color: var(--app-text-primary);
+}
+
+.auth-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 40px 36px 32px;
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    border-radius: 12px;
+    box-shadow: var(--app-shadow);
+}
+
+@media (max-width: 420px) {
+    .auth-card {
+        padding: 32px 20px 28px;
+    }
+}
+
+.auth-identity {
+    text-align: center;
+}
+
+.auth-mark {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.auth-mark .brand-mark {
+    display: block;
+    width: 72px;
+    height: 72px;
+}
+
+/* The name is text, never artwork. The text indent balances the trailing letter-spacing,
+   so the word sits optically centred. */
+.auth-name {
+    font-family: var(--chrome-font);
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 1.2;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--app-text-primary);
+    margin: 16px 0 0;
+}
+
+.auth-descriptor {
+    font-family: var(--chrome-font);
+    font-weight: 500;
+    font-size: 11px;
+    line-height: 1.4;
+    letter-spacing: 0.22em;
+    text-indent: 0.22em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+    margin: 6px 0 0;
+}
+
+.auth-heading {
+    font-family: var(--chrome-font);
+    font-weight: 600;
+    font-size: 18px;
+    line-height: 1.3;
+    text-align: center;
+    color: var(--app-text-primary);
+    margin: 28px 0 20px;
+}
+
+.auth-help {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--app-text-secondary);
+    margin: 0 0 1rem;
+}
+
+.auth-help-muted {
+    color: var(--app-text-muted);
+    font-size: 0.8125rem;
+}
+
+.auth-card .form-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--app-text-secondary);
+    margin-bottom: 0.375rem;
+}
+
+.auth-card .form-control {
+    height: 44px;
+    font-size: 0.9375rem;
+}
+
+.auth-card .form-control.auth-code {
+    text-align: center;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+}
+
+.auth-card .form-control.auth-code-text {
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+}
+
+.auth-card .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.auth-card a:not(.btn) {
+    color: var(--app-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.auth-card a:not(.btn):hover {
+    color: var(--app-accent-light);
+}
+
+.auth-page :focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+/* The Show toggle on a password field. */
+.auth-password {
+    position: relative;
+}
+
+.auth-password .form-control {
+    padding-right: 4.5rem;
+}
+
+.auth-password-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 44px;
+    min-width: 44px;
+    padding: 0 0.875rem;
+    border: 0;
+    background: transparent;
+    color: var(--app-accent);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 0 0.375rem 0.375rem 0;
+}
+
+.auth-password-toggle:hover {
+    color: var(--app-accent-light);
+}
+
+/* One "or" divider above the other sign-in methods. */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+    font-size: 0.8125rem;
+    color: var(--app-text-muted);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--app-border-strong);
+}
+
+.auth-methods {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.auth-methods form {
+    margin: 0;
+}
+
+.auth-links {
+    margin: 1.5rem 0 0;
+    text-align: center;
+    font-size: 0.8125rem;
+}
+
+.auth-note {
+    color: var(--app-text-muted);
+}
+
+.auth-details {
+    margin-top: 1.5rem;
+    font-size: 0.875rem;
+}
+
+.auth-details summary {
+    color: var(--app-text-secondary);
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+}
+
+/* Below the card: "A product of" the Cognisn logo, and the copyright line. */
+.auth-endorse {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--app-text-muted);
+}
+
+.auth-endorse-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.auth-endorse-line .brand-logo {
+    margin: 0;
+}
+
+.auth-copyright {
+    margin-top: 0.375rem;
+}
+
+
+/* --------------------------------------------------------------------------
+   App header (CS11): the bolt at 28 px and SPARK in capitals
+   -------------------------------------------------------------------------- */
+
+.app-navbar .navbar-brand {
+    gap: 0.625rem;
+}
+
+.app-navbar .brand-mark {
+    display: block;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.app-navbar .brand-product {
+    font-family: var(--chrome-font);
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--app-text-primary);
+}
+
+.app-navbar .navbar-brand:hover .brand-product,
+.app-navbar .navbar-brand:focus-visible .brand-product {
+    color: var(--app-accent);
+}
+
+
+/* --------------------------------------------------------------------------
+   App footer (CS11): SPARK v<version>, A product of [Cognisn], copyright and year
+   -------------------------------------------------------------------------- */
+
+.app-footer {
+    font-family: var(--chrome-font);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem 0.75rem;
+}
+
+.app-footer .footer-product {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--app-text-secondary);
+}
+
+.app-footer .footer-sep {
+    color: var(--app-text-muted);
+}
+
+.app-footer .footer-endorse {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.app-footer .footer-endorse .brand-logo {
+    margin: 0;
+}
+
+@media (max-width: 575.98px) {
+    .app-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .app-footer .footer-sep {
+        display: none;
+    }
+}
+
+
+/* --------------------------------------------------------------------------
+   Theme row in the Account menu (CS20): Device, Light, Dark
+   -------------------------------------------------------------------------- */
+
+.app-theme-row {
+    padding: 0.5rem 1rem;
+    min-width: 15rem;
+}
+
+.app-theme-row-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+    margin-bottom: 0.375rem;
+}
+
+.app-theme-choice {
+    position: relative;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    background: var(--app-bg-tertiary);
+    border: 1px solid var(--app-border-strong);
+    border-radius: 0.5rem;
+}
+
+.app-theme-choice input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+.app-theme-choice label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--app-text-secondary);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: var(--app-transition-fast);
+}
+
+.app-theme-choice label:hover {
+    color: var(--app-text-primary);
+}
+
+.app-theme-choice input:checked + label {
+    background: var(--app-accent);
+    color: var(--app-text-on-accent);
+    font-weight: 600;
+}
+
+.app-theme-choice input:focus-visible + label {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}

@@ -142,3 +142,30 @@ class TestInstalledClosure:
         assert {"psycopg-binary", "psycopg-pool"} <= {n.lower() for n in names}
         assert "pytest" not in names  # dev extra excluded
         assert audit.check(packages, audit.EXCEPTIONS) == []
+
+
+class TestBundledAssets:
+    """The third-party files shipped in the wheel (the Inter font) are licensed and noticed."""
+
+    def test_the_repository_complies(self):
+        assert audit.check_bundled_assets() == []
+
+    def test_a_missing_notice_or_licence_text_is_reported(self, tmp_path):
+        (tmp_path / "a.woff2").write_bytes(b"wOF2")
+        assets = {"Font": {"licence": "OFL-1.1", "licence_file": "OFL.txt", "files": ["a.woff2"]}}
+        problems = audit.check_bundled_assets(assets, tmp_path)
+        assert any("THIRD-PARTY-NOTICES.md" in p for p in problems)
+        assert any("OFL.txt" in p for p in problems)
+        (tmp_path / "OFL.txt").write_text("licence text\n", encoding="utf-8")
+        (tmp_path / "THIRD-PARTY-NOTICES.md").write_text("Font OFL-1.1\n", encoding="utf-8")
+        assert audit.check_bundled_assets(assets, tmp_path) == []
+
+    def test_a_missing_file_and_a_disallowed_licence_are_reported(self, tmp_path):
+        (tmp_path / "OFL.txt").write_text("text\n", encoding="utf-8")
+        (tmp_path / "THIRD-PARTY-NOTICES.md").write_text("Font GPL-3.0-only\n", encoding="utf-8")
+        assets = {
+            "Font": {"licence": "GPL-3.0-only", "licence_file": "OFL.txt", "files": ["gone.woff2"]}
+        }
+        problems = audit.check_bundled_assets(assets, tmp_path)
+        assert any("gone.woff2" in p for p in problems)
+        assert any("not an allowed" in p for p in problems)

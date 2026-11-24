@@ -1,7 +1,17 @@
 {% import "_brand.html" as brand %}<!DOCTYPE html>
 <html lang="en">
 <head>
-    <script>document.documentElement.setAttribute('data-bs-theme', localStorage.getItem('app-theme') || 'dark');</script>
+    {# Sets the theme before any stylesheet paints (CS8): the saved browser choice (light or dark)
+       wins, otherwise the device's colour scheme. Inline so it runs first. #}
+    <script>(function () {
+        var choice = null;
+        try { choice = window.localStorage.getItem('app-theme'); } catch (e) {}
+        var theme = choice;
+        if (theme !== 'light' && theme !== 'dark') {
+            theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-bs-theme', theme);
+    }());</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Spark{% endblock %}</title>
@@ -22,19 +32,19 @@
     <link href="/static/css/cognisn.css" rel="stylesheet">
     <link href="/static/css/base.css" rel="stylesheet">
     <link href="/static/css/spark.css" rel="stylesheet">
+    <link href="/static/css/chrome.css" rel="stylesheet">
 
     {% block head %}{% endblock %}
 </head>
+{% set desktop_controls = not request.app.state.identity_attached|default(false) %}
 <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <!-- Navbar -->
     <nav class="app-navbar navbar navbar-expand-lg">
         <div class="container-fluid px-3">
             <a class="navbar-brand d-flex align-items-center" href="/" title="SPARK home">
-                {{ brand.logo(28, "brand-logo-header") }}
-                <span class="brand-separator" aria-hidden="true">|</span>
+                {{ brand.mark(28) }}
                 <span class="brand-product">SPARK</span>
-                <span class="brand-version">v{{ version }}</span>
             </a>
 
             <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
@@ -82,26 +92,40 @@
                     </li>
                     {% endif %}
                     {% endblock %}
+                    {# The Account menu: the signed-in user's pages and sign-out (server mode), and the
+                       Theme row (Device, Light, Dark) in both modes. #}
                     {% set identity_entries = identity_menu(request) %}
-                    {% if identity_entries %}
                     <li class="nav-item dropdown ms-1">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
                             <i class="bi bi-person-circle me-1" aria-hidden="true"></i> Account
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             {% for entry in identity_entries %}
                             <li><a class="dropdown-item" href="{{ entry.href }}"><i class="bi {{ entry.icon }} me-2" aria-hidden="true"></i>{{ entry.label }}</a></li>
                             {% endfor %}
+                            {% if identity_entries %}<li><hr class="dropdown-divider"></li>{% endif %}
+                            <li class="app-theme-row">
+                                <div class="app-theme-row-label" id="app-theme-label">Theme</div>
+                                <div class="app-theme-choice" role="radiogroup" aria-labelledby="app-theme-label">
+                                    <input type="radio" name="app-theme-choice" id="app-theme-device" value="device">
+                                    <label for="app-theme-device">Device</label>
+                                    <input type="radio" name="app-theme-choice" id="app-theme-light" value="light">
+                                    <label for="app-theme-light">Light</label>
+                                    <input type="radio" name="app-theme-choice" id="app-theme-dark" value="dark">
+                                    <label for="app-theme-dark">Dark</label>
+                                </div>
+                            </li>
+                            {% if identity_entries %}
                             <li><hr class="dropdown-divider"></li>
                             <li>
                                 <form method="POST" action="/auth/sign-out" class="px-3">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                                    <button type="submit" class="btn btn-app-ghost btn-sm w-100"><i class="bi bi-box-arrow-right me-1"></i> Sign out</button>
+                                    <button type="submit" class="btn btn-app-ghost btn-sm w-100"><i class="bi bi-box-arrow-right me-1" aria-hidden="true"></i> Sign out</button>
                                 </form>
                             </li>
+                            {% endif %}
                         </ul>
                     </li>
-                    {% endif %}
                     <li class="nav-item dropdown ms-1">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" title="Help" aria-label="Help" aria-expanded="false">
                             <i class="bi bi-question-circle" aria-hidden="true"></i>
@@ -109,9 +133,11 @@
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item" href="/help"><i class="bi bi-book me-2"></i>User Guide</a></li>
                             <li><a class="dropdown-item" href="/help#shortcuts" onclick="localStorage.setItem('help-topic','shortcuts')"><i class="bi bi-keyboard me-2"></i>Keyboard Shortcuts</a></li>
+                            {% if desktop_controls %}{# Desktop only: a server refuses these (CS19). #}
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="#" onclick="openLogFolder()"><i class="bi bi-folder2-open me-2"></i>Open Log Folder</a></li>
                             <li><a class="dropdown-item" href="#" onclick="openDataFolder()"><i class="bi bi-folder me-2"></i>Open Data Folder</a></li>
+                            {% endif %}
                             <li><hr class="dropdown-divider"></li>
                             <li id="update-menu-item" style="display: none;">
                                 <a class="dropdown-item" href="#" onclick="showUpdateModal(event)">
@@ -124,21 +150,13 @@
                             <li><span class="dropdown-item-text" style="font-size: 0.75rem; color: var(--app-text-muted);">Spark v{{ version }}</span></li>
                         </ul>
                     </li>
-                    <li class="nav-item ms-1">
-                        <div class="app-theme-toggle" role="group" aria-label="Theme">
-                            <button type="button" class="theme-option" data-theme="light" title="Light theme" aria-label="Light theme">
-                                <i class="bi bi-sun-fill" aria-hidden="true"></i>
-                            </button>
-                            <button type="button" class="theme-option" data-theme="dark" title="Dark theme" aria-label="Dark theme">
-                                <i class="bi bi-moon-fill" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                    </li>
+                    {% if desktop_controls %}{# Desktop only: a server refuses /api/quit (CS19). #}
                     <li class="nav-item ms-2">
                         <a class="nav-link" href="#" role="button" title="Quit Spark" aria-label="Quit Spark" onclick="showQuitModal(event)">
                             <i class="bi bi-power" aria-hidden="true"></i>
                         </a>
                     </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>
@@ -150,12 +168,15 @@
     </main>
 
     <!-- Footer -->
-    <footer class="app-footer text-center" style="margin-left: 0;">
-        <span>Spark v{{ version }}</span>
-        <span class="mx-2">&middot;</span>
-        <span style="color: var(--app-text-muted);">Secure Personal AI Research Kit</span>
+    <footer class="app-footer" style="margin-left: 0;">
+        <span class="footer-product">SPARK v{{ version }}</span>
+        <span class="footer-sep" aria-hidden="true">&middot;</span>
+        <span class="footer-endorse"><span>A product of</span> {{ brand.logo(16) }}</span>
+        <span class="footer-sep" aria-hidden="true">&middot;</span>
+        <span>&copy; {{ current_year() }} Cognisn Pty Ltd</span>
     </footer>
 
+    {% if desktop_controls %}
     <!-- Quit Confirmation Modal -->
     <div class="modal fade" id="quitModal" tabindex="-1">
         <div class="modal-dialog">
@@ -182,6 +203,8 @@
             </div>
         </div>
     </div>
+
+    {% endif %}
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
