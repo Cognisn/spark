@@ -577,14 +577,20 @@ with `--disable-execute-command`. Other containers (a log router, for example) a
 checked. A task definition or service the job cannot read counts as a failure.
 
 Every missing control is listed, by task and container name, in the log and in the job
-summary under **Hardening check**, with no identifier. What happens next is set by
-`HARDENING_CHECK`, whose default is `HARDENING_CHECK_DEFAULT` in the script:
+summary under **Hardening check**, with no identifier. The default is `enforce` (the
+`HARDENING_CHECK_DEFAULT` in the script), since the first test deploy whose job summary showed
+`Hardening check: passed` (v0.3.0rc44). A missing control therefore fails the job with
+`Hardening check: FAILED ..., nothing was changed` before any change set is created. What
+happens next is set by `HARDENING_CHECK`:
 
 | Value | A missing control |
 |---|---|
-| `enforce` | fails the job with `Hardening check: FAILED ..., nothing was changed`, before any change set |
+| `enforce` (default) | fails the job with `Hardening check: FAILED ..., nothing was changed`, before any change set |
 | `warn` | is a warning (`Hardening check: NOT MET ...`); the deploy goes on |
 | `enforce-from:YYYY-MM-DD` | is a warning before that UTC date, and fails the job from it |
+
+For a one-off deploy that must go on despite a missing control, set `HARDENING_CHECK=warn` for
+that run only, and fix the control before the next deploy. Leave the script's default alone.
 
 The job's role needs `ecs:DescribeTaskDefinition` (which takes `Resource: "*"` only; see
 [The test deploy role reads task definitions](#the-test-deploy-role-reads-task-definitions))

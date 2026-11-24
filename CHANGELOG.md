@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The test deploy enforces the hardening check by default.** `scripts/deploy-test.sh` now sets `HARDENING_CHECK_DEFAULT` to `enforce`, since the first test deploy whose job summary showed the check passed (v0.3.0rc44). A missing control fails the job before any change set is created. `HARDENING_CHECK=warn` remains the override for a one-off deploy. The test that pins the default now asserts `enforce` and exercises the refusal, so a change back to `warn` fails the suite. `docs/deployment/aws.md` states the new default.
+
 ## [0.3.0rc44] - 2026-11-23
 
 ### Fixed
