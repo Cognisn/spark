@@ -210,10 +210,10 @@
     "semantic_hash": "f7c4b1256d142c7fa7db021ab5ae5f3f"
   },
   "src/spark/core/application.py": {
-    "mtime": 1793658631.764248,
-    "seen": 1794786212.60061,
-    "ast_hash": "3a3f9103701b723e7b1d286304ddb48d",
-    "semantic_hash": "3a3f9103701b723e7b1d286304ddb48d"
+    "mtime": 1795503414.6389916,
+    "seen": 1795505979.413299,
+    "ast_hash": "495dbdb9921a539067bca4b38c695673",
+    "semantic_hash": ""
   },
   "src/spark/core/cancellation.py": {
     "mtime": 1793174545.9212952,
@@ -228,9 +228,9 @@
     "semantic_hash": ""
   },
   "src/spark/core/conversation_manager.py": {
-    "mtime": 1795408373.069256,
-    "seen": 1795410615.9117868,
-    "ast_hash": "512f26be951551e979a432b7d689453c",
+    "mtime": 1795503414.6399894,
+    "seen": 1795505979.413299,
+    "ast_hash": "69fe0c82eecab36ddc46f6d2d48ef372",
     "semantic_hash": ""
   },
   "src/spark/core/debate/__init__.py": {
@@ -660,10 +660,10 @@
     "semantic_hash": "7877384f9793e0daf044fda3116e37c5"
   },
   "src/spark/instance_settings/consumers.py": {
-    "mtime": 1794780409.1846902,
-    "seen": 1794786212.600967,
-    "ast_hash": "f438467717fa8a63f1021b59eda2b377",
-    "semantic_hash": "f438467717fa8a63f1021b59eda2b377"
+    "mtime": 1795503414.6409721,
+    "seen": 1795505979.413299,
+    "ast_hash": "54468476e5b37394409990ad800384f9",
+    "semantic_hash": ""
   },
   "src/spark/instance_settings/listener.py": {
     "mtime": 1793759071.1451979,
@@ -672,9 +672,9 @@
     "semantic_hash": "16027128012163ac8b09a25e7dd24193"
   },
   "src/spark/instance_settings/registry.py": {
-    "mtime": 1795171877.1065013,
-    "seen": 1795174084.1153889,
-    "ast_hash": "a98e6dfbfc963c115b5dd7fe12f87f67",
+    "mtime": 1795503414.641985,
+    "seen": 1795505979.413299,
+    "ast_hash": "f4199d6130f82a54baa04188cb4e3bca",
     "semantic_hash": ""
   },
   "src/spark/instance_settings/repository.py": {
@@ -784,12 +784,6 @@
     "seen": 1795296686.9627738,
     "ast_hash": "3f3408701c87be360225f1a87bf1619d",
     "semantic_hash": ""
-  },
-  "src/spark/mcp_integration/tool_selector.py": {
-    "mtime": 1793171739.2013056,
-    "seen": 1794786212.600967,
-    "ast_hash": "b54700c43f067289d97531738a0e512e",
-    "semantic_hash": "b54700c43f067289d97531738a0e512e"
   },
   "src/spark/migrations/__init__.py": {
     "mtime": 1793244038.4079409,
@@ -1254,9 +1248,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/settings.py": {
-    "mtime": 1795305761.371328,
-    "seen": 1795317807.7031348,
-    "ast_hash": "857f28783313dd83badd3fd5fa3dc89d",
+    "mtime": 1795503414.6438656,
+    "seen": 1795505979.413299,
+    "ast_hash": "13e3910cdf9f132be37471f9cb45be1a",
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/skills.py": {
@@ -1320,9 +1314,9 @@
     "semantic_hash": "0f9c503e75ee5284b02e56369e60b0f1"
   },
   "src/spark/web/server.py": {
-    "mtime": 1795305761.3731112,
-    "seen": 1795317807.7031348,
-    "ast_hash": "2f39b4862eef5f0182338dfcf2d93143",
+    "mtime": 1795503414.644606,
+    "seen": 1795505979.413299,
+    "ast_hash": "ea5518cecd0ad37931b5e4b54e672785",
     "semantic_hash": ""
   },
   "src/spark/web/session.py": {
@@ -2028,10 +2022,10 @@
     "semantic_hash": "cbb02e5c88626ebcc925c0f72229b327"
   },
   "tests/test_instance_settings_accessor.py": {
-    "mtime": 1794780409.2081704,
-    "seen": 1794786212.600967,
-    "ast_hash": "4e494e45d9abfc72107f5e6f579e8d23",
-    "semantic_hash": "4e494e45d9abfc72107f5e6f579e8d23"
+    "mtime": 1795503414.6452625,
+    "seen": 1795505979.413299,
+    "ast_hash": "305baff2bf1a6c562b593493f8d87b69",
+    "semantic_hash": ""
   },
   "tests/test_instance_settings_application.py": {
     "mtime": 1793658631.8694408,
@@ -2040,10 +2034,10 @@
     "semantic_hash": "4b76fab1fdd06e4aadede6fe25f53a63"
   },
   "tests/test_instance_settings_consumers.py": {
-    "mtime": 1794780409.2081704,
-    "seen": 1794786212.600967,
-    "ast_hash": "d4e4da1d8a038674bcea7338247ba14b",
-    "semantic_hash": "d4e4da1d8a038674bcea7338247ba14b"
+    "mtime": 1795503414.6461706,
+    "seen": 1795505979.413299,
+    "ast_hash": "3f50ab61be3ad7be69476683fa20af1b",
+    "semantic_hash": ""
   },
   "tests/test_instance_settings_listener.py": {
     "mtime": 1794780409.2081704,
@@ -2196,10 +2190,10 @@
     "semantic_hash": "cfa0eeeb4a6023b21ada06a300e9a5a2"
   },
   "tests/test_mcp.py": {
-    "mtime": 1793171739.2467484,
-    "seen": 1794786212.600967,
-    "ast_hash": "b9a4bfcaabb97923664493a47a43fcb1",
-    "semantic_hash": "b9a4bfcaabb97923664493a47a43fcb1"
+    "mtime": 1795503414.6471841,
+    "seen": 1795505979.413299,
+    "ast_hash": "0319baf2079e0aa206ada351b837c69c",
+    "semantic_hash": ""
   },
   "tests/test_mcp_access.py": {
     "mtime": 1793755656.5723786,
@@ -2778,9 +2772,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1795408377.4679449,
-    "seen": 1795410615.912797,
-    "ast_hash": "b5e916a88634d05a2199ceb37cb722d2",
+    "mtime": 1795503435.608851,
+    "seen": 1795505979.413299,
+    "ast_hash": "cb1c1abb14c5681193d8c4e22b6219ad",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2832,9 +2826,9 @@
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1795408373.0677164,
-    "seen": 1795410615.912797,
-    "ast_hash": "0cf3a592da32cb02d193a1b3079e5558",
+    "mtime": 1795503414.6354618,
+    "seen": 1795505979.413299,
+    "ast_hash": "4b5924f01da678ccb3cdf9043802b0be",
     "semantic_hash": ""
   },
   "docs/auto-update.md": {
@@ -2856,9 +2850,9 @@
     "semantic_hash": ""
   },
   "docs/configuration.md": {
-    "mtime": 1794998740.250356,
-    "seen": 1795040012.2248287,
-    "ast_hash": "7fb0fa905a13ede5112e4c5716b93585",
+    "mtime": 1795503414.6358383,
+    "seen": 1795505979.413299,
+    "ast_hash": "075fc8c01592be4f9967dba87f0b41ed",
     "semantic_hash": ""
   },
   "docs/container.md": {
@@ -2928,9 +2922,9 @@
     "semantic_hash": "724246cd4b4e1d98624d6b74d5b95b7e"
   },
   "docs/development.md": {
-    "mtime": 1794998740.2570422,
-    "seen": 1795040012.2248287,
-    "ast_hash": "04a5c1cb1faf2c1f8b06f5471ce5763c",
+    "mtime": 1795503414.636934,
+    "seen": 1795505979.413299,
+    "ast_hash": "6d7ec12fab4323cfd9eeafc8d914150f",
     "semantic_hash": ""
   },
   "docs/getting-started.md": {
@@ -2970,9 +2964,9 @@
     "semantic_hash": ""
   },
   "docs/tools.md": {
-    "mtime": 1794998740.2671645,
-    "seen": 1795040012.2248287,
-    "ast_hash": "62d9c6a88a306e6fc78fbcbbfbc08dc7",
+    "mtime": 1795503414.6384413,
+    "seen": 1795505979.413299,
+    "ast_hash": "ca01aa176b76fb386544dcba5d8f7b0d",
     "semantic_hash": ""
   },
   "docs/voice.md": {
@@ -2994,9 +2988,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795408377.4673452,
-    "seen": 1795410615.912797,
-    "ast_hash": "cbe8fa0299e6c278a93d4e8f0e899fc4",
+    "mtime": 1795503435.608851,
+    "seen": 1795505979.413299,
+    "ast_hash": "22577cd67c8ecf899ac6ab0ef3c46867",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3846,15 +3840,15 @@
     "semantic_hash": ""
   },
   "docs/deployment/aws.md": {
-    "mtime": 1795338841.6094854,
-    "seen": 1795341110.8286252,
-    "ast_hash": "e019d5efa7eec4eb5196a506ac72cfa3",
+    "mtime": 1795499720.8998516,
+    "seen": 1795505979.413299,
+    "ast_hash": "f77a6783f93c18444112e7a77bcfcfe4",
     "semantic_hash": ""
   },
   "scripts/deploy-test.sh": {
-    "mtime": 1795338841.6132486,
-    "seen": 1795341110.8282025,
-    "ast_hash": "7da2a3e618a9561514f56f4b5d448f1b",
+    "mtime": 1795499720.9008534,
+    "seen": 1795505979.413299,
+    "ast_hash": "2db38bc6def5cd9ab96612f4762a2582",
     "semantic_hash": ""
   },
   "tests/scripts/__init__.py": {
@@ -3870,9 +3864,9 @@
     "semantic_hash": ""
   },
   "tests/scripts/test_deploy_test_script.py": {
-    "mtime": 1795338841.6200464,
-    "seen": 1795341110.8282025,
-    "ast_hash": "4f3f30392b57a5066c14f8828095e2a6",
+    "mtime": 1795499720.9019034,
+    "seen": 1795505979.413299,
+    "ast_hash": "01a8bf553a0bfb90a954ed75fa9a121c",
     "semantic_hash": ""
   },
   "tests/test_connections_runtime_overlays.py": {
