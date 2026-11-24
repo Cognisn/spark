@@ -1748,3 +1748,65 @@ main[tabindex="-1"]:focus-visible {
 .admin-index-group + .admin-index-group {
     margin-top: 1rem;
 }
+
+/* ==========================================================================
+   Shared table wrapper (admin-tables)
+   One rule for every table in the app: a wide table scrolls sideways inside
+   its card and never widens it. Do not repeat it in a page stylesheet.
+   ========================================================================== */
+
+.app-table-responsive {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.app-card,
+.app-card > .card-body {
+    min-width: 0;
+}
+
+.audit-table {
+    font-size: 0.75rem;
+}
+
+.audit-details-row > td {
+    background: var(--app-card-bg);
+}
+
+/* The details box is as wide as the card's visible area and stays in view while the
+   table scrolls sideways, so long JSON scrolls inside its own box, never the table. */
+.app-table-responsive:has(.audit-table) {
+    container-type: inline-size;
+}
+
+.audit-details {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    width: calc(100cqw - 1.5rem);
+    margin-left: 1.5rem;
+}
+
+.audit-details-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.audit-details-title {
+    font-weight: 600;
+}
+
+.audit-details-json {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    max-height: 20rem;
+    overflow: auto;
+    white-space: pre;
+    font-size: 0.7rem;
+    color: var(--app-text-primary);
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
+}

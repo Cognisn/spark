@@ -706,9 +706,9 @@
                 h('p', { class: 'conn-muted', text: 'A sample turn of ' + s.input_tokens + ' input, ' + s.output_tokens + ' output, ' +
                     s.cache_read_tokens + ' cache read and ' + s.cache_write_tokens + ' cache write tokens weighs ' + e.weighted_tokens +
                     ' weighted tokens, at the saved rates:' }),
-                h('table', { class: 'app-table conn-table' },
+                h('div', { class: 'app-table-responsive' }, h('table', { class: 'app-table conn-table' },
                     h('thead', {}, h('tr', {}, tiers.map((t) => h('th', { text: TIER_LABELS[t] + ' model' })))),
-                    h('tbody', {}, h('tr', {}, tiers.map((t) => h('td', { text: e.credits[t] + ' credits' }))))));
+                    h('tbody', {}, h('tr', {}, tiers.map((t) => h('td', { text: e.credits[t] + ' credits' })))))));
         }
         fill(data);
         renderExample(data);
@@ -775,7 +775,7 @@
                 return h('tr', {}, h('td', { text: who }), h('td', { text: credits }), h('td', { class: 'text-end' }, drop));
             });
             holder.replaceChildren(rows.length
-                ? h('table', { class: 'app-table conn-table' }, h('tbody', {}, rows))
+                ? h('div', { class: 'app-table-responsive' }, h('table', { class: 'app-table conn-table' }, h('tbody', {}, rows)))
                 : h('p', { class: 'conn-muted', text: 'Not assigned: only administrators can see this connection.' }));
             limits();
         }
