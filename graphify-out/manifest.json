@@ -60,9 +60,9 @@
     "semantic_hash": "c8af884d09c65c8dbc4f310f11a4889f"
   },
   "pyproject.toml": {
-    "mtime": 1795265230.9121556,
-    "seen": 1795296686.9627738,
-    "ast_hash": "7d015cc3b2b082eeaa84c2a3d2c6a47e",
+    "mtime": 1795512010.0099,
+    "seen": 1795515750.3676283,
+    "ast_hash": "c337197a81d73640371a3a40f6e765e3",
     "semantic_hash": ""
   },
   "scripts/check_no_nvidia.py": {
@@ -1146,9 +1146,9 @@
     "semantic_hash": "365dab39321ff262784e9cdbccbc2556"
   },
   "src/spark/web/endpoints/administration.py": {
-    "mtime": 1795264559.7553504,
-    "seen": 1795296686.9627738,
-    "ast_hash": "1bace1df1415397f6d45fbfbe5725573",
+    "mtime": 1795512010.0141444,
+    "seen": 1795515750.3676283,
+    "ast_hash": "6baa78ac1d3a08f147188f9c8c4e8127",
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/audit.py": {
@@ -1200,9 +1200,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/identity.py": {
-    "mtime": 1795264559.7560506,
-    "seen": 1795296686.9627738,
-    "ast_hash": "d0ec14b1f517dc2b0c2d0d10cf3b6160",
+    "mtime": 1795512010.0141444,
+    "seen": 1795515750.3676283,
+    "ast_hash": "8dbfdfda4928beae33445da15aa90d51",
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/knowledge.py": {
@@ -1452,16 +1452,16 @@
     "semantic_hash": "fb57b9e0f4925fa0b8ef65a67dc84727"
   },
   "tests/identity_screen_helpers.py": {
-    "mtime": 1793658631.8469348,
-    "seen": 1794786212.600967,
-    "ast_hash": "fcc8f4ac9e6cf0b180fd58ca182f18fe",
-    "semantic_hash": "fcc8f4ac9e6cf0b180fd58ca182f18fe"
+    "mtime": 1795512010.0163593,
+    "seen": 1795515750.3676283,
+    "ast_hash": "45ced61169e4a4319d5d3abc21e29a70",
+    "semantic_hash": ""
   },
   "tests/identity_web_helpers.py": {
-    "mtime": 1793658631.8469348,
-    "seen": 1794786212.600967,
-    "ast_hash": "17d2eba1c5738d3a4eb1813f33ab8153",
-    "semantic_hash": "17d2eba1c5738d3a4eb1813f33ab8153"
+    "mtime": 1795512010.017978,
+    "seen": 1795515750.3676283,
+    "ast_hash": "0f6b885dd3b36815ad6e4aead2d4926f",
+    "semantic_hash": ""
   },
   "tests/live/__init__.py": {
     "mtime": 1793773183.0687525,
@@ -1938,15 +1938,15 @@
     "semantic_hash": "2633a6fd56128eea9182bd28c58d8de8"
   },
   "tests/test_identity_mail_web.py": {
-    "mtime": 1795305761.4094753,
-    "seen": 1795317807.7031348,
-    "ast_hash": "2910db0414d6fccfeaff483afca3dc10",
+    "mtime": 1795512010.0184295,
+    "seen": 1795515750.3681786,
+    "ast_hash": "eb10eb2a7c801c9fef455e23b4811193",
     "semantic_hash": ""
   },
   "tests/test_identity_migrations.py": {
-    "mtime": 1794817514.05627,
-    "seen": 1794993833.7491727,
-    "ast_hash": "87b9596318eb620a224ee0c0155912d5",
+    "mtime": 1795512010.019102,
+    "seen": 1795515750.3681786,
+    "ast_hash": "7a3bb0d70682461606d8fe813b2b1d1d",
     "semantic_hash": ""
   },
   "tests/test_identity_permissions.py": {
@@ -1956,40 +1956,40 @@
     "semantic_hash": "85f700af0f3ae772a0cf2fef3b7596aa"
   },
   "tests/test_identity_runtime.py": {
-    "mtime": 1795153025.4257488,
-    "seen": 1795167589.982799,
-    "ast_hash": "acdf5b2de9b613d88ea9bbf535426666",
+    "mtime": 1795512010.0202043,
+    "seen": 1795515750.3681786,
+    "ast_hash": "d7b072fb8ec0478f516630984cce2c41",
     "semantic_hash": ""
   },
   "tests/test_identity_screens_account.py": {
-    "mtime": 1795305761.4115138,
-    "seen": 1795317807.7031348,
-    "ast_hash": "731ad7bcf01ad96c7ac756355252135f",
+    "mtime": 1795512010.020551,
+    "seen": 1795515750.3681786,
+    "ast_hash": "b48d485917083ebb70ceb771fbd2b5fe",
     "semantic_hash": ""
   },
   "tests/test_identity_screens_admin.py": {
-    "mtime": 1793658631.865345,
-    "seen": 1794786212.600967,
-    "ast_hash": "4082b0476e13625f51b8bb43ffa24ea1",
-    "semantic_hash": "4082b0476e13625f51b8bb43ffa24ea1"
+    "mtime": 1795512010.0216093,
+    "seen": 1795515750.3681786,
+    "ast_hash": "7508b431701165fcd0d09a51d490be8c",
+    "semantic_hash": ""
   },
   "tests/test_identity_screens_audit.py": {
-    "mtime": 1795305761.4115138,
-    "seen": 1795317807.7031348,
-    "ast_hash": "f1c2f3887fbbd2f4b4bbb3c61da07522",
+    "mtime": 1795512010.0226514,
+    "seen": 1795515750.3681786,
+    "ast_hash": "6c4b2b2704373f48e8641903ee2ff77a",
     "semantic_hash": ""
   },
   "tests/test_identity_screens_lifecycle.py": {
-    "mtime": 1795264559.7593818,
-    "seen": 1795296686.9627738,
-    "ast_hash": "dbb26e9cb2a3562cbbaae99669fc1f5c",
+    "mtime": 1795512010.0238616,
+    "seen": 1795515750.3681786,
+    "ast_hash": "96eb6daf202e7ce97d1939b7b22a7e4c",
     "semantic_hash": ""
   },
   "tests/test_identity_screens_sign_in.py": {
-    "mtime": 1793842433.6098564,
-    "seen": 1794786212.600967,
-    "ast_hash": "60bfe77c6866d3304d5e7a67214046fd",
-    "semantic_hash": "60bfe77c6866d3304d5e7a67214046fd"
+    "mtime": 1795512010.0256298,
+    "seen": 1795515750.3681786,
+    "ast_hash": "8bf6fe123d1d9ba2e4b4ddade4acfbd4",
+    "semantic_hash": ""
   },
   "tests/test_identity_sso_live.py": {
     "mtime": 1793827397.6969855,
@@ -1998,10 +1998,10 @@
     "semantic_hash": "96d3c59b68dae062f27384f49b3ba768"
   },
   "tests/test_identity_web.py": {
-    "mtime": 1794780409.2081704,
-    "seen": 1794786212.600967,
-    "ast_hash": "4301ed17d1456669533cb91d23e08092",
-    "semantic_hash": "4301ed17d1456669533cb91d23e08092"
+    "mtime": 1795512010.0283554,
+    "seen": 1795515750.3681786,
+    "ast_hash": "baedb6548b6d1656c4216ec19a39f2eb",
+    "semantic_hash": ""
   },
   "tests/test_image_tags.py": {
     "mtime": 1793317634.8966267,
@@ -2064,10 +2064,10 @@
     "semantic_hash": ""
   },
   "tests/test_instance_settings_startup.py": {
-    "mtime": 1793658631.8708587,
-    "seen": 1794786212.600967,
-    "ast_hash": "3e96aa59f2a5a7839cb21e51f79c03bc",
-    "semantic_hash": "3e96aa59f2a5a7839cb21e51f79c03bc"
+    "mtime": 1795512010.0299654,
+    "seen": 1795515750.3681786,
+    "ast_hash": "39cd806ff19c5172ba0141856a4a5f0f",
+    "semantic_hash": ""
   },
   "tests/test_instance_settings_web.py": {
     "mtime": 1795305761.4115138,
@@ -2298,9 +2298,9 @@
     "semantic_hash": ""
   },
   "tests/test_packaging.py": {
-    "mtime": 1795265230.9130983,
-    "seen": 1795296686.9627738,
-    "ast_hash": "1d12473c07cb33b3e27b66d4a92d024e",
+    "mtime": 1795512010.031494,
+    "seen": 1795515750.3681786,
+    "ast_hash": "c2d06fc3a26c853a1fc3fa368cb190ea",
     "semantic_hash": ""
   },
   "tests/test_panel_e2e.py": {
@@ -2772,9 +2772,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1795503435.608851,
-    "seen": 1795505979.413299,
-    "ast_hash": "cb1c1abb14c5681193d8c4e22b6219ad",
+    "mtime": 1795512014.9150608,
+    "seen": 1795515750.3681786,
+    "ast_hash": "87c1943a5bff2a40acf86af141a975fe",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2856,9 +2856,9 @@
     "semantic_hash": ""
   },
   "docs/container.md": {
-    "mtime": 1795324825.4024942,
-    "seen": 1795329369.127712,
-    "ast_hash": "d2efa97485af01dcc07c27e6e687149e",
+    "mtime": 1795512010.009516,
+    "seen": 1795515750.3681786,
+    "ast_hash": "32e20f6eb13f604d760699b58ad461ac",
     "semantic_hash": ""
   },
   "docs/conversations.md": {
@@ -2892,9 +2892,9 @@
     "semantic_hash": ""
   },
   "docs/deployment/identity.md": {
-    "mtime": 1795327305.0120718,
-    "seen": 1795329369.127712,
-    "ast_hash": "7a417e56f760cae96e9c5256c5022c6b",
+    "mtime": 1795512010.0099,
+    "seen": 1795515750.3681786,
+    "ast_hash": "854cfe062244e25c249fd408362ddbe3",
     "semantic_hash": ""
   },
   "docs/deployment/index.md": {
@@ -2988,9 +2988,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795503435.608851,
-    "seen": 1795505979.413299,
-    "ast_hash": "22577cd67c8ecf899ac6ab0ef3c46867",
+    "mtime": 1795512014.9150608,
+    "seen": 1795515750.3681786,
+    "ast_hash": "edd33a0a4dafc329e8564bd0ec71fa01",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3288,9 +3288,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/templates/auth_challenge.html": {
-    "mtime": 1794817514.054235,
-    "seen": 1794993833.7491727,
-    "ast_hash": "bc5e0616deee4c7dc79c4c72c4039f05",
+    "mtime": 1795512010.0163593,
+    "seen": 1795515750.3681786,
+    "ast_hash": "0cea492900c8878ce0f89dd2c747f40f",
     "semantic_hash": ""
   },
   "src/spark/web/templates/auth_invitation.html": {
@@ -3924,9 +3924,9 @@
     "semantic_hash": ""
   },
   "src/spark/identity/sso.py": {
-    "mtime": 1795264559.7537901,
-    "seen": 1795296686.9627738,
-    "ast_hash": "afd1bef42de032d33ec038ab6c0a82a7",
+    "mtime": 1795512010.012086,
+    "seen": 1795515750.3676283,
+    "ast_hash": "8a99e8c854b50b6bd0f3b9f094529d1f",
     "semantic_hash": ""
   },
   "src/spark/mcp_integration/oauth.py": {
@@ -3960,9 +3960,9 @@
     "semantic_hash": ""
   },
   "tests/test_identity_screens_sso.py": {
-    "mtime": 1795264559.76028,
-    "seen": 1795296686.9627738,
-    "ast_hash": "821ba64d6c1b5033c284cbd2a53030dc",
+    "mtime": 1795512010.0259962,
+    "seen": 1795515750.3681786,
+    "ast_hash": "287068c62ed00fc089013a1ea333a7f3",
     "semantic_hash": ""
   },
   "tests/test_mcp_oauth.py": {
@@ -3990,9 +3990,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/templates/admin_sso.html": {
-    "mtime": 1795305761.3946185,
-    "seen": 1795317807.7043357,
-    "ast_hash": "0e44fc30fb7e16e31785955b47cbd2ae",
+    "mtime": 1795512010.015934,
+    "seen": 1795515750.3681786,
+    "ast_hash": "534961d03adc5dd938ec5f441010be6f",
     "semantic_hash": ""
   },
   "src/spark/web/templates/mcp_sign_in.html": {
@@ -4221,6 +4221,12 @@
     "mtime": 1795408373.0800958,
     "seen": 1795410615.9117868,
     "ast_hash": "4ce6704907792c5ff2f0e33277615d34",
+    "semantic_hash": ""
+  },
+  "tests/test_identity_warden_upgrade.py": {
+    "mtime": 1795512010.0259962,
+    "seen": 1795515750.3681786,
+    "ast_hash": "20b0631c8e932be55eb77c21fad5fa3a",
     "semantic_hash": ""
   }
 }
