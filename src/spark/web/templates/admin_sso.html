@@ -6,6 +6,22 @@
     {{ page_ui.header("Single sign-on", "Let people sign in through your organisation's identity provider.") }}
     {% include "_page_messages.html" %}
 
+    {% if guard %}
+    <div class="app-card mb-4" id="sso-guard">
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if guard.default_sso_only %}
+            <p id="sso-guard-default">The default sign-in method, which every user without one of their own follows, is single sign-on only. Change the default to another method as well.</p>
+            {% endif %}
+            {% if guard.users %}
+            <p class="mb-2">These people sign in only through single sign-on. Open each one and change their sign-in method:</p>
+            <ul id="sso-guard-users" class="mb-0">
+                {% for user in guard.users %}<li><a href="/admin/users/{{ user.id }}">{{ user.email }}</a></li>{% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if confirm_users %}
     <div class="app-card mb-4">
         <div class="card-body" style="font-size: 0.875rem;">

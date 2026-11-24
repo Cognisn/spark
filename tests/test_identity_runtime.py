@@ -11,6 +11,7 @@ when the runtime closes.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 import psycopg
 import pytest
 from warden.audit import get_recorder, set_recorder
+from warden.identity import TokenPair, totp
 
 from spark.identity import runtime as runtime_mod
 from spark.identity.runtime import (
@@ -77,12 +79,31 @@ class TestConfig:
 
     def test_the_rest_comes_from_the_warden_section(self) -> None:
         config = warden_config(
-            _settings(identity={"require_mfa": False, "access_token_ttl_seconds": 600}),
+            _settings(identity={"sign_in_attempt_limit": 5, "access_token_ttl_seconds": 600}),
             MemorySecrets(),
             PUBLIC,
         )
-        assert config.identity.require_mfa is False
+        assert config.identity.sign_in_attempt_limit == 5
         assert config.identity.access_token_ttl_seconds == 600
+        # warden 0.2.0: a second factor is always required for password sign-in.
+        assert config.identity.require_mfa is True
+
+    def test_require_mfa_false_is_refused_with_wardens_message(self) -> None:
+        """A deployment still carrying 0.1.x's off switch learns at start-up how to fix it."""
+        with pytest.raises(StartupConfigError) as refused:
+            warden_config(
+                _settings(identity={"require_mfa": False}),  # the refused 0.1.x setting
+                MemorySecrets(),
+                PUBLIC,
+            )
+        message = str(refused.value)
+        assert "warden.identity.require_mfa" in message
+        assert "MFA is always required for password sign-in in warden 0.2.0 and later" in message
+        assert "remove identity.require_mfa or set it to true" in message
+
+    def test_require_mfa_true_is_accepted_and_changes_nothing(self) -> None:
+        config = warden_config(_settings(identity={"require_mfa": True}), MemorySecrets(), PUBLIC)
+        assert config.identity.require_mfa is True
 
     def test_secret_references_resolve_through_konfig(self) -> None:
         config = warden_config(
@@ -196,17 +217,21 @@ class TestStart:
             get_recorder()
 
     async def test_identity_signs_in_with_the_derived_config(self, database: Any) -> None:
-        runtime = await IdentityRuntime.start(
-            database, _settings(identity={"require_mfa": False}), MemorySecrets()
-        )
+        runtime = await IdentityRuntime.start(database, _settings(), MemorySecrets())
         try:
             identity = runtime.identity
             await identity.users.create(
                 "ada@example.com", actor="test", password="correct-horse-battery-dev-only"
             )
             result = await identity.sign_in("ada@example.com", "correct-horse-battery-dev-only")
-            assert result.tokens is not None
-            principal = await identity.authenticate(result.tokens.access_token)
+            # warden 0.2.0: a password alone never signs in; Ada has no factor yet.
+            assert result.tokens is None and result.challenge is not None
+            assert result.challenge.purpose == "enrol"
+            enrolment = await identity.begin_enrolment(challenge=result.challenge.token)
+            code = totp.code_at(enrolment.secret, totp.step_for(time.time()))
+            codes, tokens = await identity.confirm_enrolment(code, challenge=result.challenge.token)
+            assert len(codes) == 10 and isinstance(tokens, TokenPair)
+            principal = await identity.authenticate(tokens.access_token)
             assert principal.email == "ada@example.com"
         finally:
             runtime.close()

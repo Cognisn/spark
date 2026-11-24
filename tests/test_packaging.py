@@ -36,11 +36,20 @@ def _project() -> dict:
 
 
 def test_warden_declared_from_pypi() -> None:
-    """Server-mode identity is cognisn-warden from PyPI (A10), at its 0.1.1 release or later
-    (A18), which takes the client address on sign-in method and single sign-on settings
-    changes: never a pre-release pin."""
+    """Server-mode identity is cognisn-warden from PyPI (A10), on its 0.2 line (CS26): the
+    always-on second factor, forced enrolment and the single sign-on guard's 409 that
+    SPARK's screens follow. Never a pre-release pin, and never 0.3 unchecked."""
     deps = _project()["dependencies"]
-    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden>=0.1.1"]
+    assert [d for d in deps if d.startswith("cognisn-warden")] == ["cognisn-warden>=0.2.0,<0.3"]
+
+
+def test_jmespath_declared_in_the_dev_extra() -> None:
+    """tests/scripts/aws_stub.py imports jmespath, so the dev extra declares it (question
+    82), at the version boto3 and botocore bring; it is never a runtime dependency."""
+    project = _project()
+    dev = project["optional-dependencies"]["dev"]
+    assert [d for d in dev if d.startswith("jmespath")] == ["jmespath>=1.1.0"]
+    assert not [d for d in project["dependencies"] if d.startswith("jmespath")]
 
 
 def test_conduit_declared_from_pypi_with_every_provider() -> None:

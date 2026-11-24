@@ -43,9 +43,9 @@ classifiers = [
 ]
 dependencies = [
     "cognisn-konfig[aws]>=0.5.1",
-    # Identity, sessions, permissions and audit in server mode; 0.1.1 takes the client
-    # address on sign-in method and single sign-on settings changes
-    "cognisn-warden>=0.1.1",
+    # Identity, sessions, permissions and audit in server mode; 0.2 always asks for a
+    # second factor on password sign-in and guards single sign-on with a 409
+    "cognisn-warden>=0.2.0,<0.3",
     "fastapi>=0.100.0",
     "uvicorn>=0.22.0",
     "jinja2>=3.1.0",
@@ -99,6 +99,7 @@ dev = [
     "black==26.10.1",
     "isort==8.0.1",
     "testcontainers[postgres]>=4.8.0",
+    "jmespath>=1.1.0",
 ]
 
 [project.scripts]

@@ -15,7 +15,12 @@ Connect provider is synthetic too (an ``httpx.MockTransport`` answering for
 * every SSO button, wording and sign-in method choice is hidden until single
   sign-on is switched on and configured, and shown once it is;
 * SSO-only users are flagged while single sign-on is off and can be moved to
-  a password; switching it off while any exist asks first and names them.
+  a password; switching it off while only suspended or invited ones exist asks
+  first and names them;
+* while an active user (or the instance default) signs in only through it,
+  warden's guard refuses to switch it off (409, from warden 0.2.0): the page
+  says so in plain words, lists those users linked to their pages and offers
+  no way round it.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from warden.audit.query import AuditQuery, list_events
-from warden.identity import SignInMethod
+from warden.identity import SignInMethod, UserStatus
 from warden.identity.sso.provider import ProviderHttp
 
 from spark.identity import sso as sso_settings
@@ -395,13 +400,22 @@ class TestSsoOnlyUsers:
         resp = _post(admin, f"/admin/users/{ada_id}/sign-in-method", method="password_and_sso")
         assert resp.status_code == 303
 
-        async def method() -> SignInMethod:
+        async def method() -> tuple[SignInMethod, Any]:
             found = await _identity(admin).users.get(ada_id)
             assert found is not None
-            result: SignInMethod = found.sign_in_method
-            return result
+            return found.sign_in_method, found.pending_sign_in_method
 
-        assert _call(admin, method) is SignInMethod.PASSWORD_AND_SSO
+        # warden 0.2.0: Ada has no password yet, so the move waits for her to set one
+        # (warden mails her a set-password link); single sign-on stays in force.
+        assert _call(admin, method) == (SignInMethod.SSO_ONLY, SignInMethod.PASSWORD_AND_SSO)
+
+        async def set_password() -> None:
+            await _identity(admin).users.set_password(
+                ada_id, "a-long-new-password-dev-only", actor="test"
+            )
+
+        _call(admin, set_password)
+        assert _call(admin, method) == (SignInMethod.PASSWORD_AND_SSO, None)
         assert "Cannot sign in" not in _page(admin, "/admin/users").text
 
     def test_not_moved_to_sso_only_while_it_is_off(self, admin: TestClient) -> None:
@@ -415,17 +429,57 @@ class TestSsoOnlyUsers:
         assert "Cannot sign in" not in _page(admin, "/admin/users").text
 
     def test_switching_off_asks_first_and_names_them(self, admin: TestClient) -> None:
+        # Only invited and suspended SSO-only users: warden lets it through once confirmed.
         _enable(admin)
-        _make(admin, ADA, SignInMethod.SSO_ONLY)
+        ada_id = _make(admin, ADA, SignInMethod.SSO_ONLY)
+        _call(
+            admin,
+            lambda: _identity(admin).users.set_status(ada_id, UserStatus.SUSPENDED, actor="test"),
+        )
         invite(admin, GRACE, method=SignInMethod.SSO_ONLY)
         asked = _save(admin)  # enabled left out: switch it off
         assert asked.status_code == 409
         assert ADA in asked.text and GRACE in asked.text
         assert 'name="confirm" value="yes"' in asked.text
+        assert 'id="sso-guard"' not in asked.text
         assert _settings(admin).settings.enabled  # nothing changed yet
         done = _save(admin, confirm="yes")
         assert done.status_code == 303
         assert not _settings(admin).settings.enabled
+
+    @pytest.mark.parametrize("confirm", [None, "yes"])
+    def test_warden_refuses_while_an_active_user_needs_it(
+        self, admin: TestClient, confirm: str | None
+    ) -> None:
+        _enable(admin)
+        ada_id = _make(admin, ADA, SignInMethod.SSO_ONLY)
+        fields = {"confirm": confirm} if confirm else {}
+        refused = _save(admin, **fields)
+        assert refused.status_code == 409
+        assert message_of(refused) == sso_settings.GUARD_REFUSED
+        users = re.search(r'<ul id="sso-guard-users"[^>]*>(.*?)</ul>', refused.text, re.S)
+        assert users, refused.text
+        assert f'<a href="/admin/users/{ada_id}">{ADA}</a>' in users.group(1)
+        assert 'name="confirm" value="yes"' not in refused.text  # no way round warden
+        assert 'id="sso-guard-default"' not in refused.text
+        assert _settings(admin).settings.enabled
+        # The link opens Ada's page, where her method is changed.
+        assert _page(admin, f"/admin/users/{ada_id}").status_code == 200
+
+    def test_warden_refuses_while_the_default_is_sso_only(self, admin: TestClient) -> None:
+        _enable(admin)
+        _call(
+            admin,
+            lambda: _identity(admin).update_sign_in_settings(
+                default_sign_in_method=SignInMethod.SSO_ONLY, actor="test"
+            ),
+        )
+        refused = _save(admin)
+        assert refused.status_code == 409
+        assert message_of(refused) == sso_settings.GUARD_REFUSED
+        assert 'id="sso-guard-default"' in refused.text
+        assert "single sign-on only" in refused.text
+        assert _settings(admin).settings.enabled
 
     def test_switching_off_without_them_does_not_ask(self, admin: TestClient) -> None:
         _enable(admin)

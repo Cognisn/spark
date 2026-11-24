@@ -72,9 +72,10 @@ server:
 # warden runs inside Spark. Its public address and screen links come from
 # server.public_base_url, so do not set warden.http. Everything else is
 # optional; the defaults are warden's own. A value may be secret://<name>.
+# A second factor is always required for password sign-in; do not set
+# warden.identity.require_mfa (false stops Spark at start-up).
 # warden:
 #   identity:
-#     require_mfa: true
 #     access_token_ttl_seconds: 900
 #     session_lifespan_seconds: 43200
 #   audit:

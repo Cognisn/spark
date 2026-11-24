@@ -1,13 +1,18 @@
 """Server-mode sign-in screens and session endpoints (warden).
 
-* ``GET/POST /auth/sign-in``: the sign-in form; a password sign-in through
-  warden either sets the session cookies or hands a second-factor challenge to
-  ``/auth/challenge``.
+* ``GET/POST /auth/sign-in``: the sign-in form. From warden 0.2.0 a right
+  password never sets the session cookies by itself: warden always answers with
+  a second-factor challenge (ruling CS14), handed to ``/auth/challenge``.
 * ``GET /auth/challenge``: the second factor. A ``verify`` challenge asks for a
   TOTP code or a recovery code (``POST /auth/challenge/verify``); an ``enrol``
-  challenge (warden requires a second factor the user has not set up) starts
-  an enrolment and shows its QR code and key, and ``POST /auth/challenge/enrol``
-  confirms it, signs the user in and shows the recovery codes, once.
+  challenge (a user holding no allowed second factor: never enrolled, or only
+  a kind the administrator no longer allows) starts an enrolment of one of the
+  kinds warden names and shows its QR code and key, and
+  ``POST /auth/challenge/enrol`` confirms it, signs the user in and shows the
+  recovery codes warden returns, once. The kinds warden names (``methods``)
+  travel in the challenge cookie; this screen offers TOTP only when warden
+  names it, and enrols nothing else (security keys and passkeys are not set
+  up here).
 * A ``change`` challenge: warden requires a new password before it issues the
   session (an administrator asked, the password expired, no longer meets the
   policy or is on a watch list). It follows a right password and any second
@@ -89,6 +94,16 @@ CHALLENGE_VERIFY_PATH = CHALLENGE_PATH + "/verify"
 CHALLENGE_ENROL_PATH = CHALLENGE_PATH + "/enrol"
 CHALLENGE_CHANGE_PATH = CHALLENGE_PATH + "/change"
 _PURPOSES = ("verify", "enrol", "change")
+# The second-factor kinds a challenge may name (warden's SecondFactor values).
+_KINDS = ("totp", "webauthn")
+NO_ENROLMENT = (
+    "Your account needs a second factor that this page cannot set up. "
+    "Ask an administrator to help you sign in."
+)
+NO_TOTP = (
+    "Your account has no authenticator app that can be used here. "
+    "Use a recovery code, or ask an administrator to help you sign in."
+)
 # Fixed notices the sign-in page may show (?notice=...); nothing from the URL is echoed.
 NOTICES = {
     "accepted": "Your invitation is accepted. Sign in to continue.",
@@ -263,9 +278,18 @@ def _set_challenge(response: Response, purpose: str, token: str, expires_in: int
 
 
 def challenge_issued(request: Request, challenge: ChallengeIssued, next_path: str) -> Response:
-    """Go to the second-factor screen, its challenge in this browser's cookie."""
+    """Go to the second-factor screen, its challenge in this browser's cookie.
+
+    The kinds warden names (``methods``: for ``verify`` the allowed kinds the
+    user holds, for ``enrol`` the kinds they may enrol) ride in the cookie
+    beside the purpose, so the screen offers only those.
+    """
     response = redirect(with_next(CHALLENGE_PATH, next_path))
-    _set_challenge(response, challenge.purpose, challenge.token, challenge.expires_in)
+    # "+" between kinds: a cookie-safe character, so the value is never quoted.
+    methods = "+".join(str(m) for m in challenge.methods if str(m) in _KINDS)
+    _set_challenge(
+        response, f"{challenge.purpose}:{methods}", challenge.token, challenge.expires_in
+    )
     return response
 
 
@@ -289,9 +313,33 @@ def challenge_of(request: Request) -> tuple[str, str] | None:
 
     Read from this browser's challenge cookie only, never from a form or a URL.
     """
-    value = request.cookies.get(CHALLENGE_COOKIE, "")
-    purpose, _, token = value.partition(":")
-    return (purpose, token) if purpose in _PURPOSES and token else None
+    found = _challenge_cookie(request)
+    return (found[0], found[2]) if found is not None else None
+
+
+def challenge_methods(request: Request) -> tuple[str, ...]:
+    """The second-factor kinds warden named for the pending challenge (none for a change)."""
+    found = _challenge_cookie(request)
+    return found[1] if found is not None else ()
+
+
+def _challenge_cookie(request: Request) -> tuple[str, tuple[str, ...], str] | None:
+    """``<purpose>:<token>``, or ``<purpose>:<kinds>:<token>`` for a second factor.
+
+    A second-factor cookie without kinds was set before warden 0.2.0 (a sign-in
+    in flight across the upgrade), when TOTP was the only kind: it keeps TOTP.
+    """
+    parts = request.cookies.get(CHALLENGE_COOKIE, "").split(":")
+    if len(parts) == 2:
+        purpose, token = parts
+        kinds = "" if purpose == "change" else "totp"
+    elif len(parts) == 3:
+        purpose, kinds, token = parts
+    else:
+        return None
+    if purpose not in _PURPOSES or not token:
+        return None
+    return purpose, tuple(k for k in kinds.split("+") if k in _KINDS), token
 
 
 def _clear_challenge(response: Response) -> None:
@@ -308,8 +356,10 @@ def _challenge_page(
     secret: str = "",
     uri: str = "",
     reason: str = "",
+    notice: str | None = None,
 ) -> HTMLResponse:
     authenticator: WardenAuthenticator = request.app.state.authenticator
+    methods = challenge_methods(request)
     response: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,
         "auth_challenge.html",
@@ -325,6 +375,9 @@ def _challenge_page(
             "reason": reason,
             "reason_text": change_reason_text(reason),
             "min_length": _min_length(request),
+            # Only the kinds warden named: TOTP is asked for, or enrolled, only then.
+            "totp": "totp" in methods,
+            "factor_notice": notice,
         },
         status_code=status_code,
     )
@@ -355,10 +408,15 @@ async def challenge_page(request: Request) -> Response:
         return redirect(with_next(SIGN_IN_PATH, next_path))
     purpose, token = pending
     if purpose == "verify":
-        return _challenge_page(request, purpose, next_path)
+        notice = None if "totp" in challenge_methods(request) else NO_TOTP
+        return _challenge_page(request, purpose, next_path, notice=notice)
     if purpose == "change":
         reason = request.query_params.get("reason", "")
         return _challenge_page(request, purpose, next_path, reason=reason)
+    if "totp" not in challenge_methods(request):
+        # warden names no kind this screen can enrol (TOTP not allowed, and no
+        # security keys here yet): nothing is started, and nothing signs in.
+        return _challenge_page(request, purpose, next_path, notice=NO_ENROLMENT)
     try:
         enrolment = await runtime.identity.begin_enrolment(
             challenge=token, source_ip=source_ip(runtime, request)
@@ -379,11 +437,12 @@ async def challenge_verify(request: Request) -> Response:
     pending = challenge_of(request)
     if pending is None or pending[0] != "verify":
         return _start_over(next_path)
-    verify = (
-        runtime.identity.use_recovery_code
-        if form.get("kind") == "recovery"
-        else runtime.identity.verify_totp
-    )
+    recovery = form.get("kind") == "recovery"
+    if not recovery and "totp" not in challenge_methods(request):
+        return _challenge_page(
+            request, "verify", next_path, error=VERIFICATION_FAILED, status_code=401
+        )
+    verify = runtime.identity.use_recovery_code if recovery else runtime.identity.verify_totp
     try:
         outcome = await verify(pending[1], form.get("code"), source_ip=source_ip(runtime, request))
     except AuthenticationRefused:
@@ -414,6 +473,8 @@ async def challenge_enrol(request: Request) -> Response:
     pending = challenge_of(request)
     if pending is None or pending[0] != "enrol":
         return _start_over(next_path)
+    if "totp" not in challenge_methods(request):
+        return _start_over(next_path)
     try:
         codes, outcome = await runtime.identity.confirm_enrolment(
             form.get("code"), challenge=pending[1], source_ip=source_ip(runtime, request)
@@ -431,6 +492,10 @@ async def challenge_enrol(request: Request) -> Response:
         )
     if outcome is None:  # under a challenge warden always signs in or asks for a change
         raise HTTPException(status_code=500)
+    if not codes:
+        # Not the user's first second factor (one no longer allowed was replaced):
+        # warden keeps their recovery codes and returns none, so none are shown.
+        return session_or_change(next_path, outcome)
     change = outcome if isinstance(outcome, PasswordChangeIssued) else None
     response: HTMLResponse = request.app.state.templates.TemplateResponse(
         request,

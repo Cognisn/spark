@@ -6,7 +6,6 @@ TOTP codes are computed with warden's own RFC 6238 implementation
 
 from __future__ import annotations
 
-import base64
 import html
 import re
 import time
@@ -23,7 +22,18 @@ from warden.identity import MailMessage, SignInMethod, StagedGrant, totp
 from spark.identity.mail import LinkCapture, captured, link_in
 from spark.mode import DatabaseSettings, Dialect
 from spark.web.security import CSRF_FORM_FIELD, CSRF_HEADER
-from tests.identity_web_helpers import PASSWORD, PUBLIC, server_client, sign_in, write_config
+from tests.identity_web_helpers import (
+    PASSWORD,
+    PUBLIC,
+    leave_second_factor_to_test,
+    password_step,
+    recovery_codes_on,
+    secret_on,
+    server_client,
+    write_config,
+)
+
+__all__ = ["recovery_codes_on", "secret_on"]
 
 NAVIGATE = {"Accept": "text/html,application/xhtml+xml", "Sec-Fetch-Mode": "navigate"}
 ORIGIN = {"Origin": PUBLIC}
@@ -53,28 +63,14 @@ def post_form(client: TestClient, path: str, page: Any, **fields: str) -> Any:
     )
 
 
-def secret_on(page: Any) -> bytes:
-    """The TOTP key an enrolment page shows, decoded."""
-    match = re.search(r'<code id="totp-secret"[^>]*>([A-Z2-7]+)</code>', page.text)
-    assert match, page.text
-    text = match.group(1)
-    return base64.b32decode(text + "=" * (-len(text) % 8))
-
-
 def code(secret: bytes, steps_ahead: int = 0) -> str:
     """The TOTP code for now (plus ``steps_ahead`` 30-second steps)."""
     return totp.code_at(secret, totp.step_for(time.time()) + steps_ahead)
 
 
-def recovery_codes_on(page: Any) -> list[str]:
-    match = re.search(r'<pre id="recovery-codes"[^>]*>(.*?)</pre>', page.text, re.S)
-    assert match, page.text
-    return [line.strip() for line in html.unescape(match.group(1)).splitlines() if line.strip()]
-
-
 def enrol_under_challenge(client: TestClient, email: str) -> tuple[bytes, list[str], Any]:
     """Sign in to an enrolment challenge, enrol, and return the key, codes and final page."""
-    resp = sign_in(client, email, PASSWORD)
+    resp = password_step(client, email, PASSWORD)
     assert resp.status_code == 303 and resp.headers["location"].startswith("/auth/challenge")
     page = client.get("/auth/challenge")
     assert page.status_code == 200, page.text
@@ -123,15 +119,23 @@ def server_db(pg_server: str, _pg_template: str) -> Iterator[DatabaseSettings]:
 
 @pytest.fixture
 def mfa_client(tmp_path: Path, server_db: DatabaseSettings) -> Iterator[TestClient]:
-    """A server whose policy requires a second factor for password sign-in."""
-    config = write_config(tmp_path / "config.yaml", require_mfa=True)
-    with server_client(config, server_db) as client:
+    """A server whose tests answer warden's second-factor challenges themselves.
+
+    Its users start with no factor, and ``sign_in`` stops at the password's
+    answer (:func:`tests.identity_web_helpers.leave_second_factor_to_test`).
+    """
+    with server_client(write_config(tmp_path / "config.yaml"), server_db) as client:
+        leave_second_factor_to_test(client)
         yield client
 
 
 @pytest.fixture
 def plain_client(tmp_path: Path, server_db: DatabaseSettings) -> Iterator[TestClient]:
-    """A server whose policy does not require a second factor."""
+    """A server whose users hold a TOTP factor that ``sign_in`` answers for them.
+
+    warden 0.2.0 asks every password sign-in for a second factor; this client's
+    helpers give it, so a test that only needs a signed-in user gets one.
+    """
     with server_client(write_config(tmp_path / "config.yaml"), server_db) as client:
         yield client
 

@@ -39,6 +39,7 @@ from tests.identity_screen_helpers import (  # noqa: F401 - fixtures
 from tests.identity_web_helpers import (
     PUBLIC,
     another_client,
+    leave_second_factor_to_test,
     make_user,
     server_client,
     sign_in,
@@ -171,8 +172,9 @@ class TestMailedLinks:
     def test_a_signed_out_reset_request_is_mailed_with_the_neutral_answer(
         self, admin: TestClient, smtp: FakeSmtp
     ) -> None:
-        _configure(admin, smtp.port)
+        # Ada's factor is enrolled before mail is set up, so its notice is not mailed.
         make_user(admin, ADA)
+        _configure(admin, smtp.port)
         stranger = another_client(admin)
         stranger.cookies.clear()
         stranger.headers.clear()
@@ -188,8 +190,9 @@ class TestMailedLinks:
     def test_an_enrolled_second_factor_is_notified(
         self, tmp_path: Path, server_db: DatabaseSettings, smtp: FakeSmtp
     ) -> None:
-        config = write_config(tmp_path / "mfa.yaml", require_mfa=True)
+        config = write_config(tmp_path / "mfa.yaml")
         with server_client(config, server_db) as client:
+            leave_second_factor_to_test(client)  # each user enrols on the challenge screen
             make_user(client, ROOT, ADMINISTRATOR)
             root = another_client(client)
             enrol_under_challenge(root, ROOT)
@@ -390,8 +393,9 @@ class TestTestMail:
         assert resp.json()["status"] == "error"
 
     def test_a_user_cannot_send_one(self, admin: TestClient, smtp: FakeSmtp) -> None:
-        _configure(admin, smtp.port)
+        # Ada's factor is enrolled before mail is set up, so its notice is not mailed.
         make_user(admin, ADA)
+        _configure(admin, smtp.port)
         ada = another_client(admin)
         assert sign_in(ada, ADA).status_code == 303
         resp = ada.post("/settings/api/mail/test", json={})

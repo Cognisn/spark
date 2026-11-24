@@ -97,13 +97,22 @@ class TestFilters:
         failed = _audit(auditor, "?action=warden.identity.sign_in&outcome=failure")
         assert _rows(failed) == ["warden.identity.sign_in"]
         succeeded = _audit(auditor, "?action=warden.identity.sign_in&outcome=success")
-        assert _rows(succeeded) == ["warden.identity.sign_in"]  # the auditor's own
+        # The auditor's own: the password at the factor's enrolment when the account was
+        # made (tests.identity_web_helpers.make_user), and the sign-in with it.
+        assert _rows(succeeded) == ["warden.identity.sign_in", "warden.identity.sign_in"]
 
     def test_by_actor_email(self, auditor: TestClient) -> None:
         make_user(auditor, ADA)
         sign_in(another_client(auditor), ADA)
         page = _audit(auditor, f"?actor={ADA}")
-        assert _rows(page) and set(_rows(page)) == {"warden.identity.sign_in"}
+        # Ada's own: her TOTP enrolled when the account was made, then a sign-in with it.
+        assert _rows(page) and set(_rows(page)) == {
+            "warden.identity.sign_in",
+            "warden.identity.mfa.enrolment_started",
+            "warden.identity.mfa.enrolled",
+            "warden.identity.mfa.challenge",
+            "warden.identity.sign_out",
+        }
         assert _rows(_audit(auditor, "?actor=nobody%40example.com")) == []
 
     def test_by_time_range(self, auditor: TestClient) -> None:

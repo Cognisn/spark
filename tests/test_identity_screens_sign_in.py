@@ -87,8 +87,16 @@ class TestSignInPage:
         page = plain_client.get("/auth/sign-in?notice=%3Cscript%3Ealert(1)%3C/script%3E")
         assert "alert(1)" not in page.text
 
-    def test_a_password_without_a_second_factor_signs_in(self, plain_client: TestClient) -> None:
-        make_user(plain_client, ADA)
+    def test_a_password_alone_never_signs_in(self, mfa_client: TestClient) -> None:
+        # warden 0.2.0: a right password always answers with a second-factor challenge.
+        make_user(mfa_client, ADA)
+        resp = sign_in(mfa_client, ADA)
+        assert resp.status_code == 303 and resp.headers["location"] == "/auth/challenge"
+        assert not _sets(resp, ACCESS_COOKIE) and not _sets(resp, REFRESH_COOKIE)
+        assert _sets(resp, CHALLENGE_COOKIE)
+
+    def test_a_password_and_its_second_factor_sign_in(self, plain_client: TestClient) -> None:
+        make_user(plain_client, ADA)  # holds a TOTP factor the helper answers with
         resp = sign_in(plain_client, ADA)
         assert resp.status_code == 303 and resp.headers["location"] == "/"
         assert _sets(resp, ACCESS_COOKIE)
@@ -109,7 +117,9 @@ class TestSignInPage:
             follow_redirects=False,
         )
         assert resp.status_code == status
-        assert _sets(resp, ACCESS_COOKIE) is (status == 303)
+        # Accepted, the password goes on to the second factor; never a session by itself.
+        assert _sets(resp, CHALLENGE_COOKIE) is (status == 303)
+        assert not _sets(resp, ACCESS_COOKIE)
 
 
 class TestEnrolmentUnderChallenge:
@@ -270,7 +280,7 @@ class TestChallengeBinding:
             "/auth/challenge/verify",
             grace_page,
             code=code(secret, 1),
-            challenge=ada_challenge.partition(":")[2],
+            challenge=ada_challenge.rpartition(":")[2],
         )
         assert resp.status_code == 303  # Grace's enrol challenge does not verify
         assert not _sets(resp, ACCESS_COOKIE)

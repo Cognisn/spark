@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Spark runs on warden 0.2.0 (`cognisn-warden>=0.2.0,<0.3`).** Every password sign-in now asks for a second factor, whatever the user's sign-in method: a right password always goes to the challenge screen, and no session cookie is set until the second factor is answered. A user with no authenticator app yet (someone who signed in with a password alone before) is asked to set one up straight after their password, and is shown the recovery codes warden returns, once. The screen offers only the kinds warden names that it can set up (an authenticator app); a re-enrolment for which warden returns no new codes signs in without the codes page. Single sign-on and personal mode are unchanged.
+- **Upgrading runs warden's migration `f1c7d24e8b93` through `spark migrate`.** Nobody's sign-in method changes: password users follow the instance default, which starts as password or single sign-on, and single sign-on only users keep it as their own setting. A database left at warden 0.1.x's head is refused until `spark migrate` has run.
+- **`warden.identity.require_mfa: false` stops Spark at start-up** with warden's message naming the setting; `true` is accepted and does nothing. The configuration template and the container and deployment guides no longer show it, and the identity guide has an upgrade note (users without a second factor enrol at their next sign-in, the setting, and single sign-on), citing chapter 20 of warden's client guide.
+- **Single sign-on cannot be switched off while an active user signs in only through it.** warden refuses (409); the Single sign-on page says single sign-on is still on, lists those users with a link to each one's page to change their method first, and says so when the default sign-in method is single sign-on only. The confirmation with "Switch single sign-on off anyway" is kept for suspended and invited users only, whom warden lets through.
+- **`jmespath` is declared in the `dev` extra** (`jmespath>=1.1.0`, the version boto3 and botocore install), since the AWS stub in `tests/scripts` imports it. It is a development dependency only and the licence audit is unchanged.
+
 ## [0.3.0rc46] - 2026-11-24
 
 ### Removed

@@ -34,7 +34,7 @@ from tests.identity_screen_helpers import (  # noqa: F401 - fixtures
     secret_on,
     server_db,
 )
-from tests.identity_web_helpers import PASSWORD, another_client, make_user, sign_in
+from tests.identity_web_helpers import PASSWORD, another_client, make_user, runtime, sign_in
 
 pytestmark = pytest.mark.postgres
 
@@ -111,8 +111,27 @@ class TestChangePassword:
         assert sign_in(third, ADA, NEW_PASSWORD).status_code == 303
 
 
+def _drop_factor_keeping_the_session(client: TestClient, email: str) -> None:
+    """A signed-in user holding no authenticator, as after single sign-on (synthetic).
+
+    From warden 0.2.0 every password sign-in needs a factor, and an
+    administrator's reset ends the user's sessions, so the rows are removed
+    directly, leaving the session.
+    """
+    identity = runtime(client).identity
+
+    async def drop() -> None:
+        user = await identity.users.get_by_email(email)
+        async with identity.db.transaction() as tx:
+            for table in ("totp_credentials", "recovery_codes"):
+                await tx.execute(f"DELETE FROM warden.{table} WHERE user_id = %s", (user.id,))
+
+    client.portal.call(drop)  # type: ignore[union-attr]
+
+
 class TestOwnEnrolment:
     def test_enrol_while_signed_in_and_see_the_codes_once(self, ada: TestClient) -> None:
+        _drop_factor_keeping_the_session(ada, ADA)
         page = _post(ada, "/account/mfa")
         assert page.status_code == 200
         assert 'src="data:image/svg+xml;base64,' in page.text
