@@ -835,13 +835,9 @@ def test_the_default_is_the_scripts_constant(tmp_path: Path) -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     default = re.search(r'^HARDENING_CHECK_DEFAULT="([^"]+)"$', text, re.M)
     assert default, "the script names its default"
+    assert default.group(1) == "enforce", "the default is enforce since the rc44 test deploy"
     run = deploy(tmp_path, task_definitions=task_definitions("web", _drop(["user"])))
-    if default.group(1) == "warn":
-        assert run.returncode == 0, run.output
-        assert "Hardening check: NOT MET (warning only, not enforced)" in run.summary
-    else:
-        assert run.returncode == 1, run.output
-        assert "Hardening check: FAILED" in run.summary
+    _refused_before_any_change(run)
 
 
 def test_enforced_from_a_date_that_has_passed(tmp_path: Path) -> None:
