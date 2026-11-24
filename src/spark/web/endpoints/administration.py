@@ -557,6 +557,7 @@ async def _sso_page(
         "checks_ok": False,
         "confirm_users": None,
         "secret_dropped": False,
+        "guard": None,
     }
     context.update(extra or {})
     # The page never holds the secret; it is kept out of caches all the same.
@@ -572,8 +573,11 @@ async def sso_page(request: Request, _: SparkIdentity = Depends(administrator)) 
 async def save_sso(request: Request, identity: SparkIdentity = Depends(administrator)) -> Response:
     """Save the settings; a new client secret goes to the secrets store, a blank keeps it.
 
-    Switching single sign-on off while any user signs in only through it needs
-    ``confirm=yes``; without it nothing is saved and the page names them.
+    Switching single sign-on off while a suspended or invited user signs in only
+    through it needs ``confirm=yes``; without it nothing is saved and the page
+    names them. While an active user (or the instance default) does, warden
+    refuses whatever is confirmed (its guard's 409): the page says so in plain
+    words and lists those users, each linked to their page, to move first.
     """
     runtime = _runtime(request)
     form = await request.form()
@@ -588,7 +592,8 @@ async def save_sso(request: Request, identity: SparkIdentity = Depends(administr
     current = await sso.state(runtime.identity)
     if current.settings.enabled and not change.enabled and form.get("confirm") != "yes":
         users = await sso.sso_only_users(runtime.identity)
-        if users:
+        # Active users are warden's to refuse (below); confirming could not override it.
+        if users and not any(u.status is UserStatus.ACTIVE for u in users):
             return await _sso_page(
                 request,
                 runtime,
@@ -603,6 +608,10 @@ async def save_sso(request: Request, identity: SparkIdentity = Depends(administr
     try:
         await sso.save(
             runtime.identity, change, actor=_actor(identity), source_ip=source_ip(runtime, request)
+        )
+    except sso.SsoStillRequired as exc:
+        return await _sso_page(
+            request, runtime, error=str(exc), status_code=409, extra={**typed, "guard": exc}
         )
     except ValueError as exc:
         return await _sso_page(request, runtime, error=str(exc), status_code=400, extra=typed)

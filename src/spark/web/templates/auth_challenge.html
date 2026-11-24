@@ -1,6 +1,11 @@
 {% extends "auth_layout.html" %}
 {% block title %}{% if purpose == "change" %}Choose a New Password{% else %}Two-Step Verification{% endif %}{% endblock %}
 {% block content %}
+{% if factor_notice %}
+<div class="alert-app alert-app-warning mb-3" role="status" id="factor-notice">
+    <i class="bi bi-info-circle-fill me-1"></i> {{ factor_notice }}
+</div>
+{% endif %}
 {% if purpose == "change" %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
     {{ reason_text }} Use at least {{ min_length }} characters. Changing it signs you out everywhere else.
@@ -23,10 +28,13 @@
         <i class="bi bi-key me-1"></i> Change password and sign in
     </button>
 </form>
+{% elif purpose == "enrol" and not totp %}
+{# warden named no kind this screen can enrol: nothing to set up here. #}
 {% elif purpose == "enrol" %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-    Your account needs a second factor before you can sign in. Scan the code with an
-    authenticator app, or enter the key by hand, then type the six-digit code it shows.
+    Every password sign-in now needs a second factor, and your account does not have one yet.
+    Set up an authenticator app to continue: scan the code with the app, or enter the key by
+    hand, then type the six-digit code it shows.
 </p>
 {% include "_totp_enrolment.html" %}
 <form method="POST" action="/auth/challenge/enrol">
@@ -45,6 +53,7 @@
     </button>
 </form>
 {% else %}
+{% if totp %}
 <p class="mb-3 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
     Enter the code from your authenticator app to finish signing in.
 </p>
@@ -62,7 +71,8 @@
         <i class="bi bi-unlock me-1"></i> Verify
     </button>
 </form>
-<details class="mt-4" style="font-size: 0.875rem;">
+{% endif %}
+<details class="mt-4" style="font-size: 0.875rem;"{% if not totp %} open{% endif %}>
     <summary style="color: var(--app-text-secondary); cursor: pointer;">Use a recovery code instead</summary>
     <form method="POST" action="/auth/challenge/verify" class="mt-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

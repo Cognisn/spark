@@ -24,7 +24,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import psycopg
 import pytest
@@ -49,6 +49,7 @@ from tests.identity_web_helpers import (
     claims,
     cookie_header,
     make_user,
+    password_step,
     runtime,
     server_client,
     set_cookie_headers,
@@ -208,13 +209,15 @@ class TestSignIn:
                 headers={"Origin": PUBLIC},
                 follow_redirects=False,
             )
-            assert resp.headers["location"] == expected, target
+            # warden 0.2.0 always asks for the second factor; next rides through it.
+            challenge = "/auth/challenge"
+            if expected != "/":
+                challenge += "?" + urlencode({"next": expected})
+            assert resp.headers["location"] == challenge, target
 
     def test_an_mfa_challenge_goes_to_the_challenge_screen(self, client: TestClient) -> None:
         make_user(client, ADA)
-        identity = runtime(client).identity
-        client.portal.call(lambda: identity.policy.update(actor="test", require_mfa=True))  # type: ignore[union-attr]
-        resp = sign_in(client, ADA)
+        resp = password_step(client, ADA)  # every password sign-in is challenged
         assert resp.status_code == 303
         assert resp.headers["location"] == "/auth/challenge"
         challenge = attributes(cookie_header(resp, CHALLENGE_COOKIE))
@@ -223,7 +226,7 @@ class TestSignIn:
         assert not any(h.startswith(ACCESS_COOKIE) for h in set_cookie_headers(resp))
         page = client.get("/auth/challenge")
         assert page.status_code == 200
-        assert "second factor" in page.text.lower()
+        assert 'action="/auth/challenge/verify"' in page.text
 
 
 # -- Requests without a session -----------------------------------------------------------

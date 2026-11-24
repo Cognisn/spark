@@ -180,11 +180,9 @@ class TestUsers:
         assert _user(admin, admin_id).status is UserStatus.ACTIVE
 
     def test_reset_totp(self, admin: TestClient) -> None:
-        ada_id = make_user(admin, ADA)
+        ada_id = make_user(admin, ADA)  # holds TOTP, as every password user does from 0.2.0
         ada = another_client(admin)
-        sign_in(ada, ADA)
-        page = ada.post("/account/mfa", follow_redirects=False)
-        ada.post("/account/mfa/confirm", data={"code": code(secret_on(page))})
+        assert sign_in(ada, ADA).status_code == 303
 
         async def enrolled() -> bool:
             result: bool = await _identity(admin).mfa.has_confirmed_totp(ada_id)

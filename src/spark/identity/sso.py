@@ -13,7 +13,11 @@ field and secret names only, never values. This module is SPARK's view of it:
   offers single sign-on that cannot work.
 * :func:`save` writes an administrator's changes: the secret first (when a
   new one is given), then the settings, refusing to switch single sign-on on
-  without a secret.
+  without a secret. warden 0.2.0 refuses to switch it off, or clear it, while
+  the instance default or any active user's own, pending or in-force sign-in
+  method is single sign-on only (its guard, ruling CS17, the 409 of the
+  client guide's section 19.4); :func:`save` raises :class:`SsoStillRequired`
+  then, naming the users to move first.
 * :func:`sso_only_users` names the users who can sign in only through single
   sign-on, for the confirmation before switching it off and the flags on the
   Users page.
@@ -31,14 +35,18 @@ from typing import Any, Final
 
 from warden.identity import SignInMethod, User, UserStatus
 from warden.identity.sso.settings import SsoSettings, SsoSettingsError
+from warden.identity.sso.settings import SsoStillRequired as WardenSsoStillRequired
 
 __all__ = [
     "CHECKS",
+    "GUARD_REFUSED",
     "REASONS",
     "SECRET_REFUSED",
     "SECRET_REQUIRED",
+    "GuardedUser",
     "SsoChange",
     "SsoState",
+    "SsoStillRequired",
     "available",
     "check_text",
     "save",
@@ -103,6 +111,35 @@ class SsoState:
         return bool(self.settings.enabled and self.configured)
 
 
+GUARD_REFUSED: Final = (
+    "Single sign-on is still on: the people below sign in only through it and would be "
+    "locked out. Move each of them to another sign-in method first, then switch it off."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GuardedUser:
+    """A user warden's guard names: their warden id and email, for a link to their page."""
+
+    id: str
+    email: str
+
+
+class SsoStillRequired(ValueError):
+    """warden refused to switch single sign-on off or clear it: someone signs in with it alone.
+
+    ``default_sso_only`` says whether the instance default is single sign-on
+    only; ``users`` are the active users to move to another sign-in method
+    first. The settings were not changed (a new client secret given with them
+    is already stored).
+    """
+
+    def __init__(self, *, default_sso_only: bool, users: tuple[GuardedUser, ...]) -> None:
+        super().__init__(GUARD_REFUSED)
+        self.default_sso_only = default_sso_only
+        self.users = users
+
+
 @dataclass(frozen=True, slots=True)
 class SsoChange:
     """An administrator's change. ``client_secret`` None keeps the stored secret."""
@@ -154,6 +191,9 @@ async def save(identity: Any, change: SsoChange, *, actor: str, source_ip: Any) 
             issuer_url=change.issuer_url,
             client_id=change.client_id,
         )
+    except WardenSsoStillRequired as exc:
+        users = tuple(GuardedUser(str(user_id), email) for user_id, email in exc.users)
+        raise SsoStillRequired(default_sso_only=exc.default_sso_only, users=users) from None
     except SsoSettingsError as exc:
         raise ValueError(_settings_refusal(str(exc))) from None
     return settings

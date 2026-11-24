@@ -79,7 +79,7 @@ Configuration comes through konfig, as on the desktop:
   TLS reverse proxy's host name, no path). Sign-in cookies are Secure and the
   Origin check accepts only this address, so users must reach Spark through it.
 - **warden**: identity settings are the `warden` section, for example
-  `SPARK__WARDEN__IDENTITY__REQUIRE_MFA=true` (the default) or
+  `SPARK__WARDEN__IDENTITY__SESSION_LIFESPAN_SECONDS=43200` or
   `SPARK__WARDEN__AUDIT__TRUSTED_PROXIES=10.0.0.0/8` so warden believes the
   proxy's `X-Forwarded-For`. `spark bootstrap` creates warden's signing key and
   its TOTP and CSRF keys in the secrets store before web and worker start.
@@ -127,7 +127,7 @@ in `spark worker`.
 #### Users, two-step verification and single sign-on
 
 - **First administrator**: follow the invitation `spark bootstrap` sent, set a
-  password, then sign in at `/auth/sign-in`. With `warden.identity.require_mfa` on (the default) the first
+  password, then sign in at `/auth/sign-in`. Two-step verification is always on, so the first
   sign-in asks the administrator to set up an authenticator app (a QR code, or the
   key typed in) and shows ten recovery codes once: keep them somewhere safe.
 - **Mail**: set `mail.smtp` on the instance page (**Settings**, as an
@@ -147,8 +147,10 @@ in `spark worker`.
   no mail host, the invitation or reset link is shown to the administrator once,
   to pass on privately, and a signed-out reset request gets a neutral answer and
   no link, so the user asks an administrator instead.
-- **Two-step verification**: `SPARK__WARDEN__IDENTITY__REQUIRE_MFA` (default
-  `true`) makes every password sign-in use an authenticator app. A user who has
+- **Two-step verification**: every password sign-in uses an authenticator app,
+  and it cannot be switched off: `SPARK__WARDEN__IDENTITY__REQUIRE_MFA=false` stops
+  the container at start-up (remove it; see
+  [Upgrading to warden 0.2.0](deployment/identity.md#upgrading-to-warden-020)). A user who has
   lost both their authenticator and their recovery codes needs an administrator
   to reset it from their user page (confirm who they are some other way first);
   they set it up again at their next sign-in.

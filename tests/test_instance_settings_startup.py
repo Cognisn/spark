@@ -206,11 +206,21 @@ class TestPublicBaseUrlAndWarden:
 
     def test_warden_configuration_is_derived_and_validated(self) -> None:
         config = _validate(
-            _server(**{"warden.identity.require_mfa": False}), KONFIG_MASTER_KEY="mk-dev-only"
+            _server(**{"warden.identity.access_token_ttl_seconds": 600}),
+            KONFIG_MASTER_KEY="mk-dev-only",
         )
         assert config.warden is not None
         assert config.warden.http.public_base_url == "https://spark.example.com"
-        assert config.warden.identity.require_mfa is False
+        assert config.warden.identity.access_token_ttl_seconds == 600
+        assert config.warden.identity.require_mfa is True
+
+    def test_require_mfa_false_stops_start_up_with_wardens_message(self) -> None:
+        # warden 0.2.0 refuses the 0.1.x off switch; the refusal names the setting.
+        with pytest.raises(StartupConfigError, match="warden.identity.require_mfa: MFA is always"):
+            _validate(
+                _server(**{"warden.identity.require_mfa": False}),
+                KONFIG_MASTER_KEY="mk-dev-only",
+            )
 
     def test_invalid_warden_setting_refused_by_name(self) -> None:
         with pytest.raises(StartupConfigError, match="warden.identity.access_token_ttl_seconds"):

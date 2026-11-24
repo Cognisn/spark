@@ -112,9 +112,9 @@ not need it, and personal users are moved [with a bundle](from-personal.md).
 ## Signing in the first time
 
 Follow the invitation's link, set a password, and sign in at
-`https://spark.example.com/auth/sign-in`. Two-step verification is on by default, so
-the first sign-in asks the administrator to add Spark to an authenticator app (a QR
-code, or the key typed in) and shows ten recovery codes once. Keep the recovery codes
+`https://spark.example.com/auth/sign-in`. Two-step verification is always on, so the
+first sign-in asks the administrator to add Spark to an authenticator app (a QR code,
+or the key typed in) and shows ten recovery codes once. Keep the recovery codes
 somewhere safe.
 
 ## Roles
@@ -148,12 +148,19 @@ link is shown to the administrator once, to pass on privately.
 
 ## Two-step verification
 
-`SPARK__WARDEN__IDENTITY__REQUIRE_MFA` (default `true`) makes every password sign-in
-use an authenticator app. Leave it on. A user who has lost both their authenticator
-and their recovery codes needs an administrator to reset their second factor from
-their user page; confirm who they are some other way first. They set it up again at
-their next sign-in. warden 0.1.0 cannot replace a confirmed authenticator, so
-replacing a phone is also an administrator's reset.
+Every password sign-in asks for a second factor: a code from an authenticator app, or
+a recovery code. It cannot be switched off. A user who has no authenticator app yet is
+asked to set one up straight after their password, and is shown their ten recovery
+codes once. Single sign-on asks for nothing more: the identity provider does its own
+checks.
+
+`warden.identity.require_mfa` is deprecated. `true` does nothing, and `false` stops
+Spark from starting (see [Upgrading to warden 0.2.0](#upgrading-to-warden-020)).
+
+A user who has lost both their authenticator and their recovery codes needs an
+administrator to reset their second factor from their user page; confirm who they are
+some other way first. They set it up again at their next sign-in. Replacing a phone is
+also an administrator's reset.
 
 Other warden settings (`SPARK__WARDEN__IDENTITY__...`) include
 `access_token_ttl_seconds` (900), `session_lifespan_seconds` (43200, twelve hours),
@@ -216,8 +223,13 @@ sign-on button, My account shows the sign-in method as Password, and the Users a
 Invitations pages offer only a password. A user who signs in only through single sign-on
 is flagged "Cannot sign in: single sign-on is off" on the Users page; change their
 sign-in method on their page and send them a password reset link. Switching single
-sign-on off ends every session it issued, and while any active, suspended or invited user
-signs in only through it the page asks for confirmation first and names them.
+sign-on off ends every session it issued.
+
+Single sign-on cannot be switched off while an active user signs in only through it:
+warden refuses, and the page says single sign-on is still on and lists those users, each
+linked to their page, to move to another sign-in method first (and says so when the
+default sign-in method is single sign-on only). While only suspended or invited users
+sign in only through it, the page names them and asks for confirmation first.
 
 Every change is audited by warden with field and secret names only, never values
 (`warden.identity.sso.settings_changed`, `warden.identity.sso.client_secret_set`,
@@ -246,6 +258,36 @@ ones, mounted into the containers.
 > Not run for this guide: a sign-in against a real provider. Spark's tests run single
 > sign-on and the page's Test against synthetic providers, and a live test against a
 > local OpenID provider is run by hand before a release.
+
+## Upgrading to warden 0.2.0
+
+Spark 0.3.0 moves to warden 0.2.0 (`cognisn-warden>=0.2.0,<0.3`). warden's own upgrade
+steps are chapter 20 of its client guide, "Upgrading from 0.1.x"
+([docs/guide/clients.md](https://github.com/Cognisn/warden/blob/v0.2.0/docs/guide/clients.md#20-upgrading-from-01x)).
+For a Spark server:
+
+1. **Remove `require_mfa: false`.** Before upgrading, take `warden.identity.require_mfa`
+   out of `config.yaml`, the settings document and the environment
+   (`SPARK__WARDEN__IDENTITY__REQUIRE_MFA`). With `false` the web, worker and bootstrap
+   stop at start-up with warden's message: "warden.identity.require_mfa: MFA is always
+   required for password sign-in in warden 0.2.0 and later; remove
+   identity.require_mfa or set it to true". `true` still starts and does nothing; remove
+   it too.
+2. **Run `spark migrate`** as for any upgrade. It runs warden's revision `f1c7d24e8b93`
+   after Spark's own chain. Nobody's sign-in method changes: users who signed in with a
+   password or single sign-on follow the instance default, which starts as "password
+   or single sign-on", and users who sign in only through single sign-on keep that as
+   their own setting.
+3. **Expect enrolment.** Users who signed in with a password alone are asked to set up
+   an authenticator app at their next sign-in, straight after their password, and are
+   shown their recovery codes once. Users who already have an authenticator app sign in
+   as before. Users who sign in through single sign-on see no change.
+4. **Single sign-on.** It can no longer be switched off while an active user signs in
+   only through it ([Single sign-on](#single-sign-on)): move them first. A user moved
+   to "single sign-on only" who cannot use it yet keeps their current method until the
+   move completes, at their first single sign-on. With Microsoft Entra ID, add the optional claims `email` and `xms_edov` to the
+   ID token and verify your email domains in Entra before upgrading, or users get the
+   fixed failure (warden's chapter 20, step 7).
 
 ## Mail
 

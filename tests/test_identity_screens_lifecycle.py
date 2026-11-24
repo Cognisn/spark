@@ -29,6 +29,7 @@ from warden.identity import (
     SSO_FAILURE_MESSAGE,
     AuthenticationRefused,
     LoginStart,
+    MailKind,
     SignInMethod,
     SsoError,
     TokenPair,
@@ -62,12 +63,14 @@ from tests.identity_screen_helpers import (  # noqa: F401 - fixtures
     server_db,
 )
 from tests.identity_web_helpers import (
+    FACTORS,
     PASSWORD,
     another_client,
     attributes,
     cookie_header,
     make_user,
     runtime,
+    second_factor_answer,
     set_cookie_headers,
     sign_in,
 )
@@ -118,8 +121,12 @@ class TestInvitation:
             password=NEW_PASSWORD,
             confirm=NEW_PASSWORD,
         )
-        assert resp.status_code == 303 and resp.headers["location"] == "/"
-        assert _sets(resp, ACCESS_COOKIE)
+        # warden 0.2.0: the new password goes on to the second factor before any session.
+        assert resp.status_code == 303 and resp.headers["location"] == "/auth/challenge"
+        assert not _sets(resp, ACCESS_COOKIE)
+        enrol = plain_client.get("/auth/challenge")
+        done = post_form(plain_client, "/auth/challenge/enrol", enrol, code=code(secret_on(enrol)))
+        assert done.status_code == 200 and _sets(done, ACCESS_COOKIE)
         adopt_session(plain_client)
         me = plain_client.get("/auth/session", headers={"Accept": "application/json"}).json()
         assert me["email"] == ADA and me["roles"] == [POWER_USER]
@@ -245,7 +252,7 @@ class TestPasswordReset:
             answers.append(resp.text.replace(form_token(resp), ""))
         assert answers[0] == answers[1] == answers[2]
         assert RESET_REQUESTED in answers[0]
-        assert [m.to for m in outbox] == [ADA]
+        assert [m.to for m in outbox if m.kind == MailKind.PASSWORD_RESET] == [ADA]
 
     def test_reset_end_to_end(self, outbox: list[Any], plain_client: TestClient) -> None:
         make_user(plain_client, ADA)
@@ -385,9 +392,15 @@ class FakeSso:
     async def exchange(self, code: object, binding: object, *, source_ip: Any = None) -> TokenPair:
         if not isinstance(code, str) or self.handoffs.pop(code, None) != binding:
             raise AuthenticationRefused("handoff_unknown")
+        # A session for the user, made here with their password and TOTP factor
+        # (warden 0.2.0 asks every password sign-in for one); the real exchange
+        # issues it from the provider's answer.
         result = await self.identity.sign_in(self.email, PASSWORD)
-        assert result.tokens is not None
-        tokens: TokenPair = result.tokens
+        assert result.challenge is not None and result.challenge.purpose == "verify"
+        user = await self.identity.users.get_by_email(self.email)
+        _, value = second_factor_answer(FACTORS[str(user.id)])
+        tokens = await self.identity.verify_totp(result.challenge.token, value)
+        assert isinstance(tokens, TokenPair)
         return tokens
 
 
