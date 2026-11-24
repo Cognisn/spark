@@ -1,7 +1,17 @@
 {% import "_brand.html" as brand %}<!DOCTYPE html>
 <html lang="en">
 <head>
-    {% include "_theme_boot.html" %}
+    {# Sets the theme before any stylesheet paints (CS8): the saved browser choice (light or dark)
+       wins, otherwise the device's colour scheme. Inline so it runs first. #}
+    <script>(function () {
+        var choice = null;
+        try { choice = window.localStorage.getItem('app-theme'); } catch (e) {}
+        var theme = choice;
+        if (theme !== 'light' && theme !== 'dark') {
+            theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-bs-theme', theme);
+    }());</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Spark{% endblock %}</title>

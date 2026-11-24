@@ -191,7 +191,7 @@ class TestModuleAccessor:
         a = await accessor.preferences(spark_db, "user-a")
         b = await accessor.preferences(spark_db, "user-b")
         assert a["interface.theme"] == "dark"
-        assert b["interface.theme"] == "dark"
+        assert b["interface.theme"] == "device"  # nothing saved: follow the device
 
     async def test_set_preference_records_an_audit_event(self, spark_db: Any) -> None:
         mode.configure(RuntimeSettings(Mode.SERVER, DatabaseSettings(Dialect.POSTGRESQL, url="x")))
