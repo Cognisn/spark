@@ -1,13 +1,22 @@
-"""The signed-in user's own screens (server mode): profile, password, TOTP and API keys.
+"""The signed-in user's own screens (server mode): profile, password, second factors, API keys.
 
 * ``GET /account``: the user's email, name, roles and how they sign in.
 * ``POST /account/password``: change the password through warden, which ends
   the user's other sessions and keeps this one.
+* ``GET /account/mfa``: account security, the user's second factors: the
+  authenticator app, and their passkeys and security keys.
 * ``POST /account/mfa`` and ``POST /account/mfa/confirm``: set up an
   authenticator app while signed in, for a user with none confirmed; the
   recovery codes are shown once. warden 0.1.0 cannot replace a confirmed
   enrolment for its own user, so replacing one is an administrator's TOTP
   reset (the user enrols again at the next sign-in).
+* ``POST /account/passkeys/options`` and ``POST /account/passkeys``: register a
+  passkey or security key with a name (``webauthn.js`` fetches the options,
+  then the form posts the browser's answer); the recovery codes come with a
+  user's first second factor, shown once.
+  ``POST /account/passkeys/{id}/rename`` and ``/remove``: the user's own keys
+  only (another's is not found). warden refuses removing the last second
+  factor, since every password sign-in needs one (ruling CS14).
 * ``GET/POST /account/api-keys`` and ``POST /account/api-keys/{id}/revoke``:
   the user's own API keys, behind ``spark.api_keys`` (warden has no
   self-service route, question 19). A key's scopes may not exceed the
@@ -28,8 +37,19 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
-from warden.identity import ApiKeyError, MfaError, PasswordRejected, Principal, SignInMethod
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from warden.identity import (
+    ApiKeyError,
+    LastSecondFactorError,
+    MfaError,
+    PasswordRejected,
+    Principal,
+    SignInMethod,
+    WebAuthnCredential,
+    WebAuthnError,
+    WebAuthnRefusal,
+    WebAuthnUnavailable,
+)
 
 from spark.identity.access import SparkIdentity, current_identity, require_permission
 from spark.identity.passwords import refusal_text
@@ -37,7 +57,14 @@ from spark.identity.permissions import API_KEYS
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import principal_of, source_ip, via_api_key
 from spark.web.endpoints.identity import (
+    KEY_LIMIT,
+    KEY_NOT_REGISTERED,
+    credential_of,
     identity_runtime,
+    nickname_of,
+    options_refused,
+    options_response,
+    passkeys_available,
     private_headers,
     redirect,
     shown_back,
@@ -49,6 +76,8 @@ router = APIRouter()
 
 ACCOUNT_PATH = "/account"
 KEYS_PATH = "/account/api-keys"
+SECURITY_PATH = ACCOUNT_PATH + "/mfa"
+PASSKEYS_PATH = ACCOUNT_PATH + "/passkeys"
 
 # Fixed notices after a change (?done=...); nothing from the URL is echoed.
 DONE = {
@@ -58,7 +87,26 @@ DONE = {
         "to reset it."
     ),
     "revoked": "The key is revoked.",
+    "passkey-added": "The passkey or security key is registered.",
+    "passkey-renamed": "The name is changed.",
+    "passkey-removed": "The passkey or security key is removed.",
 }
+LAST_FACTOR = (
+    "This is your last second factor, and every password sign-in needs one. "
+    "Add another passkey, security key or authenticator app before removing it."
+)
+NAME_REFUSED = "A name has 1 to 64 characters, with no control characters."
+# A refused registration, by warden's reason; any other is KEY_NOT_REGISTERED.
+REGISTRATION_REFUSED = {
+    WebAuthnRefusal.LIMIT_REACHED: KEY_LIMIT,
+    WebAuthnRefusal.FACTOR_NOT_ALLOWED: (
+        "Passkeys and security keys are not allowed as a second factor here."
+    ),
+    WebAuthnRefusal.SSO_ONLY: "This account signs in through single sign-on only.",
+    WebAuthnRefusal.CREDENTIAL_EXISTS: "That passkey or security key is already registered.",
+    WebAuthnRefusal.NICKNAME: NAME_REFUSED,
+}
+PASSKEYS_UNAVAILABLE = "Passkeys and security keys cannot be used on this server."
 PASSWORD_REFUSED = {
     "wrong_password": "The current password is not right.",
     "not_permitted": "This account cannot change its password here.",
@@ -165,15 +213,24 @@ async def change_password(request: Request) -> Response:
 # -- The user's own authenticator -----------------------------------------------------------
 
 
-def _mfa_page(
+def key_kind(key: WebAuthnCredential) -> str:
+    """How a key is described: a passkey signs in on its own; a security key does not."""
+    return "Passkey" if key.passkey else "Security key"
+
+
+async def _mfa_page(
     request: Request,
     *,
     secret: str = "",
     uri: str = "",
     error: str | None = None,
     codes: list[str] | None = None,
+    codes_for: str = "totp",
     status_code: int = 200,
 ) -> HTMLResponse:
+    """Account security: the overview, or a TOTP enrolment, or new recovery codes once."""
+    runtime, identity = signed_in(request)
+    user_id = uuid.UUID(identity.warden_user_id)
     return screen(
         request,
         "account_mfa.html",
@@ -182,11 +239,24 @@ def _mfa_page(
             "uri": uri,
             "qr": qr_data_uri(uri) if uri else None,
             "recovery_codes": codes,
+            "codes_for": codes_for,
+            "mfa_enrolled": await runtime.identity.mfa.has_confirmed_totp(user_id),
+            "passkeys": await runtime.identity.webauthn_credentials.list(user_id),
+            "key_kind": key_kind,
+            "webauthn": await passkeys_available(runtime),
+            "passkeys_path": PASSKEYS_PATH,
+            "notice": DONE.get(request.query_params.get("done", "")),
             "error": error,
         },
         status_code=status_code,
         private=True,
     )
+
+
+@router.get(SECURITY_PATH, response_class=HTMLResponse)
+async def security_page(request: Request) -> HTMLResponse:
+    """Account security: the user's authenticator app and passkeys."""
+    return await _mfa_page(request)
 
 
 @router.post(ACCOUNT_PATH + "/mfa")
@@ -200,7 +270,7 @@ async def begin_mfa(request: Request) -> Response:
         )
     except MfaError:
         return redirect(f"{ACCOUNT_PATH}?done=mfa-exists")
-    return _mfa_page(request, secret=enrolment.secret_base32, uri=enrolment.uri)
+    return await _mfa_page(request, secret=enrolment.secret_base32, uri=enrolment.uri)
 
 
 @router.post(ACCOUNT_PATH + "/mfa/confirm")
@@ -215,8 +285,96 @@ async def confirm_mfa(request: Request) -> Response:
         )
     except MfaError:
         secret, uri = shown_back(form)
-        return _mfa_page(request, secret=secret, uri=uri, error=CODE_NOT_ACCEPTED, status_code=400)
-    return _mfa_page(request, codes=codes)
+        return await _mfa_page(
+            request, secret=secret, uri=uri, error=CODE_NOT_ACCEPTED, status_code=400
+        )
+    return await _mfa_page(request, codes=codes)
+
+
+# -- The user's own passkeys and security keys ---------------------------------------------
+
+
+def _passkey_id(value: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=404) from None
+
+
+def _refused(exc: WebAuthnError | WebAuthnUnavailable) -> tuple[str, int]:
+    """A refused registration's fixed message and status."""
+    if isinstance(exc, WebAuthnUnavailable):
+        return PASSKEYS_UNAVAILABLE, 409
+    text = REGISTRATION_REFUSED.get(exc.reason)
+    return (text, 409) if text is not None else (KEY_NOT_REGISTERED, 400)
+
+
+@router.post(PASSKEYS_PATH + "/options")
+async def passkey_options(request: Request) -> JSONResponse:
+    """The options for registering a passkey or security key (existing ones excluded)."""
+    runtime, _ = signed_in(request)
+    principal = _session_principal(request)
+    try:
+        options = await runtime.identity.begin_webauthn_registration(
+            principal=principal, source_ip=source_ip(runtime, request)
+        )
+    except (WebAuthnError, WebAuthnUnavailable) as exc:
+        return options_refused(*_refused(exc))
+    return options_response(options)
+
+
+@router.post(PASSKEYS_PATH)
+async def register_passkey(request: Request) -> Response:
+    """Register the browser's key with its name; a first second factor brings recovery codes."""
+    runtime, _ = signed_in(request)
+    principal = _session_principal(request)
+    form = await request.form()
+    try:
+        enrolled = await runtime.identity.finish_webauthn_registration(
+            credential_of(form),
+            nickname=nickname_of(form),
+            principal=principal,
+            source_ip=source_ip(runtime, request),
+        )
+    except (WebAuthnError, WebAuthnUnavailable) as exc:
+        text, status = _refused(exc)
+        return await _mfa_page(request, error=text, status_code=status)
+    if enrolled.recovery_codes:
+        return await _mfa_page(request, codes=list(enrolled.recovery_codes), codes_for="passkey")
+    return redirect(f"{SECURITY_PATH}?done=passkey-added")
+
+
+@router.post(PASSKEYS_PATH + "/{key_id}/rename")
+async def rename_passkey(request: Request, key_id: str) -> Response:
+    """Name one of the user's own keys (a blank name clears it)."""
+    runtime, _ = signed_in(request)
+    principal = _session_principal(request)
+    form = await request.form()
+    try:
+        renamed = await runtime.identity.rename_webauthn(
+            principal, _passkey_id(key_id), nickname_of(form), source_ip=source_ip(runtime, request)
+        )
+    except WebAuthnError:
+        return await _mfa_page(request, error=NAME_REFUSED, status_code=400)
+    if renamed is None:
+        raise HTTPException(status_code=404)
+    return redirect(f"{SECURITY_PATH}?done=passkey-renamed")
+
+
+@router.post(PASSKEYS_PATH + "/{key_id}/remove")
+async def remove_passkey(request: Request, key_id: str) -> Response:
+    """Remove one of the user's own keys, never their last second factor."""
+    runtime, _ = signed_in(request)
+    principal = _session_principal(request)
+    try:
+        removed = await runtime.identity.remove_webauthn(
+            principal, _passkey_id(key_id), source_ip=source_ip(runtime, request)
+        )
+    except LastSecondFactorError:
+        return await _mfa_page(request, error=LAST_FACTOR, status_code=409)
+    if not removed:
+        raise HTTPException(status_code=404)
+    return redirect(f"{SECURITY_PATH}?done=passkey-removed")
 
 
 # -- Own API keys ---------------------------------------------------------------------------

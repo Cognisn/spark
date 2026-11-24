@@ -58,11 +58,14 @@
         </div>
     </div>
 
+    {% include "_admin_user_passkeys.html" %}
+
     <div class="app-card">
         <div class="card-header"><i class="bi bi-person-badge me-2"></i> Roles</div>
         <div class="card-body">
             {% if assignments %}
-            <table class="app-table mb-3" style="font-size: 0.8125rem;">
+            <div class="app-table-responsive mb-3">
+            <table class="app-table" style="font-size: 0.8125rem;">
                 <thead><tr><th>Role</th><th>Granted</th><th>Expires</th><th></th></tr></thead>
                 <tbody>
                 {% for assignment in assignments %}
@@ -80,6 +83,7 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% else %}
             <p style="font-size: 0.875rem; color: var(--app-text-secondary);">No roles.</p>
             {% endif %}

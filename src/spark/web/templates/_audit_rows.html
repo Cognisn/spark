@@ -1,0 +1,29 @@
+{% for row in rows %}
+<tr class="audit-row" data-id="{{ row.id }}" data-action="{{ row.action }}">
+    <td>{{ row.id }}</td>
+    <td class="text-nowrap">{{ row.occurred_at }}</td>
+    <td><code>{{ row.action }}</code></td>
+    <td><span class="badge-app {{ 'badge-app-success' if row.outcome == 'success' else 'badge-app-danger' }}">{{ row.outcome }}</span></td>
+    <td>{{ actors.get(row.actor, row.actor) }}</td>
+    <td>{{ row.resource }}</td>
+    <td>{{ row.source_ip }}</td>
+    <td>
+        {% if row.details_formatted and row.details_formatted != "{}" %}
+        <button type="button" class="btn btn-app-outline btn-sm audit-view" aria-expanded="false" aria-controls="audit-details-{{ row.id }}" data-audit-view>View</button>
+        {% else %}
+        <span class="text-muted">None</span>
+        {% endif %}
+    </td>
+</tr>
+<tr class="audit-details-row" id="audit-details-{{ row.id }}" hidden>
+    <td colspan="8">
+        <div class="audit-details">
+            <div class="audit-details-bar">
+                <span class="audit-details-title">Details for event {{ row.id }}</span>
+                <button type="button" class="btn btn-app-ghost btn-sm" data-audit-copy>Copy</button>
+            </div>
+            <pre class="audit-details-json" tabindex="0">{{ row.details_formatted }}</pre>
+        </div>
+    </td>
+</tr>
+{% endfor %}

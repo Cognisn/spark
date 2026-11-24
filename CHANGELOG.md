@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc49] - 2026-11-24
+
+### Added
+
+- **Passkeys and security keys (rulings CS13 and CS14).** My account has a security page (`/account/mfa`) where a user registers a passkey or security key with a name, and renames or removes it; warden refuses removing the last second factor. A password sign-in offers the key beside the authenticator app wherever warden names it, and a user with no second factor yet may register one there instead of an app. The ceremonies are in `static/js/webauthn.js` (base64url, plain-word errors, nothing logged); the browser's answer is posted with the page's own form, so every outcome is an ordinary page.
+- **Sign in with a passkey.** The sign-in page offers a passkey, and the browser's autofill on the email field (conditional mediation) where the browser has it, while warden can use passkeys. warden decides who may: passkey-only users always, others while passkeys are an allowed second factor. Every refusal is one message.
+- **Passkey-only users.** Administrators can invite a user who signs in with a passkey only; the invitation link opens a page that registers the passkey and shows the recovery codes once. A user's page lists their passkeys and security keys, sends a passkey registration link (`/auth/passkey-registration`, which registers a passkey without signing in) and resets every second factor.
+
+### Changed
+
+- **The relying party follows `server.public_base_url`.** warden's relying party id is that address's host and its origin the only one allowed, unless `warden.webauthn` says otherwise; `warden.webauthn.allowed_origins` must then include the address, and a mismatch stops Spark at start-up naming the settings. warden's mailed passkey registration links point at Spark's own page. Documented in the identity deployment guide.
+
+## [0.3.0rc48] - 2026-11-24
+
+### Fixed
+
+- **Wide tables stay inside their card.** One shared rule in `base.css` makes every `app-table-responsive` wrapper scroll sideways inside its card (the connections page used to be the only one that did), so the Total tokens and Credits columns on Usage and credits no longer spill out of the card.
+- **The audit trail keeps each event on one line.** The Details column shows a View button that opens the event's details under its row as indented JSON, with a Copy button that announces its result to screen readers; the details are no longer broken after every character. Export CSV and NDJSON are unchanged.
+- **Every other table now has the wrapper too.** The role table on a user's page and the single sign-on checks table sat outside it and pushed the page wider than a phone; the two tables the connections page builds in script do the same. An open audit details box is now as wide as the card and scrolls its JSON inside itself, rather than stretching the table.
+
 ## [0.3.0rc47] - 2026-11-24
 
 ### Changed

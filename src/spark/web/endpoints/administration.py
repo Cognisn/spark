@@ -7,9 +7,17 @@ SPARK's screens over warden's Python API; warden audits every change itself
   optionally of one status; create a user with a password or for single
   sign-on, with roles. ``/admin/users/{id}``: one user, with their roles
   (assign and revoke), their status (suspend, reactivate, deactivate), a TOTP
-  reset and a password reset link.
-* ``/admin/invitations``: pending invitations; invite with staged roles,
-  resend (the old link stops working) and revoke.
+  reset and a password reset link; their passkeys and security keys
+  (``_admin_user_passkeys.html``), a passkey registration link
+  (``POST /admin/users/{id}/passkey-link``, for a user who has lost their
+  passkeys or signs in with one only) and a reset of every second factor
+  (``POST /admin/users/{id}/mfa-reset``: every key, the authenticator app and
+  the recovery codes, and their sessions end). warden 0.2.0 has no
+  administrator's removal of a single key, so the reset is how an
+  administrator removes them.
+* ``/admin/invitations``: pending invitations; invite with staged roles and a
+  sign-in method (a passkey only, where passkeys work here), resend (the old
+  link stops working) and revoke.
 * ``/admin/api-keys``: every user's API keys; revoke one.
 * ``/admin/sso``: single sign-on through warden's settings: the issuer URL,
   client ID, client secret (to the secrets store, never shown again) and
@@ -39,12 +47,14 @@ from warden.identity import (
     InvitationError,
     LastAdministratorError,
     MailError,
+    PasskeyLinkRefused,
     RoleError,
     SignInMethod,
     StagedGrant,
     User,
     UserError,
     UserStatus,
+    WebAuthnUnavailable,
 )
 
 from spark.identity import sso
@@ -52,9 +62,9 @@ from spark.identity.access import SparkIdentity, require_permission
 from spark.identity.mail import captured, link_in
 from spark.identity.permissions import USERS_ADMIN
 from spark.identity.runtime import IdentityRuntime
-from spark.identity.web import INVITATION_PATH, RESET_PATH, source_ip
-from spark.web.endpoints.account import screen
-from spark.web.endpoints.identity import identity_runtime, redirect
+from spark.identity.web import INVITATION_PATH, PASSKEY_REGISTRATION_PATH, RESET_PATH, source_ip
+from spark.web.endpoints.account import key_kind, screen
+from spark.web.endpoints.identity import identity_runtime, passkeys_available, redirect
 
 router = APIRouter()
 
@@ -83,7 +93,15 @@ DONE = {
     "sent": "The link is sent.",
     "method": "The sign-in method is changed.",
     "saved": "The single sign-on settings are saved.",
+    "mfa-reset": (
+        "Every second factor is removed and the user's sessions are ended. They set one up "
+        "again at their next sign-in, or with a passkey registration link."
+    ),
 }
+NO_PASSKEY_LINK = (
+    "No link was sent: the user is not active, or signs in only through single sign-on."
+)
+PASSKEYS_OFF = "Passkeys cannot be used on this server, so no link was sent."
 SSO_PATH = "/admin/sso"
 SSO_OFF = "Single sign-on is not switched on, so a user cannot be set to sign in only through it."
 SSO_OFF_FLAG = "Cannot sign in: single sign-on is off"
@@ -257,6 +275,10 @@ async def _user_page(
         "mailed_link": None,
         "sso_available": await sso.available(runtime.identity),
         "sso_off_flag": SSO_OFF_FLAG,
+        # _admin_user_passkeys.html
+        "passkeys": await runtime.identity.webauthn_credentials.list(user.id),
+        "key_kind": key_kind,
+        "webauthn": await passkeys_available(runtime),
     }
     context.update(extra or {})
     return screen(
@@ -384,6 +406,44 @@ async def send_password_reset(
     return await _user_page(request, runtime, user, extra=_mailed(runtime, messages, RESET_PATH))
 
 
+@router.post(USERS_PATH + "/{user_id}/passkey-link")
+async def send_passkey_link(
+    request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Send the user a passkey registration link (or, without a mail service, show it once)."""
+    runtime = _runtime(request)
+    user = await _user_or_404(runtime, user_id)
+    try:
+        with captured() as messages:
+            await runtime.identity.send_passkey_registration(
+                user.id, actor=_actor(identity), source_ip=source_ip(runtime, request)
+            )
+    except PasskeyLinkRefused:
+        return await _user_page(request, runtime, user, error=NO_PASSKEY_LINK, status_code=409)
+    except WebAuthnUnavailable:
+        return await _user_page(request, runtime, user, error=PASSKEYS_OFF, status_code=409)
+    except MailError:
+        return await _user_page(
+            request, runtime, user, error="The link could not be sent.", status_code=502
+        )
+    return await _user_page(
+        request, runtime, user, extra=_mailed(runtime, messages, PASSKEY_REGISTRATION_PATH)
+    )
+
+
+@router.post(USERS_PATH + "/{user_id}/mfa-reset")
+async def reset_mfa(
+    request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Remove every second factor of the user (keys, app, codes) and end their sessions."""
+    runtime = _runtime(request)
+    user = await _user_or_404(runtime, user_id)
+    await runtime.identity.reset_mfa(
+        user.id, actor=_actor(identity), source_ip=source_ip(runtime, request)
+    )
+    return redirect(f"{USERS_PATH}/{user.id}?done=mfa-reset")
+
+
 # -- Invitations ----------------------------------------------------------------------------
 
 
@@ -402,6 +462,7 @@ async def _invitations_page(
         "error": error,
         "mailed_link": None,
         "sso_available": await sso.available(runtime.identity),
+        "webauthn": await passkeys_available(runtime),
     }
     context.update(extra or {})
     return screen(

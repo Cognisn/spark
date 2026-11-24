@@ -1,0 +1,15 @@
+{# Sign in with a passkey alone: a button, and the browser's autofill on the email field
+   (conditional mediation) where the browser has it. Included by auth_sign_in.html only
+   while warden's capabilities offer passkey sign-in, which also loads webauthn.js.
+   Expects csrf_token and next_path. #}
+<div class="text-center my-3" style="color: var(--app-text-muted); font-size: 0.8125rem;">or</div>
+<form method="POST" action="/auth/sign-in/passkey" data-webauthn="sign-in"
+      data-options-url="/auth/sign-in/passkey/options" data-conditional="#email">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <input type="hidden" name="credential" value="">
+    <div class="alert-app alert-app-danger mb-3" data-webauthn-error hidden></div>
+    <button type="button" class="btn btn-app-outline w-100" data-webauthn-start>
+        <i class="bi bi-fingerprint me-1" aria-hidden="true"></i> Sign in with a passkey
+    </button>
+</form>
