@@ -47,8 +47,9 @@ sessions on the old address end.
    and every message fail the Origin check.
 3. **Leave `Origin`, `Referer`, `Cookie` and `X-CSRF-Token` alone.**
 4. **Serve Spark at `/`**, with no path prefix or rewriting.
-5. **Stream responses.** Chat answers (`/stream/chat`), debates and panels arrive as
-   server-sent events; buffering holds an answer back until it is complete. Turn response
+5. **Stream responses.** Chat answers (`/stream/chat`), the live view of a shared
+   conversation (`/stream/conversation`), debates and panels arrive as server-sent
+   events; buffering holds an answer back until it is complete. Turn response
    buffering off, and allow long reads: a model turn with tools can run for minutes.
 6. **Accept large bodies**: at least the instance's largest upload
    (`files.max_upload_mb`, default 50 MB), and up to 1 GB on `/admin/bundles` if

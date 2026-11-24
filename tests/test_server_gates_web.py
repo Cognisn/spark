@@ -59,6 +59,10 @@ class _PromptingManager:
     def __init__(self) -> None:
         self.answers: dict[str, Any] = {}
 
+    def model_refusal(self, *_: Any) -> None:
+        """Every sender may use the model (the real check is ConversationManager's)."""
+        return None
+
     def send_message(
         self,
         conversation_id: int,

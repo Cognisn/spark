@@ -49,6 +49,12 @@ function sendMessageWithSSE(conversationId, message, attachmentIds) {
 function openChatStream(url) {
     currentEventSource = new EventSource(url);
 
+    // The sender was removed from the conversation: their turn is cancelled.
+    currentEventSource.addEventListener('removed', () => {
+        closeStream();
+        if (window.SparkSharing) SparkSharing._onEvent('removed', {});
+    });
+
     currentEventSource.addEventListener('status', (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -189,7 +195,15 @@ function openChatStream(url) {
     currentEventSource.onerror = () => {
         if (isRequestCancelled) return;
         if (currentEventSource.readyState === EventSource.CLOSED) {
+            // Refused before it started (another participant's turn, a read-only role,
+            // a model the sender may not use): the page says why and nothing was sent.
+            const refused = !currentStreamId;
             closeStream();
+            if (refused) {
+                removeStreamingMessage();
+                appendSystemMessage('Your message was not sent.');
+                if (window.SparkSharing) SparkSharing.refresh();
+            }
         }
     };
 }

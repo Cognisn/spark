@@ -1,8 +1,22 @@
-"""Server-Sent Events streaming for real-time chat responses."""
+"""Server-Sent Events streaming for real-time chat responses, and live views of a turn.
+
+A turn runs as its sender (CS28) and one at a time per conversation (CS29): the
+sender takes the conversation's turn lock (:class:`RunningTurn`, a lease in
+``conversation_turns`` refreshed every :data:`HEARTBEAT_SECONDS`), so a second
+sender on any replica is refused with 409 and the holder's name. The lock is given
+back when the turn ends, however it ends (completed, cancelled or failed), even if
+the sender's page has gone.
+
+While the turn runs its reply text and tool activity are published on the app's
+live bus (:mod:`spark.web.live`); every member viewing the conversation follows it
+through ``GET /stream/conversation`` and reloads the history when the turn ends.
+Removing the sender cancels their turn; removing a viewer closes their view.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -15,10 +29,15 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.database import conversation_members
+from spark.database.conversation_members import HEARTBEAT_SECONDS
+from spark.database.scope import Capability, conversation_role
 from spark.identity.access import current_user_guid
 from spark.usage.budgets import BudgetExceeded
 from spark.web import interactions
 from spark.web.db import database, sync_database
+from spark.web.live import DELTA_INTERVAL, TurnHandle, bus_for
+from spark.web.scope import ConversationAccess, conversation_access
 
 logger = logging.getLogger(__name__)
 
@@ -167,10 +186,34 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         return EventSourceResponse(error_gen())
 
     user_guid = current_user_guid(request)
-    from spark.web.scope import not_found, owned_conversation
+    from spark.web.endpoints.chat import refuse_send
+    from spark.web.endpoints.usage import request_roles as _request_roles
 
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()  # type: ignore[return-value]
+    access = await conversation_access(request, conversation_id, Capability.CONTRIBUTE)
+    if not isinstance(access, ConversationAccess):
+        if access.status_code == 403:
+            await refuse_send(request, conversation_id, "role")
+        return access  # type: ignore[return-value]
+
+    # The sender must be able to use the conversation's model (M9, CS28): refused
+    # before anything of the turn is stored, and before the turn lock is taken.
+    from spark.identity.access import request_permissions as _request_permissions
+    from spark.web.scope import is_server
+
+    refusal = (
+        await asyncio.to_thread(
+            conv_mgr.model_refusal,
+            access.conversation.get("model_id") or "",
+            user_guid,
+            _request_roles(request),
+            _request_permissions(request),
+        )
+        if is_server()
+        else None
+    )
+    if refusal is not None:
+        await refuse_send(request, conversation_id, "model")
+        return JSONResponse({"error": refusal}, status_code=403)  # type: ignore[return-value]
 
     # Resolve an explicit /skill-name invocation at the start of the message
     from spark.skills.trigger import resolve_trigger_for_conversation
@@ -191,6 +234,20 @@ async def stream_chat(request: Request) -> EventSourceResponse:
     stream_id = uuid.uuid4().hex
     turn_token = CancellationToken()
     agent_tokens_for_stream: dict[str, CancellationToken] = {}
+
+    # One turn at a time in a conversation, on every replica (CS29). Personal mode has
+    # one person and no sharing: its turns run as before.
+    try:
+        turn: RunningTurn | LocalTurn = (
+            await RunningTurn.start(request, conversation_id, user_guid, stream_id, turn_token)
+            if is_server()
+            else LocalTurn(turn_token)
+        )
+    except TurnRefused as busy:
+        await refuse_send(request, conversation_id, "turn")
+        return JSONResponse(  # type: ignore[return-value]
+            {"error": str(busy), "holder": busy.holder}, status_code=409
+        )
 
     # Initialise cancellation registries on app.state if absent.
     if not hasattr(request.app.state, "turn_cancel_tokens"):
@@ -235,10 +292,12 @@ async def stream_chat(request: Request) -> EventSourceResponse:
         def status_callback(event_type: str, data: dict[str, Any]) -> None:
             """Collect tool events from the conversation manager."""
             tool_events.append({"event": event_type, "data": data})
+            turn.observe(event_type, data)
 
         def stream_callback(text: str) -> None:
             nonlocal final_content
             final_content += text
+            turn.push_text(text)
 
         def permission_callback(tool_name: str, tool_input: dict[str, Any]) -> str:
             """Called from the tool execution thread when permission is needed.
@@ -248,6 +307,8 @@ async def stream_chat(request: Request) -> EventSourceResponse:
             """
             request_id = str(uuid.uuid4())[:8]
 
+            # Viewers see that the sender is answering a tool prompt (never its input).
+            turn.observe("permission_request", {"tool_name": tool_name})
             # Create an event that the main loop will emit as SSE
             tool_events.append(
                 {
@@ -377,6 +438,7 @@ async def stream_chat(request: Request) -> EventSourceResponse:
 
         permissions = request_permissions(request)
         roles = request_roles(request)
+        result_future: asyncio.Future[Any] | None = None
         try:
             loop = asyncio.get_event_loop()
             result_future = loop.run_in_executor(
@@ -393,9 +455,16 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                     roles=roles,
                 ),
             )
+            # The lock is given back when the turn ends, whether or not this page stays.
+            turn.finish_after(result_future)
 
             # Poll for events while waiting for completion
             while not result_future.done():
+                if turn.handle.removed.is_set():
+                    # The sender was removed from the conversation: their turn is
+                    # cancelled and their view closes at once.
+                    yield {"event": "removed", "data": json.dumps({})}
+                    return
                 while tool_events:
                     mapped = _sse_event(tool_events.pop(0))
                     if mapped is not None:
@@ -455,6 +524,9 @@ async def stream_chat(request: Request) -> EventSourceResponse:
                 yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
         finally:
+            if result_future is None:
+                # The turn never started (the page went first): give the lock back.
+                await turn.finish("not_started")
             # Drop registries for this stream so cancel endpoints can't address
             # stale tokens after the turn finishes.
             request.app.state.turn_cancel_tokens.pop(stream_id, None)
@@ -489,3 +561,276 @@ async def cancel_stream(request: Request) -> JSONResponse:
         logger.info("Cascade cancel for agent %s in stream %s", agent_id, stream_id)
 
     return JSONResponse({"status": "ok"})
+
+
+# -- The turn lock and live publishing ---------------------------------------------------------
+
+
+class TurnRefused(Exception):
+    """Another participant's turn is running in the conversation."""
+
+    def __init__(self, message: str, holder: dict[str, str]) -> None:
+        super().__init__(message)
+        self.holder = holder
+
+
+class LocalTurn:
+    """A personal-mode turn: no lock and no live publishing (one person, nothing shared)."""
+
+    def __init__(self, token: CancellationToken) -> None:
+        self.token = token
+        self.handle = TurnHandle(0, "", cancel=token.cancel)
+
+    def push_text(self, text: str) -> None:
+        return None
+
+    def observe(self, event_type: str, data: dict[str, Any]) -> None:
+        return None
+
+    async def finish(self, status: str) -> None:
+        return None
+
+    def finish_after(self, future: asyncio.Future[Any]) -> None:
+        return None
+
+
+class RunningTurn:
+    """One participant's turn: it holds the conversation's turn lock while it runs, and
+    publishes the turn's events to everyone viewing it.
+
+    Made by :meth:`start` (which takes the lock or raises :class:`TurnRefused`). The
+    turn's worker thread reports reply text (:meth:`push_text`) and tool activity
+    (:meth:`observe`); a task on the event loop publishes them, coalesced every
+    :data:`spark.web.live.DELTA_INTERVAL` seconds, and refreshes the lease every
+    :data:`HEARTBEAT_SECONDS`. :meth:`finish` (or :meth:`finish_after` a future)
+    publishes the last text, gives the lock back and tells viewers the turn ended.
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        database_: Any,
+        conversation_id: int,
+        user_guid: str,
+        stream_id: str,
+        token: CancellationToken,
+    ) -> None:
+        self._app = app
+        self._db = database_
+        self.conversation_id = conversation_id
+        self.user_guid = user_guid
+        self.stream_id = stream_id
+        self.token = token
+        self.bus = bus_for(app)
+        self.handle = TurnHandle(conversation_id, user_guid, cancel=token.cancel)
+        self._lock = threading.Lock()
+        self._text: list[str] = []
+        self._events: list[tuple[str, dict[str, Any]]] = []
+        self._seq = 0
+        self._finished = False
+        self._ended = asyncio.Event()
+        self._pump: asyncio.Task[None] | None = None
+        self._finishing: asyncio.Task[None] | None = None
+
+    @classmethod
+    async def start(
+        cls,
+        request: Request,
+        conversation_id: int,
+        user_guid: str,
+        stream_id: str | None = None,
+        token: CancellationToken | None = None,
+    ) -> RunningTurn:
+        """Take the turn lock for ``user_guid`` and announce the turn; :class:`TurnRefused`
+        (naming the holder) while another participant's turn runs."""
+        turn = cls(
+            request.app,
+            database(request),
+            conversation_id,
+            user_guid,
+            stream_id or uuid.uuid4().hex,
+            token or CancellationToken(),
+        )
+        holder = await conversation_members.acquire_turn(
+            turn._db, user_guid, conversation_id, turn.stream_id, turn.bus.replica_id
+        )
+        if holder is not None:
+            from spark.web.endpoints.conversations import display_names
+
+            guid = str(holder["user_guid"])
+            name = (await display_names(request, [guid]))[guid]["name"]
+            raise TurnRefused(
+                f"Waiting for {name}'s turn to finish", {"user_guid": guid, "name": name}
+            )
+        turn.bus.register_turn(turn.handle)
+        from spark.web.endpoints.conversations import display_names
+
+        name = (await display_names(request, [user_guid]))[user_guid]["name"]
+        await turn.bus.publish(
+            conversation_id,
+            "turn_started",
+            {"user_guid": user_guid, "name": name, "stream_id": turn.stream_id},
+        )
+        turn._pump = asyncio.get_running_loop().create_task(
+            turn._run(), name=f"spark-turn-{turn.stream_id}"
+        )
+        return turn
+
+    # Called from the turn's worker thread.
+
+    def push_text(self, text: str) -> None:
+        with self._lock:
+            self._text.append(text)
+
+    def observe(self, event_type: str, data: dict[str, Any]) -> None:
+        """Note a turn event viewers may see: a tool starting or ending, or a prompt."""
+        phase = {
+            "tool_call": "start",
+            "tool_result": "end",
+            "permission_request": "approval",
+        }.get(event_type)
+        if phase is None:
+            return
+        with self._lock:
+            self._events.append(
+                ("tool", {"phase": phase, "tool_name": str(data.get("tool_name", ""))})
+            )
+
+    # On the event loop.
+
+    async def _flush(self) -> None:
+        with self._lock:
+            text = "".join(self._text)
+            events, self._events, self._text = self._events, [], []
+        for event, data in events:
+            await self.bus.publish(
+                self.conversation_id, event, {**data, "stream_id": self.stream_id}
+            )
+        if text:
+            self._seq += 1
+            await self.bus.publish(
+                self.conversation_id,
+                "delta",
+                {"seq": self._seq, "text": text, "stream_id": self.stream_id},
+            )
+
+    async def _run(self) -> None:
+        loop = asyncio.get_running_loop()
+        beat = loop.time()
+        while not self._finished:
+            await asyncio.sleep(DELTA_INTERVAL)
+            try:
+                await self._flush()
+                if loop.time() - beat >= HEARTBEAT_SECONDS:
+                    beat = loop.time()
+                    if not await conversation_members.heartbeat_turn(
+                        self._db, self.conversation_id, self.stream_id
+                    ):
+                        logger.warning(
+                            "Turn %s lost its lease in conversation %s",
+                            self.stream_id,
+                            self.conversation_id,
+                        )
+            except Exception:  # noqa: BLE001 - a live view never breaks a turn
+                logger.warning("Live publishing of turn %s failed", self.stream_id)
+
+    async def finish(self, status: str) -> None:
+        """End the turn: publish what is left, give the lock back, tell the viewers. Once;
+        a second call waits until the first has finished."""
+        if self._finished:
+            await self._ended.wait()
+            return
+        self._finished = True
+        pump, self._pump = self._pump, None
+        if pump is not None:
+            pump.cancel()
+            with contextlib.suppress(BaseException):
+                await pump
+        try:
+            await self._flush()
+        except Exception:  # noqa: BLE001
+            logger.warning("Live publishing of turn %s failed", self.stream_id)
+        try:
+            await conversation_members.release_turn(self._db, self.conversation_id, self.stream_id)
+        finally:
+            self.bus.unregister_turn(self.handle)
+            try:
+                await self.bus.publish(
+                    self.conversation_id,
+                    "turn_finished",
+                    {"status": status, "user_guid": self.user_guid, "stream_id": self.stream_id},
+                )
+            finally:
+                self._ended.set()
+
+    def finish_after(self, future: asyncio.Future[Any]) -> None:
+        """Finish the turn when ``future`` (the turn's work) is done, however it ends."""
+
+        def done(fut: asyncio.Future[Any]) -> None:
+            if fut.cancelled():
+                status = "cancelled"
+            elif fut.exception() is not None:
+                status = "failed"
+            else:
+                result = fut.result()
+                status = str(result.get("status", "ok")) if isinstance(result, dict) else "ok"
+            self._finishing = asyncio.ensure_future(self.finish(status))
+
+        future.add_done_callback(done)
+
+
+# -- Watching a conversation -------------------------------------------------------------------
+
+# Seconds between checks that a watcher still has access (a removal whose notice was lost).
+WATCH_RECHECK = 10.0
+
+
+@router.get("/conversation")
+async def watch_conversation(request: Request) -> EventSourceResponse:
+    """SSE: follow a conversation the signed-in user may read, live.
+
+    Sends ``ready`` (with the running turn's holder, if any), then the live events
+    of :mod:`spark.web.live` as they happen. Closes with ``removed`` when the user
+    loses access, and ``deleted`` when the conversation is deleted.
+    """
+    try:
+        conversation_id = int(request.query_params.get("conversation_id", "0"))
+    except ValueError:
+        conversation_id = 0
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access  # type: ignore[return-value]
+    user_guid = access.user_guid
+    db = database(request)
+    bus = bus_for(request.app)
+    sub = bus.subscribe(conversation_id, user_guid)
+    holder = await conversation_members.current_turn(db, user_guid, conversation_id)
+    ready: dict[str, Any] = {"turn": None}
+    if holder is not None:
+        from spark.web.endpoints.conversations import display_names
+
+        guid = str(holder["user_guid"])
+        ready["turn"] = {
+            "user_guid": guid,
+            "name": (await display_names(request, [guid]))[guid]["name"],
+            "stream_id": holder["stream_id"],
+        }
+
+    async def events() -> AsyncGenerator[dict[str, Any], None]:
+        try:
+            yield {"event": "ready", "data": json.dumps(ready)}
+            while True:
+                try:
+                    item = await asyncio.wait_for(sub.queue.get(), timeout=WATCH_RECHECK)
+                except TimeoutError:
+                    if await conversation_role(db, user_guid, conversation_id) is None:
+                        yield {"event": "removed", "data": json.dumps({})}
+                        return
+                    continue
+                yield {"event": item["event"], "data": json.dumps(item["data"])}
+                if sub.closed.is_set() and item["event"] in ("removed", "deleted", "closed"):
+                    return
+        finally:
+            bus.unsubscribe(sub)
+
+    return EventSourceResponse(events())

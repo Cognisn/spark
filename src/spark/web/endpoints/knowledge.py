@@ -20,11 +20,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.core.cancellation import CancellationToken
+from spark.database.scope import Capability
 from spark.identity.access import current_user_guid, has_permission
 from spark.identity.permissions import KNOWLEDGE_INSTANCE
 from spark.knowledge import jobs
 from spark.web.db import database, sync_database
-from spark.web.scope import is_server, not_found, owned_conversation
+from spark.web.scope import ConversationAccess, conversation_access, is_server, not_found
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,19 @@ def build_key(user_guid: str, scope: str) -> str:
 
 
 async def _scope_refusal(request: Request, scope: str) -> JSONResponse | None:
-    """400 for a malformed scope, 404 for another user's (or a missing) conversation."""
+    """400 for a malformed scope, 404 for another user's (or a missing) conversation.
+
+    A conversation's knowledge graph stays with its owner (CS31): a member of a
+    shared conversation is refused (403).
+    """
     if scope == "global":
         return None
     kind, _, raw = scope.partition(":")
     if kind != "conv" or not raw.isdigit():
         return JSONResponse({"error": "Invalid scope"}, status_code=400)
-    if await owned_conversation(request, int(raw)) is None:
-        return not_found()
+    access = await conversation_access(request, int(raw), Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
     return None
 
 

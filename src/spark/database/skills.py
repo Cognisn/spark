@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from spark.database.scope import OWNED_CONVERSATIONS, owns_conversation
+from spark.database.scope import (
+    READABLE_CONVERSATIONS,
+    Capability,
+    allows,
+    conversation_role,
+)
 from spark.db.dialect import upsert
 from spark.db.engine import Executor
 
@@ -49,10 +54,13 @@ async def set_skill_enabled(db: Executor, name: str, enabled: bool, user_guid: s
 async def get_conversation_skill_states(
     db: Executor, user_guid: str, conversation_id: int
 ) -> dict[str, bool]:
-    """Overrides on one of the user's conversations keyed by skill name (absent: inherit)."""
+    """Overrides on a conversation the user may read, keyed by skill name (absent: inherit).
+
+    The overrides are the owner's settings; every participant's turn follows them.
+    """
     rows = await db.fetch_all(
         f"""SELECT skill_name, enabled FROM conversation_skills WHERE conversation_id = ?
-            AND conversation_id IN ({OWNED_CONVERSATIONS})""",
+            AND conversation_id IN ({READABLE_CONVERSATIONS})""",
         (conversation_id, user_guid),
     )
     return {r["skill_name"]: bool(r["enabled"]) for r in rows}
@@ -61,9 +69,10 @@ async def get_conversation_skill_states(
 async def set_conversation_skill_enabled(
     db: Executor, user_guid: str, conversation_id: int, skill_name: str, enabled: bool
 ) -> None:
-    """Set a skill override on one of the user's conversations (nothing otherwise)."""
+    """Set a skill override on a conversation the user owns (nothing otherwise)."""
     async with db.transaction() as conn:
-        if await owns_conversation(conn, user_guid, conversation_id):
+        role = await conversation_role(conn, user_guid, conversation_id)
+        if allows(role, Capability.MANAGE):
             await conn.execute(
                 _SET_CONVERSATION_SKILL, (conversation_id, skill_name, 1 if enabled else 0)
             )

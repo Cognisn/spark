@@ -133,11 +133,57 @@ Each conversation maintains a vector index of all messages, tool calls, and tool
 
 ## Favourites
 
-Star a conversation to mark it as a favourite. Favourites appear at the top of the conversation list and on the dashboard.
+Star a conversation to mark it as a favourite. Favourites appear at the top of the conversation list and on the dashboard. In a shared conversation your star is your own.
+
+## Sharing a Conversation (server mode)
+
+On a server you can share a conversation with other people on the same instance. Personal mode has one person, so it has no sharing.
+
+### Roles
+
+| Role | Can |
+|------|-----|
+| **Owner** | Everything: send, share, change roles, remove people, transfer, rename, change the model and settings, link conversations, delete |
+| **Contributor** | Read the whole conversation, send messages as themselves, add attachments, export |
+| **Read-only** | Read the whole conversation (messages, attachments, tool calls and results, the thought process where shown) and export it |
+
+Whoever creates a conversation is its owner.
+
+### Sharing
+
+1. Open the conversation and click **Share** (only the owner sees it)
+2. Type at least two letters of a person's name or email address; anyone with an active account on the instance can be found
+3. Choose **Read-only** or **Contributor** and click **Add**
+
+The dialog warns that everything already in the conversation becomes visible to the people you share it with. The person sees it at once under **Shared with me** on the Conversations page, marked **New** until they open it, with a count of the new ones. When the instance has a mail server, they are also sent a short notice with the conversation's name and link (never anything said in it).
+
+In the dialog the owner can change a person's role, **Remove** them, or **Make owner**. A removal takes effect at once: the person's open view closes, and if their turn is running it is cancelled. Anyone other than the owner can leave a conversation from the Shared with me list.
+
+### Transferring ownership
+
+**Make owner** hands the conversation to someone who already has access, or to a person found in the dialog, who is added in the transfer. The new owner takes over sharing, settings and deletion and is told by mail; the previous owner stays as a contributor. Links between the conversation and the previous owner's other conversations are removed, and their knowledge graph builds and actions stay with them.
+
+### Taking turns
+
+Each message is sent as the person who wrote it, and the turn that answers it is theirs: it uses their credits, their tools and tool approvals (an "allow in this conversation" answer is your own, never another person's), and it is recorded in their usage. If the conversation's model is not one you may use, the composer says so and you cannot send.
+
+One turn runs at a time. While the assistant answers one person, everyone viewing the conversation sees the reply stream in, and the others' composers say **Waiting for <name>'s turn to finish**. New messages and replies appear for everyone without a reload.
+
+Each person's messages carry their name, initials and their own colour, and the assistant's replies say whose turn they answered. The colours are chosen to be told apart with any colour vision and are always shown with the name. The conversation's header shows a sharing icon with the people in it, and the Conversations page marks your own shared conversations with the same icon.
+
+### What stays private
+
+While a conversation is shared with anyone, every turn in it (the owner's too) runs without personal memories and without knowledge graphs: no memory or knowledge graph tools, no knowledge graph context, and no context from linked conversations. Your own memories and graphs are never put into an answer others can read.
+
+These stay with the owner and are never reachable by the people they share with: linked conversations, actions created from the conversation, knowledge graph builds, and the owner's file area. Files attached in the conversation are the exception: everyone with access can open them.
+
+Debates and panels cannot be shared.
+
+Every share, role change, removal, transfer and refused message is recorded in the audit trail, with the address it came from.
 
 ## Conversation Export
 
-Export a conversation from the chat settings menu. Available formats:
+Export a conversation from the chat settings menu. In a shared conversation everyone with access can export it. Available formats:
 
 | Format | Description |
 |--------|-------------|

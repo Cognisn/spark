@@ -127,7 +127,19 @@ async function loadToolActivity(conversationId) {
     }
 }
 
+// The stored message being drawn: in a shared conversation its header names its sender.
+let _renderingMsg = null;
+
 function appendMessage(msg) {
+    _renderingMsg = msg;
+    try {
+        _appendMessage(msg);
+    } finally {
+        _renderingMsg = null;
+    }
+}
+
+function _appendMessage(msg) {
     const content = msg.content || '';
     const role = msg.role || 'user';
     const timestamp = msg.timestamp || null;
@@ -208,7 +220,18 @@ function _formatDateTime(timestamp) {
     });
 }
 
+function _sharedMessage() {
+    // A stored message, or (for what this page sends and streams) the signed-in user's.
+    if (!window.SparkSharing || !SparkSharing.isShared()) return null;
+    return _renderingMsg || SparkSharing.mine();
+}
+
 function _buildMessageHeader(role) {
+    const shared = _sharedMessage();
+    if (shared && (role === 'user' || role === 'assistant')) {
+        const header = SparkSharing.headerFor(role, shared);
+        if (header) return header;
+    }
     const icon = role === 'assistant'
         ? '<i class="bi bi-robot" style="color: var(--app-accent);"></i>'
         : '<i class="bi bi-person" style="color: var(--app-text-secondary);"></i>';
@@ -252,6 +275,11 @@ function appendTextMessage(role, content, timestamp, modelId, reasoning) {
 
     const bubble = document.createElement('div');
     bubble.className = `chat-message ${role}`;
+    const shared = role === 'user' ? _sharedMessage() : null;
+    if (shared) {
+        const colour = SparkSharing.bubbleClass(role, shared);
+        if (colour) bubble.className += ` ${colour}`;
+    }
 
     const header = _buildMessageHeader(role);
     const copyBtn = _buildCopyButton(content);
