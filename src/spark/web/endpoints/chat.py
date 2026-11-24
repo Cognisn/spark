@@ -1,4 +1,11 @@
-"""Chat and message endpoints."""
+"""Chat and message endpoints.
+
+Every route that takes a conversation id asks
+:func:`spark.web.scope.conversation_access` for what it needs: reading (history,
+tool activity, agents, info, export) is open to every member, sending to the owner
+and contributors, and settings, tools and links to the owner. Linked conversations
+stay private to the owner: a link's target must be the owner's own conversation.
+"""
 
 from __future__ import annotations
 
@@ -14,13 +21,15 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from spark.core.conversation_manager import ConnectionNotAssigned
 from spark.core.reasoning import strip_reasoning_blocks
+from spark.database import conversation_members
+from spark.database.scope import Capability, Role, allows, conversation_role
 from spark.identity.access import current_user_guid, request_permissions
 from spark.usage.budgets import BudgetExceeded
 from spark.web import attachments, interactions
 from spark.web import models as offered_models
 from spark.web.db import database, sync_database
 from spark.web.endpoints.usage import refused_response, request_roles
-from spark.web.scope import not_found, owned_conversation
+from spark.web.scope import ConversationAccess, conversation_access, is_server, not_found
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +41,22 @@ router = APIRouter(prefix="/chat")
 
 @router.get("/{conversation_id}", response_class=HTMLResponse)
 async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
-    """Render the chat page for a conversation."""
+    """Render the chat page for a conversation the signed-in user may read."""
     templates = request.app.state.templates
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
-    user_guid = current_user_guid(request)
 
     conversation = None
+    role = Role.OWNER
     if conv_mgr:
-        conversation = await asyncio.to_thread(
-            conv_mgr.get_conversation, conversation_id, user_guid
-        )
+        access = await conversation_access(request, conversation_id, Capability.READ)
+        if isinstance(access, ConversationAccess):
+            conversation = dict(access.conversation)
+            role = access.role
+            # Opening it clears the "new" marker of a conversation shared with them.
+            if is_server():
+                await conversation_members.mark_seen(
+                    database(request), access.user_guid, conversation_id
+                )
 
     if not conversation:
         return templates.TemplateResponse(
@@ -63,6 +78,9 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
             "conversation": conversation,
             # A conversation pinned to a model no longer offered keeps working, with a notice.
             "model_notice": offered_models.notice(request, conversation.get("model_id")),
+            # Sharing is a server's: the page shows the Share button to the owner only.
+            "sharing": is_server(),
+            "my_role": role.value,
         },
     )
 
@@ -72,33 +90,46 @@ async def chat_page(request: Request, conversation_id: int) -> HTMLResponse:
 
 @router.get("/{conversation_id}/api/history")
 async def get_history(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get message history for one of the user's conversations."""
+    """API: the message history of a conversation the user may read.
+
+    On a server each message carries its sender's name and initials (``sender``): the
+    person who wrote a user message, or whose turn an assistant reply answered.
+    """
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
 
-    user_guid = current_user_guid(request)
+    user_guid = access.user_guid
     messages = await asyncio.to_thread(conv_mgr.get_messages, conversation_id, user_guid)
     # Each reply's reasoning travels beside its message, for the page to show collapsed.
     reasoning = await asyncio.to_thread(conv_mgr.get_reasoning, conversation_id, user_guid)
-    return JSONResponse(
-        [
-            {**m, "reasoning": reasoning[m["id"]]} if m.get("id") in reasoning else m
-            for m in messages
-        ]
-    )
+    senders: dict[str, dict[str, str]] = {}
+    if is_server():
+        from spark.web.endpoints.conversations import display_names
+
+        senders = await display_names(request, {str(m.get("user_guid") or "") for m in messages})
+    history = []
+    for m in messages:
+        item = {**m, "reasoning": reasoning[m["id"]]} if m.get("id") in reasoning else dict(m)
+        sender = senders.get(str(m.get("user_guid") or ""))
+        if sender is not None:
+            item["sender"] = sender
+        history.append(item)
+    return JSONResponse(history)
 
 
 @router.get("/{conversation_id}/api/tool-activity")
 async def get_tool_activity(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get tool call history for one of the user's conversations."""
+    """API: the tool call history of a conversation the user may read."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
 
     from spark.database import mcp_ops
 
@@ -126,12 +157,13 @@ async def get_tool_activity(request: Request, conversation_id: int) -> JSONRespo
 
 @router.get("/{conversation_id}/api/agent-history")
 async def get_agent_history(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get agent run history for one of the user's conversations."""
+    """API: the agent run history of a conversation the user may read."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse([])
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
 
     from spark.database import agents as agent_db
 
@@ -153,13 +185,20 @@ async def get_agent_history(request: Request, conversation_id: int) -> JSONRespo
 
 @router.post("/{conversation_id}/api/send")
 async def send_message(request: Request, conversation_id: int) -> JSONResponse:
-    """API: send a message (non-streaming fallback)."""
+    """API: send a message (non-streaming fallback), as the signed-in user's turn.
+
+    Refused (and audited) for a viewer (403), for a sender who may not use the
+    conversation's model (403) and while another participant's turn runs (409).
+    """
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.CONTRIBUTE)
+    if not isinstance(access, ConversationAccess):
+        if access.status_code == 403:
+            await refuse_send(request, conversation_id, "role")
+        return access
     data = await request.json()
     message = data.get("message", "").strip()
     raw_attachments = data.get("attachments")
@@ -175,22 +214,116 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     # token budget, exactly as on the stream.
     permissions = request_permissions(request)
     roles = request_roles(request)
+    from spark.core.cancellation import CancellationToken
+    from spark.web.endpoints.streaming import LocalTurn, RunningTurn, TurnRefused
+
     try:
-        result = await asyncio.to_thread(
-            lambda: conv_mgr.send_message(
-                conversation_id, attached, user_guid, permissions=permissions, roles=roles
-            )
+        # One turn at a time (CS29): the lock is given back when the turn ends, even if
+        # this request is gone by then. Personal mode's turns run as before.
+        turn: RunningTurn | LocalTurn = (
+            await RunningTurn.start(request, conversation_id, user_guid)
+            if is_server()
+            else LocalTurn(CancellationToken())
         )
+        work = asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: conv_mgr.send_message(
+                conversation_id,
+                attached,
+                user_guid,
+                permissions=permissions,
+                roles=roles,
+                cancel_token=turn.token,
+            ),
+        )
+        turn.finish_after(work)
+        try:
+            result = await asyncio.shield(work)
+        finally:
+            # The turn is over when its work is: give the lock back before answering
+            # (a request that went away leaves it to the work's own callback).
+            if work.done():
+                await turn.finish(_status_of(work))
         return JSONResponse(result)
+    except TurnRefused as busy:
+        await refuse_send(request, conversation_id, "turn")
+        return JSONResponse({"error": str(busy), "holder": busy.holder}, status_code=409)
     except BudgetExceeded as refused:
         # Refused at turn start: nothing of the turn was stored or sent to the model.
         return refused_response(refused)
     except ConnectionNotAssigned as refused:
         # The conversation's connection is not (or no longer) assigned to the user (M9).
+        await refuse_send(request, conversation_id, "model")
         return JSONResponse({"error": str(refused)}, status_code=403)
     except Exception as e:
         logger.error("Send message failed: %s", e)
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+def _status_of(work: asyncio.Future[Any]) -> str:
+    if work.cancelled():
+        return "cancelled"
+    if work.exception() is not None:
+        return "failed"
+    result = work.result()
+    return str(result.get("status", "ok")) if isinstance(result, dict) else "ok"
+
+
+async def refuse_send(request: Request, conversation_id: int, reason: str) -> None:
+    """Audit a refused send: ``role`` (a viewer), ``model`` (a model the sender may not use)
+    or ``turn`` (another participant's turn is running)."""
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.CONVERSATION_SEND_REFUSED,
+        "failure",
+        resource_type="conversation",
+        resource_id=str(conversation_id),
+        details={"reason": reason},
+    )
+
+
+async def _sharing_info(
+    request: Request, access: ConversationAccess, conv_mgr: Any, model_id: str
+) -> dict[str, Any]:
+    """The signed-in user's place in the conversation, for the page."""
+    db = database(request)
+    conversation_id = int(access.conversation["id"])
+    refusal: str | None = None
+    if not allows(access.role, Capability.CONTRIBUTE):
+        refusal = "You have read-only access to this conversation."
+    elif is_server():
+        refusal = await asyncio.to_thread(
+            conv_mgr.model_refusal,
+            model_id,
+            access.user_guid,
+            request_roles(request),
+            request_permissions(request),
+        )
+    info: dict[str, Any] = {
+        "my_role": access.role.value,
+        "may_send": refusal is None,
+        "send_refusal": refusal,
+        "may_manage": allows(access.role, Capability.MANAGE),
+        "sharing": is_server(),
+        "shared": False,
+        "members": [],
+        "turn": None,
+    }
+    if not is_server():
+        return info
+    from spark.web.endpoints.conversations import display_names, members_view
+
+    members = await members_view(request, access)
+    info["members"] = members
+    info["shared"] = len(members) > 1
+    turn = await conversation_members.current_turn(db, access.user_guid, conversation_id)
+    if turn is not None:
+        holder = str(turn["user_guid"])
+        names = await display_names(request, [holder])
+        info["turn"] = {"user_guid": holder, "name": names[holder]["name"]}
+    return info
 
 
 # -- Info & Settings ----------------------------------------------------------
@@ -198,15 +331,21 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.get("/{conversation_id}/api/info")
 async def get_info(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get conversation info and settings."""
+    """API: conversation info and settings, with the signed-in user's place in it.
+
+    ``my_role``, ``may_send`` (and ``send_refusal``, the reason when they may not: a
+    read-only role, or a model they may not use), ``may_manage``, ``shared``, the
+    ``members`` (server mode) and the running turn's holder (``turn``).
+    """
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
-    conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
-    if not conv:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
+    conv = dict(access.conversation)
 
     model_id = conv.get("model_id", "")
     # The model's context window, from the connections' catalogue.
@@ -225,8 +364,10 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
     except Exception:
         pass
 
+    sharing = await _sharing_info(request, access, conv_mgr, model_id)
     return JSONResponse(
         {
+            **sharing,
             "id": conv.get("id"),
             "name": conv.get("name"),
             "model_id": model_id,
@@ -264,14 +405,15 @@ async def get_info(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.post("/{conversation_id}/api/settings")
 async def update_settings(request: Request, conversation_id: int) -> JSONResponse:
-    """API: update per-conversation settings."""
+    """API: update per-conversation settings (the owner only)."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
     data = await request.json()
 
     from spark.database import conversations
@@ -330,14 +472,15 @@ async def update_settings(request: Request, conversation_id: int) -> JSONRespons
 
 @router.get("/{conversation_id}/api/tools")
 async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get tool enable/disable states for this conversation."""
+    """API: get tool enable/disable states for this conversation (any member reads them)."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"embedded": [], "mcp_servers": []})
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
 
     from spark.database import mcp_ops
     from spark.identity.access import tools_config_for
@@ -424,14 +567,15 @@ async def get_tools(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.post("/{conversation_id}/api/tools")
 async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
-    """API: toggle a tool or MCP server for this conversation."""
+    """API: toggle a tool or MCP server for this conversation (the owner only)."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
     data = await request.json()
     tool_type = data.get("type", "embedded")  # embedded | mcp_server
     name = data.get("name", "")
@@ -462,14 +606,15 @@ async def toggle_tool(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.get("/{conversation_id}/api/links")
 async def get_links(request: Request, conversation_id: int) -> JSONResponse:
-    """API: get linked conversations."""
+    """API: get linked conversations (the owner's own, private to them)."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"linked": [], "available": []})
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
 
     from spark.database import conversation_links
 
@@ -483,19 +628,24 @@ async def get_links(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.post("/{conversation_id}/api/links")
 async def add_link(request: Request, conversation_id: int) -> JSONResponse:
-    """API: link to another conversation."""
+    """API: link to another of the owner's own conversations."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
     data = await request.json()
     target_id = data.get("target_id")
     if not target_id:
         return JSONResponse({"error": "target_id required"}, status_code=400)
-    if not isinstance(target_id, int) or await owned_conversation(request, target_id) is None:
+    # A link's target is the owner's own: a conversation shared with them is not linkable.
+    if (
+        not isinstance(target_id, int)
+        or await conversation_role(database(request), user_guid, target_id) is not Role.OWNER
+    ):
         return not_found()
 
     from spark.database import conversation_links
@@ -510,14 +660,15 @@ async def add_link(request: Request, conversation_id: int) -> JSONResponse:
 
 @router.delete("/{conversation_id}/api/links/{target_id}")
 async def remove_link(request: Request, conversation_id: int, target_id: int) -> JSONResponse:
-    """API: remove a conversation link."""
+    """API: remove a conversation link (the owner only)."""
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
-    if await owned_conversation(request, conversation_id) is None:
-        return not_found()
+    access = await conversation_access(request, conversation_id, Capability.MANAGE)
+    if not isinstance(access, ConversationAccess):
+        return access
+    user_guid = access.user_guid
 
     from spark.database import conversation_links
 
@@ -530,8 +681,11 @@ async def remove_link(request: Request, conversation_id: int, target_id: int) ->
 
 @router.get("/{conversation_id}/api/export")
 async def export_conversation(request: Request, conversation_id: int):  # type: ignore[no-untyped-def]
-    """API: export conversation as a file download (audited in server mode)."""
-    response = await _export_response(request, conversation_id)
+    """API: export conversation as a file download (any member; audited in server mode)."""
+    access = await conversation_access(request, conversation_id, Capability.READ)
+    if not isinstance(access, ConversationAccess):
+        return access
+    response = await _export_response(request, access)
     if response.status_code == 200:
         from spark.identity import audit
 
@@ -548,17 +702,15 @@ async def export_conversation(request: Request, conversation_id: int):  # type: 
     return response
 
 
-async def _export_response(request: Request, conversation_id: int):  # type: ignore[no-untyped-def]
+async def _export_response(request: Request, access: ConversationAccess):  # type: ignore[no-untyped-def]
     conv_mgr = getattr(request.app.state, "conversation_manager", None)
     if not conv_mgr:
         return JSONResponse({"error": "Not initialised"}, status_code=503)
 
-    user_guid = current_user_guid(request)
     fmt = request.query_params.get("format", "markdown")
-
-    conv = await asyncio.to_thread(conv_mgr.get_conversation, conversation_id, user_guid)
-    if not conv:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+    conversation_id = int(access.conversation["id"])
+    user_guid = access.user_guid
+    conv = dict(access.conversation)
 
     msgs = await asyncio.to_thread(conv_mgr.get_messages, conversation_id, user_guid)
     # A stored tool-use message carries the model's reasoning as provider state: an

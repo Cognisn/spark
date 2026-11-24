@@ -17,6 +17,7 @@ from spark.connections.usage import Attribution
 from spark.core.cancellation import CancellationToken
 from spark.core.context_compaction import CompactionSettings, ContextCompactor, ordered_for_model
 from spark.core.reasoning import response_reasoning
+from spark.database.scope import NotOwned
 from spark.db.bridge import SyncDatabase
 from spark.safety.untrusted import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
@@ -30,6 +31,20 @@ from spark.usage import budgets
 from spark.usage.meter import meter
 
 logger = logging.getLogger(__name__)
+
+# The memory tools: never offered or run in a shared conversation (CS28).
+MEMORY_TOOLS = frozenset(_REGISTRY_CATEGORIES["memory"])
+
+
+def _without_memory(permissions: Permissions) -> Permissions:
+    """A user's permissions without the memory category (a server user's are a set)."""
+    from collections.abc import Set
+
+    from spark.tools.registry import permission_name
+
+    if isinstance(permissions, Set):
+        return frozenset(permissions) - {permission_name("memory")}
+    return permissions
 
 
 class ConnectionNotAssigned(PermissionError):
@@ -313,11 +328,19 @@ class ConversationManager:
             logger.debug("Failed to index tool result: %s", e)
 
     def _retrieve_relevant_context(
-        self, conversation_id: int, user_guid: str, query: str, conv: dict
+        self,
+        conversation_id: int,
+        user_guid: str,
+        query: str,
+        conv: dict,
+        *,
+        shared: bool = False,
     ) -> str | None:
         """Retrieve relevant context from the vector index for augmentation.
 
-        Searches the current conversation AND any linked conversations.
+        Searches the current conversation AND any linked conversations, except while the
+        conversation is ``shared``: linked conversations are the owner's own, and every
+        member reads the answer, so only this conversation is searched.
         Only returns context from messages that have been compacted (rolled up),
         NOT from messages still in the active history — those are already sent
         to the LLM as part of the conversation and would waste tokens.
@@ -351,7 +374,11 @@ class ConversationManager:
             try:
                 from spark.database import conversation_links
 
-                linked = self._db.call(conversation_links.get_links, conversation_id, user_guid)
+                linked = (
+                    []
+                    if shared
+                    else self._db.call(conversation_links.get_links, conversation_id, user_guid)
+                )
                 for link in linked:
                     link_id = link.get("id")
                     if link_id:
@@ -667,8 +694,15 @@ class ConversationManager:
         and a turn that started under it always finishes. Every model call the turn
         makes, its sub-agents' and its compaction's included, is recorded against
         ``user_guid``. The result's ``budget`` is the user's standing after the turn.
+
+        In a shared conversation ``user_guid`` is the sender, whatever their role, and the
+        turn is theirs throughout (CS28): their credits and budget, their tools and
+        prompts, their usage. While the conversation has any member besides its owner,
+        every turn (the owner's too, since every member reads the answer) runs without
+        memory tools, without retrieval from linked conversations and without knowledge
+        graph context.
         """
-        from spark.database import conversations
+        from spark.database import conversation_members, conversations
         from spark.database import messages as msg_db
 
         callbacks = callbacks or self._default_callbacks()
@@ -676,6 +710,10 @@ class ConversationManager:
         conv = self._db.call(conversations.get_conversation, conversation_id, user_guid)
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
+        shared = bool(self._db.call(conversation_members.is_shared, user_guid, conversation_id))
+        if shared:
+            # The memory category is withheld from the whole turn, its sub-agents included.
+            permissions = _without_memory(permissions)
 
         # The conversation's model, as a (connection, model) pair. On a server the
         # user may use only a connection assigned to them (M9): checked every turn.
@@ -702,6 +740,9 @@ class ConversationManager:
         # Auto-load embedded tools + MCP tools if none provided
         if tools is None:
             tools = self._get_all_tools(permissions)
+        if shared:
+            # Personal memories are left out of a shared conversation (CS28).
+            tools = [t for t in tools if t.get("name") not in MEMORY_TOOLS]
 
         # Files the turn carries (attached to the message or to the conversation):
         # read_my_file and list_my_files go first, and one line names the files.
@@ -755,7 +796,7 @@ class ConversationManager:
 
         # Retrieve relevant context from vector index (respects conv settings)
         retrieved_context = self._retrieve_relevant_context(
-            conversation_id, user_guid, user_message, conv
+            conversation_id, user_guid, user_message, conv, shared=shared
         )
         if retrieved_context:
             logger.info(
@@ -780,7 +821,8 @@ class ConversationManager:
             from spark.knowledge.tools import _get_embedder
 
             kg_settings = self._db.call(conversation_kg_settings, conversation_id, user_guid)
-            if kg_settings["kg_auto_context"]:
+            # A knowledge graph stays with its owner: none in a shared conversation.
+            if kg_settings["kg_auto_context"] and not shared:
                 kg_scopes = self._db.call(available_scopes, conversation_id, user_guid)
                 if kg_scopes:
                     subgraph = subgraph_for_query(
@@ -799,6 +841,7 @@ class ConversationManager:
             retrieved_context=retrieved_context,
             kg_block=kg_block,
             attachments_line=attachments_line,
+            shared=shared,
         )
         system = self._with_skills(base_system, skills)
         logger.debug(
@@ -833,14 +876,19 @@ class ConversationManager:
                     token_count = service.count_tokens(marker)
             except Exception:
                 token_count = 0
-            self._db.call(
-                msg_db.add_message,
-                conversation_id,
-                "user",
-                marker,
-                token_count,
-                user_guid,
-            )
+            try:
+                self._db.call(
+                    msg_db.add_message,
+                    conversation_id,
+                    "user",
+                    marker,
+                    token_count,
+                    user_guid,
+                )
+            except NotOwned:
+                # The sender was removed from the shared conversation: nothing more is
+                # written in their name.
+                pass
 
         try:
             for iteration in range(self._max_tool_iterations):
@@ -1071,6 +1119,16 @@ class ConversationManager:
                 )
                 break
 
+        except NotOwned:
+            # The sender lost access during the turn (removed from a shared conversation):
+            # the turn ends as cancelled and writes nothing more in their name.
+            return {
+                "content": final_content,
+                "usage": total_usage,
+                "tool_calls": all_tool_calls,
+                "iterations": iterations,
+                "status": "cancelled",
+            }
         finally:
             self._in_tool_use_loop = False
             if skills is not None:
@@ -1310,9 +1368,31 @@ class ConversationManager:
         skills_block: str = "",
         kg_block: str = "",
         attachments_line: str = "",
+        shared: bool = False,
     ) -> str:
-        """Assemble system instructions from all sources."""
+        """Assemble system instructions from all sources.
+
+        A ``shared`` conversation is read by several people: the instructions say so, and
+        leave the memory tools out (none are offered).
+        """
         parts: list[str] = []
+
+        memory = (
+            (
+                "**Shared conversation:** This conversation is shared between several people; "
+                "each message names its sender. Personal memories are not available here.\n\n"
+            )
+            if shared
+            else (
+                f"**Memory tools:** You can store and retrieve persistent information across conversations.\n"
+                f"- `store_memory` — Save facts, preferences, projects, instructions, or relationships the user shares.\n"
+                f"- `query_memory` — Search stored memories by semantic relevance. Use this to recall information from past conversations.\n"
+                f"- `list_memories` — List all stored memories, optionally filtered by category.\n"
+                f"- `delete_memory` — Remove a specific memory by ID.\n\n"
+                f"**When the user tells you something about themselves, their work, or their preferences, proactively use `store_memory` to remember it.**\n"
+                f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
+            )
+        )
 
         # 1. Embedded identity and capabilities
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -1321,14 +1401,8 @@ class ConversationManager:
             f"Current date/time: {now}\n\n"
             f"## Your Capabilities\n\n"
             f"You have access to tools that you should actively use when appropriate:\n\n"
-            f"**Memory tools:** You can store and retrieve persistent information across conversations.\n"
-            f"- `store_memory` — Save facts, preferences, projects, instructions, or relationships the user shares.\n"
-            f"- `query_memory` — Search stored memories by semantic relevance. Use this to recall information from past conversations.\n"
-            f"- `list_memories` — List all stored memories, optionally filtered by category.\n"
-            f"- `delete_memory` — Remove a specific memory by ID.\n\n"
-            f"**When the user tells you something about themselves, their work, or their preferences, proactively use `store_memory` to remember it.**\n"
-            f"**When the user asks about something that might have been discussed before, use `query_memory` to check.**\n\n"
-            f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
+            + memory
+            + f"**Other tools:** You may also have access to filesystem, document, web search, email, and other tools. "
             f"Use them when the user's request requires reading files, searching the web, or performing other actions.\n\n"
             + self._build_conversation_tool_context(conv.get("model_id") or "")
             + "**Tool documentation:** Use the `get_tool_documentation` tool to retrieve detailed usage instructions, "
@@ -1795,6 +1869,33 @@ class ConversationManager:
                 "available to you. Choose a model from the list."
             )
 
+    def model_refusal(
+        self,
+        model_id: str,
+        user_guid: str,
+        roles: Iterable[str] | None,
+        permissions: Permissions,
+    ) -> str | None:
+        """Why ``user_guid`` may not send with ``model_id`` (a connection not assigned to
+        them, M9), or None when they may. The page asks before a send (CS28)."""
+        ref = self._models.resolve(model_id) if model_id else None
+        try:
+            self._check_assigned(ref, user_guid, roles, permissions)
+        except ConnectionNotAssigned as refused:
+            return f"You cannot use this conversation's model. {refused}"
+        return None
+
+    def _is_shared(self, conversation_id: int | None, user_guid: str | None) -> bool:
+        """Whether a conversation the user may read has anyone besides its owner."""
+        if conversation_id is None or not user_guid:
+            return False
+        from spark.database import conversation_members
+
+        try:
+            return bool(self._db.call(conversation_members.is_shared, user_guid, conversation_id))
+        except Exception:  # noqa: BLE001 - when in doubt, treat it as shared
+            return True
+
     @staticmethod
     def _user_scope(
         user_guid: str, roles: Iterable[str] | None, permissions: Permissions
@@ -2166,6 +2267,11 @@ class ConversationManager:
             )
         if tool_name == "list_provider_models":
             return self._list_provider_models(self._conversation_model(conversation_id, uid))
+
+        # Personal memories are left out of a shared conversation (CS28), however the
+        # call was asked for.
+        if tool_name in MEMORY_TOOLS and self._is_shared(conversation_id, uid):
+            return "Memory tools are not available in a shared conversation.", True
 
         # Try built-in tools first
         if self._is_builtin_tool(tool_name):

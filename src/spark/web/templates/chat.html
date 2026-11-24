@@ -43,6 +43,11 @@
             <strong id="conv-display-name" style="cursor: pointer;" onclick="renameConversation()" onkeydown="if(event.key==='Enter')renameConversation()" tabindex="0" role="button" title="Click to rename">{{ conversation.name }}</strong>
             <button class="btn btn-app-ghost btn-sm ms-1" onclick="renameConversation()" title="Rename" aria-label="Rename conversation"><i class="bi bi-pencil" style="font-size: 0.7rem;" aria-hidden="true"></i></button>
             <span class="ms-1" style="font-size: 0.8125rem; color: var(--app-text-muted); cursor: pointer;" onclick="changeModel()" onkeydown="if(event.key==='Enter')changeModel()" tabindex="0" role="button" title="Click to change model" id="conv-display-model">{{ conversation.model_id }}</span>
+            {# Shown for every shared conversation: who it is shared with, by initials and colour. #}
+            <span id="shared-indicator" class="shared-indicator ms-2" role="img" aria-label="Shared conversation" hidden>
+                <i class="bi bi-people-fill" aria-hidden="true"></i><span class="toolbar-label">Shared</span>
+                <span id="shared-people" class="shared-people"></span>
+            </span>
         </div>
         <div class="d-flex gap-1">
             <button class="btn btn-app-ghost btn-sm" id="btn-favourite" title="Favourite" aria-label="Favourite" onclick="toggleFavourite()"
@@ -56,10 +61,13 @@
                 <i class="bi bi-tools" aria-hidden="true"></i><span class="toolbar-label">Activity</span>
                 <span id="tool-panel-toolbar-badge" class="badge rounded-pill" style="display: none; position: absolute; top: -2px; right: -2px; font-size: 0.55rem; background: var(--app-accent); color: var(--app-text-on-accent); min-width: 16px; padding: 2px 4px;"></span>
             </button>
+            {% if sharing and my_role == 'owner' %}
+            <button class="btn btn-app-ghost btn-sm" id="btn-share" title="Share this conversation" aria-label="Share this conversation"><i class="bi bi-share" aria-hidden="true"></i><span class="toolbar-label">Share</span></button>
+            {% endif %}
             <button class="btn btn-app-ghost btn-sm" title="Conversation information" aria-label="Conversation information" onclick="showInfoModal()"><i class="bi bi-info-circle" aria-hidden="true"></i><span class="toolbar-label">Info</span></button>
-            <button class="btn btn-app-ghost btn-sm" title="Create Action from Conversation" aria-label="Create an action from this conversation" onclick="showCreateActionFromConv()"><i class="bi bi-play-circle" aria-hidden="true"></i><span class="toolbar-label">Create action</span></button>
-            <button class="btn btn-app-ghost btn-sm" title="Conversation settings" aria-label="Conversation settings" onclick="showSettingsModal()"><i class="bi bi-gear" aria-hidden="true"></i><span class="toolbar-label">Settings</span></button>
-            <button class="btn btn-app-ghost btn-sm toolbar-danger" title="Delete conversation" aria-label="Delete conversation" onclick="confirmDeleteConversation()" style="color: var(--app-danger);"><i class="bi bi-trash" aria-hidden="true"></i><span class="toolbar-label">Delete</span></button>
+            <button class="btn btn-app-ghost btn-sm" title="Create Action from Conversation" aria-label="Create an action from this conversation" onclick="showCreateActionFromConv()" data-owner-only {% if my_role and my_role != 'owner' %}hidden{% endif %}><i class="bi bi-play-circle" aria-hidden="true"></i><span class="toolbar-label">Create action</span></button>
+            <button class="btn btn-app-ghost btn-sm" title="Conversation settings" aria-label="Conversation settings" onclick="showSettingsModal()" data-owner-only {% if my_role and my_role != 'owner' %}hidden{% endif %}><i class="bi bi-gear" aria-hidden="true"></i><span class="toolbar-label">Settings</span></button>
+            <button class="btn btn-app-ghost btn-sm toolbar-danger" title="Delete conversation" aria-label="Delete conversation" onclick="confirmDeleteConversation()" style="color: var(--app-danger);" data-owner-only {% if my_role and my_role != 'owner' %}hidden{% endif %}><i class="bi bi-trash" aria-hidden="true"></i><span class="toolbar-label">Delete</span></button>
         </div>
     </div>
 
@@ -93,6 +101,7 @@
 
     <!-- Input area -->
     <div class="chat-input-container" data-budget-anchor>
+        <div id="turn-waiting" class="turn-waiting" role="status" hidden></div>
         <div id="attach-errors" aria-live="polite"></div>
         <div id="attach-pending" style="display: none;"></div>
         <form id="chat-form" onsubmit="handleSubmit(event)">
@@ -501,6 +510,7 @@
         </div>
     </div>
 </div>
+{% if sharing and my_role == 'owner' %}{% include "_share_dialog.html" %}{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -509,6 +519,7 @@
 <script src="/static/js/attachments.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
+<script src="/static/js/share.js"></script>
 <script src="/static/js/budget.js"></script>
 <script src="/static/js/model_picker.js"></script>
 <script>
@@ -520,6 +531,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     configureMarked();
     initMermaid();
     SparkAttachments.initComposer(conversationId);
+    // A shared conversation's people and colours label the history, so they come first.
+    await SparkSharing.init({
+        conversationId,
+        sharing: {{ 'true' if sharing else 'false' }},
+        role: "{{ my_role or 'owner' }}",
+    });
     loadChatHistory(conversationId);
 
     // Restore tool panel state and saved width

@@ -28,6 +28,7 @@ __all__ = [
     "delete_file",
     "delete_user_file",
     "get_conversation_files",
+    "get_shared_attachment",
     "get_usage",
     "get_user_file",
     "get_user_file_by_key",
@@ -152,6 +153,25 @@ async def get_user_file(db: Executor, user_guid: str, file_id: int) -> Row | Non
     """One of the user's files by id, or None (including another user's file)."""
     return await db.fetch_one(
         "SELECT * FROM user_files WHERE id = ? AND user_guid = ?", (file_id, user_guid)
+    )
+
+
+async def get_shared_attachment(db: Executor, user_guid: str, file_id: int) -> Row | None:
+    """Another member's file ``user_guid`` may download because it is attached in a
+    conversation they may read, or None.
+
+    A file is attached there when it was uploaded into the conversation, or when a
+    message its owner sent in the conversation names it (the attachment note's
+    ``- file <id>: <name>`` line). Nothing else of the owner's file area is reachable.
+    """
+    return await db.fetch_one(
+        f"""SELECT f.* FROM user_files f WHERE f.id = ? AND (
+                f.conversation_id IN ({READABLE_CONVERSATIONS})
+                OR EXISTS (SELECT 1 FROM messages m
+                    WHERE m.user_guid = f.user_guid AND m.role = 'user'
+                    AND m.conversation_id IN ({READABLE_CONVERSATIONS})
+                    AND m.content LIKE ?))""",
+        (file_id, user_guid, user_guid, f"%- file {int(file_id)}: %"),
     )
 
 

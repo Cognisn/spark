@@ -29,6 +29,15 @@
         </div>
     </div>
 
+    <!-- Conversations other people shared with me (server mode) -->
+    <section id="shared-section" class="mt-4" aria-labelledby="shared-heading" hidden>
+        <h5 id="shared-heading" style="font-family: var(--app-font-heading); font-weight: 700;">
+            <i class="bi bi-people me-1" aria-hidden="true"></i>Shared with me
+            <span id="shared-count" class="badge badge-new ms-1" hidden></span>
+        </h5>
+        <div id="shared-list"></div>
+    </section>
+
     <!-- New conversation modal -->
     <div class="modal fade" id="newConvModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -193,7 +202,72 @@
 {% block scripts %}
 <script src="/static/js/model_picker.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', loadConversations);
+document.addEventListener('DOMContentLoaded', () => { loadConversations(); loadShared(); });
+
+const ROLE_LABELS = { contributor: 'Contributor', viewer: 'Read-only' };
+
+async function loadShared() {
+    const section = document.getElementById('shared-section');
+    try {
+        const resp = await fetch('/conversations/api/shared', { headers: { Accept: 'application/json' } });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const convs = data.conversations || [];
+        section.hidden = !convs.length;
+        const count = document.getElementById('shared-count');
+        count.hidden = !data.unseen;
+        count.textContent = data.unseen ? `${data.unseen} new` : '';
+        convs.sort((a, b) => (b.is_favourite || 0) - (a.is_favourite || 0));
+        document.getElementById('shared-list').innerHTML = convs.map(c => {
+            const isFav = c.is_favourite;
+            const href = `/chat/${c.id}`;
+            const isNew = c.is_new ? '<span class="badge badge-new ms-2">New</span>' : '';
+            return `
+            <div class="app-card d-flex align-items-center p-3 mb-2">
+                <button class="btn btn-app-ghost btn-sm me-2" onclick="toggleSharedFavourite(${c.id}, ${!isFav})" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}" style="${isFav ? 'color: var(--app-warning);' : 'color: var(--app-text-muted);'}" aria-label="${isFav ? 'Remove from favourites' : 'Add to favourites'}">
+                    <i class="bi ${isFav ? 'bi-star-fill' : 'bi-star'}" aria-hidden="true"></i>
+                </button>
+                <a href="${href}" class="flex-grow-1 text-decoration-none">
+                    <div style="font-weight: 600; color: var(--app-text-primary);">
+                        <i class="bi bi-people-fill me-1" style="color: var(--app-accent);" aria-label="Shared"></i>${escapeHtml(c.name)}${isNew}
+                    </div>
+                    <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
+                        From ${escapeHtml(c.owner_name || 'someone')} &middot; ${ROLE_LABELS[c.role] || c.role}
+                        ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
+                    </div>
+                </a>
+                <button class="btn btn-app-ghost btn-sm ms-2" onclick="leaveShared(${c.id}, '${escapeHtml(c.name)}')" title="Leave" aria-label="Leave this conversation">
+                    <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                </button>
+                <a href="${href}" class="ms-1" style="color: var(--app-text-muted);" aria-label="Open conversation"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        section.hidden = true;
+    }
+}
+
+async function toggleSharedFavourite(id, favourite) {
+    await toggleFavourite(id, favourite);
+    loadShared();
+}
+
+let _myGuid = null;
+
+async function leaveShared(id, name) {
+    if (!confirm(`Leave "${name}"? You lose access to it until it is shared with you again.`)) return;
+    try {
+        if (!_myGuid) {
+            const session = await fetch('/auth/session', { headers: { Accept: 'application/json' } }).then(r => r.json());
+            _myGuid = session.user_guid;
+        }
+        const resp = await fetch(`/conversations/api/${id}/members/${encodeURIComponent(_myGuid)}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error('not left');
+        loadShared();
+    } catch (err) {
+        AppToast.danger('Error', 'Failed to leave.');
+    }
+}
 
 async function loadConversations() {
     try {
@@ -234,7 +308,7 @@ async function loadConversations() {
                     <i class="bi ${starIcon}" aria-hidden="true"></i>
                 </button>
                 <a href="${href}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
-                    <div style="font-weight: 600; color: var(--app-text-primary);">${escapeHtml(c.name)}${typeBadge}</div>
+                    <div style="font-weight: 600; color: var(--app-text-primary);">${c.is_shared ? '<i class="bi bi-people-fill me-1" style="color: var(--app-accent);" title="Shared" aria-label="Shared"></i>' : ''}${escapeHtml(c.name)}${typeBadge}</div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
                         ${c.model_id || 'No model'} &middot; ${c.total_tokens || 0} tokens
                         ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}

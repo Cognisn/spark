@@ -18,10 +18,9 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from spark.web import scope
 from spark.web.endpoints import streaming
 from spark.web.server import create_app
-from tests.web_helpers import sign_in
+from tests.web_helpers import every_conversation_owned, sign_in
 
 INSPECTION = {
     "tool_name": "web_fetch",
@@ -78,10 +77,8 @@ def _client(monkeypatch: pytest.MonkeyPatch, send: Callable[..., Any]) -> tuple[
     mgr.send_message.side_effect = send
     app.state.conversation_manager = mgr
 
-    async def owned(request: object, conversation_id: int) -> dict:
-        return {"id": conversation_id}  # no database here: the id is the local user's
-
-    monkeypatch.setattr(scope, "owned_conversation", owned)
+    # No database here: the id is the local user's.
+    every_conversation_owned(monkeypatch)
     return client, cookies
 
 

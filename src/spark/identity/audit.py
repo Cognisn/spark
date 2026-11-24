@@ -78,6 +78,11 @@ if TYPE_CHECKING:
 __all__ = [
     "ACTIONS",
     "ACTION_REFUSED",
+    "CONVERSATION_MEMBER_REMOVED",
+    "CONVERSATION_ROLE_CHANGED",
+    "CONVERSATION_SEND_REFUSED",
+    "CONVERSATION_SHARED",
+    "CONVERSATION_TRANSFERRED",
     "EXPORT_DOWNLOADED",
     "FILE_DOWNLOADED",
     "PREFERENCE_CHANGED",
@@ -124,6 +129,11 @@ MCP_OAUTH_SIGNED_OUT: Final = "spark.mcp.oauth.signed_out"
 MCP_OAUTH_REFRESH_FAILED: Final = "spark.mcp.oauth.refresh_failed"
 BUNDLE_IMPORTED: Final = "spark.bundle.imported"
 MAIL_TEST_SENT: Final = "spark.mail.test_sent"
+CONVERSATION_SHARED: Final = "spark.conversation.shared"
+CONVERSATION_ROLE_CHANGED: Final = "spark.conversation.role_changed"
+CONVERSATION_MEMBER_REMOVED: Final = "spark.conversation.member_removed"
+CONVERSATION_TRANSFERRED: Final = "spark.conversation.transferred"
+CONVERSATION_SEND_REFUSED: Final = "spark.conversation.send_refused"
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +191,19 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ),
     MAIL_TEST_SENT: ActionDef(
         Severity.NOTICE, "{actor} sent a test message through {resource_id}: {outcome}"
+    ),
+    CONVERSATION_SHARED: ActionDef(Severity.NOTICE, "{actor} shared conversation {resource_id}"),
+    CONVERSATION_ROLE_CHANGED: ActionDef(
+        Severity.NOTICE, "{actor} changed a role in conversation {resource_id}"
+    ),
+    CONVERSATION_MEMBER_REMOVED: ActionDef(
+        Severity.NOTICE, "{actor} removed a person from conversation {resource_id}"
+    ),
+    CONVERSATION_TRANSFERRED: ActionDef(
+        Severity.NOTICE, "{actor} transferred conversation {resource_id}"
+    ),
+    CONVERSATION_SEND_REFUSED: ActionDef(
+        Severity.NOTICE, "a message of {actor} in conversation {resource_id} was refused"
     ),
 }
 
