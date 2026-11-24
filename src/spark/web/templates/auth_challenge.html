@@ -6,6 +6,7 @@
     <i class="bi bi-info-circle-fill me-1"></i> {{ factor_notice }}
 </div>
 {% endif %}
+{% include "_passkey_challenge.html" %}
 {% if purpose == "change" %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
     {{ reason_text }} Use at least {{ min_length }} characters. Changing it signs you out everywhere else.
@@ -32,8 +33,8 @@
 {# warden named no kind this screen can enrol: nothing to set up here. #}
 {% elif purpose == "enrol" %}
 <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-    Every password sign-in now needs a second factor, and your account does not have one yet.
-    Set up an authenticator app to continue: scan the code with the app, or enter the key by
+    {% if not webauthn %}Every password sign-in now needs a second factor, and your account does not have one yet.
+    {% endif %}Set up an authenticator app to continue: scan the code with the app, or enter the key by
     hand, then type the six-digit code it shows.
 </p>
 {% include "_totp_enrolment.html" %}
@@ -93,3 +94,4 @@
     <a href="/auth/sign-in">Start again</a>
 </div>
 {% endblock %}
+{% block scripts %}{% if webauthn %}<script src="/static/js/webauthn.js"></script>{% endif %}{% endblock %}

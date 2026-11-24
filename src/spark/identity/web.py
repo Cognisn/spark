@@ -28,9 +28,11 @@ konfig's secrets store, of its warden session id, so it survives refreshes and
 a token from any other session never matches. The sign-in form has its own
 token in a cookie scoped to the sign-in path, and so does each of the other
 forms used before a session exists (:data:`FORM_PATHS`: accepting an
-invitation, asking for and completing a password reset), in
-:data:`FORM_CSRF_COOKIE` scoped to that form's own path; a second-factor
-challenge's token is bound to the challenge.
+invitation, asking for and completing a password reset, registering a passkey
+from an administrator's link), in :data:`FORM_CSRF_COOKIE` scoped to that
+form's own path; a second-factor challenge's token is bound to the challenge.
+A passkey ceremony on one of those pages first fetches its options from a path
+under the page's own (:data:`FORM_SUBPATHS`), with the page's token.
 
 API keys: ``Authorization: Bearer wdn_...`` authenticates through warden's API
 keys (the key's scopes intersected with its user's permissions). Such a request
@@ -76,8 +78,14 @@ __all__ = [
     "CHALLENGE_PATH",
     "FORM_CSRF_COOKIE",
     "FORM_PATHS",
+    "FORM_SUBPATHS",
+    "INVITATION_PASSKEY_OPTIONS_PATH",
     "INVITATION_PATH",
     "LOGOUT_PATH",
+    "PASSKEY_REGISTRATION_OPTIONS_PATH",
+    "PASSKEY_REGISTRATION_PATH",
+    "PASSKEY_SIGN_IN_OPTIONS_PATH",
+    "PASSKEY_SIGN_IN_PATH",
     "PUBLIC_PATHS",
     "PUBLIC_PREFIXES",
     "REFRESH_COOKIE",
@@ -95,6 +103,7 @@ __all__ = [
     "SSO_PREFIX",
     "SignedClaims",
     "form_csrf_cookie",
+    "form_path",
     "WardenAuthenticator",
     "clear_session_cookies",
     "csrf_token_for",
@@ -128,10 +137,26 @@ INVITATION_PATH = "/auth/invitation"
 RESET_PATH = "/auth/reset"
 RESET_REQUEST_PATH = "/auth/password-reset"
 SSO_COMPLETE_PATH = "/auth/sso/complete"
+# Registering a passkey with an administrator's emailed link (spark.identity.runtime).
+PASSKEY_REGISTRATION_PATH = "/auth/passkey-registration"
+PASSKEY_REGISTRATION_OPTIONS_PATH = PASSKEY_REGISTRATION_PATH + "/options"
+# Signing in with a passkey alone, from the sign-in page.
+PASSKEY_SIGN_IN_PATH = SIGN_IN_PATH + "/passkey"
+PASSKEY_SIGN_IN_OPTIONS_PATH = PASSKEY_SIGN_IN_PATH + "/options"
+# Accepting a passkey_only invitation: the options, before the invitation form posts.
+INVITATION_PASSKEY_OPTIONS_PATH = INVITATION_PATH + "/passkey/options"
 # warden's single sign-on leg: start and the provider's callback (its auth prefix + /sso).
 SSO_PREFIX = "/identity/auth/sso"
 # Forms used before a session exists, each with its own token cookie.
-FORM_PATHS = frozenset({INVITATION_PATH, RESET_PATH, RESET_REQUEST_PATH})
+FORM_PATHS = frozenset({INVITATION_PATH, RESET_PATH, RESET_REQUEST_PATH, PASSKEY_REGISTRATION_PATH})
+# Paths under such a form's page that use the page's own token (its cookie's
+# path covers them): a passkey ceremony's options, and signing in with a passkey.
+FORM_SUBPATHS = {
+    PASSKEY_SIGN_IN_PATH: SIGN_IN_PATH,
+    PASSKEY_SIGN_IN_OPTIONS_PATH: SIGN_IN_PATH,
+    PASSKEY_REGISTRATION_OPTIONS_PATH: PASSKEY_REGISTRATION_PATH,
+    INVITATION_PASSKEY_OPTIONS_PATH: INVITATION_PATH,
+}
 # The menu's sign-out form (shared with personal mode).
 LOGOUT_PATH = "/logout"
 
@@ -159,6 +184,7 @@ PUBLIC_PATHS = frozenset(
         "/favicon.ico",
     }
     | FORM_PATHS
+    | FORM_SUBPATHS.keys()
 )
 PUBLIC_PREFIXES = ("/static/", CHALLENGE_PATH + "/", SSO_PREFIX + "/")
 
@@ -180,8 +206,14 @@ def csrf_token_for(key: bytes, kind: str, value: str) -> str:
     return base64.urlsafe_b64encode(mac.digest()).rstrip(b"=").decode("ascii")
 
 
+def form_path(path: str) -> str:
+    """The page whose form token ``path`` uses: its own, or its page's for a subpath."""
+    return FORM_SUBPATHS.get(path, path)
+
+
 def form_csrf_cookie(path: str) -> str | None:
     """The cookie holding the form token of a page used before a session exists, or None."""
+    path = form_path(path)
     if path == SIGN_IN_PATH:
         return SIGN_IN_CSRF_COOKIE
     return FORM_CSRF_COOKIE if path in FORM_PATHS else None

@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 {% import "_page.html" as page_ui %}
-{% block title %}Spark - Two-Step Verification{% endblock %}
+{% block title %}Spark - Account Security{% endblock %}
 {% block content %}
-<div class="container-fluid" style="max-width: 520px;">
-    {{ page_ui.header("Two-step verification", "Set up an authenticator app for signing in.") }}
+<div class="container-fluid" style="max-width: 800px;">
+    {{ page_ui.header("Account security", "The second factors you sign in with: passkeys, security keys and an authenticator app.") }}
     {% include "_page_messages.html" %}
+    {% if recovery_codes %}
     <div class="app-card">
         <div class="card-body">
-            {% if recovery_codes %}
-            <p style="font-size: 0.875rem;">Your authenticator app is set up.</p>
+            <p style="font-size: 0.875rem;">{% if codes_for == "passkey" %}Your passkey is registered.{% else %}Your authenticator app is set up.{% endif %}</p>
             {% include "_recovery_codes.html" %}
-            <a class="btn btn-app-primary w-100" href="/account">I have saved my codes</a>
-            {% else %}
+            <a class="btn btn-app-primary w-100" href="/account/mfa">I have saved my codes</a>
+        </div>
+    </div>
+    {% elif secret %}
+    <div class="app-card">
+        <div class="card-body">
             <p style="color: var(--app-text-secondary); font-size: 0.875rem;">
                 Scan the code with an authenticator app, or enter the key by hand, then type the six-digit code it shows.
             </p>
@@ -28,9 +32,82 @@
                 </div>
                 <button type="submit" class="btn btn-app-primary w-100"><i class="bi bi-shield-check me-1"></i> Confirm</button>
             </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="app-card mb-4" id="passkeys">
+        <div class="card-header"><i class="bi bi-fingerprint me-2" aria-hidden="true"></i> Passkeys and security keys</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if passkeys %}
+            <div class="app-table-responsive">
+            <table class="app-table mb-3" style="font-size: 0.8125rem;">
+                <thead><tr><th>Name</th><th>Kind</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+                <tbody>
+                {% for key in passkeys %}
+                <tr>
+                    <td>
+                        <form method="POST" action="{{ passkeys_path }}/{{ key.id }}/rename" class="d-flex gap-1">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <input type="text" name="nickname" value="{{ key.nickname or '' }}" maxlength="64"
+                                   class="form-control form-control-sm" aria-label="Name" placeholder="Unnamed" style="min-width: 140px;">
+                            <button type="submit" class="btn btn-app-ghost btn-sm">Rename</button>
+                        </form>
+                    </td>
+                    <td>{{ key_kind(key) }}</td>
+                    <td class="text-nowrap">{{ key.created_at.strftime("%Y-%m-%d") }}</td>
+                    <td class="text-nowrap">{{ key.last_used_at.strftime("%Y-%m-%d") if key.last_used_at else "never" }}</td>
+                    <td class="text-end">
+                        <form method="POST" action="{{ passkeys_path }}/{{ key.id }}/remove" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="btn btn-app-ghost btn-sm" style="color: var(--app-danger);"><i class="bi bi-x-circle me-1" aria-hidden="true"></i>Remove</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p>No passkeys or security keys are registered.</p>
+            {% endif %}
+            {% if webauthn %}
+            <form method="POST" action="{{ passkeys_path }}" data-webauthn="register" data-options-url="{{ passkeys_path }}/options">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="credential" value="">
+                <div class="d-flex flex-wrap align-items-end gap-2">
+                    <div>
+                        <label for="passkey-nickname" class="form-label">Name (optional)</label>
+                        <input type="text" id="passkey-nickname" name="nickname" class="form-control form-control-sm"
+                               maxlength="64" autocomplete="off" placeholder="For example, Work laptop">
+                    </div>
+                    <button type="button" class="btn btn-app-primary btn-sm" data-webauthn-start>
+                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add a passkey or security key
+                    </button>
+                </div>
+                <div class="alert-app alert-app-danger mt-3 mb-0" data-webauthn-error hidden></div>
+            </form>
+            {% else %}
+            <p class="mb-0" style="color: var(--app-text-muted);">Passkeys and security keys cannot be used on this server.</p>
             {% endif %}
         </div>
     </div>
+
+    <div class="app-card">
+        <div class="card-header"><i class="bi bi-shield-lock me-2" aria-hidden="true"></i> Authenticator app</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if mfa_enrolled %}
+            <p class="mb-0"><i class="bi bi-check-circle-fill me-1" style="color: var(--app-success);"></i>
+                An authenticator app is set up. To replace it, ask an administrator to reset it.</p>
+            {% else %}
+            <p>No authenticator app is set up.</p>
+            <form method="POST" action="/account/mfa">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-qr-code me-1"></i> Set up an authenticator app</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script><script src="/static/js/webauthn.js"></script>{% endblock %}
