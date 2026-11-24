@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc49] - 2026-11-24
+
 ### Added
 
 - **Passkeys and security keys (rulings CS13 and CS14).** My account has a security page (`/account/mfa`) where a user registers a passkey or security key with a name, and renames or removes it; warden refuses removing the last second factor. A password sign-in offers the key beside the authenticator app wherever warden names it, and a user with no second factor yet may register one there instead of an app. The ceremonies are in `static/js/webauthn.js` (base64url, plain-word errors, nothing logged); the browser's answer is posted with the page's own form, so every outcome is an ordinary page.
