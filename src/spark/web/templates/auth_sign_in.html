@@ -1,33 +1,36 @@
 {% extends "auth_layout.html" %}
 {% block title %}Sign In{% endblock %}
+{% block heading %}Sign in{% endblock %}
 {% block content %}
-<p class="mb-4 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
-    Sign in with your email address and password.
-</p>
 <form method="POST" action="/auth/sign-in">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="next" value="{{ next_path }}">
     <div class="mb-3">
-        <label for="email" class="form-label visually-hidden">Email address</label>
-        <input type="email" id="email" name="email" class="form-control" placeholder="Email address"
-               autocomplete="username" required autofocus>
+        <label for="email" class="form-label">Email address</label>
+        <input type="email" id="email" name="email" class="form-control"
+               autocomplete="username{% if passkey_sign_in %} webauthn{% endif %}" required autofocus>
     </div>
-    <div class="mb-3">
-        <label for="password" class="form-label visually-hidden">Password</label>
-        <input type="password" id="password" name="password" class="form-control" placeholder="Password"
+    <div class="mb-4">
+        <label for="password" class="form-label">Password</label>
+        <input type="password" id="password" name="password" class="form-control"
                autocomplete="current-password" required>
     </div>
-    <button type="submit" class="btn btn-app-primary w-100">
-        <i class="bi bi-box-arrow-in-right me-1"></i> Sign in
-    </button>
+    <button type="submit" class="btn btn-app-primary w-100">Sign in</button>
 </form>
+{# Other methods, only when warden's capabilities offer them: one "or" divider, the passkey
+   first, then single sign-on. #}
+{% if passkey_sign_in or sso_enabled %}
+<div class="auth-divider" role="separator"><span>or</span></div>
+<div class="auth-methods">
+{# Include point for the passkey button (_passkey_sign_in.html), shown only when warden offers passkey sign-in. #}
+{% if passkey_sign_in %}{% include "_passkey_sign_in.html" %}{% endif %}
 {% if sso_enabled %}
-<div class="text-center my-3" style="color: var(--app-text-muted); font-size: 0.8125rem;">or</div>
 <a class="btn btn-app-outline w-100" href="/identity/auth/sso/start">
-    <i class="bi bi-building-lock me-1"></i> Sign in with single sign-on
+    <i class="bi bi-building-lock me-1" aria-hidden="true"></i> Sign in with single sign-on
 </a>
 {% endif %}
-<div class="mt-4 text-center" style="font-size: 0.8125rem;">
-    <a href="/auth/password-reset">Forgotten your password?</a>
 </div>
+{% endif %}
+<p class="auth-links"><a href="/auth/password-reset">Forgotten your password?</a></p>
 {% endblock %}
+{% block scripts %}{% if passkey_sign_in %}<script src="/static/js/webauthn.js"></script>{% endif %}{% endblock %}

@@ -14,6 +14,9 @@ from spark.settings_values import setting_bool
 
 router = APIRouter()
 
+# interface.theme: Device follows the device's colour scheme (the default); Light and Dark are fixed.
+THEMES = ("device", "light", "dark")
+
 
 @router.post("/api/heartbeat")
 async def heartbeat(request: Request) -> JSONResponse:
@@ -43,9 +46,9 @@ async def get_theme(request: Request) -> JSONResponse:
         return JSONResponse({"theme": prefs["interface.theme"]})
     ctx = getattr(request.app.state, "ctx", None)
     if ctx:
-        theme = ctx.settings.get("interface.theme", "dark")
+        theme = ctx.settings.get("interface.theme", "device")
         return JSONResponse({"theme": theme})
-    return JSONResponse({"theme": "dark"})
+    return JSONResponse({"theme": "device"})
 
 
 @router.post("/api/theme")
@@ -54,8 +57,8 @@ async def set_theme(request: Request) -> JSONResponse:
     import yaml
 
     data = await request.json()
-    theme = data.get("theme", "dark")
-    if theme not in ("dark", "light"):
+    theme = data.get("theme", "device")
+    if theme not in THEMES:
         return JSONResponse({"error": "Invalid theme"}, status_code=400)
 
     if _server():

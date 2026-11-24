@@ -377,11 +377,22 @@ async def ai_create_message(request: Request) -> JSONResponse:
     if action_name or model_id:
         system_prompt += f"\n\nThe user has already chosen:\n- Action name: {action_name}\n- Model: {model_id}\n\nUse these values when creating the action. Do not ask the user for the name or model again."
 
-    # Inject conversation context if creating from a conversation
+    # Inject conversation context if creating from a conversation. Actions stay private
+    # to a conversation's owner (CS31): a conversation shared with the user is not used.
     if conversation_id and conv_mgr and not history:
         try:
-            conv_messages = await asyncio.to_thread(
-                conv_mgr.get_messages, int(conversation_id), current_user_guid(request)
+            from spark.database.scope import Role, conversation_role
+            from spark.web.db import database as _database
+
+            owner_role = await conversation_role(
+                _database(request), current_user_guid(request), int(conversation_id)
+            )
+            conv_messages = (
+                await asyncio.to_thread(
+                    conv_mgr.get_messages, int(conversation_id), current_user_guid(request)
+                )
+                if owner_role is Role.OWNER
+                else []
             )
             if conv_messages:
                 # Build a summary of the conversation for the AI to analyse

@@ -9,6 +9,7 @@ import threading
 import webbrowser
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -328,6 +329,7 @@ def create_app(ctx: AppContext, *, first_run: bool = False) -> FastAPI:
     app.state.user_guid = _local_user_guid(ctx)
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     templates.env.globals["version"] = spark.__version__
+    templates.env.globals["current_year"] = lambda: datetime.now().year
     templates.env.globals["csrf_token"] = _template_csrf_token
     # The Account menu and Administration area for the signed-in user's permissions (server only).
     from spark.web.menu import admin_menu, identity_menu

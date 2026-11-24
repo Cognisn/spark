@@ -1,7 +1,9 @@
 """Files endpoint: the signed-in user's file area.
 
 Every route is scoped to the signed-in user: another user's file is a 404,
-never a 403, so its existence is not revealed. Uploads are refused over the
+never a 403, so its existence is not revealed. One exception: a file attached in
+a shared conversation can be downloaded by every member of it (CS31), and nothing
+else of its owner's area. Uploads are refused over the
 maximum upload size (413) or the user's quota (507), and nothing is stored.
 In server mode each download is recorded in warden's audit trail
 (``spark.file.downloaded``), never with the file's name or content.
@@ -21,8 +23,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.datastructures import UploadFile
 
 from spark import files as files_pkg
-from spark.database import conversations as convdb
 from spark.database import files as files_db
+from spark.database.scope import Capability, allows, conversation_role
 from spark.db.engine import Row
 from spark.files.area import FileArea, FileAreaNotConfigured
 from spark.files.paths import PathRefused
@@ -118,9 +120,12 @@ async def upload_file(request: Request) -> Response:
         if not raw_cid.strip().isdigit():
             return _error(400, "conversation_id must be a number.")
         conversation_id = int(raw_cid)
-        owned = await convdb.get_conversation(database(request), conversation_id, user)
-        if owned is None:
+        # The owner and contributors attach files to a conversation; a viewer may not.
+        role = await conversation_role(database(request), user, conversation_id)
+        if role is None:
             return _error(404, "Conversation not found.")
+        if not allows(role, Capability.CONTRIBUTE):
+            return _error(403, "You have read-only access to this conversation.")
 
     filename = _safe_name(upload.filename)
     key = f"uploads/{uuid.uuid4().hex}/{filename}"
@@ -166,10 +171,14 @@ async def download_file(request: Request, file_id: int) -> Response:
         return _error(401, "Sign in to download files.")
     row = await files_db.get_user_file(database(request), user, file_id)
     if row is None:
+        # Another member's attachment in a conversation shared with this user.
+        row = await files_db.get_shared_attachment(database(request), user, file_id)
+    if row is None:
         return _error(404, "File not found.")
     try:
         store = files_pkg.file_store()
-        handle = await asyncio.to_thread(store.open, user, str(row["storage_key"]))
+        owner = str(row["user_guid"])
+        handle = await asyncio.to_thread(store.open, owner, str(row["storage_key"]))
     except FileAreaNotConfigured as exc:
         return _error(503, f"File storage is not available: {exc}.")
     except (FileNotFoundError, PathRefused):

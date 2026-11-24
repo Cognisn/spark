@@ -133,7 +133,7 @@ Spark accepts a state-changing request (POST, PUT, PATCH or DELETE) or an event 
 
 ```yaml
 interface:
-  theme: dark                    # dark or light — persists across restarts
+  theme: device                  # device (follow the device), light or dark — persists across restarts
 ```
 
 The selected theme is saved to `config.yaml` when changed via the UI toggle, so it persists across application restarts.

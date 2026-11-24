@@ -231,6 +231,21 @@ docker compose -p spark -f deploy/compose.yaml -f deploy/compose.real-mail.yaml 
 The proxy reaches the replicas as `web:8000`, which Docker resolves to each of them
 in turn. The [reverse proxy page](reverse-proxy.md) gives the Caddyfile.
 
+**Shared conversations across replicas.** People viewing a shared conversation may be
+on different replicas from the person whose turn is running, and nothing here needs
+sticky sessions for it:
+
+- one turn at a time is kept by a lease in the database (`conversation_turns`): the
+  turn's replica refreshes it every 15 seconds and gives it back when the turn ends,
+  so a second sender on any replica is told to wait; a lease left by a replica that
+  stopped is taken over after 45 seconds;
+- the live view travels over PostgreSQL notifications on the `spark_conversation`
+  channel. Each replica opens one extra database connection to listen while anyone
+  on it is viewing a conversation or running a turn, and closes it when none is.
+  Allow for it in the database's connection limit (one per web replica);
+- the live view is `GET /stream/conversation` (Server-Sent Events). A proxy in front
+  must not buffer it, as for `/stream/chat`.
+
 ## pgvector
 
 Spark's vector search needs **pgvector 0.8 or later**: it filters each search to the

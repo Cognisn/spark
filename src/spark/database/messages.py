@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from spark.database.scope import OWNED_CONVERSATIONS, require_conversation
+from spark.database.scope import (
+    CONTRIBUTABLE_CONVERSATIONS,
+    OWNED_CONVERSATIONS,
+    READABLE_CONVERSATIONS,
+    Capability,
+    require_access,
+)
 from spark.db.engine import Executor, Row
 
 __all__ = [
@@ -25,14 +31,16 @@ async def add_message(
     token_count: int,
     user_guid: str,
 ) -> int:
-    """Add a message to one of the user's conversations and update its totals, in one
-    transaction. Returns the message ID.
+    """Add a message to a conversation the user may send in, and update its totals, in one
+    transaction. Returns the message ID. The message records ``user_guid`` as its sender
+    (for an assistant or tool message, the participant whose turn it answers).
 
-    Raises :class:`spark.database.scope.NotOwned` when the conversation is not the user's.
+    Raises :class:`spark.database.scope.NotOwned` when the user is not a member and
+    :class:`spark.database.scope.NotPermitted` when they may only read.
     """
     now = datetime.now(timezone.utc).isoformat()
     async with db.transaction() as conn:
-        await require_conversation(conn, user_guid, conversation_id)
+        await require_access(conn, user_guid, conversation_id, Capability.CONTRIBUTE)
         new_id = await conn.fetch_value(
             """INSERT INTO messages
                 (conversation_id, role, content, token_count, timestamp, user_guid)
@@ -54,11 +62,11 @@ async def get_messages(
     *,
     include_rolled_up: bool = False,
 ) -> list[Row]:
-    """Messages of one of the user's conversations (none for another user's)."""
+    """Messages of a conversation the user may read (none otherwise)."""
     rolled = "" if include_rolled_up else " AND is_rolled_up = 0"
     return await db.fetch_all(
         f"""SELECT * FROM messages WHERE conversation_id = ?
-            AND conversation_id IN ({OWNED_CONVERSATIONS}){rolled}
+            AND conversation_id IN ({READABLE_CONVERSATIONS}){rolled}
             ORDER BY timestamp""",
         (conversation_id, user_guid),
     )
@@ -67,13 +75,13 @@ async def get_messages(
 async def mark_messages_as_rolled_up(
     db: Executor, user_guid: str, conversation_id: int, message_ids: list[int]
 ) -> None:
-    """Mark messages of one of the user's conversations as rolled up after compaction."""
+    """Mark messages of a conversation the user may send in as rolled up after compaction."""
     if not message_ids:
         return
     placeholders = ", ".join("?" for _ in message_ids)
     await db.execute(
         f"UPDATE messages SET is_rolled_up = 1 "
-        f"WHERE conversation_id = ? AND conversation_id IN ({OWNED_CONVERSATIONS}) "
+        f"WHERE conversation_id = ? AND conversation_id IN ({CONTRIBUTABLE_CONVERSATIONS}) "
         f"AND id IN ({placeholders})",
         (conversation_id, user_guid, *message_ids),
     )
@@ -88,18 +96,22 @@ async def record_rollup(
     summarised_token_count: int,
     user_guid: str,
 ) -> None:
-    """Record a compaction event of one of the user's conversations (nothing otherwise)."""
+    """Record a compaction event of a conversation the user may send in (nothing otherwise).
+
+    The row records ``user_guid``, the participant whose turn compacted it.
+    """
     await db.execute(
-        """INSERT INTO rollup_history
+        f"""INSERT INTO rollup_history
             (conversation_id, original_message_count, summarised_content,
              original_token_count, summarised_token_count, user_guid)
-            SELECT id, ?, ?, ?, ?, user_guid FROM conversations
-            WHERE id = ? AND user_guid = ?""",
+            SELECT id, ?, ?, ?, ?, ? FROM conversations
+            WHERE id = ? AND id IN ({CONTRIBUTABLE_CONVERSATIONS})""",
         (
             original_message_count,
             summarised_content,
             original_token_count,
             summarised_token_count,
+            user_guid,
             conversation_id,
             user_guid,
         ),
@@ -109,8 +121,8 @@ async def record_rollup(
 async def delete_message(
     db: Executor, user_guid: str, message_id: int, conversation_id: int
 ) -> None:
-    """Delete a message of one of the user's conversations and adjust its token count,
-    in one transaction."""
+    """Delete a message of a conversation the user owns and adjust its token count, in one
+    transaction. Only the owner manages a conversation's history."""
     async with db.transaction() as conn:
         tokens = await conn.fetch_value(
             f"""SELECT token_count FROM messages WHERE id = ? AND conversation_id = ?

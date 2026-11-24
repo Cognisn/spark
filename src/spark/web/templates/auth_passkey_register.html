@@ -1,0 +1,43 @@
+{% extends "auth_layout.html" %}
+{# Register a passkey without a session: from an administrator's registration link
+   (kind "link") or to accept a passkey-only invitation (kind "invitation"). Once done,
+   the recovery codes are shown once and the user signs in with the passkey. #}
+{% block title %}{% if kind == "invitation" %}Accept Invitation{% else %}Register a Passkey{% endif %}{% endblock %}
+{% block heading %}{% if kind == "invitation" %}Accept your invitation{% else %}Register a passkey{% endif %}{% endblock %}
+{% block content %}
+{% if done %}
+<p class="auth-help">
+    {% if kind == "invitation" %}Your invitation is accepted and your passkey is registered.{% else %}Your passkey is registered.{% endif %}
+    Sign in with it from the sign-in page.
+</p>
+{% if recovery_codes %}{% include "_recovery_codes.html" %}{% endif %}
+<a class="btn btn-app-primary w-100" href="/auth/sign-in">
+    {% if recovery_codes %}I have saved my codes, sign in{% else %}Sign in{% endif %}
+</a>
+{% elif token %}
+<p class="auth-help">
+    {% if kind == "invitation" %}You have been invited to Spark, and you sign in with a passkey.
+    Register one on this device to accept.{% else %}Register a passkey on this device to sign in to Spark with it.{% endif %}
+    Your device asks you to confirm it is you, with a fingerprint, face or PIN.
+</p>
+<form method="POST" action="{{ action }}" data-webauthn="{{ kind }}" data-options-url="{{ options_url }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    {% if kind == "invitation" %}<input type="hidden" name="method" value="passkey">{% endif %}
+    <input type="hidden" name="credential" value="">
+    <div class="mb-3">
+        <label for="passkey-nickname" class="form-label">Name for this passkey (optional)</label>
+        <input type="text" id="passkey-nickname" name="nickname" class="form-control"
+               maxlength="64" autocomplete="off" placeholder="For example, Work laptop">
+    </div>
+    <div class="alert-app alert-app-danger mb-3" data-webauthn-error hidden></div>
+    <button type="button" class="btn btn-app-primary w-100" data-webauthn-start>
+        Register a passkey
+    </button>
+</form>
+<script src="/static/js/webauthn.js"></script>
+{% endif %}
+<p class="auth-links">
+    <a href="/auth/sign-in">Back to sign-in</a>
+</p>
+{% endblock %}

@@ -1,0 +1,34 @@
+{# A security key or passkey for the second factor, when warden names one (webauthn):
+   finish signing in with a key the user holds (verify), or register one (enrol).
+   Included by auth_challenge.html, which loads webauthn.js. Expects purpose, webauthn, totp, csrf_token, next_path. #}
+{% if webauthn and purpose in ("verify", "enrol") %}
+<form method="POST" action="/auth/challenge/webauthn" data-webauthn="{{ purpose }}"
+      data-options-url="/auth/challenge/webauthn/options" class="mb-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_path }}">
+    <input type="hidden" name="credential" value="">
+    {% if purpose == "enrol" %}
+    <p class="mb-3" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+        Every password sign-in now needs a second factor, and your account does not have one yet.
+        Register a passkey or security key{% if totp %}, or set up an authenticator app below{% endif %}.
+    </p>
+    <div class="mb-3">
+        <label for="passkey-nickname" class="form-label">Name for this passkey (optional)</label>
+        <input type="text" id="passkey-nickname" name="nickname" class="form-control"
+               maxlength="64" autocomplete="off" placeholder="For example, Work laptop">
+    </div>
+    {% else %}
+    <p class="mb-3 text-center" style="color: var(--app-text-secondary); font-size: 0.875rem;">
+        Use your passkey or security key to finish signing in.
+    </p>
+    {% endif %}
+    <div class="alert-app alert-app-danger mb-3" data-webauthn-error hidden></div>
+    <button type="button" class="btn btn-app-primary w-100" data-webauthn-start>
+        <i class="bi bi-fingerprint me-1" aria-hidden="true"></i>
+        {% if purpose == "enrol" %}Register a passkey or security key{% else %}Use a passkey or security key{% endif %}
+    </button>
+</form>
+{% if totp %}
+<div class="text-center my-3" style="color: var(--app-text-muted); font-size: 0.8125rem;">or</div>
+{% endif %}
+{% endif %}

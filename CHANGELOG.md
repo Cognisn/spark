@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc51] - 2026-11-25
+
+### Added
+
+- **Conversation membership and one access decision (server mode).** A new revision, `conversation_sharing` (after `message_reasoning`), adds `conversation_members` (owner, contributor or viewer, who added them, when, when they last opened it, and their own star), with every existing conversation's owner back-filled, and `conversation_turns`, the turn lock. `spark.database.scope` now decides what a person may do in a conversation from one role table: read (any member), contribute (owner and contributors) or manage (the owner). Every repository that reaches a conversation's rows uses it: a viewer reads the history, attachments, tool activity and reasoning; a contributor's messages, tool calls, agent runs and compaction are recorded as theirs; only the owner renames, deletes, changes settings or tools, and shares. Debates, panels, linked conversations and knowledge graph builds stay with the owner. A per-conversation tool permission now belongs to the participant who gave it, so one person's "allow in this conversation" never answers for another's turn; the downgrade refuses while two participants hold one for the same tool.
+- **Sharing a conversation (server mode).** The owner shares a conversation with any active user of the instance, picked by name or email, as Read-only or Contributor, from the Share dialog, which warns that everything already in the conversation becomes visible. The owner changes roles, removes people (at once: their open views close and a turn of theirs is cancelled) and transfers ownership to a member or someone added in the transfer; the old owner becomes a contributor and the new owner is told. Anyone else may leave. Each share, role change, removal, transfer and refused send is audited (`spark.conversation.shared`, `.role_changed`, `.member_removed`, `.transferred`, `.send_refused`) with the client address, and a share or transfer is mailed when a mail sender is configured (the notice names the person, the conversation and its link, never its content). Debates and panels are not shared; personal mode is unchanged, with sharing hidden.
+- **Every conversation route asks one access decision.** `spark.web.scope.conversation_access` answers 404 to someone who is not a member and 403 to a member whose role does not allow the request; reading (history, tool activity, agents, info, export) is every member's, sending the owner's and contributors', and settings, tools, links, rename, model and deletion the owner's. A tripwire test fails when a route or query checks conversation ownership any other way.
+- **A turn is its sender's, one at a time.** In a shared conversation each turn runs as the person who sent it: their credits and allowance, their tools and tool prompts, their usage records, and a model they may not use is refused before anything is stored (the composer says so). A turn holds the conversation's turn lock (`conversation_turns`, a lease refreshed every 15 seconds and taken over after 45) on every web replica, given back however the turn ends; a second sender is answered 409 with "Waiting for <name>'s turn to finish". While a conversation is shared, every turn (the owner's too) runs without memory or knowledge graph tools, without retrieval from linked conversations and without knowledge graph context.
+- **Live views across replicas.** Everyone viewing a shared conversation follows another participant's turn as it streams (`GET /stream/conversation`), carried between web replicas by PostgreSQL LISTEN and NOTIFY on `spark_conversation` (one listening connection per replica while anyone watches), and the history reloads when the turn ends.
+- **People in a shared conversation.** Each participant's messages carry their name, initials and one of six colours (Okabe and Ito, 4.5:1 or better in both themes, never the only cue); the assistant's replies say whose turn they answered. The conversation header shows a sharing icon with the people in it, and the list has a Shared with me section with its count, New markers and each member's own star. Attachments in a shared conversation, and its export, are every member's; the owner's other files, linked conversations, actions and knowledge graph builds stay private to the owner.
+
+## [0.3.0rc50] - 2026-11-24
+
+### Added
+
+- **The Cognisn sign-in standard (rulings CS1 to CS11, CS19 and CS20).** Every page before sign-in (sign-in, second factor, forgotten password, reset, invitation, forced password change, passkey registration link, MCP sign-in and the personal-mode code page) shares one frame in `auth_layout.html`: the bolt in a 72 px slot, SPARK, the descriptor SECURE PERSONAL AI RESEARCH KIT, one h1, labelled 44 px fields with a Show toggle on passwords, a full-width primary action, the passkey and single sign-on buttons only when warden offers them under one "or" divider, Forgotten your password? last, and "A product of" the Cognisn logo with the copyright line below the card. The loading splash takes the same mark, name, descriptor and footer and keeps its pulse and progress bar (both stop under reduced motion).
+- **`static/img/spark-bolt.svg`**, the bolt alone, taken unchanged from the polygon in the loading page and cropped to it. The tile stays the favicon and app icon.
+- **Inter, self-hosted.** Four weights (400 to 700) of the Latin subset under `static/fonts/`, used only on the pages before sign-in, the splash, the header and the footer; no page asks a third party for a font. The SIL Open Font Licence text ships beside it, `THIRD-PARTY-NOTICES.md` names it, and `scripts/licence_audit.py` now checks bundled assets as well as dependencies.
+- **Light and dark follow the device before sign-in.** The theme is set before the stylesheets paint, from the saved browser choice or else `prefers-color-scheme`; the pages used to fall back to dark.
+
+### Changed
+
+- **The header is the bolt and SPARK** (Inter Bold, capitals), linking home: no Cognisn logo and no version. **The footer** on every signed-in page reads SPARK v<version>, A product of the Cognisn logo, and the copyright line with the current year. The version stays in Help.
+- **The theme control is a Theme row in the Account menu** (Device, Light, Dark, a radio group with arrow keys) in place of the header toggle. `interface.theme` now accepts `device`, the new default, which follows the device's colour scheme live; the choice is mirrored to the browser's `app-theme`. Personal mode has the Account menu too, holding the Theme row.
+- **Quit, Open Log Folder and Open Data Folder are hidden in server mode** and kept in personal mode; `/api/quit` and `/api/open-folder` still refuse on a server.
+- **A failed sign-in says "The email address or password is incorrect."**
+
+## [0.3.0rc49] - 2026-11-24
+
+### Added
+
+- **Passkeys and security keys (rulings CS13 and CS14).** My account has a security page (`/account/mfa`) where a user registers a passkey or security key with a name, and renames or removes it; warden refuses removing the last second factor. A password sign-in offers the key beside the authenticator app wherever warden names it, and a user with no second factor yet may register one there instead of an app. The ceremonies are in `static/js/webauthn.js` (base64url, plain-word errors, nothing logged); the browser's answer is posted with the page's own form, so every outcome is an ordinary page.
+- **Sign in with a passkey.** The sign-in page offers a passkey, and the browser's autofill on the email field (conditional mediation) where the browser has it, while warden can use passkeys. warden decides who may: passkey-only users always, others while passkeys are an allowed second factor. Every refusal is one message.
+- **Passkey-only users.** Administrators can invite a user who signs in with a passkey only; the invitation link opens a page that registers the passkey and shows the recovery codes once. A user's page lists their passkeys and security keys, sends a passkey registration link (`/auth/passkey-registration`, which registers a passkey without signing in) and resets every second factor.
+
+### Changed
+
+- **The relying party follows `server.public_base_url`.** warden's relying party id is that address's host and its origin the only one allowed, unless `warden.webauthn` says otherwise; `warden.webauthn.allowed_origins` must then include the address, and a mismatch stops Spark at start-up naming the settings. warden's mailed passkey registration links point at Spark's own page. Documented in the identity deployment guide.
+
+## [0.3.0rc48] - 2026-11-24
+
+### Fixed
+
+- **Wide tables stay inside their card.** One shared rule in `base.css` makes every `app-table-responsive` wrapper scroll sideways inside its card (the connections page used to be the only one that did), so the Total tokens and Credits columns on Usage and credits no longer spill out of the card.
+- **The audit trail keeps each event on one line.** The Details column shows a View button that opens the event's details under its row as indented JSON, with a Copy button that announces its result to screen readers; the details are no longer broken after every character. Export CSV and NDJSON are unchanged.
+- **Every other table now has the wrapper too.** The role table on a user's page and the single sign-on checks table sat outside it and pushed the page wider than a phone; the two tables the connections page builds in script do the same. An open audit details box is now as wide as the card and scrolls its JSON inside itself, rather than stretching the table.
+
 ## [0.3.0rc47] - 2026-11-24
 
 ### Changed

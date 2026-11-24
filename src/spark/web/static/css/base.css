@@ -125,21 +125,6 @@ hr {
     display: block;
 }
 
-/* Sign-in pages: the logo above the product name. */
-.brand-lockup .brand-logo {
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.brand-lockup-product {
-    font-family: var(--app-font-heading);
-    font-weight: 700;
-    font-size: 1.25rem;
-    letter-spacing: 0.12em;
-    color: var(--app-text-secondary);
-    margin: 0.5rem 0 0;
-}
-
 .app-navbar .brand-logo-header {
     height: 28px;
     width: auto;
@@ -150,44 +135,6 @@ hr {
     font-size: 0.875rem;
     color: var(--app-text-primary);
     vertical-align: middle;
-}
-
-@media (max-width: 575.98px) {
-    .app-navbar .brand-version {
-        display: none;
-    }
-}
-
-/* Product name separator and label */
-.app-navbar .brand-separator {
-    color: var(--app-accent);
-    margin: 0 0.625rem;
-    font-weight: 300;
-    font-size: 1.25rem;
-    opacity: 0.4;
-    user-select: none;
-}
-
-.app-navbar .brand-product {
-    font-family: var(--app-font-product);
-    font-weight: 600;
-    font-size: 1.125rem;
-    color: var(--app-text-secondary);
-    letter-spacing: 0.01em;
-    transition: var(--app-transition-fast);
-}
-
-.app-navbar .navbar-brand:hover .brand-product {
-    color: var(--app-text-primary);
-}
-
-.app-navbar .brand-version {
-    font-family: var(--app-font-product);
-    font-weight: 400;
-    font-size: 0.75rem;
-    color: var(--app-text-muted);
-    margin-left: 0.375rem;
-    letter-spacing: 0.02em;
 }
 
 .app-navbar .nav-link {
@@ -1340,44 +1287,6 @@ hr {
 
 
 /* --------------------------------------------------------------------------
-   20. Theme Switcher
-   -------------------------------------------------------------------------- */
-
-.app-theme-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--app-bg-tertiary);
-    border: 1px solid var(--app-border-strong);
-    border-radius: 2rem;
-    padding: 0.25rem;
-    cursor: pointer;
-    transition: var(--app-transition);
-}
-
-.app-theme-toggle .theme-option {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    font-size: 1rem;
-    transition: var(--app-transition-fast);
-    color: var(--app-text-muted);
-}
-
-.app-theme-toggle .theme-option.active {
-    background: var(--app-accent);
-    color: var(--app-text-on-accent);
-    box-shadow: 0 0 8px var(--app-accent-glow);
-}
-
-
-/* --------------------------------------------------------------------------
    21. Loading / Spinner
    -------------------------------------------------------------------------- */
 
@@ -1747,4 +1656,66 @@ main[tabindex="-1"]:focus-visible {
 
 .admin-index-group + .admin-index-group {
     margin-top: 1rem;
+}
+
+/* ==========================================================================
+   Shared table wrapper (admin-tables)
+   One rule for every table in the app: a wide table scrolls sideways inside
+   its card and never widens it. Do not repeat it in a page stylesheet.
+   ========================================================================== */
+
+.app-table-responsive {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.app-card,
+.app-card > .card-body {
+    min-width: 0;
+}
+
+.audit-table {
+    font-size: 0.75rem;
+}
+
+.audit-details-row > td {
+    background: var(--app-card-bg);
+}
+
+/* The details box is as wide as the card's visible area and stays in view while the
+   table scrolls sideways, so long JSON scrolls inside its own box, never the table. */
+.app-table-responsive:has(.audit-table) {
+    container-type: inline-size;
+}
+
+.audit-details {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    width: calc(100cqw - 1.5rem);
+    margin-left: 1.5rem;
+}
+
+.audit-details-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.audit-details-title {
+    font-weight: 600;
+}
+
+.audit-details-json {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    max-height: 20rem;
+    overflow: auto;
+    white-space: pre;
+    font-size: 0.7rem;
+    color: var(--app-text-primary);
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
 }

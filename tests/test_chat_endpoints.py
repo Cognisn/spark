@@ -47,13 +47,9 @@ def every_conversation_owned(monkeypatch: pytest.MonkeyPatch) -> None:
 
     Ownership itself is tested against a real database (test_user_scoping_web).
     """
-    from spark.web.endpoints import chat, conversations
+    from tests.web_helpers import every_conversation_owned as owned
 
-    async def owned(request: object, conversation_id: int) -> dict:
-        return {"id": conversation_id}
-
-    monkeypatch.setattr(chat, "owned_conversation", owned)
-    monkeypatch.setattr(conversations, "owned_conversation", owned)
+    owned(monkeypatch)
 
 
 def _auth(client: TestClient) -> dict:

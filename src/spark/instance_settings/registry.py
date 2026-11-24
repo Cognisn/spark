@@ -399,7 +399,7 @@ _SPECS: tuple[SettingSpec, ...] = (
     # Per-user preferences (A4)
     _text("default_model.model_id", "", _U),
     _text("conversation.global_instructions", "", _U),
-    _pick("interface.theme", ("dark", "light"), "dark", _U),
+    _pick("interface.theme", ("device", "light", "dark"), "device", _U),
     _text("voice.elevenlabs.default_voice_id", "", _U),
     _pick(
         "voice.interaction_mode",

@@ -7,7 +7,11 @@ browser never talks to warden's JSON routes.
   Accepting with a password activates the user with the staged roles and then
   signs them in, which goes on to the enrolment warden requires where it
   requires a second factor. Accepting through single sign-on starts the
-  provider leg with the invitation sealed into it.
+  provider leg with the invitation sealed into it. A ``passkey_only``
+  invitation opens the passkey screen instead (``auth_passkey_register.html``):
+  ``POST /auth/invitation/passkey/options`` begins the ceremony and the form
+  posts back here with ``method=passkey`` and the browser's answer, which
+  activates the user without signing them in; they then sign in with it.
 * ``GET/POST /auth/password-reset``: asks warden to mail a reset link. The
   answer is the same whatever the address, and is sent before warden does any
   work, so neither it nor its timing says whether the address has an account.
@@ -35,20 +39,25 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from warden.identity import (
     SSO_FAILURE_MESSAGE,
     AuthenticationRefused,
     InvitationMismatch,
     LoginStart,
+    SignInMethod,
     SsoError,
     UserError,
+    UserStatus,
+    WebAuthnError,
 )
+from warden.identity.single_use import Purpose
 
 from spark.identity.passwords import refusal_text
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import (
+    INVITATION_PASSKEY_OPTIONS_PATH,
     INVITATION_PATH,
     RESET_PATH,
     RESET_REQUEST_PATH,
@@ -61,9 +70,17 @@ from spark.identity.web import (
     source_ip,
 )
 from spark.web.endpoints.identity import (
+    KEY_NOT_REGISTERED,
+    credential_of,
     forget_form_token,
     form_page,
     identity_runtime,
+    json_body,
+    nickname_of,
+    options_refused,
+    options_response,
+    passkey_registered_page,
+    passkeys_available,
     private_headers,
     redirect,
     signed_in_or_challenged,
@@ -83,6 +100,7 @@ RESET_REQUESTED = (
 )
 PASSWORDS_DIFFER = "The two passwords do not match."
 USE_SSO = "This invitation is accepted through single sign-on."
+NOT_PASSKEY = "This invitation is not accepted with a passkey."
 SSO_START_PATH = SSO_PREFIX + "/start"
 SSO_CALLBACK_PATH = SSO_PREFIX + "/callback"
 _SSO_FAILED = f"{SSO_COMPLETE_PATH}?error=sso_failed"
@@ -108,6 +126,8 @@ async def _invitation_page(
     error: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
+    if token and await _passkey_invitation(runtime, token):
+        return _passkey_invitation_page(request, token, error=error, status_code=status_code)
     return form_page(
         request,
         "auth_invitation.html",
@@ -119,6 +139,92 @@ async def _invitation_page(
         },
         status_code=status_code,
     )
+
+
+async def _passkey_invitation(runtime: IdentityRuntime, token: str) -> bool:
+    """Whether ``token`` invites a ``passkey_only`` user, so the passkey screen is shown.
+
+    A read that changes and records nothing (warden's acceptance stays the
+    authority, and refuses a mismatch): only which screen the link opens
+    depends on it. Without passkeys here, the password screen is shown and
+    warden refuses it as the wrong way to accept.
+    """
+    if not await passkeys_available(runtime):
+        return False
+    identity = runtime.identity
+    async with identity.db.connection() as conn:
+        user_id = await identity.single_use.owner(conn, token, Purpose.INVITATION)
+    if user_id is None:
+        return False
+    user = await identity.users.get(user_id)
+    return (
+        user is not None
+        and user.status is UserStatus.INVITED
+        and user.sign_in_method is SignInMethod.PASSKEY_ONLY
+    )
+
+
+def _passkey_invitation_page(
+    request: Request,
+    token: str,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+    codes: list[str] | None = None,
+    done: bool = False,
+) -> HTMLResponse:
+    return passkey_registered_page(
+        request,
+        {
+            "kind": "invitation",
+            "action": INVITATION_PATH,
+            "options_url": INVITATION_PASSKEY_OPTIONS_PATH,
+            "token": token,
+        },
+        error=error,
+        status_code=status_code,
+        codes=codes,
+        done=done,
+    )
+
+
+@router.post(INVITATION_PASSKEY_OPTIONS_PATH)
+async def invitation_passkey_options(request: Request) -> JSONResponse:
+    """The options for accepting a ``passkey_only`` invitation; it stays usable."""
+    runtime = identity_runtime(request)
+    body = await json_body(request)
+    try:
+        options = await runtime.identity.begin_passkey_invitation(
+            body.get("token"), source_ip=source_ip(runtime, request)
+        )
+    except InvitationMismatch:
+        return options_refused(NOT_PASSKEY, 409)
+    except AuthenticationRefused:
+        return options_refused(LINK_NOT_VALID)
+    except WebAuthnError:
+        return options_refused(KEY_NOT_REGISTERED, 400)
+    return options_response(options)
+
+
+async def _accept_with_passkey(request: Request, runtime: IdentityRuntime, form: Any) -> Response:
+    """Accept a ``passkey_only`` invitation with the browser's answer; nobody is signed in."""
+    token = _text(form.get("token"))
+    try:
+        accepted = await runtime.identity.accept_invitation_with_passkey(
+            token,
+            credential_of(form),
+            nickname=nickname_of(form),
+            source_ip=source_ip(runtime, request),
+        )
+    except InvitationMismatch:
+        return _passkey_invitation_page(request, "", error=NOT_PASSKEY, status_code=409)
+    except AuthenticationRefused:
+        return _passkey_invitation_page(request, "", error=LINK_NOT_VALID, status_code=401)
+    except WebAuthnError:  # not a passkey, or not accepted: the invitation stays usable
+        return _passkey_invitation_page(request, token, error=KEY_NOT_REGISTERED, status_code=400)
+    response = _passkey_invitation_page(request, "", codes=list(accepted.recovery_codes), done=True)
+    forget_form_token(response, INVITATION_PATH)
+    return response
 
 
 @router.get(INVITATION_PATH, response_class=HTMLResponse)
@@ -139,6 +245,8 @@ async def accept_invitation(request: Request) -> Response:
     token = _text(form.get("token"))
     if form.get("method") == "sso":
         return await _start_sso(request, runtime, invitation=token, status_code=303)
+    if form.get("method") == "passkey":
+        return await _accept_with_passkey(request, runtime, form)
     password, confirm = _text(form.get("password")), _text(form.get("confirm"))
     if password != confirm:
         return await _invitation_page(

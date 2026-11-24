@@ -99,7 +99,8 @@
             <div class="alert-app {{ 'alert-app-success' if checks_ok else 'alert-app-warning' }} mb-3" role="status">
                 {% if checks_ok %}All checks passed.{% else %}Some checks failed.{% endif %}
             </div>
-            <table class="app-table mb-3" style="font-size: 0.8125rem;">
+            <div class="app-table-responsive mb-3">
+            <table class="app-table" style="font-size: 0.8125rem;">
                 <thead><tr><th>Check</th><th>Result</th></tr></thead>
                 <tbody>
                 {% for check in checks %}
@@ -107,6 +108,7 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
             {% endif %}
             <form method="POST" action="/admin/sso/test">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

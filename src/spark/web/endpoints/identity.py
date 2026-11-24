@@ -11,14 +11,25 @@
   ``POST /auth/challenge/enrol`` confirms it, signs the user in and shows the
   recovery codes warden returns, once. The kinds warden names (``methods``)
   travel in the challenge cookie; this screen offers TOTP only when warden
-  names it, and enrols nothing else (security keys and passkeys are not set
-  up here).
+  names it, and a security key or passkey (``webauthn``) only when warden
+  names that: ``POST /auth/challenge/webauthn/options`` begins the ceremony
+  (verifying with a key the user holds, or registering one for an
+  enrolment) and ``POST /auth/challenge/webauthn`` finishes it with the
+  browser's answer.
 * A ``change`` challenge: warden requires a new password before it issues the
   session (an administrator asked, the password expired, no longer meets the
   policy or is on a watch list). It follows a right password and any second
   factor, in place of the session; ``POST /auth/challenge/change`` sets the new
   password through warden and signs in. After a forced enrolment the recovery
   codes are still shown first, without a session, and lead here.
+* ``POST /auth/sign-in/passkey/options`` and ``POST /auth/sign-in/passkey``:
+  signing in with a passkey alone (no password, no second step), offered
+  only while warden can use passkeys (its capabilities). warden decides who
+  may: ``passkey_only`` users always, others only while passkeys are an
+  allowed second factor. Every refusal is one message.
+* ``GET/POST /auth/passkey-registration`` and its ``/options``: the screen an
+  administrator's emailed registration link opens; it registers a passkey
+  and signs nobody in.
 * ``GET/POST /auth/session/refresh``: rotates both cookies. The GET serves
   page loads (redirected here by the auth middleware, then back to ``next``);
   the POST serves ``csrf.js`` and is Origin and CSRF checked by the guard.
@@ -32,12 +43,20 @@ challenge never completes another's. Every refusal of a code is one message,
 never which factor failed. Invitations, password resets and single sign-on are
 in :mod:`spark.web.endpoints.lifecycle`.
 
+A passkey ceremony is two requests from ``static/js/webauthn.js``: a fetch
+for the options (JSON, the page's CSRF token in its header), then the page's
+own form posted with the browser's answer in its ``credential`` field, so
+every outcome is an ordinary page (the session cookies, recovery codes shown
+once, or the screen's fixed message). The answer is passed to warden as it
+came; warden checks it and never says why it refused one.
+
 In personal mode every route here answers 404: personal mode signs in with
 its terminal code (:mod:`spark.web.endpoints.auth`).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import secrets
@@ -54,6 +73,10 @@ from warden.identity import (
     Principal,
     SignInResult,
     TokenPair,
+    WebAuthnEnrolled,
+    WebAuthnError,
+    WebAuthnOptions,
+    WebAuthnUnavailable,
 )
 
 from spark.identity import sso
@@ -64,6 +87,10 @@ from spark.identity.web import (
     ACCESS_COOKIE,
     CHALLENGE_COOKIE,
     CHALLENGE_PATH,
+    PASSKEY_REGISTRATION_OPTIONS_PATH,
+    PASSKEY_REGISTRATION_PATH,
+    PASSKEY_SIGN_IN_OPTIONS_PATH,
+    PASSKEY_SIGN_IN_PATH,
     REFRESH_COOKIE,
     REFRESH_PATH,
     SESSION_HEADER,
@@ -73,6 +100,7 @@ from spark.identity.web import (
     WardenAuthenticator,
     clear_session_cookies,
     form_csrf_cookie,
+    form_path,
     safe_next,
     set_session_cookies,
     signed_claims,
@@ -86,13 +114,31 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-SIGN_IN_FAILED = "Sign-in failed. Check your email address and password and try again."
+SIGN_IN_FAILED = "The email address or password is incorrect."
 VERIFICATION_FAILED = (
     "Verification failed. Check the code and try again; if it keeps failing, start again."
 )
 CHALLENGE_VERIFY_PATH = CHALLENGE_PATH + "/verify"
 CHALLENGE_ENROL_PATH = CHALLENGE_PATH + "/enrol"
 CHALLENGE_CHANGE_PATH = CHALLENGE_PATH + "/change"
+CHALLENGE_WEBAUTHN_PATH = CHALLENGE_PATH + "/webauthn"
+CHALLENGE_WEBAUTHN_OPTIONS_PATH = CHALLENGE_WEBAUTHN_PATH + "/options"
+# One message for every refused passkey sign-in: warden's audit trail says which it was.
+PASSKEY_SIGN_IN_FAILED = (
+    "Sign-in with a passkey did not work. Try again, or use another way to sign in."
+)
+LINK_NOT_VALID = (
+    "This link is not valid: it may have been used already or have expired. Ask for a new one."
+)
+KEY_NOT_REGISTERED = (
+    "The passkey could not be registered. Try again, or use another passkey or security key."
+)
+KEY_LIMIT = (
+    "This account already has as many passkeys and security keys as it may. "
+    "Remove one before adding another."
+)
+# The largest browser answer passed on to warden (a WebAuthn response is a few KiB).
+MAX_CREDENTIAL_BYTES = 64 * 1024
 _PURPOSES = ("verify", "enrol", "change")
 # The second-factor kinds a challenge may name (warden's SecondFactor values).
 _KINDS = ("totp", "webauthn")
@@ -101,7 +147,7 @@ NO_ENROLMENT = (
     "Ask an administrator to help you sign in."
 )
 NO_TOTP = (
-    "Your account has no authenticator app that can be used here. "
+    "Your account has no second factor that can be used here. "
     "Use a recovery code, or ask an administrator to help you sign in."
 )
 # Fixed notices the sign-in page may show (?notice=...); nothing from the URL is echoed.
@@ -147,7 +193,7 @@ def form_page(
     (:func:`spark.identity.web.form_csrf_cookie`), re-using the browser's
     when it has one, and the page's form posts back to the same path.
     """
-    path = request.url.path
+    path = form_path(request.url.path)
     cookie = form_csrf_cookie(path)
     if cookie is None:
         raise RuntimeError(f"{path} has no form token cookie")
@@ -174,6 +220,57 @@ async def sso_enabled(runtime: IdentityRuntime) -> bool:
     (:func:`spark.identity.sso.available`); a failed read offers none.
     """
     return await sso.available(runtime.identity)
+
+
+async def passkeys_available(runtime: IdentityRuntime) -> bool:
+    """Whether warden can use passkeys and security keys here (its capabilities).
+
+    Only where a relying party is known: ``server.public_base_url`` names a
+    host, not an IP address (:func:`spark.identity.runtime.check_webauthn`).
+    """
+    return (await runtime.identity.capabilities()).webauthn
+
+
+def credential_of(form: Any) -> dict[str, Any] | None:
+    """The browser's WebAuthn answer a form posted (``credential``, JSON), or None.
+
+    Passed to warden unchanged, which checks every part of it; anything that
+    is not a JSON object of a sensible size is None, which warden refuses.
+    """
+    text = form.get("credential")
+    if not isinstance(text, str) or len(text) > MAX_CREDENTIAL_BYTES:
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def nickname_of(form: Any) -> str | None:
+    """A key's name from a form: trimmed, or None when blank (warden checks the rest)."""
+    value = form.get("nickname")
+    text = value.strip() if isinstance(value, str) else ""
+    return text or None
+
+
+def options_response(options: WebAuthnOptions) -> JSONResponse:
+    """The options for ``navigator.credentials``, as ``webauthn.js`` reads them; never cached."""
+    return JSONResponse({"publicKey": options.public_key}, headers=_NO_STORE)
+
+
+def options_refused(detail: str, status_code: int = 401) -> JSONResponse:
+    """A refused options request: one fixed message for the page to show."""
+    return JSONResponse({"detail": detail}, status_code=status_code, headers=_NO_STORE)
+
+
+async def json_body(request: Request) -> dict[str, Any]:
+    """An options request's JSON object, or an empty one."""
+    try:
+        body = await request.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 def signed_in_response(target: str, pair: TokenPair) -> RedirectResponse:
@@ -204,6 +301,7 @@ async def sign_in_page(
             "notice": notice,
             "next_path": next_path,
             "sso_enabled": await sso_enabled(runtime),
+            "passkey_sign_in": await passkeys_available(runtime),
         },
         status_code=status_code,
     )
@@ -377,6 +475,8 @@ def _challenge_page(
             "min_length": _min_length(request),
             # Only the kinds warden named: TOTP is asked for, or enrolled, only then.
             "totp": "totp" in methods,
+            # A security key or passkey, likewise (_passkey_challenge.html).
+            "webauthn": "webauthn" in methods,
             "factor_notice": notice,
         },
         status_code=status_code,
@@ -407,16 +507,20 @@ async def challenge_page(request: Request) -> Response:
     if pending is None:
         return redirect(with_next(SIGN_IN_PATH, next_path))
     purpose, token = pending
+    methods = challenge_methods(request)
     if purpose == "verify":
-        notice = None if "totp" in challenge_methods(request) else NO_TOTP
+        notice = None if methods else NO_TOTP
         return _challenge_page(request, purpose, next_path, notice=notice)
     if purpose == "change":
         reason = request.query_params.get("reason", "")
         return _challenge_page(request, purpose, next_path, reason=reason)
-    if "totp" not in challenge_methods(request):
-        # warden names no kind this screen can enrol (TOTP not allowed, and no
-        # security keys here yet): nothing is started, and nothing signs in.
+    if not methods:
+        # warden names no kind this screen can enrol: nothing is started, and
+        # nothing signs in.
         return _challenge_page(request, purpose, next_path, notice=NO_ENROLMENT)
+    if "totp" not in methods:
+        # Only a security key or passkey: its ceremony starts from the page.
+        return _challenge_page(request, purpose, next_path)
     try:
         enrolment = await runtime.identity.begin_enrolment(
             challenge=token, source_ip=source_ip(runtime, request)
@@ -492,6 +596,16 @@ async def challenge_enrol(request: Request) -> Response:
         )
     if outcome is None:  # under a challenge warden always signs in or asks for a change
         raise HTTPException(status_code=500)
+    return _enrolled(request, list(codes), outcome, next_path)
+
+
+def _enrolled(
+    request: Request,
+    codes: list[str],
+    outcome: TokenPair | PasswordChangeIssued,
+    next_path: str,
+) -> Response:
+    """After a forced enrolment: the codes once, with the session (or the change), or straight on."""
     if not codes:
         # Not the user's first second factor (one no longer allowed was replaced):
         # warden keeps their recovery codes and returns none, so none are shown.
@@ -516,6 +630,65 @@ async def challenge_enrol(request: Request) -> Response:
         set_session_cookies(response, outcome)
         _clear_challenge(response)
     return response
+
+
+@router.post(CHALLENGE_WEBAUTHN_OPTIONS_PATH)
+async def challenge_webauthn_options(request: Request) -> JSONResponse:
+    """The options for the challenge's key: one the user holds, or a new one to enrol."""
+    runtime = identity_runtime(request)
+    pending = challenge_of(request)
+    if (
+        pending is None
+        or pending[0] not in ("verify", "enrol")
+        or "webauthn" not in challenge_methods(request)
+    ):
+        return options_refused(VERIFICATION_FAILED)
+    purpose, token = pending
+    ip = source_ip(runtime, request)
+    try:
+        if purpose == "verify":
+            options = await runtime.identity.begin_webauthn_sign_in(token, source_ip=ip)
+        else:
+            options = await runtime.identity.begin_webauthn_registration(
+                challenge=token, source_ip=ip
+            )
+    except AuthenticationRefused:
+        return options_refused(VERIFICATION_FAILED)
+    return options_response(options)
+
+
+@router.post(CHALLENGE_WEBAUTHN_PATH)
+async def challenge_webauthn(request: Request) -> Response:
+    """Finish the challenge with the browser's answer: sign in, or enrol the key and sign in."""
+    runtime = identity_runtime(request)
+    form = await request.form()
+    next_path = safe_next(form.get("next"))
+    pending = challenge_of(request)
+    if (
+        pending is None
+        or pending[0] not in ("verify", "enrol")
+        or "webauthn" not in challenge_methods(request)
+    ):
+        return _start_over(next_path)
+    purpose, token = pending
+    ip = source_ip(runtime, request)
+    try:
+        if purpose == "verify":
+            outcome = await runtime.identity.verify_webauthn(
+                token, credential_of(form), source_ip=ip
+            )
+            return session_or_change(next_path, outcome)
+        enrolled: WebAuthnEnrolled = await runtime.identity.finish_webauthn_registration(
+            credential_of(form), nickname=nickname_of(form), challenge=token, source_ip=ip
+        )
+    except (AuthenticationRefused, WebAuthnError, WebAuthnUnavailable):
+        return _challenge_page(
+            request, purpose, next_path, error=VERIFICATION_FAILED, status_code=401
+        )
+    issued = enrolled.password_change or enrolled.tokens
+    if issued is None:  # under a challenge warden always signs in or asks for a change
+        raise HTTPException(status_code=500)
+    return _enrolled(request, list(enrolled.recovery_codes), issued, next_path)
 
 
 @router.post(CHALLENGE_CHANGE_PATH)
@@ -545,6 +718,146 @@ async def challenge_change(request: Request) -> Response:
         return _start_over(next_path)
     response = signed_in_response(next_path, pair)
     _clear_challenge(response)
+    return response
+
+
+# -- Passkey sign-in -------------------------------------------------------------------------
+
+
+@router.post(PASSKEY_SIGN_IN_OPTIONS_PATH)
+async def passkey_sign_in_options(request: Request) -> JSONResponse:
+    """The options for signing in with a passkey alone (a button, or the browser's autofill)."""
+    runtime = identity_runtime(request)
+    try:
+        options = await runtime.identity.begin_passkey_sign_in(
+            source_ip=source_ip(runtime, request)
+        )
+    except AuthenticationRefused:
+        return options_refused(PASSKEY_SIGN_IN_FAILED)
+    return options_response(options)
+
+
+@router.post(PASSKEY_SIGN_IN_PATH)
+async def passkey_sign_in(request: Request) -> Response:
+    """Sign in with the browser's passkey answer; warden decides who may (ruling CS14)."""
+    runtime = identity_runtime(request)
+    form = await request.form()
+    next_path = safe_next(form.get("next"))
+    try:
+        pair = await runtime.identity.passkey_sign_in(
+            credential_of(form), source_ip=source_ip(runtime, request)
+        )
+    except AuthenticationRefused:
+        # One answer for every refusal; warden's audit trail records which it was.
+        return await sign_in_page(
+            request, error=PASSKEY_SIGN_IN_FAILED, status_code=401, next_path=next_path
+        )
+    response = signed_in_response(next_path, pair)
+    forget_form_token(response, SIGN_IN_PATH)
+    return response
+
+
+# -- Registering a passkey from an administrator's link -------------------------------------
+
+
+def passkey_registered_page(
+    request: Request,
+    template_context: dict[str, Any],
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+    codes: list[str] | None = None,
+    done: bool = False,
+) -> HTMLResponse:
+    """auth_passkey_register.html: register a passkey, or, once done, the codes and sign-in.
+
+    Shared by a registration link and a ``passkey_only`` invitation
+    (:mod:`spark.web.endpoints.lifecycle`); ``template_context`` names the
+    form's ``kind``, ``action``, ``options_url`` and ``token``.
+    """
+    return form_page(
+        request,
+        "auth_passkey_register.html",
+        {
+            **template_context,
+            "error": error,
+            "done": done,
+            "recovery_codes": codes or [],
+        },
+        status_code=status_code,
+    )
+
+
+def _registration_page(
+    request: Request,
+    token: str,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+    codes: list[str] | None = None,
+    done: bool = False,
+) -> HTMLResponse:
+    return passkey_registered_page(
+        request,
+        {
+            "kind": "link",
+            "action": PASSKEY_REGISTRATION_PATH,
+            "options_url": PASSKEY_REGISTRATION_OPTIONS_PATH,
+            "token": token,
+        },
+        error=error,
+        status_code=status_code,
+        codes=codes,
+        done=done,
+    )
+
+
+@router.get(PASSKEY_REGISTRATION_PATH, response_class=HTMLResponse)
+async def passkey_registration_page(request: Request) -> HTMLResponse:
+    """The screen a registration link opens: register a passkey, without signing in."""
+    identity_runtime(request)
+    token = request.query_params.get("token", "")
+    if not token:
+        return _registration_page(request, "", error=LINK_NOT_VALID, status_code=400)
+    return _registration_page(request, token)
+
+
+@router.post(PASSKEY_REGISTRATION_OPTIONS_PATH)
+async def passkey_registration_options(request: Request) -> JSONResponse:
+    """The options for the link's passkey; the link stays usable."""
+    runtime = identity_runtime(request)
+    body = await json_body(request)
+    try:
+        options = await runtime.identity.begin_passkey_registration(
+            body.get("token"), source_ip=source_ip(runtime, request)
+        )
+    except AuthenticationRefused:
+        return options_refused(LINK_NOT_VALID)
+    except WebAuthnError:  # the user holds as many keys as allowed
+        return options_refused(KEY_LIMIT, 409)
+    return options_response(options)
+
+
+@router.post(PASSKEY_REGISTRATION_PATH)
+async def passkey_registration(request: Request) -> Response:
+    """Register the passkey and use the link up; the recovery codes are shown once."""
+    runtime = identity_runtime(request)
+    form = await request.form()
+    raw = form.get("token")
+    token = raw if isinstance(raw, str) else ""
+    try:
+        enrolled = await runtime.identity.finish_passkey_registration(
+            token,
+            credential_of(form),
+            nickname=nickname_of(form),
+            source_ip=source_ip(runtime, request),
+        )
+    except AuthenticationRefused:
+        return _registration_page(request, "", error=LINK_NOT_VALID, status_code=401)
+    except WebAuthnError:  # not a passkey, or not accepted: the link stays usable
+        return _registration_page(request, token, error=KEY_NOT_REGISTERED, status_code=400)
+    response = _registration_page(request, "", codes=list(enrolled.recovery_codes), done=True)
+    forget_form_token(response, PASSKEY_REGISTRATION_PATH)
     return response
 
 

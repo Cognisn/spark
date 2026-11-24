@@ -168,6 +168,54 @@ Other warden settings (`SPARK__WARDEN__IDENTITY__...`) include
 `sign_in_window_seconds`, 900) and `totp_issuer`, the name shown in the authenticator
 app.
 
+## Passkeys and security keys
+
+Users register passkeys (a fingerprint, face or PIN on their device, or a synced
+passkey) and security keys from **My account > Passkeys and second factors**
+(`/account/mfa`), give each a name, and rename or remove them there. Every password
+sign-in then offers the key beside the authenticator app, and a user who has no
+second factor yet may register one instead of setting up an app. warden refuses to
+remove a user's last second factor. A user's first second factor comes with ten
+recovery codes, shown once.
+
+**Signing in with a passkey alone.** The sign-in page offers **Sign in with a
+passkey**, and where the browser supports it, the browser's autofill on the email
+field lists the user's passkeys. There is no password and no second step. warden
+decides who may: users whose sign-in method is a passkey only, always, and other
+users only while passkeys are an allowed second factor. Every refusal shows the same
+message; the audit trail records why.
+
+**Passkey-only users.** An administrator invites someone who will sign in with a
+passkey only by choosing **A passkey only** on the invitation form; the invitation
+link opens a page that registers a passkey on their device and shows their recovery
+codes. For a user who has lost their passkeys, the administrator resets every second
+factor from the user's page (**Passkeys and security keys > Reset every second
+factor**), confirming who they are some other way first, then sends **a passkey
+registration link**. The link works once, for `warden.identity.reset_ttl_seconds`,
+registers a passkey without signing in, and without [mail](#mail) is shown to the
+administrator once.
+
+**The relying party follows `server.public_base_url`.** Passkeys are tied to the
+address users reach Spark on:
+
+- With nothing set, the relying party id is the host of `server.public_base_url`
+  (`spark.example.com` for `https://spark.example.com`), and a ceremony is accepted
+  only from that address's origin.
+- `warden.webauthn.rp_id` may name a parent domain instead (`example.com`), so a
+  passkey also works on other hosts under it. It must be the host or a registrable
+  suffix of it.
+- `warden.webauthn.allowed_origins`, when set, must include `server.public_base_url`.
+- Either mismatch stops Spark at start-up with a message naming the settings.
+- On an address whose host is an IP address there is no relying party, so passkeys
+  are not offered anywhere. Use a host name (`localhost` works for a trial).
+
+Changing the relying party id later strands every registered passkey: users need new
+ones. Other settings under `warden.webauthn`: `rp_name` (the name the device shows),
+`max_credentials_per_user` (10), `challenge_ttl_seconds` (300) and
+`attestation_roots`, trusted roots as PEM certificates (usually a `secret://`
+reference) when only certain makes of security key may register; synced passkeys
+carry no attestation and are then refused.
+
 ## Passwords and forced changes
 
 warden 0.1.0 enforces its default password policy wherever a password is set (the

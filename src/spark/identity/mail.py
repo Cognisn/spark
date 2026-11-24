@@ -63,6 +63,9 @@ __all__ = [
     "captured",
     "is_loopback",
     "link_in",
+    "SHARE_KINDS",
+    "build_share_notice",
+    "send_share_notice",
     "send_test_mail",
     "settings_problem",
     "smtp_settings",
@@ -418,3 +421,78 @@ async def send_test_mail(
         raise SmtpRefused(problem[1])
     sender = SmtpSender(smtp, timeout=timeout, context=context)
     await sender.deliver(build_test_mail(smtp, to), "test")
+
+
+# -- Conversation sharing notices -----------------------------------------------------------
+
+SHARE_KINDS = ("shared", "transferred")
+
+
+def _clean(text: str, limit: int = 200) -> str:
+    """One line of plain text for a header or a sentence (no line breaks, bounded)."""
+    return " ".join(str(text).split())[:limit]
+
+
+def build_share_notice(
+    smtp: SmtpSettings,
+    to: str,
+    *,
+    kind: str,
+    sharer: str,
+    conversation: str,
+    role: str,
+    link: str,
+) -> EmailMessage:
+    """The notice that a conversation was shared with ``to`` (``kind`` ``shared``) or
+    transferred to them (``transferred``). It names the person, the conversation and its
+    link, never anything said in it."""
+    if kind not in SHARE_KINDS:
+        raise ValueError(f"unknown notice: {kind}")
+    who, name = _clean(sharer), _clean(conversation)
+    if kind == "shared":
+        subject = f"{who} shared a conversation with you"
+        lead = f'{who} shared the conversation "{name}" with you in Spark, as {role}.'
+    else:
+        subject = f"{who} made you the owner of a conversation"
+        lead = f'{who} made you the owner of the conversation "{name}" in Spark.'
+    email = _envelope(smtp, to, subject)
+    email.set_content(
+        f"{lead}\n\nOpen it: {link}\n\n"
+        "Everything already in the conversation is visible to everyone it is shared with.\n"
+    )
+    return email
+
+
+async def send_share_notice(
+    secrets: SecretReader | None,
+    to: str,
+    *,
+    kind: str,
+    sharer: str,
+    conversation: str,
+    role: str,
+    link: str,
+) -> bool:
+    """Mail a sharing notice when a mail sender is configured. Returns whether it was sent.
+
+    Never raises: a notice that cannot be delivered is logged (without the address) and
+    the share stands.
+    """
+    try:
+        smtp = await asyncio.to_thread(smtp_settings, secrets)
+        if smtp is None:
+            return False
+        email = build_share_notice(
+            smtp,
+            to,
+            kind=kind,
+            sharer=sharer,
+            conversation=conversation,
+            role=role,
+            link=link,
+        )
+        await SmtpSender(smtp).deliver(email, f"conversation {kind}")
+    except Exception:  # noqa: BLE001 - a notice never undoes a share
+        logger.warning("A conversation %s notice was not delivered", kind)
+        return False
+    return True

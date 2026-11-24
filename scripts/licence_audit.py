@@ -22,11 +22,22 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import IntEnum
 from importlib.metadata import PackageMetadata, PackageNotFoundError, distribution
+from pathlib import Path
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-__all__ = ["EXCEPTIONS", "Category", "Package", "check", "classify", "main", "runtime_closure"]
+__all__ = [
+    "BUNDLED_ASSETS",
+    "EXCEPTIONS",
+    "Category",
+    "Package",
+    "check",
+    "check_bundled_assets",
+    "classify",
+    "main",
+    "runtime_closure",
+]
 
 
 class Category(IntEnum):
@@ -48,6 +59,24 @@ EXCEPTIONS: dict[str, str] = {
     "python-xlib": "LGPL-2.0-or-later: pystray's X11 backend on Linux, unmodified",
     "tqdm": "MPL-2.0: progress bars, transitive via sentence-transformers, unmodified",
 }
+
+# Third-party files shipped inside the wheel (not Python packages). Each needs its licence text
+# beside it, a permissive or font licence, and a line in THIRD-PARTY-NOTICES.md.
+ROOT = Path(__file__).resolve().parent.parent
+NOTICES = "THIRD-PARTY-NOTICES.md"
+BUNDLED_ASSETS: dict[str, dict[str, object]] = {
+    "Inter": {
+        "licence": "OFL-1.1",
+        "licence_file": "src/spark/web/static/fonts/Inter-OFL.txt",
+        "files": [
+            "src/spark/web/static/fonts/inter-latin-400.woff2",
+            "src/spark/web/static/fonts/inter-latin-500.woff2",
+            "src/spark/web/static/fonts/inter-latin-600.woff2",
+            "src/spark/web/static/fonts/inter-latin-700.woff2",
+        ],
+    },
+}
+_ALLOWED_ASSET_LICENCES = {"OFL-1.1", "MIT", "Apache-2.0", "BSD-3-Clause", "ISC"}
 
 _STRONG_SPDX = re.compile(r"^(A?GPL|SSPL|EUPL|OSL)-", re.I)
 _WEAK_SPDX = re.compile(r"^(LGPL|MPL|EPL|CDDL)-", re.I)
@@ -204,6 +233,30 @@ def runtime_closure(root: str) -> list[Package]:
     return sorted(seen.values(), key=lambda p: canonicalize_name(p.name))
 
 
+def check_bundled_assets(
+    assets: Mapping[str, Mapping[str, object]] = BUNDLED_ASSETS, root: Path = ROOT
+) -> list[str]:
+    """Problems with the third-party files shipped in the wheel (empty when compliant)."""
+    problems: list[str] = []
+    notices = root / NOTICES
+    notice_text = notices.read_text(encoding="utf-8") if notices.is_file() else ""
+    if not notice_text:
+        problems.append(f"{NOTICES} is missing or empty")
+    for name, asset in assets.items():
+        licence = str(asset["licence"])
+        if licence not in _ALLOWED_ASSET_LICENCES:
+            problems.append(f"{name}: licence {licence} is not an allowed bundled-asset licence")
+        licence_file = root / str(asset["licence_file"])
+        if not licence_file.is_file() or not licence_file.read_text(encoding="utf-8").strip():
+            problems.append(f"{name}: licence text {asset['licence_file']} is missing")
+        for relative in asset["files"]:  # type: ignore[attr-defined]
+            if not (root / relative).is_file():
+                problems.append(f"{name}: bundled file {relative} is missing")
+        if name not in notice_text or licence not in notice_text:
+            problems.append(f"{name}: {NOTICES} does not name it and its licence {licence}")
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default="cognisn-spark", help="distribution to audit")
@@ -211,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
 
     packages = runtime_closure(args.root)
     problems = check(packages, EXCEPTIONS)
+    problems += check_bundled_assets()
     width = max(len(p.name) for p in packages)
     for pkg in packages:
         flag = ""
@@ -218,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
             flag = "  [named exception]"
         print(f"{pkg.name:<{width}}  {pkg.category.name.lower():<10}  {pkg.licence}{flag}")
     print(f"\n{len(packages)} runtime dependencies audited")
+    print(f"{len(BUNDLED_ASSETS)} bundled third-party assets audited: {', '.join(BUNDLED_ASSETS)}")
     if problems:
         print("\nLicence policy violations:")
         for line in problems:
