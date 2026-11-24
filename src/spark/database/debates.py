@@ -2,6 +2,8 @@
 
 Every function takes the caller's user guid and reaches only debates on that
 user's conversations; the debate tables are scoped through their conversation.
+Debates and panels are not shared: they stay with the conversation's owner
+(``OWNED_CONVERSATIONS``), whoever else is a member.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import json
 import logging
 from typing import Any
 
-from spark.database.scope import OWNED_CONVERSATIONS, NotOwned, require_conversation
+from spark.database.scope import OWNED_CONVERSATIONS, NotOwned, Role, conversation_role
 from spark.db.engine import Executor
 
 __all__ = [
@@ -71,7 +73,8 @@ async def create_debate(
     Raises :class:`NotOwned` when the conversation is not the user's.
     """
     async with db.transaction() as conn:
-        await require_conversation(conn, user_guid, conversation_id)
+        if await conversation_role(conn, user_guid, conversation_id) is not Role.OWNER:
+            raise NotOwned(f"conversation {conversation_id} not found")
         config_id = await conn.fetch_value(
             """INSERT INTO debate_config
                 (conversation_id, topic, rounds_mode, max_rounds, state, user_guid)

@@ -12,7 +12,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from spark.database.scope import OWNED_CONVERSATIONS, require_conversation
+from spark.database.scope import (
+    OWNED_CONVERSATIONS,
+    READABLE_CONVERSATIONS,
+    Capability,
+    require_access,
+)
 from spark.db.engine import Connection, Executor, Row
 
 __all__ = [
@@ -196,12 +201,13 @@ async def add_file(
     token_count: int = 0,
     tags: str | None = None,
 ) -> int:
-    """Attach a file to one of the user's conversations. Returns file ID.
+    """Attach a file to a conversation the user may send in. Returns file ID.
 
-    Raises :class:`spark.database.scope.NotOwned` for another user's conversation.
+    Raises :class:`spark.database.scope.NotOwned` when the user is not a member, and
+    :class:`spark.database.scope.NotPermitted` when they may only read.
     """
     async with db.transaction() as conn:
-        await require_conversation(conn, user_guid, conversation_id)
+        await require_access(conn, user_guid, conversation_id, Capability.CONTRIBUTE)
         return await _insert_file(
             conn,
             conversation_id,
@@ -252,16 +258,17 @@ async def _insert_file(
 
 
 async def get_conversation_files(db: Executor, user_guid: str, conversation_id: int) -> list[Row]:
-    """All files of one of the user's conversations."""
+    """All files of a conversation the user may read (attachments are visible to every
+    member)."""
     return await db.fetch_all(
         f"""SELECT * FROM conversation_files WHERE conversation_id = ?
-            AND conversation_id IN ({OWNED_CONVERSATIONS}) ORDER BY added_at""",
+            AND conversation_id IN ({READABLE_CONVERSATIONS}) ORDER BY added_at""",
         (conversation_id, user_guid),
     )
 
 
 async def delete_file(db: Executor, user_guid: str, file_id: int) -> None:
-    """Delete a file attachment of one of the user's conversations."""
+    """Delete a file attachment of a conversation the user owns."""
     await db.execute(
         f"""DELETE FROM conversation_files WHERE id = ?
             AND conversation_id IN ({OWNED_CONVERSATIONS})""",
@@ -270,7 +277,7 @@ async def delete_file(db: Executor, user_guid: str, file_id: int) -> None:
 
 
 async def delete_conversation_files(db: Executor, user_guid: str, conversation_id: int) -> None:
-    """Delete all files of one of the user's conversations."""
+    """Delete all files of a conversation the user owns."""
     await db.execute(
         f"""DELETE FROM conversation_files WHERE conversation_id = ?
             AND conversation_id IN ({OWNED_CONVERSATIONS})""",
