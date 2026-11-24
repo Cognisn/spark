@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc46] - 2026-11-24
+
 ### Removed
 
 - **The `conversation.max_tool_selections` setting and the unused `ToolSelector`.** The setting (default 30) was stored but never applied, and `ToolSelector` was reached only from its own tests, with keyword patterns that no longer match the tool names. Both are removed, with the setting's entry in the settings page, API and `config.yaml` template. Tool volume stays governed by the per-server MCP permissions (`spark.mcp.<server>`); no tool is added, removed or reordered. A stored `conversation.max_tool_selections` value is ignored.
