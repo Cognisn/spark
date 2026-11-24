@@ -135,6 +135,7 @@ def test_dockerignore_admits_only_what_the_image_needs() -> None:
         "pyproject.toml",
         "README.md",
         "LICENSE",
+        "THIRD-PARTY-NOTICES.md",
         "src/",
         "scripts/licence_audit.py",
         "scripts/check_no_nvidia.py",
