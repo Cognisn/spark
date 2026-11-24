@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc50] - 2026-11-24
+
 ### Added
 
 - **The Cognisn sign-in standard (rulings CS1 to CS11, CS19 and CS20).** Every page before sign-in (sign-in, second factor, forgotten password, reset, invitation, forced password change, passkey registration link, MCP sign-in and the personal-mode code page) shares one frame in `auth_layout.html`: the bolt in a 72 px slot, SPARK, the descriptor SECURE PERSONAL AI RESEARCH KIT, one h1, labelled 44 px fields with a Show toggle on passwords, a full-width primary action, the passkey and single sign-on buttons only when warden offers them under one "or" divider, Forgotten your password? last, and "A product of" the Cognisn logo with the copyright line below the card. The loading splash takes the same mark, name, descriptor and footer and keeps its pulse and progress bar (both stop under reduced motion).
