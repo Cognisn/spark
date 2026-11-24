@@ -49,21 +49,10 @@
         <div class="card-body">
             {% if rows %}
             <div class="app-table-responsive">
-            <table class="app-table" style="font-size: 0.75rem;">
+            <table class="app-table audit-table">
                 <thead><tr><th>Id</th><th>When (UTC)</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Resource</th><th>Address</th><th>Details</th></tr></thead>
                 <tbody>
-                {% for row in rows %}
-                <tr class="audit-row" data-id="{{ row.id }}" data-action="{{ row.action }}">
-                    <td>{{ row.id }}</td>
-                    <td class="text-nowrap">{{ row.occurred_at }}</td>
-                    <td><code>{{ row.action }}</code></td>
-                    <td><span class="badge-app {{ 'badge-app-success' if row.outcome == 'success' else 'badge-app-danger' }}">{{ row.outcome }}</span></td>
-                    <td>{{ actors.get(row.actor, row.actor) }}</td>
-                    <td>{{ row.resource }}</td>
-                    <td>{{ row.source_ip }}</td>
-                    <td><code style="font-size: 0.7rem; word-break: break-all;">{{ row.details }}</code></td>
-                </tr>
-                {% endfor %}
+                {% include "_audit_rows.html" %}
                 </tbody>
             </table>
             </div>
@@ -80,3 +69,4 @@
     </div>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/js/audit.js"></script>{% endblock %}

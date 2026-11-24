@@ -43,6 +43,7 @@ PAGE_SIZE = 50
 BAD_FILTER = "A filter is not valid: dates are YYYY-MM-DD and the outcome is success or failure."
 _MEDIA = {"csv": "text/csv; charset=utf-8", "ndjson": "application/x-ndjson"}
 _DETAILS_SHOWN = 300
+_DETAILS_FORMATTED_MAX = 20000
 
 
 class FilterError(ValueError):
@@ -119,6 +120,12 @@ def _details(value: Any) -> str:
     return text if len(text) <= _DETAILS_SHOWN else text[:_DETAILS_SHOWN] + "..."
 
 
+def _details_formatted(value: Any) -> str:
+    """The whole details object as indented JSON for the row's View panel (text only)."""
+    text = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, default=str)
+    return text if len(text) <= _DETAILS_FORMATTED_MAX else text[:_DETAILS_FORMATTED_MAX] + "\n..."
+
+
 @router.get(AUDIT_PATH, response_class=HTMLResponse)
 async def audit_page(
     request: Request, identity: SparkIdentity = Depends(require_permission(AUDIT_READ))
@@ -150,6 +157,7 @@ async def audit_page(
             "resource": f"{row.resource_type}:{row.resource_id}" if row.resource_type else "",
             "source_ip": str(row.source_ip) if row.source_ip is not None else "",
             "details": _details(dict(row.details)),
+            "details_formatted": _details_formatted(dict(row.details)),
         }
         for row in page.rows
     ]
