@@ -30,7 +30,7 @@ RUN pip install --upgrade pip \
     && pip install torch --index-url "${TORCH_INDEX_URL}"
 
 WORKDIR /build
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE THIRD-PARTY-NOTICES.md ./
 COPY src ./src
 RUN pip install . \
     && pip check
@@ -96,6 +96,10 @@ RUN groupadd --system --gid 10001 spark \
     && chown -R 10001:10001 /var/lib/spark /var/lib/spark-files /var/cache/spark
 
 COPY --from=builder /opt/venv /opt/venv
+
+# The third-party notices (the Inter font's licence text also ships in the package,
+# beside the fonts), readable by anyone who has the image.
+COPY --from=builder --chmod=0644 /build/THIRD-PARTY-NOTICES.md /usr/share/doc/spark/THIRD-PARTY-NOTICES.md
 
 # The RDS certificate authority bundle (public certificates only), at the fixed
 # path tasks name in PGSSLROOTCERT so sslmode=verify-full works against RDS with

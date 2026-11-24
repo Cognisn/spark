@@ -4,6 +4,7 @@
 !pyproject.toml
 !README.md
 !LICENSE
+!THIRD-PARTY-NOTICES.md
 !src/
 !scripts/licence_audit.py
 !scripts/check_no_nvidia.py
