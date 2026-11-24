@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc48] - 2026-11-24
+
 ### Fixed
 
 - **Wide tables stay inside their card.** One shared rule in `base.css` makes every `app-table-responsive` wrapper scroll sideways inside its card (the connections page used to be the only one that did), so the Total tokens and Credits columns on Usage and credits no longer spill out of the card.
