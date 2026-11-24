@@ -523,10 +523,12 @@ class TestTurns:
         threads = [threading.Thread(target=send, args=(w,)) for w in ("ada", "cora")]
         for t in threads:
             t.start()
-        wait_for(lambda: len(answers) == 1)  # the loser is answered at once
-        script.hold.set()
-        for t in threads:
-            t.join(60)
+        try:
+            wait_for(lambda: len(answers) == 1)  # the loser is answered at once
+        finally:
+            script.hold.set()  # never leave a turn held, even when the check fails
+            for t in threads:
+                t.join(60)
         statuses = sorted(a.status_code for a in answers.values())
         assert statuses == [200, 409]
         busy = next(a for a in answers.values() if a.status_code == 409).json()

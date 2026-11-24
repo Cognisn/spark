@@ -94,7 +94,39 @@ Search conversations by keyword.
 **Query params:**
 - `q` (string) -- Search query
 
-**Response:** Array of matching conversation objects.
+**Response:** Array of matching conversation objects (the caller's own and those shared with them).
+
+## Sharing (server mode)
+
+Every route that takes a conversation id answers `404` to someone who is not a member of the conversation and `403` to a member whose role does not allow the request. Reading (history, tool activity, agents, info, export, members) is open to every member; sending to the owner and contributors; settings, tools, links, rename, model, deletion, sharing and transfer to the owner. In personal mode the routes below answer `404`.
+
+### GET /conversations/api/shared
+
+The conversations shared with the caller: `{"conversations": [...], "unseen": N}`. Each carries `role` (`contributor` or `viewer`), `owner_name`, `is_new` (1 until opened) and the caller's own `is_favourite`.
+
+### GET /conversations/api/people?q=
+
+Active users whose name or email contains `q` (at least two characters), at most ten, never the caller: `[{"id": "<user id>", "name": "...", "email": "..."}]`.
+
+### GET /conversations/api/{conversation_id}/members
+
+`{"role": "<caller's role>", "members": [...]}`, owner first; each member has `user_guid`, `role`, `name`, `initials`, `colour` (1 to 6) and `is_me`.
+
+### POST /conversations/api/{conversation_id}/members
+
+The owner shares with a person or changes a member's role. Body: `{"user_id": "<user id>", "role": "viewer"}` to add someone, or `{"user_guid": "...", "role": "contributor"}` to change a member's role. Answers `{"status": "added" | "changed" | "unchanged", "members": [...]}`.
+
+### DELETE /conversations/api/{conversation_id}/members/{user_guid}
+
+The owner removes a person, or a member leaves (their own guid). Takes effect at once.
+
+### POST /conversations/api/{conversation_id}/transfer
+
+The owner hands the conversation to a member (`{"user_guid": "..."}`) or to a person added in the transfer (`{"user_id": "<user id>"}`); the previous owner becomes a contributor.
+
+### GET /stream/conversation?conversation_id=
+
+Server-sent events for everyone viewing a conversation: `ready` (with the running `turn`, if any), `turn_started` (`user_guid`, `name`, `stream_id`), `delta` (`seq`, `text`), `tool` (`phase` `start`, `end` or `approval`, `tool_name`), `turn_finished`, `members_changed`, `member_removed`; the stream ends with `removed` when the caller loses access and `deleted` when the conversation is deleted.
 
 ## Chat
 
@@ -124,7 +156,7 @@ Get message history for a conversation.
 
 ### POST /chat/{conversation_id}/api/send
 
-Send a message without streaming. Body: `{"message": "...", "attachments": [12, 13]}`; `attachments` is optional, follows the same rules as on `GET /stream/chat`, and may stand without a message.
+Send a message without streaming. Body: `{"message": "...", "attachments": [12, 13]}`; `attachments` is optional, follows the same rules as on `GET /stream/chat`, and may stand without a message. In a shared conversation a read-only member is answered `403`, a sender who may not use the conversation's model `403`, and a send while another participant's turn runs `409` with `{"error": "Waiting for <name>'s turn to finish", "holder": {...}}`; `GET /stream/chat` answers the same way before it streams.
 
 ### GET /chat/{conversation_id}/api/export
 
