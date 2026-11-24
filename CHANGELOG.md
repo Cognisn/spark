@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc51] - 2026-11-25
+
 ### Added
 
 - **Conversation membership and one access decision (server mode).** A new revision, `conversation_sharing` (after `message_reasoning`), adds `conversation_members` (owner, contributor or viewer, who added them, when, when they last opened it, and their own star), with every existing conversation's owner back-filled, and `conversation_turns`, the turn lock. `spark.database.scope` now decides what a person may do in a conversation from one role table: read (any member), contribute (owner and contributors) or manage (the owner). Every repository that reaches a conversation's rows uses it: a viewer reads the history, attachments, tool activity and reasoning; a contributor's messages, tool calls, agent runs and compaction are recorded as theirs; only the owner renames, deletes, changes settings or tools, and shares. Debates, panels, linked conversations and knowledge graph builds stay with the owner. A per-conversation tool permission now belongs to the participant who gave it, so one person's "allow in this conversation" never answers for another's turn; the downgrade refuses while two participants hold one for the same tool.
