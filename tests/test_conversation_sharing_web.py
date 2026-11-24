@@ -422,6 +422,43 @@ class TestSharing:
 
 
 class TestTurns:
+    @pytest.mark.parametrize("path", ["api", "stream"])
+    def test_the_senders_roles_and_permissions_reach_the_turn(
+        self,
+        client: TestClient,
+        people: dict[str, Person],
+        shared: int,
+        monkeypatch: pytest.MonkeyPatch,
+        path: str,
+    ) -> None:
+        """A contributor's turn gets their own roles and permissions, never the owner's:
+        the tools and MCP servers it may use (granted by role) are theirs."""
+        from spark.identity.permissions import ROLES
+
+        mgr = client.app.state.conversation_manager  # type: ignore[attr-defined]
+        seen: dict[str, Any] = {}
+
+        def send(conversation_id: int, message: str, user_guid: str, **kwargs: Any) -> dict:
+            seen.update(kwargs, user_guid=user_guid)
+            return {"content": "x", "status": "completed"}
+
+        monkeypatch.setattr(mgr, "send_message", send)
+        cora = people["cora"]
+        if path == "api":
+            assert (
+                cora.browser.post(f"/chat/{shared}/api/send", json={"message": "m"}).status_code
+                == 200
+            )
+        else:
+            assert (
+                "event: complete"
+                in cora.browser.get(f"/stream/chat?message=m&conversation_id={shared}").text
+            )
+        assert seen["user_guid"] == cora.guid
+        assert seen["roles"] == frozenset({USER})
+        assert frozenset(seen["permissions"]) == ROLES[USER].permissions
+        assert frozenset(seen["permissions"]) != ROLES[POWER_USER].permissions
+
     def test_the_turn_is_the_senders(
         self, client: TestClient, people: dict[str, Person], shared: int
     ) -> None:
