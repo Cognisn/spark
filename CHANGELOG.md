@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc47] - 2026-11-24
+
 ### Changed
 
 - **Spark runs on warden 0.2.0 (`cognisn-warden>=0.2.0,<0.3`).** Every password sign-in now asks for a second factor, whatever the user's sign-in method: a right password always goes to the challenge screen, and no session cookie is set until the second factor is answered. A user with no authenticator app yet (someone who signed in with a password alone before) is asked to set one up straight after their password, and is shown the recovery codes warden returns, once. The screen offers only the kinds warden names that it can set up (an authenticator app); a re-enrolment for which warden returns no new codes signs in without the codes page. Single sign-on and personal mode are unchanged.
