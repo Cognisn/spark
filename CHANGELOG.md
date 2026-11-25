@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc55] - 2026-11-25
+
+### Added
+
+- **Password policies and watch lists (server mode).** Administration, Users and access, Password policies lists the policies by priority with the roles each covers and how many people it applies to, creates and edits a policy with every rule warden supports (lengths, character kinds, repeats, the person's own details, a passphrase rule, tiers with change periods, history, minimum age, the watch lists and breach range service it checks, and the re-check switches), moves a policy up or down, maps roles to policies, and shows warden's reason when it refuses one. Watch lists, beside it, creates lists of passwords to refuse, adds and removes passwords (hashed at once, never shown again) and terms, imports a file of hashes in the Have I Been Pwned downloader format with an optional threshold, and shows when each was last imported and which policies check it. A user's page shows the policy that applies and why, with Pin and Unpin. All of it is behind `spark.users.admin`.
+- **Live password feedback.** Under the new-password field of an invitation, a reset or set-up link, the forced change at sign-in and the account page, a checklist ticks as the person types, from the policy warden describes for that place and warden's own `passwordrules.js`, which Spark serves from the installed package and keeps no copy of. The server checks the candidate too (the person's own details, watch lists with their reason, the breach range service) and stays the authority when the form is saved. The administrator's Create a user form has a checklist too, drawn from the policy the ticked roles would get (ticked in the browser only; warden checks the rest on save).
+
+## [0.3.0rc54] - 2026-11-25
+
+### Added
+
+- **Document preview (rulings CS37 to CS39).** A new built-in tool, `show_document` (documents category), shows a document in a pane on the right of the conversation: a link returned by one of the sender's MCP servers (such as a KVASIR document link), or a file in the conversation (one of the sender's own files from elsewhere is copied in). The document is kept as a file of the conversation in the sender's file area (`source` `preview`), under the attachment limit and their quota, and the message carries a card with its name, type and size that reopens it. Every member of a shared conversation can open it through the conversation's access decision (`GET /preview/api/<conversation>/files/<file>`, audited as `spark.file.downloaded`); a removed member and anyone else get 404. When the assistant shows a document in someone's turn it opens in every viewer's pane.
+- **The fetch guard.** SPARK's server fetches a link only from the exact host (and port) of an MCP server the sender is connected to over HTTP and their roles grant, over `https` or that server's own scheme; it resolves the host once and pins the connection to that address, refuses a private, loopback or link-local address the MCP server is not at, never follows a redirect to another host, stops at the attachment limit and after 30 seconds, checks the declared type against the content's first bytes, and sends no cookie, credential, proxy or netrc setting beyond what the URL carries. Each refusal is a plain reason the model is told. The rules are in the deployment guide.
+- **The preview pane and its renderers.** The pane is resizable (pointer or keyboard), closable, tabbed with Download and Close per document, keyboard accessible, and a full-screen overlay at phone width. Each document renders in its own `<iframe sandbox="allow-scripts">` (`/preview/frame`) under a Content Security Policy that allows SPARK's own scripts and no network access: PDF with PDF.js 4.10.38, Word with docx-preview 0.4.1 (and JSZip 3.10.2), Excel, legacy Excel and CSV with SheetJS Community Edition 0.20.3 as read-only tables with sheet tabs and a 1,000-row cap, images natively (SVG only as an image), Markdown with marked 18.3.0 and DOMPurify 3.5.0, text and code with line numbers (HTML as text), and anything else as its details with Download. Every library is served from `static/vendor`, pinned by version and SHA-256 in the licence audit and listed in `THIRD-PARTY-NOTICES.md`.
+
+### Changed
+
+- **Markdown is self-hosted.** base.html loads marked and DOMPurify from `static/vendor` instead of cdn.jsdelivr.net, and the update notice's release notes are rendered through a sanitised renderer (`SparkMarkdown.safe`). The chat, actions and help pages no longer load marked from the CDN.
+
+## [0.3.0rc53] - 2026-11-25
+
+### Added
+
+- **Sign-in settings (server mode).** Administration, Users and access, Sign-in sets the default sign-in method for everyone (Password + MFA, Passkey, SSO, or Password + MFA or SSO, each with a plain description; SSO selectable only once single sign-on is set up, Passkey only where passkeys work) and the second factors the instance allows (an authenticator app and a passkey or security key, at least one). Saving a new default says how many people moved at once and how many wait for their credential, names anyone whose set-up link was not delivered, lists the people who depend on single sign-on, and, without a mail service, shows each link once.
+- **A user's own sign-in method.** A user's page chooses between Use the instance default (first, showing what it is) and the methods that can be chosen, shows a change that waits for the user with Resend the link and Cancel the change, and refuses in plain words (single sign-on not set up, no mail server, the user holding passkeys). The Users page shows the method in force and any change waiting, and Invitations offer the same choices.
+- **Setup steps for single sign-on.** The Single sign-on page shows warden's numbered steps for Microsoft Entra ID, Google, Okta or another OpenID Connect provider, with this instance's redirect URI filled in, Copy buttons, and each value to copy back linked to the field it fills. The chosen provider is saved with the settings.
+- **Account security shows how you sign in, and replaces recovery codes.** The user sees their own sign-in method, whether an administrator set it, and any change waiting for them. Replace recovery codes shows the new codes once, with Copy and Download, and asks for a second factor proved just now (sign out and in again) when warden refuses.
+
 ## [0.3.0rc52] - 2026-11-25
 
 ### Fixed

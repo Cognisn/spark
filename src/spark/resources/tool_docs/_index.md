@@ -38,6 +38,7 @@ This directory contains comprehensive documentation for all embedded tools avail
 |------|-------------|
 | `list_my_files` | List the files in your own file area, with their ids and keys |
 | `read_my_file` | Read one of your own files by id (attachments and created documents) |
+| `show_document` | Show a document in the preview pane beside the conversation: a link from one of your MCP servers, or a file by id |
 
 Files attached in chat are named at the end of the message by file id: read them with `read_my_file` and the id. In server mode the document and archive tools take a key in the user's own file area, as `list_my_files` shows it, not an attachment's bare name.
 

@@ -79,6 +79,7 @@ TOOL_CATEGORIES: Mapping[str, tuple[str, ...]] = {
         "create_pdf",
         "list_my_files",
         "read_my_file",
+        "show_document",
     ),
     "archives": ("list_archive", "extract_archive"),
     "web": ("web_search", "web_fetch"),
@@ -422,6 +423,11 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(my_files_tools())
 
+        # A document shown in the preview pane, kept with the conversation (CS37)
+        from spark.tools.show_document import get_tools as show_document_tools
+
+        tools.extend(show_document_tools())
+
     # Archives — the user's file area (server) or filesystem allowed_paths
     arc_config = embedded.get("archives", {})
     if arc_config.get("enabled", True) and _file_tools_available(fs_config):
@@ -523,6 +529,12 @@ def execute_builtin_tool(
             from spark.tools.my_files import execute as my_files_execute
 
             return my_files_execute(tool_name, tool_input, config)
+
+        # A document in the preview pane: a link from the sender's MCP servers or a file
+        if tool_name == "show_document":
+            from spark.tools.show_document import execute as show_document_execute
+
+            return show_document_execute(tool_input, config)
 
         # Documents (create)
         doc_create_tools = {

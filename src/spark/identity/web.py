@@ -86,6 +86,9 @@ __all__ = [
     "PASSKEY_REGISTRATION_PATH",
     "PASSKEY_SIGN_IN_OPTIONS_PATH",
     "PASSKEY_SIGN_IN_PATH",
+    "PASSWORD_CHECK_SUFFIX",
+    "PASSWORD_POLICY_SUFFIX",
+    "PASSWORD_RULES_PATH",
     "PUBLIC_PATHS",
     "PUBLIC_PREFIXES",
     "REFRESH_COOKIE",
@@ -147,6 +150,12 @@ PASSKEY_SIGN_IN_OPTIONS_PATH = PASSKEY_SIGN_IN_PATH + "/options"
 INVITATION_PASSKEY_OPTIONS_PATH = INVITATION_PATH + "/passkey/options"
 # warden's single sign-on leg: start and the provider's callback (its auth prefix + /sso).
 SSO_PREFIX = "/identity/auth/sso"
+# warden's packaged password rule evaluator, served from this app's own route (no copy of it is
+# kept), and the two feedback routes each password-setting page adds under its own path:
+# the policy a new password must meet, and a check of a candidate against it.
+PASSWORD_RULES_PATH = "/auth/password-rules.js"
+PASSWORD_POLICY_SUFFIX = "/password-policy"
+PASSWORD_CHECK_SUFFIX = "/password-check"
 # Forms used before a session exists, each with its own token cookie.
 FORM_PATHS = frozenset({INVITATION_PATH, RESET_PATH, RESET_REQUEST_PATH, PASSKEY_REGISTRATION_PATH})
 # Paths under such a form's page that use the page's own token (its cookie's
@@ -156,6 +165,11 @@ FORM_SUBPATHS = {
     PASSKEY_SIGN_IN_OPTIONS_PATH: SIGN_IN_PATH,
     PASSKEY_REGISTRATION_OPTIONS_PATH: PASSKEY_REGISTRATION_PATH,
     INVITATION_PASSKEY_OPTIONS_PATH: INVITATION_PATH,
+    # Live password feedback beside the new-password field of a page with no session.
+    INVITATION_PATH + PASSWORD_POLICY_SUFFIX: INVITATION_PATH,
+    INVITATION_PATH + PASSWORD_CHECK_SUFFIX: INVITATION_PATH,
+    RESET_PATH + PASSWORD_POLICY_SUFFIX: RESET_PATH,
+    RESET_PATH + PASSWORD_CHECK_SUFFIX: RESET_PATH,
 }
 # The menu's sign-out form (shared with personal mode).
 LOGOUT_PATH = "/logout"
@@ -177,6 +191,7 @@ PUBLIC_PATHS = frozenset(
         REFRESH_PATH,
         CHALLENGE_PATH,
         STATUS_PATH,
+        PASSWORD_RULES_PATH,
         SSO_COMPLETE_PATH,
         # An MCP server's OAuth sign-in returns here from another site, so without
         # the Strict session cookie; it is bound by its own Lax cookie instead.

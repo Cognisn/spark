@@ -232,6 +232,71 @@ a forced enrolment in two-step verification the recovery codes are shown first, 
 the new-password step. A user whose current password is too common is asked for a new
 one at their next password sign-in.
 
+### Password policies and live feedback
+
+Administration, Users and access, Password policies sets the rules, in warden's own
+vocabulary. A policy holds the shortest and longest length, the kinds of character
+(lower case, upper case, digit, other letter, symbol or space), the longest repeat of
+one character, whether the password may contain part of the person's email address or
+name, a passphrase rule (words and length, and whether a passphrase is excused the
+character kinds), tiers with the days before a password at that tier must change, how
+many earlier passwords it may not repeat, how long a password is held before it may be
+changed again, the watch lists and the breach range service it checks, and the
+re-check settings. The page refuses a policy warden refuses, with warden's reason, and
+keeps what was typed.
+
+Policies have a priority, 1 being the highest, and one default with none. A person who
+signs in with a password follows the policy pinned on them; otherwise the policy of
+highest priority among the roles they hold that map to one; otherwise the default.
+Map a role on the Password policies page, move a policy up or down to change who wins,
+and see why a policy applies, or pin and unpin one, on the person's own page. A policy
+that is pinned on someone cannot be deleted, and the default cannot be deleted.
+
+**Re-checking passwords already set.** A policy that keeps a sealed fingerprint of each
+password (it needs `warden.passwords.fingerprint_key_secret`) lets warden compare passwords in
+use against a watch list added later, flag the people whose password is on it, and, if
+the policy says so, end their sessions. Whether warden runs that check is the
+deployment's: warden runs no scheduler, so schedule `warden passwords recheck`. The
+policy's own switches (keep the fingerprint, end sessions on a match, ask for a new
+password at sign-in when the current one no longer meets the rules) are on its page.
+
+**Watch lists.** Watch lists, beside Password policies, holds lists of passwords that
+must not be used. A typed-in list holds exact passwords (up to 100 at a time, hashed at
+once and never shown again) and contained terms of 3 to 64 characters. An imported list
+holds the hashes of a file in the Have I Been Pwned downloader format, one
+`SHA-1:count` per line, replaced by each import (the largest file is 512 MiB, an
+optional threshold keeps only hashes seen at least that often, and a file warden cannot
+read changes nothing and names the line). A list shows its reason, the count held, when
+it was last imported, and the policies that check it; a list a policy still checks
+cannot be deleted. A policy may also ask the Have I Been Pwned range service: only the
+first five characters of a hash leave the server, never the password, and the policy
+says whether an unreachable service allows or refuses the password.
+
+**Live feedback.** Under the new-password field of every page that sets a password (an
+invitation, a reset or set-up link, the forced change at sign-in, and the account page)
+a checklist ticks as the person types. It is drawn from the policy warden describes for
+that place, bound to that place's own credential (the link's token, the pending change,
+or the session), and evaluated in the browser by warden's own `passwordrules.js`, which
+Spark serves at `/auth/password-rules.js` from the installed `cognisn-warden` package
+(Spark keeps no copy of it). A moment after the person stops typing the server checks
+the candidate too, which adds what the browser cannot know: the person's own details, a
+watch list match with its reason, and the range service. The server stays the authority:
+the form's own submit is checked again, and a refusal shows warden's reasons. Feedback
+answers are never cached, never stored and never audited, and are throttled by warden.
+
+The **Create a user** form on Administration > Users also shows a checklist under the
+password an administrator types for someone else. warden describes a policy only for the
+four places a person sets their own password, so this one is drawn from the policy the
+ticked roles would resolve to (the default when none maps) through an administrator-only
+route, and ticks in the browser alone: there is no one yet to check the candidate against,
+so the person's own details and the watch lists are checked when the form is saved, and the
+refusal shows warden's reasons.
+
+Spark's screens use warden's Python API, behind `spark.users.admin`, rather than
+mounting warden's bearer-token password administration routes; warden audits every
+change under `warden.identity.password_policy.*`, `warden.identity.watch_list.*` and
+`warden.identity.password.*` with the administrator as actor.
+
 ## API keys
 
 Users create their own API keys at **Account > My API keys** (`/account/api-keys`), with
@@ -240,6 +305,83 @@ and is never combined with a session cookie. Keys expire after at most 365 days
 (`warden.identity.api_key_max_lifetime_days`). Requests made with an API key are
 granted no MCP server.
 
+## How people sign in
+
+**Administration > Users and access > Sign-in** (`/admin/sign-in`, needs the user
+administration permission) sets how everyone signs in. There are four methods:
+
+| Method | What it means |
+| --- | --- |
+| Password + MFA | A password and a second factor. Single sign-on is not offered. |
+| Passkey | A passkey alone, with no password. Needs passkeys to work on this server. |
+| SSO | Single sign-on through your identity provider, with no password and no passkey. Needs single sign-on set up and switched on. |
+| Password + MFA or SSO | Either a password and a second factor, or single sign-on once it is set up. This is the starting default. |
+
+Until single sign-on is set up, the page does not let SSO be chosen, and until
+passkeys work (see [Passkeys and security keys](#passkeys-and-security-keys)) it does
+not let Passkey be chosen.
+
+### The default and overrides
+
+The method chosen on the Sign-in page is the **default**: every user follows it unless an
+administrator gives them a method of their own. On a user's page (**Sign-in method**) the
+choices start with **Use the instance default**, which shows what it is now, then the
+methods that can be chosen. The Users page shows the method in force for each person,
+marks those who follow the default, and shows a change waiting for them. Invitations
+offer the same choices, again starting with the default.
+
+### Changes that wait
+
+A change takes effect at once for a user who already holds what the new method needs:
+a password for Password + MFA, a passkey for Passkey, a linked single sign-on identity for
+SSO. Otherwise it is **pending**: the method in force keeps working, and warden emails a
+set-up link where one is needed, a set-password link or a passkey registration link.
+Moving to SSO needs no link: it completes the first time the person signs in through
+single sign-on. When the change completes, whatever the new method does not allow is
+removed (the password hash, and the passkeys and security keys for SSO), and so are the
+sessions signed in another way.
+
+A user's page shows the pending change, when it was asked for and when the link was
+sent, with **Resend the link** (a new link, and the old one stops working) and **Cancel
+the change** (the user stays on the method in force). Account security shows the person
+their own method and any change waiting for them. Without a [mail service](#mail) the
+link is shown to the administrator once, to pass on privately.
+
+Changing the default moves everyone who follows it in the same way. After saving, the
+page says how many people moved at once and how many are waiting, lists those waiting,
+and names anyone whose link could not be delivered so each can be resent from their own
+page. Without a mail service it lists each person's link once.
+
+### The single sign-on guard
+
+Single sign-on cannot be switched off, or its settings cleared, while the default or an
+active user's method is SSO. The Sign-in page lists the people who sign in only through
+single sign-on, each linked to their page, so they can be moved first; the
+[Single sign-on](#single-sign-on) page lists them again when it refuses.
+
+### Allowed second factors
+
+The Sign-in page also sets which second factors the instance allows: an authenticator
+app, and a passkey or security key. At least one must stay allowed, and the passkey
+factor is offered only where passkeys work. A person who holds a factor that is no longer
+allowed loses it once they hold one that is. Recovery codes are always the backup.
+
+### Replacing recovery codes
+
+On **My account > Account security**, **Replace recovery codes** replaces all of a
+person's recovery codes, used or not, and shows the new ones once, with a copy and a
+download button. warden requires a second factor proved just now: the session must have
+been signed in with an authenticator app or a passkey (not a recovery code, a password
+alone, single sign-on or an API key) within the last few minutes
+(`warden.identity.mfa_challenge_ttl_seconds`). Otherwise nothing changes and the page
+asks the person to sign out, sign in again with a second factor and try again. warden
+emails a notice that the codes were replaced, never the codes.
+
+Every change is audited by warden (`warden.identity.sign_in_settings_changed`,
+`warden.identity.user.sign_in_method_changed`, `.sign_in_method_pending`,
+`.sign_in_method_pending_cancelled`, `.sign_in_method_link_sent` and
+`warden.identity.mfa.recovery_codes_regenerated`).
+
 ## Single sign-on
 
 warden signs users in with one OpenID Connect provider (Microsoft Entra ID, Google,
@@ -247,7 +389,13 @@ Okta, Keycloak and others). Single sign-on does not create accounts: a user must
 already exist, created or invited, before they can sign in through it.
 
 An administrator sets it up on the **Single sign-on** page (`/admin/sso`, from the
-**Single sign-on settings** button on the Users page):
+**Single sign-on settings** button on the Users page). The page has numbered setup steps
+for **Microsoft Entra ID**, **Google**, **Okta** or **Other OpenID Connect provider**,
+chosen from the Provider list (saved with the settings; it is a label for the steps and
+changes nothing about how sign-in works). They come from warden, with this instance's
+own redirect URI, scopes and name filled in, each with a **Copy** button, and each value
+to copy back from the provider's console is linked to the field it goes into (issuer
+URL, client ID, client secret). The same steps in general:
 
 1. Register Spark with the provider as a web application:
    - the redirect URI the page shows (with a copy button), for example
@@ -295,8 +443,8 @@ SPARK__WARDEN__SSO__CLIENT_ID=spark
 with the client secret placed in the secrets store under `warden.sso.client-secret`
 ([placing a secret](secrets.md#placing-a-secret-in-the-store)). Optionally
 `SPARK__WARDEN__SSO__ALLOWED_EMAIL_DOMAINS=example.com` accepts only addresses in your
-own domains, and `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`, `google`, `okta` or
-`generic`) is a label that changes nothing; neither is on the page.
+own domains, which is not on the page. `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`,
+`google`, `okta` or `generic`) is the provider the page's setup steps start on.
 
 warden accepts only asymmetrically signed ID tokens (RS256, ES256, PS256), and checks
 the state, nonce and PKCE of every sign-in. A provider behind a private certificate

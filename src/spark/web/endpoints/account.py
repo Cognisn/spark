@@ -40,6 +40,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from warden.identity import (
     ApiKeyError,
+    FreshSecondFactorRequired,
     LastSecondFactorError,
     MfaError,
     PasswordRejected,
@@ -51,6 +52,7 @@ from warden.identity import (
     WebAuthnUnavailable,
 )
 
+from spark.identity import sign_in
 from spark.identity.access import SparkIdentity, current_identity, require_permission
 from spark.identity.passwords import refusal_text
 from spark.identity.permissions import API_KEYS
@@ -91,6 +93,11 @@ DONE = {
     "passkey-renamed": "The name is changed.",
     "passkey-removed": "The passkey or security key is removed.",
 }
+FRESH_FACTOR_NEEDED = (
+    "To replace your recovery codes, prove it is you with a second factor just now. "
+    "Sign out, sign in again with your authenticator app or a passkey (a recovery code "
+    "does not count), then try again. Your current codes are unchanged."
+)
 LAST_FACTOR = (
     "This is your last second factor, and every password sign-in needs one. "
     "Add another passkey, security key or authenticator app before removing it."
@@ -226,22 +233,32 @@ async def _mfa_page(
     error: str | None = None,
     codes: list[str] | None = None,
     codes_for: str = "totp",
+    fresh_needed: bool = False,
     status_code: int = 200,
 ) -> HTMLResponse:
     """Account security: the overview, or a TOTP enrolment, or new recovery codes once."""
     runtime, identity = signed_in(request)
     user_id = uuid.UUID(identity.warden_user_id)
+    method = await runtime.identity.sign_in_method(user_id)
+    sso_on = await sso_enabled(runtime)
+    passkeys = await runtime.identity.webauthn_credentials.list(user_id)
+    mfa_enrolled = await runtime.identity.mfa.has_confirmed_totp(user_id)
     return screen(
         request,
         "account_mfa.html",
         {
+            "sign_in_state": method,
+            "in_force_label": sign_in.in_force_label,
+            "sso_available": sso_on,
+            "has_factor": mfa_enrolled or bool(passkeys),
+            "fresh_needed": fresh_needed,
             "secret": secret,
             "uri": uri,
             "qr": qr_data_uri(uri) if uri else None,
             "recovery_codes": codes,
             "codes_for": codes_for,
-            "mfa_enrolled": await runtime.identity.mfa.has_confirmed_totp(user_id),
-            "passkeys": await runtime.identity.webauthn_credentials.list(user_id),
+            "mfa_enrolled": mfa_enrolled,
+            "passkeys": passkeys,
             "key_kind": key_kind,
             "webauthn": await passkeys_available(runtime),
             "passkeys_path": PASSKEYS_PATH,
@@ -289,6 +306,26 @@ async def confirm_mfa(request: Request) -> Response:
             request, secret=secret, uri=uri, error=CODE_NOT_ACCEPTED, status_code=400
         )
     return await _mfa_page(request, codes=codes)
+
+
+@router.post(SECURITY_PATH + "/recovery-codes")
+async def replace_recovery_codes(request: Request) -> Response:
+    """Replace the user's recovery codes; the new ones are shown once.
+
+    warden asks for a second factor proved just now (not a recovery code, a password
+    alone or an API key); without one nothing changes and the page says how to give it.
+    """
+    runtime, _ = signed_in(request)
+    principal = _session_principal(request)
+    try:
+        codes = await runtime.identity.regenerate_recovery_codes(
+            principal, source_ip=source_ip(runtime, request)
+        )
+    except FreshSecondFactorRequired:
+        return await _mfa_page(
+            request, error=FRESH_FACTOR_NEEDED, fresh_needed=True, status_code=403
+        )
+    return await _mfa_page(request, codes=codes, codes_for="replaced")
 
 
 # -- The user's own passkeys and security keys ---------------------------------------------

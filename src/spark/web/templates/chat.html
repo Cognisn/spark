@@ -5,8 +5,9 @@
 {% block head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{# marked is self-hosted, loaded by base.html. #}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="/static/css/preview.css">
 <style>
     .attachment-chips, #attach-pending { display: flex; flex-wrap: wrap; gap: 0.375rem; }
     .attachment-chips { margin-top: 0.5rem; }
@@ -127,6 +128,8 @@
     </div>
 
     </div><!-- end main chat column -->
+
+    {% include "_preview_pane.html" %}
 
     <!-- Tool Activity Sidecar Panel -->
     <div id="tool-panel" style="display: none; width: 380px; flex-shrink: 0;
@@ -517,6 +520,7 @@
 <script src="/static/js/main.js"></script>
 <script src="/static/js/voice.js"></script>
 <script src="/static/js/attachments.js"></script>
+<script src="/static/js/preview.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
 <script src="/static/js/share.js"></script>

@@ -285,8 +285,23 @@
     </script>
 
     <!-- Update Available Modal -->
-    <!-- Marked.js for rendering release notes markdown -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Markdown, self-hosted (static/vendor, pinned in the licence audit), and the
+         sanitised renderer for text from outside SPARK such as the release notes -->
+    <script src="/static/vendor/marked/marked.umd.js"></script>
+    <script src="/static/vendor/dompurify/purify.min.js"></script>
+    <script>
+    window.SparkMarkdown = {
+        // Markdown to HTML with every script, handler and active element removed.
+        safe(text) {
+            const html = marked.parse(String(text || ''), { gfm: true, breaks: true, async: false });
+            return DOMPurify.sanitize(html, {
+                USE_PROFILES: { html: true },
+                FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
+                FORBID_ATTR: ['style'],
+            });
+        },
+    };
+    </script>
 
     <div class="modal fade" id="updateModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -332,9 +347,9 @@
 
             const notesEl = document.getElementById('update-modal-notes');
             if (_updateData.release_notes) {
-                // Render release notes as markdown
+                // Render release notes as sanitised markdown
                 try {
-                    notesEl.innerHTML = marked.parse(_updateData.release_notes);
+                    notesEl.innerHTML = SparkMarkdown.safe(_updateData.release_notes);
                 } catch (e) {
                     notesEl.textContent = _updateData.release_notes;
                 }

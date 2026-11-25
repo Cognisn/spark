@@ -1,0 +1,16 @@
+{#- The document preview pane (CS39): on the right of the conversation, resizable and
+    closable, one tab per document, each with Download and Close; a full-screen
+    overlay at phone width. preview.js fills it; each document renders in its own
+    sandboxed frame (preview_frame.html). Expects conversation.id. -#}
+<aside id="preview-pane" class="preview-pane" aria-label="Document preview" data-conversation-id="{{ conversation.id }}" hidden>
+    <div id="preview-resize" class="preview-resize" role="separator" aria-orientation="vertical"
+         aria-label="Resize the document preview" aria-controls="preview-pane" tabindex="0"></div>
+    <div class="preview-pane-header">
+        <div id="preview-tabs" class="preview-tabs" role="tablist" aria-label="Documents"></div>
+        <button type="button" id="preview-pane-close" class="btn btn-app-ghost btn-sm preview-pane-close"
+                title="Close the preview" aria-label="Close the document preview">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div id="preview-panels" class="preview-panels"></div>
+</aside>

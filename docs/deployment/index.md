@@ -84,6 +84,45 @@ To try a server on your own computer first, see [Docker Desktop](docker-desktop.
 7. Invite users and give them roles.
 8. [Schedule backups](operations.md#backups).
 
+## What the server fetches for document previews
+
+The `show_document` tool lets the assistant show a document beside a conversation
+(see [Document Preview](../conversations.md#document-preview)). When it is given a
+link, the **web** replica that runs the turn fetches the document itself, under these
+rules, so outbound access from the web containers is needed only to your MCP servers:
+
+- **Only the sender's MCP servers.** The link's host must be exactly the host of an
+  MCP server the sender is connected to over HTTP (stdio servers have none), and that
+  their roles grant (`spark.mcp.<server>`). Any other host is refused.
+- **Scheme and port.** `https`, or the scheme the MCP server's own URL uses, on the
+  server's port (or 443 for `https` to a server configured with `http`). Links with a
+  user name or password are refused.
+- **One lookup, pinned.** The host name is resolved once and the connection is made to
+  that address, with the name kept for the `Host` header and the TLS certificate
+  check. An MCP server configured with `ssl_verify: false` keeps that setting for its
+  links.
+- **Private addresses.** A private, loopback, link-local or other non-public address is
+  accepted only when the MCP server's own host resolved to it when the server list was
+  gathered, so an MCP server on your internal network works and a public one cannot
+  hand out links to internal addresses.
+- **No redirects to another host**, and at most three on the same host.
+- **Size and time.** The document must be within the attachment limit
+  (`files.max_upload_mb`) and arrive within 30 seconds; it is stored in the sender's
+  file area under their quota (`files.quota_mb`).
+- **Type.** The declared content type must match the document's first bytes; a
+  compressed answer is refused.
+- **No credentials.** The request carries only what the URL carries: no cookies,
+  no `Authorization` header, and no proxy or netrc settings from the environment
+  (`HTTPS_PROXY` is not used for these fetches).
+
+Browsers never fetch the link: they get the stored copy from Spark at
+`/preview/api/<conversation>/files/<file>`, which only members of the conversation can
+read, and render it in a sandboxed frame (`/preview/frame`) whose Content Security
+Policy allows Spark's own scripts and no network access. The renderers (PDF.js,
+docx-preview with JSZip, SheetJS Community Edition, marked and DOMPurify) ship in the
+image under `static/vendor`; no content delivery network is needed for them. Each
+document opened or downloaded there is audited as `spark.file.downloaded`.
+
 ## Release images
 
 Images are published to `ghcr.io/cognisn/spark` with the version only: release

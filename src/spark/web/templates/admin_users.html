@@ -4,6 +4,7 @@
 {% block page %}
 <div class="admin-page-body">
     {% call page_ui.header("Users", "Who can sign in to this Spark, their roles and their status.") %}
+        <a class="btn btn-app-ghost btn-sm" href="{{ sign_in_path }}"><i class="bi bi-box-arrow-in-right me-1" aria-hidden="true"></i> Sign-in settings</a>
         <a class="btn btn-app-ghost btn-sm" href="{{ sso_path }}"><i class="bi bi-building-lock me-1" aria-hidden="true"></i> Single sign-on settings</a>
         <a class="btn btn-app-primary btn-sm" href="/admin/invitations"><i class="bi bi-envelope-plus me-1" aria-hidden="true"></i> Invite a user</a>
     {% endcall %}
@@ -31,7 +32,7 @@
                     <td><a href="/admin/users/{{ user.id }}">{{ user.email }}</a></td>
                     <td>{{ user.display_name or "" }}</td>
                     <td><span class="badge-app {{ 'badge-app-success' if user.status == 'active' else 'badge-app-warning' }}">{{ user.status }}</span></td>
-                    <td>{% if user.sign_in_method == "sso_only" %}single sign-on{% if not sso_available %} <span class="badge-app badge-app-warning">{{ sso_off_flag }}</span>{% endif %}{% elif sso_available %}password or SSO{% else %}password{% endif %}</td>
+                    <td>{{ in_force_label(user.sign_in_method, sso_available) }}{% if user.sign_in_method == "sso_only" and not sso_available %} <span class="badge-app badge-app-warning">{{ sso_off_flag }}</span>{% endif %}{% if user.own_sign_in_method is none %} <span style="color: var(--app-text-muted);">(default)</span>{% endif %}{% if user.pending_sign_in_method %} <span class="badge-app badge-app-warning">moving to {{ method_label(user.pending_sign_in_method) }}</span>{% endif %}</td>
                     <td>{% for role in roles[user.id|string] %}<span class="badge-app badge-app-primary me-1">{{ role }}</span>{% endfor %}</td>
                     <td>{{ user.created_at.strftime("%Y-%m-%d") }}</td>
                 </tr>
@@ -80,6 +81,7 @@
                     <div class="col-md-6">
                         <label for="password" class="form-label">Password{% if sso_available %} (not for single sign-on only){% endif %}</label>
                         <input type="password" id="password" name="password" class="form-control" autocomplete="new-password">
+                        <div class="mt-3">{% set feedback_place = "administrator" %}{% set feedback_policy_url = "/admin/password-policy-preview" %}{% set feedback_roles = "input[name=roles]" %}{% include "_password_feedback.html" %}</div>
                     </div>
                 </div>
                 <div class="mb-3">
@@ -97,3 +99,4 @@
     </div>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/auth/password-rules.js" defer></script><script src="/static/js/password_feedback.js" defer></script>{% endblock %}

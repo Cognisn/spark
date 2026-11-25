@@ -60,24 +60,61 @@
         </div>
     </div>
 
+    <div class="app-card mb-4" id="sso-setup">
+        <div class="card-header"><i class="bi bi-list-ol me-2" aria-hidden="true"></i> Set up your identity provider</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <form method="GET" action="/admin/sso" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <label for="preset" class="form-label mb-0">Provider</label>
+                <select id="preset" name="preset" class="form-select form-select-sm" style="width: 280px;" data-preset-select>
+                    {% for value, label in presets %}<option value="{{ value }}" {% if value == preset %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn btn-app-outline btn-sm">Show the steps</button>
+            </form>
+            {% if guide.notes %}<p style="color: var(--app-text-muted); font-size: 0.8125rem;">{{ guide.notes }}</p>{% endif %}
+            <ol class="ps-3 mb-0" id="sso-steps">
+                {% for step in guide.steps %}
+                <li class="mb-3" id="sso-step-{{ step.number }}">
+                    <strong>{{ step.title }}</strong>
+                    <p class="mb-2">{{ step.text }}</p>
+                    {% for name, value in step.values.items() %}
+                    <div class="d-flex flex-wrap align-items-start gap-2 mb-1">
+                        <span style="color: var(--app-text-secondary); min-width: 8rem;">{{ value_labels.get(name, name) }}</span>
+                        <code id="sso-value-{{ step.number }}-{{ name }}" style="word-break: break-all;">{{ value }}</code>
+                        <button type="button" class="btn btn-app-ghost btn-sm" data-copy="#sso-value-{{ step.number }}-{{ name }}"><i class="bi bi-clipboard"></i> Copy</button>
+                    </div>
+                    {% endfor %}
+                    {% for item in step.copy_back %}
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                        <i class="bi bi-arrow-down-circle" aria-hidden="true"></i>
+                        <span>Copy {{ item.label }} into <a href="#{{ item.setting }}">{{ {"issuer_url": "Issuer URL", "client_id": "Client ID", "client_secret": "Client secret"}[item.setting] }}</a> below.</span>
+                    </div>
+                    {% endfor %}
+                </li>
+                {% endfor %}
+            </ol>
+        </div>
+    </div>
+
     <div class="app-card mb-4">
         <div class="card-header"><i class="bi bi-gear me-2"></i> Settings</div>
         <div class="card-body">
             <form method="POST" action="/admin/sso" autocomplete="off">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="provider_preset" value="{{ preset }}">
                 <div class="mb-3">
                     <label for="issuer_url" class="form-label">Issuer URL</label>
                     <input type="url" id="issuer_url" name="issuer_url" class="form-control" value="{{ issuer_url }}" placeholder="https://login.example.com/realms/example">
-                    <div class="form-text">Exactly as the provider's discovery document states it, trailing slash included.</div>
+                    <div class="form-text">Exactly as the provider's discovery document states it, trailing slash included.{% if copy_steps.issuer_url %} From step {{ copy_steps.issuer_url }} of the steps above.{% endif %}</div>
                 </div>
                 <div class="mb-3">
                     <label for="client_id" class="form-label">Client ID</label>
                     <input type="text" id="client_id" name="client_id" class="form-control" value="{{ client_id }}">
+                    {% if copy_steps.client_id %}<div class="form-text">From step {{ copy_steps.client_id }} of the steps above.</div>{% endif %}
                 </div>
                 <div class="mb-3">
                     <label for="client_secret" class="form-label">Client secret</label>
                     <input type="password" id="client_secret" name="client_secret" class="form-control" autocomplete="new-password">
-                    <div class="form-text">{% if secret_set %}A client secret is stored and is never shown. Leave this blank to keep it, or enter a new one to replace it.{% else %}Stored in the secrets store and never shown again.{% endif %}</div>
+                    <div class="form-text">{% if secret_set %}A client secret is stored and is never shown. Leave this blank to keep it, or enter a new one to replace it.{% else %}Stored in the secrets store and never shown again.{% endif %}{% if copy_steps.client_secret %} From step {{ copy_steps.client_secret }} of the steps above.{% endif %}</div>
                 </div>
                 <div class="form-check mb-3">
                     <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="on" {% if enabled %}checked{% endif %}>
@@ -118,4 +155,4 @@
     </div>
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script><script src="/static/js/sign_in_settings.js"></script>{% endblock %}

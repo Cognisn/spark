@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+{#- The document preview's renderer (CS38). Loaded by the preview pane in an
+    <iframe sandbox="allow-scripts">: an opaque origin with no access to SPARK's
+    cookies, storage or pages, under the Content Security Policy that
+    spark.web.endpoints.preview sends (SPARK's own scripts only, no network). The
+    document arrives from the pane by postMessage; no inline script or style here. -#}
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>Document preview</title>
+    <link rel="stylesheet" href="/static/css/preview.css">
+</head>
+<body class="preview-frame-body">
+    <main id="preview-root" class="preview-root" aria-live="polite">
+        <p class="preview-status">Loading the preview…</p>
+    </main>
+    <script src="/static/vendor/dompurify/purify.min.js"></script>
+    <script src="/static/vendor/marked/marked.umd.js"></script>
+    <script src="/static/js/preview_frame.js"></script>
+</body>
+</html>

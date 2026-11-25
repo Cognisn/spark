@@ -25,7 +25,9 @@ CSRF_JS = STATIC_JS / "csrf.js"
 META = '<meta name="csrf-token" content="{{ csrf_token(request) }}">'
 SCRIPT = '<script src="/static/js/csrf.js"></script>'
 # Pages rendered without base.html, and why each is safe.
-STANDALONE = {"base.html", "login.html", "loading.html", "auth_layout.html"}
+# preview_frame.html is the document preview's sandboxed renderer: an opaque origin whose
+# Content Security Policy allows no request at all (connect-src 'none'), checked below.
+STANDALONE = {"base.html", "login.html", "loading.html", "auth_layout.html", "preview_frame.html"}
 # Server mode's screens used before a session exists (sign-in, second factor,
 # invitations, password reset, single sign-on) extend this standalone layout:
 # they make no scripted state changes, and each form carries its own token.
@@ -64,6 +66,12 @@ class TestPagesLoadTheWrapper:
         text = path.read_text(encoding="utf-8").lstrip()
         # The Administration layout extends base.html itself (checked here too).
         assert text.startswith(('{% extends "base.html" %}', ADMIN_LAYOUT, AUTH_LAYOUT))
+
+    def test_the_preview_frame_makes_no_requests(self) -> None:
+        for path in (TEMPLATES / "preview_frame.html", STATIC_JS / "preview_frame.js"):
+            text = path.read_text(encoding="utf-8")
+            assert not UNSAFE_METHOD.search(text), path.name
+            assert "fetch(" not in text and "XMLHttpRequest" not in text, path.name
 
     def test_login_page_makes_no_scripted_state_changes(self) -> None:
         text = (TEMPLATES / "login.html").read_text(encoding="utf-8")
