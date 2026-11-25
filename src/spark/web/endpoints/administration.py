@@ -49,15 +49,20 @@ from warden.identity import (
     MailError,
     PasskeyLinkRefused,
     RoleError,
+    SecondFactorKind,
     SignInMethod,
+    SignInMethodChangeRefused,
+    SignInMethodConflict,
+    SignInSettingsError,
     StagedGrant,
     User,
     UserError,
     UserStatus,
     WebAuthnUnavailable,
 )
+from warden.identity.sso.presets import PRESETS
 
-from spark.identity import sso
+from spark.identity import sign_in, sso
 from spark.identity.access import SparkIdentity, require_permission
 from spark.identity.mail import captured, link_in
 from spark.identity.permissions import USERS_ADMIN
@@ -92,6 +97,12 @@ DONE = {
     "revoked": "Revoked.",
     "sent": "The link is sent.",
     "method": "The sign-in method is changed.",
+    "method-pending": (
+        "The change is waiting for the user. Their current method keeps working until they "
+        "have what the new one needs."
+    ),
+    "method-resent": "A new set-up link is sent, and the old one no longer works.",
+    "method-cancelled": "The change is cancelled. The user stays on their current method.",
     "saved": "The single sign-on settings are saved.",
     "mfa-reset": (
         "Every second factor is removed and the user's sessions are ended. They set one up "
@@ -112,8 +123,10 @@ SSO_ONLY_ASK = (
 # The statuses an administrator sets, and those the list filters by.
 _STATUSES = {s.value: s for s in (UserStatus.ACTIVE, UserStatus.SUSPENDED, UserStatus.DEACTIVATED)}
 _FILTERS = {s.value: s for s in UserStatus}
-# The sign-in methods an administrator sets on these screens.
-_SETTABLE = {m.value: m for m in (SignInMethod.PASSWORD_AND_SSO, SignInMethod.SSO_ONLY)}
+# The sign-in methods an administrator sets on these screens (and the form's word for "follow
+# the instance default").
+_SETTABLE = {m.value: m for m in SignInMethod}
+SIGN_IN_PATH = "/admin/sign-in"
 
 administrator = require_permission(USERS_ADMIN)
 
@@ -152,6 +165,13 @@ def _mailed(runtime: IdentityRuntime, messages: list[Any], path: str) -> dict[st
     """What to tell the administrator about a mailed link: the link once, or that it was sent."""
     link = link_in(messages, runtime.config.http.public_base_url, path)
     return {"mailed_link": link, "notice": None if link else DONE["sent"]}
+
+
+def _setup_link(runtime: IdentityRuntime, messages: list[Any]) -> dict[str, Any]:
+    """The set-up link of a sign-in change, shown once when there is no mail service."""
+    base = runtime.config.http.public_base_url
+    link = link_in(messages, base, RESET_PATH) or link_in(messages, base, PASSKEY_REGISTRATION_PATH)
+    return {"mailed_link": link, "notice": None if link else DONE["method-resent"]}
 
 
 # -- Users ----------------------------------------------------------------------------------
@@ -194,6 +214,9 @@ async def _users_page(
             "sso_available": await sso.available(runtime.identity),
             "sso_off_flag": SSO_OFF_FLAG,
             "sso_path": SSO_PATH,
+            "sign_in_path": SIGN_IN_PATH,
+            "in_force_label": sign_in.in_force_label,
+            "method_label": sign_in.method_label,
         },
         status_code=status_code,
     )
@@ -265,6 +288,9 @@ async def _user_page(
     status_code: int = 200,
     extra: dict[str, Any] | None = None,
 ) -> HTMLResponse:
+    sso_on = await sso.available(runtime.identity)
+    webauthn = await passkeys_available(runtime)
+    settings = await runtime.identity.sign_in_settings()
     context: dict[str, Any] = {
         "user": user,
         "assignments": await runtime.identity.roles.assignments_of(user.id),
@@ -273,12 +299,19 @@ async def _user_page(
         "notice": DONE.get(request.query_params.get("done", "")),
         "error": error,
         "mailed_link": None,
-        "sso_available": await sso.available(runtime.identity),
+        "sso_available": sso_on,
         "sso_off_flag": SSO_OFF_FLAG,
         # _admin_user_passkeys.html
         "passkeys": await runtime.identity.webauthn_credentials.list(user.id),
         "key_kind": key_kind,
-        "webauthn": await passkeys_available(runtime),
+        "webauthn": webauthn,
+        # _admin_user_sign_in_method.html
+        "sign_in_state": await runtime.identity.sign_in_method(user.id),
+        "default_method": settings.default_sign_in_method,
+        "method_choices": sign_in.choices(sso_available=sso_on, webauthn=webauthn),
+        "method_label": sign_in.method_label,
+        "in_force_label": sign_in.in_force_label,
+        "default_choice": sign_in.DEFAULT_CHOICE,
     }
     context.update(extra or {})
     return screen(
@@ -318,28 +351,84 @@ async def set_status(
     return redirect(f"{USERS_PATH}/{user.id}?done=status")
 
 
+def _refusal(exc: Exception) -> str:
+    """The fixed words for a refused sign-in change (never anything the request sent)."""
+    if isinstance(exc, SignInMethodChangeRefused):
+        return sign_in.refusal_text(exc.reason)
+    if isinstance(exc, SignInMethodConflict):
+        return sign_in.HOLDS_KEYS
+    if isinstance(exc, MailError):
+        return sign_in.LINK_NOT_SENT
+    return _message(exc)
+
+
 @router.post(USERS_PATH + "/{user_id}/sign-in-method")
 async def set_sign_in_method(
     request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
 ) -> Response:
-    """Change how a user signs in (SSO-only only while single sign-on is available)."""
+    """Set a user's own sign-in method, or have them follow the instance default.
+
+    The change takes effect at once when the user holds what the new method needs;
+    otherwise it waits, the current method keeps working, and warden emails a set-up
+    link where one is needed. Single sign-on only is refused while single sign-on is
+    not set up.
+    """
     runtime = _runtime(request)
     user = await _user_or_404(runtime, user_id)
     form = await request.form()
-    method = _SETTABLE.get(_text(form.get("method")))
-    if method is None:
+    choice = _text(form.get("method"))
+    method = _SETTABLE.get(choice)
+    if choice != sign_in.DEFAULT_CHOICE and method is None:
         return await _user_page(
-            request, runtime, user, error="That is not a sign-in method to set.", status_code=400
+            request, runtime, user, error=sign_in.METHOD_REFUSED, status_code=400
         )
     if _sso_only_refused(method, await sso.available(runtime.identity)):
         return await _user_page(request, runtime, user, error=SSO_OFF, status_code=400)
     try:
-        await runtime.identity.users.set_sign_in_method(
+        state = await runtime.identity.set_sign_in_method(
             user.id, method, actor=_actor(identity), source_ip=source_ip(runtime, request)
         )
+    except (SignInMethodChangeRefused, SignInMethodConflict, MailError) as exc:
+        return await _user_page(request, runtime, user, error=_refusal(exc), status_code=409)
     except UserError as exc:
         return await _user_page(request, runtime, user, error=_message(exc), status_code=409)
-    return redirect(f"{USERS_PATH}/{user.id}?done=method")
+    done = "method-pending" if state.pending is not None else "method"
+    return redirect(f"{USERS_PATH}/{user.id}?done={done}")
+
+
+@router.post(USERS_PATH + "/{user_id}/sign-in-method/resend")
+async def resend_sign_in_link(
+    request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Email the user a fresh set-up link for a waiting change (or show it once, without mail)."""
+    runtime = _runtime(request)
+    user = await _user_or_404(runtime, user_id)
+    try:
+        with captured() as messages:
+            await runtime.identity.resend_sign_in_method_link(
+                user.id, actor=_actor(identity), source_ip=source_ip(runtime, request)
+            )
+    except (SignInMethodChangeRefused, MailError) as exc:
+        return await _user_page(request, runtime, user, error=_refusal(exc), status_code=409)
+    except UserError as exc:
+        return await _user_page(request, runtime, user, error=_message(exc), status_code=409)
+    return await _user_page(request, runtime, user, extra=_setup_link(runtime, messages))
+
+
+@router.post(USERS_PATH + "/{user_id}/sign-in-method/cancel")
+async def cancel_sign_in_change(
+    request: Request, user_id: str, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Cancel a waiting change: the user stays on the method in force and the link stops working."""
+    runtime = _runtime(request)
+    user = await _user_or_404(runtime, user_id)
+    try:
+        await runtime.identity.cancel_sign_in_method_change(
+            user.id, actor=_actor(identity), source_ip=source_ip(runtime, request)
+        )
+    except SignInMethodChangeRefused as exc:
+        return await _user_page(request, runtime, user, error=_refusal(exc), status_code=409)
+    return redirect(f"{USERS_PATH}/{user.id}?done=method-cancelled")
 
 
 @router.post(USERS_PATH + "/{user_id}/roles")
@@ -455,14 +544,21 @@ async def _invitations_page(
     status_code: int = 200,
     extra: dict[str, Any] | None = None,
 ) -> HTMLResponse:
+    sso_on = await sso.available(runtime.identity)
+    webauthn = await passkeys_available(runtime)
     context: dict[str, Any] = {
         "pending": await runtime.identity.invitations.pending(),
         "role_names": _role_names(runtime),
         "notice": DONE.get(request.query_params.get("done", "")),
         "error": error,
         "mailed_link": None,
-        "sso_available": await sso.available(runtime.identity),
-        "webauthn": await passkeys_available(runtime),
+        "sso_available": sso_on,
+        "webauthn": webauthn,
+        "default_method": (await runtime.identity.sign_in_settings()).default_sign_in_method,
+        "default_choice": sign_in.DEFAULT_CHOICE,
+        "in_force_label": sign_in.in_force_label,
+        "method_label": sign_in.method_label,
+        "method_choices": sign_in.choices(sso_available=sso_on, webauthn=webauthn),
     }
     context.update(extra or {})
     return screen(
@@ -487,7 +583,13 @@ async def invite(request: Request, identity: SparkIdentity = Depends(administrat
     runtime = _runtime(request)
     form = await request.form()
     grants = [StagedGrant(r) for r in form.getlist("roles") if isinstance(r, str)]
-    method = _method(_text(form.get("method")))
+    choice = _text(form.get("method"))
+    # Blank or "default": the invitee follows the instance default (resolved when they accept).
+    method = None if choice in ("", sign_in.DEFAULT_CHOICE) else _SETTABLE.get(choice)
+    if method is None and choice not in ("", sign_in.DEFAULT_CHOICE):
+        return await _invitations_page(
+            request, runtime, error=sign_in.METHOD_REFUSED, status_code=400
+        )
     if _sso_only_refused(method, await sso.available(runtime.identity)):
         return await _invitations_page(request, runtime, error=SSO_OFF, status_code=400)
     try:
@@ -583,6 +685,160 @@ async def revoke_key(
     return redirect(f"{KEYS_PATH}?done=revoked")
 
 
+# -- Sign-in settings -----------------------------------------------------------------------
+
+_FACTOR_KINDS = {kind.value: kind for kind in SecondFactorKind}
+# How many users a result lists by name; the rest are counted.
+RESULT_LISTED = 50
+
+
+async def _sign_in_page(
+    request: Request,
+    runtime: IdentityRuntime,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+    extra: dict[str, Any] | None = None,
+) -> HTMLResponse:
+    settings = await runtime.identity.sign_in_settings()
+    sso_on = await sso.available(runtime.identity)
+    webauthn = await passkeys_available(runtime)
+    methods = [
+        {
+            "value": text.method.value,
+            "label": text.label,
+            "description": text.description,
+            "offered": offered,
+            "why": why,
+        }
+        for text in sign_in.METHODS
+        for offered, why in [_method_offer(text.method, sso_on, webauthn)]
+    ]
+    factors = [
+        {
+            "value": kind.value,
+            "label": label,
+            "description": description,
+            "allowed": kind in settings.allowed_second_factors,
+            "offered": kind is not SecondFactorKind.PASSKEY or webauthn,
+        }
+        for kind, label, description in sign_in.FACTORS
+    ]
+    only_sso = await sso.sso_only_users(runtime.identity)
+    context: dict[str, Any] = {
+        "default_method": settings.default_sign_in_method.value,
+        "methods": methods,
+        "factors": factors,
+        "sso_available": sso_on,
+        "webauthn": webauthn,
+        "sso_path": SSO_PATH,
+        "sso_only_users": only_sso,
+        "default_label": sign_in.in_force_label(settings.default_sign_in_method, sso_on),
+        "result": None,
+        "mailed_links": [],
+        "error": error,
+    }
+    context.update(extra or {})
+    return screen(
+        request,
+        "admin_sign_in.html",
+        context,
+        status_code=status_code,
+        private=bool(context["mailed_links"]),
+    )
+
+
+def _method_offer(method: SignInMethod, sso_on: bool, webauthn: bool) -> tuple[bool, str]:
+    """Whether a method can be chosen as the default, and if not, why (in plain words)."""
+    if method is SignInMethod.SSO_ONLY and not sso_on:
+        return False, "Set up and switch on single sign-on first."
+    if method is SignInMethod.PASSKEY_ONLY and not webauthn:
+        return False, "Passkeys cannot be used on this server."
+    return True, ""
+
+
+@router.get(SIGN_IN_PATH, response_class=HTMLResponse)
+async def sign_in_page(request: Request, _: SparkIdentity = Depends(administrator)) -> HTMLResponse:
+    return await _sign_in_page(request, _runtime(request))
+
+
+async def _named(runtime: IdentityRuntime, ids: tuple[uuid.UUID, ...]) -> list[dict[str, str]]:
+    """The users of a result, by id and email (the first :data:`RESULT_LISTED`)."""
+    rows = []
+    for user_id in ids[:RESULT_LISTED]:
+        user = await runtime.identity.users.get(user_id)
+        rows.append({"id": str(user_id), "email": user.email if user is not None else str(user_id)})
+    return rows
+
+
+@router.post(SIGN_IN_PATH)
+async def save_sign_in(
+    request: Request, identity: SparkIdentity = Depends(administrator)
+) -> Response:
+    """Change the default sign-in method and the allowed second factors.
+
+    A new default moves every user who follows it: at once for those who hold what
+    it needs, otherwise as a change waiting for them, with a set-up link emailed (or
+    shown here once, without a mail service). The page says how many of each, and
+    names anyone whose link was not delivered.
+    """
+    runtime = _runtime(request)
+    form = await request.form()
+    current = await runtime.identity.sign_in_settings()
+    sso_on = await sso.available(runtime.identity)
+    webauthn = await passkeys_available(runtime)
+    default = _SETTABLE.get(_text(form.get("default_method")))
+    kinds = {
+        _FACTOR_KINDS[v]
+        for v in form.getlist("factors")
+        if isinstance(v, str) and v in _FACTOR_KINDS
+    }
+    if not webauthn and SecondFactorKind.PASSKEY in current.allowed_second_factors:
+        # The box is not offered here, so it is not in the form: keep what was set.
+        kinds.add(SecondFactorKind.PASSKEY)
+    if default is None:
+        return await _sign_in_page(request, runtime, error=sign_in.METHOD_REFUSED, status_code=400)
+    if not kinds:
+        return await _sign_in_page(request, runtime, error=sign_in.NO_FACTOR, status_code=400)
+    moved = default is not current.default_sign_in_method
+    if moved and not _method_offer(default, sso_on, webauthn)[0]:
+        error = SSO_OFF if default is SignInMethod.SSO_ONLY else sign_in.refusal_text("webauthn")
+        return await _sign_in_page(request, runtime, error=error, status_code=400)
+    base = runtime.config.http.public_base_url
+    try:
+        with captured() as messages:
+            change = await runtime.identity.update_sign_in_settings(
+                actor=_actor(identity),
+                source_ip=source_ip(runtime, request),
+                default_sign_in_method=default,
+                allowed_second_factors=sorted(k.value for k in kinds),
+            )
+    except SignInMethodChangeRefused as exc:
+        return await _sign_in_page(
+            request, runtime, error=sign_in.refusal_text(exc.reason), status_code=409
+        )
+    except SignInSettingsError:
+        return await _sign_in_page(request, runtime, error=sign_in.FACTORS_REFUSED, status_code=400)
+    links = []
+    for message in messages:
+        link = link_in([message], base, RESET_PATH) or link_in(
+            [message], base, PASSKEY_REGISTRATION_PATH
+        )
+        if link is not None:
+            links.append({"to": message.to, "link": link})
+    result = {
+        "moved": moved,
+        "default_label": sign_in.method_label(change.settings.default_sign_in_method),
+        "changed": len(change.changed),
+        "pending": len(change.pending),
+        "pending_users": await _named(runtime, change.pending),
+        "failed_users": await _named(runtime, change.links_failed),
+        "failed": len(change.links_failed),
+        "listed": RESULT_LISTED,
+    }
+    return await _sign_in_page(request, runtime, extra={"result": result, "mailed_links": links})
+
+
 # -- Single sign-on -------------------------------------------------------------------------
 
 
@@ -605,7 +861,18 @@ async def _sso_page(
 ) -> HTMLResponse:
     current = await sso.state(runtime.identity)
     settings = current.settings
+    # The steps for the provider chosen (?preset=, to look at another before saving),
+    # else the one saved.
+    asked = request.query_params.get("preset", "")
+    preset = asked if asked in sso.PRESET_NAMES else settings.provider_preset
+    guide = sso.guide_for(runtime.identity, preset, settings)
     context: dict[str, Any] = {
+        "preset": guide.preset,
+        "presets": [(p.preset, p.label) for p in PRESETS],
+        "guide": guide,
+        # Which step each copy-back setting comes from, for the note beside its field.
+        "copy_steps": {c.setting: step.number for step in guide.steps for c in step.copy_back},
+        "value_labels": sso.VALUE_LABELS,
         "issuer_url": settings.issuer_url or "",
         "client_id": settings.client_id or "",
         "enabled": settings.enabled,
@@ -648,6 +915,7 @@ async def save_sso(request: Request, identity: SparkIdentity = Depends(administr
         client_id=_text(form.get("client_id")) or None,
         enabled=form.get("enabled") == "on",
         client_secret=secret if isinstance(secret, str) and secret != "" else None,
+        provider_preset=_text(form.get("provider_preset")) or None,
     )
     typed = {"issuer_url": change.issuer_url or "", "client_id": change.client_id or ""}
     current = await sso.state(runtime.identity)

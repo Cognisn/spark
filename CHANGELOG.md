@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sign-in settings (server mode).** Administration, Users and access, Sign-in sets the default sign-in method for everyone (Password + MFA, Passkey, SSO, or Password + MFA or SSO, each with a plain description; SSO selectable only once single sign-on is set up, Passkey only where passkeys work) and the second factors the instance allows (an authenticator app and a passkey or security key, at least one). Saving a new default says how many people moved at once and how many wait for their credential, names anyone whose set-up link was not delivered, lists the people who depend on single sign-on, and, without a mail service, shows each link once.
+- **A user's own sign-in method.** A user's page chooses between Use the instance default (first, showing what it is) and the methods that can be chosen, shows a change that waits for the user with Resend the link and Cancel the change, and refuses in plain words (single sign-on not set up, no mail server, the user holding passkeys). The Users page shows the method in force and any change waiting, and Invitations offer the same choices.
+- **Setup steps for single sign-on.** The Single sign-on page shows warden's numbered steps for Microsoft Entra ID, Google, Okta or another OpenID Connect provider, with this instance's redirect URI filled in, Copy buttons, and each value to copy back linked to the field it fills. The chosen provider is saved with the settings.
+- **Account security shows how you sign in, and replaces recovery codes.** The user sees their own sign-in method, whether an administrator set it, and any change waiting for them. Replace recovery codes shows the new codes once, with Copy and Download, and asks for a second factor proved just now (sign out and in again) when warden refuses.
+
 ## [0.3.0rc52] - 2026-11-25
 
 ### Fixed

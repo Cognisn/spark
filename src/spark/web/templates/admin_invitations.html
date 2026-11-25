@@ -18,7 +18,7 @@
                 {% for invitation in pending %}
                 <tr>
                     <td>{{ invitation.user.email }}</td>
-                    <td>{% if invitation.user.sign_in_method == "sso_only" %}single sign-on{% elif invitation.user.sign_in_method == "passkey_only" %}passkey{% elif sso_available %}password or SSO{% else %}password{% endif %}</td>
+                    <td>{% if invitation.user.sign_in_method == "passkey_only" %}passkey{% else %}{{ in_force_label(invitation.user.sign_in_method, sso_available) }}{% endif %}{% if invitation.user.own_sign_in_method is none %} <span style="color: var(--app-text-muted);">(default)</span>{% endif %}</td>
                     <td>{% for grant in invitation.grants %}<span class="badge-app badge-app-primary me-1">{{ grant.role }}</span>{% endfor %}</td>
                     <td>{{ invitation.expires_at.strftime("%Y-%m-%d %H:%M") if invitation.expires_at else "expired" }}</td>
                     <td class="text-end text-nowrap">
@@ -59,15 +59,10 @@
                     <div class="col-md-6">
                         <label for="method" class="form-label">Signs in with</label>
                         <select id="method" name="method" class="form-select">
-                            {% if sso_available %}
-                            <option value="password_and_sso">A password, or single sign-on</option>
-                            <option value="sso_only">Single sign-on only</option>
-                            {% else %}
-                            <option value="password_and_sso">A password</option>
-                            {% endif %}
-                            {% if webauthn %}
-                            <option value="passkey_only">A passkey only</option>
-                            {% endif %}
+                            <option value="{{ default_choice }}" selected>Use the instance default ({{ in_force_label(default_method, sso_available) }})</option>
+                            {% for choice in method_choices %}
+                            <option value="{{ choice.method.value }}">{{ choice.label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>

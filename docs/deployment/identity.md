@@ -240,6 +240,83 @@ and is never combined with a session cookie. Keys expire after at most 365 days
 (`warden.identity.api_key_max_lifetime_days`). Requests made with an API key are
 granted no MCP server.
 
+## How people sign in
+
+**Administration > Users and access > Sign-in** (`/admin/sign-in`, needs the user
+administration permission) sets how everyone signs in. There are four methods:
+
+| Method | What it means |
+| --- | --- |
+| Password + MFA | A password and a second factor. Single sign-on is not offered. |
+| Passkey | A passkey alone, with no password. Needs passkeys to work on this server. |
+| SSO | Single sign-on through your identity provider, with no password and no passkey. Needs single sign-on set up and switched on. |
+| Password + MFA or SSO | Either a password and a second factor, or single sign-on once it is set up. This is the starting default. |
+
+Until single sign-on is set up, the page does not let SSO be chosen, and until
+passkeys work (see [Passkeys and security keys](#passkeys-and-security-keys)) it does
+not let Passkey be chosen.
+
+### The default and overrides
+
+The method chosen on the Sign-in page is the **default**: every user follows it unless an
+administrator gives them a method of their own. On a user's page (**Sign-in method**) the
+choices start with **Use the instance default**, which shows what it is now, then the
+methods that can be chosen. The Users page shows the method in force for each person,
+marks those who follow the default, and shows a change waiting for them. Invitations
+offer the same choices, again starting with the default.
+
+### Changes that wait
+
+A change takes effect at once for a user who already holds what the new method needs:
+a password for Password + MFA, a passkey for Passkey, a linked single sign-on identity for
+SSO. Otherwise it is **pending**: the method in force keeps working, and warden emails a
+set-up link where one is needed, a set-password link or a passkey registration link.
+Moving to SSO needs no link: it completes the first time the person signs in through
+single sign-on. When the change completes, whatever the new method does not allow is
+removed (the password hash, and the passkeys and security keys for SSO), and so are the
+sessions signed in another way.
+
+A user's page shows the pending change, when it was asked for and when the link was
+sent, with **Resend the link** (a new link, and the old one stops working) and **Cancel
+the change** (the user stays on the method in force). Account security shows the person
+their own method and any change waiting for them. Without a [mail service](#mail) the
+link is shown to the administrator once, to pass on privately.
+
+Changing the default moves everyone who follows it in the same way. After saving, the
+page says how many people moved at once and how many are waiting, lists those waiting,
+and names anyone whose link could not be delivered so each can be resent from their own
+page. Without a mail service it lists each person's link once.
+
+### The single sign-on guard
+
+Single sign-on cannot be switched off, or its settings cleared, while the default or an
+active user's method is SSO. The Sign-in page lists the people who sign in only through
+single sign-on, each linked to their page, so they can be moved first; the
+[Single sign-on](#single-sign-on) page lists them again when it refuses.
+
+### Allowed second factors
+
+The Sign-in page also sets which second factors the instance allows: an authenticator
+app, and a passkey or security key. At least one must stay allowed, and the passkey
+factor is offered only where passkeys work. A person who holds a factor that is no longer
+allowed loses it once they hold one that is. Recovery codes are always the backup.
+
+### Replacing recovery codes
+
+On **My account > Account security**, **Replace recovery codes** replaces all of a
+person's recovery codes, used or not, and shows the new ones once, with a copy and a
+download button. warden requires a second factor proved just now: the session must have
+been signed in with an authenticator app or a passkey (not a recovery code, a password
+alone, single sign-on or an API key) within the last few minutes
+(`warden.identity.mfa_challenge_ttl_seconds`). Otherwise nothing changes and the page
+asks the person to sign out, sign in again with a second factor and try again. warden
+emails a notice that the codes were replaced, never the codes.
+
+Every change is audited by warden (`warden.identity.sign_in_settings_changed`,
+`warden.identity.user.sign_in_method_changed`, `.sign_in_method_pending`,
+`.sign_in_method_pending_cancelled`, `.sign_in_method_link_sent` and
+`warden.identity.mfa.recovery_codes_regenerated`).
+
 ## Single sign-on
 
 warden signs users in with one OpenID Connect provider (Microsoft Entra ID, Google,
@@ -247,7 +324,13 @@ Okta, Keycloak and others). Single sign-on does not create accounts: a user must
 already exist, created or invited, before they can sign in through it.
 
 An administrator sets it up on the **Single sign-on** page (`/admin/sso`, from the
-**Single sign-on settings** button on the Users page):
+**Single sign-on settings** button on the Users page). The page has numbered setup steps
+for **Microsoft Entra ID**, **Google**, **Okta** or **Other OpenID Connect provider**,
+chosen from the Provider list (saved with the settings; it is a label for the steps and
+changes nothing about how sign-in works). They come from warden, with this instance's
+own redirect URI, scopes and name filled in, each with a **Copy** button, and each value
+to copy back from the provider's console is linked to the field it goes into (issuer
+URL, client ID, client secret). The same steps in general:
 
 1. Register Spark with the provider as a web application:
    - the redirect URI the page shows (with a copy button), for example
@@ -295,8 +378,8 @@ SPARK__WARDEN__SSO__CLIENT_ID=spark
 with the client secret placed in the secrets store under `warden.sso.client-secret`
 ([placing a secret](secrets.md#placing-a-secret-in-the-store)). Optionally
 `SPARK__WARDEN__SSO__ALLOWED_EMAIL_DOMAINS=example.com` accepts only addresses in your
-own domains, and `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`, `google`, `okta` or
-`generic`) is a label that changes nothing; neither is on the page.
+own domains, which is not on the page. `SPARK__WARDEN__SSO__PROVIDER_PRESET` (`entra`,
+`google`, `okta` or `generic`) is the provider the page's setup steps start on.
 
 warden accepts only asymmetrically signed ID tokens (RS256, ES256, PS256), and checks
 the state, nonce and PKCE of every sign-in. A provider behind a private certificate

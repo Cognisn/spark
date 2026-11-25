@@ -8,8 +8,9 @@
     {% if recovery_codes %}
     <div class="app-card">
         <div class="card-body">
-            <p style="font-size: 0.875rem;">{% if codes_for == "passkey" %}Your passkey is registered.{% else %}Your authenticator app is set up.{% endif %}</p>
+            <p style="font-size: 0.875rem;">{% if codes_for == "passkey" %}Your passkey is registered.{% elif codes_for == "replaced" %}Your recovery codes are replaced. Every earlier code no longer works.{% else %}Your authenticator app is set up.{% endif %}</p>
             {% include "_recovery_codes.html" %}
+            <button type="button" class="btn btn-app-ghost btn-sm mb-3" data-download="#recovery-codes" data-filename="spark-recovery-codes.txt"><i class="bi bi-download"></i> Download codes</button>
             <a class="btn btn-app-primary w-100" href="/account/mfa">I have saved my codes</a>
         </div>
     </div>
@@ -35,6 +36,23 @@
         </div>
     </div>
     {% else %}
+    <div class="app-card mb-4" id="how-you-sign-in">
+        <div class="card-header"><i class="bi bi-box-arrow-in-right me-2" aria-hidden="true"></i> How you sign in</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Your sign-in method</span><span id="own-method">{{ in_force_label(sign_in_state.effective, sso_available) }}</span></div>
+            <div class="d-flex justify-content-between"><span style="color: var(--app-text-secondary);">Set by</span><span id="own-method-source">{% if sign_in_state.setting is none %}The default for everyone{% else %}An administrator, for you{% endif %}</span></div>
+            {% if sign_in_state.pending %}
+            <div class="alert-app alert-app-warning mt-3 mb-0" role="status" id="own-method-pending">
+                <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>
+                An administrator is changing how you sign in to <strong>{{ in_force_label(sign_in_state.pending.to_method, sso_available) }}</strong>. Until then you keep signing in with {{ in_force_label(sign_in_state.pending.from_method, sso_available) }}.
+                {% if sign_in_state.pending.link == "set_password" %}Set a password with the link emailed to you to finish the change.
+                {% elif sign_in_state.pending.link == "passkey_registration" %}Register a passkey with the link emailed to you to finish the change.
+                {% else %}It finishes the first time you sign in through single sign-on.{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="app-card mb-4" id="passkeys">
         <div class="card-header"><i class="bi bi-fingerprint me-2" aria-hidden="true"></i> Passkeys and security keys</div>
         <div class="card-body" style="font-size: 0.875rem;">
@@ -107,7 +125,26 @@
             {% endif %}
         </div>
     </div>
+
+    {% if has_factor %}
+    <div class="app-card mt-4" id="recovery-codes-card">
+        <div class="card-header"><i class="bi bi-life-preserver me-2" aria-hidden="true"></i> Recovery codes</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <p>Each recovery code works once, if you lose your authenticator app or passkey. Replacing them makes every earlier code stop working, and the new codes are shown once.</p>
+            {% if fresh_needed %}
+            <form method="POST" action="/auth/sign-out" class="mb-3" id="fresh-factor-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-box-arrow-right me-1" aria-hidden="true"></i> Sign out to sign in again</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="/account/mfa/recovery-codes">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i> Replace recovery codes</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/js/copy.js"></script><script src="/static/js/webauthn.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script><script src="/static/js/webauthn.js"></script><script src="/static/js/sign_in_settings.js"></script>{% endblock %}
