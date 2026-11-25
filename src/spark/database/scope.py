@@ -24,6 +24,15 @@ fragments decide it inside a query, each taking one parameter, the caller's guid
   user's bundle).
 
 ``OWNED_ACTIONS`` takes the caller's guid as well.
+
+**Conversations in a project** (PC9) are also reached through the project. A member of
+the project's tree (``project_members`` on its top-level project) whose scope is
+``all_conversations`` reaches every conversation of the tree, whoever started it, at
+their project role (``contributor``, or ``viewer`` for Read-only); with ``project_only``
+they reach none of them through the project. The project's owner reaches every
+conversation of their tree as :data:`PROJECT_OWNER_ROLE`. A person with an individual
+share as well holds the better of the two roles. Managing a conversation stays with
+whoever started it: nothing reached through a project is ``MANAGE``.
 """
 
 from __future__ import annotations
@@ -37,6 +46,7 @@ __all__ = [
     "CONTRIBUTABLE_CONVERSATIONS",
     "OWNED_ACTIONS",
     "OWNED_CONVERSATIONS",
+    "PROJECT_OWNER_ROLE",
     "READABLE_CONVERSATIONS",
     "Capability",
     "NotOwned",
@@ -77,13 +87,36 @@ def allows(role: Role | None, need: Capability) -> bool:
     return role is not None and need in ALLOWS[role]
 
 
+# The role a project's owner holds in a conversation someone else started in their
+# project (question 89; contributor: they read and send, they do not manage).
+PROJECT_OWNER_ROLE: Role = Role.CONTRIBUTOR
+
+_RANK = {Role.VIEWER: 1, Role.CONTRIBUTOR: 2, Role.OWNER: 3}
+
+
 def _members_with(roles: tuple[str, ...]) -> str:
     listed = ", ".join(f"'{r}'" for r in roles)
+    project_roles = ", ".join(f"'{r}'" for r in roles if r != Role.OWNER.value)
+    owner_reaches = PROJECT_OWNER_ROLE.value in roles
     return (
         "WITH caller AS (SELECT CAST(? AS TEXT) AS guid) "
         "SELECT c.id FROM conversations c JOIN caller ON c.user_guid = caller.guid "
         "UNION SELECT cm.conversation_id FROM conversation_members cm "
-        f"JOIN caller ON cm.user_guid = caller.guid WHERE cm.role IN ({listed})"
+        f"JOIN caller ON cm.user_guid = caller.guid WHERE cm.role IN ({listed}) "
+        # Through a project: every conversation of the tree for its all-conversations
+        # members at their role, and for the project's owner.
+        "UNION SELECT pc.id FROM conversations pc "
+        "JOIN projects pp ON pp.id = pc.project_id "
+        "JOIN project_members pm ON pm.project_id = pp.root_id "
+        "JOIN caller ON pm.user_guid = caller.guid "
+        f"WHERE pm.scope = 'all_conversations' AND pm.role IN ({project_roles})"
+        + (
+            " UNION SELECT oc.id FROM conversations oc "
+            "JOIN projects op ON op.id = oc.project_id "
+            "JOIN caller ON op.user_guid = caller.guid"
+            if owner_reaches
+            else ""
+        )
     )
 
 
@@ -112,18 +145,27 @@ async def conversation_role(db: Executor, user_guid: str, conversation_id: int) 
     row = await db.fetch_one(
         """SELECT c.user_guid AS owner_guid,
                 (SELECT cm.role FROM conversation_members cm
-                 WHERE cm.conversation_id = c.id AND cm.user_guid = ?) AS member_role
+                 WHERE cm.conversation_id = c.id AND cm.user_guid = ?) AS member_role,
+                (SELECT p.user_guid FROM projects p WHERE p.id = c.project_id)
+                    AS project_owner,
+                (SELECT pm.role FROM projects p
+                 JOIN project_members pm ON pm.project_id = p.root_id
+                 WHERE p.id = c.project_id AND pm.user_guid = ?
+                 AND pm.scope = 'all_conversations') AS project_role
             FROM conversations c WHERE c.id = ?""",
-        (user_guid, conversation_id),
+        (user_guid, user_guid, conversation_id),
     )
     if row is None:
         return None
     if row["owner_guid"] == user_guid:
         return Role.OWNER
-    member = row["member_role"]
-    if member in (Role.CONTRIBUTOR.value, Role.VIEWER.value):
-        return Role(member)
-    return None
+    held: list[Role] = []
+    for value in (row["member_role"], row["project_role"]):
+        if value in (Role.CONTRIBUTOR.value, Role.VIEWER.value):
+            held.append(Role(value))
+    if row["project_owner"] is not None and row["project_owner"] == user_guid:
+        held.append(PROJECT_OWNER_ROLE)
+    return max(held, key=_RANK.__getitem__, default=None)
 
 
 async def require_access(
