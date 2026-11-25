@@ -15,6 +15,12 @@ writes the results into the page, which the test reads back:
 
 The browser is the Chromium Playwright installs, or the one ``SPARK_TEST_CHROMIUM``
 names; without one the test is skipped, as the Node tests are without Node.
+
+The harness runs on the real clock: the page posts its results back to the harness server
+when it has finished, and the browser is stopped then. Each card gets a generous budget
+(``CARD_BUDGET_MS``) so a loaded machine, such as the full suite running beside a
+browser, can finish PDF.js; a frame that reports an error is recorded at once, never
+waited out, and the card that ran out of budget is named with how long it waited.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -79,7 +86,16 @@ def chromium() -> str | None:
 
 
 BROWSER = chromium()
-pytestmark = pytest.mark.skipif(BROWSER is None, reason="no Chromium is installed")
+
+# A card has this long, on the real clock, to report; the whole page has RUN_BUDGET_S.
+# An error the frame reports ends the wait for that card at once, so only a frame that
+# is still working (or has stopped) ever uses the budget.
+CARD_BUDGET_MS = 90_000
+RUN_BUDGET_S = 400
+pytestmark = [
+    pytest.mark.skipif(BROWSER is None, reason="no Chromium is installed"),
+    pytest.mark.timeout(RUN_BUDGET_S + 60),
+]
 
 
 def xls_bytes() -> bytes | None:
@@ -164,24 +180,33 @@ function wait(check, ms) {{
     }})();
   }});
 }}
+const BUDGET = {budget};
 (async () => {{
   const results = {{}};
+  const timings = {{}};
   for (const card of cards) {{
     if (only && card.name !== only) continue;
     SparkPreview.appendCard(card);
     SparkPreview.open(card, {{ focus: false }});
+    const began = Date.now();
+    // 'error' is set by the panel when the frame posts spark-preview-error, so a
+    // reported failure ends this wait at once; only silence uses the budget.
     const panel = await wait(() => {{
       const p = document.getElementById(`preview-1-${{card.file_id}}-panel`);
       return p && p.dataset.rendered ? p : null;
-    }}, 20000);
+    }}, BUDGET);
+    const waited = Date.now() - began;
     results[card.name] = panel
       ? {{ rendered: panel.dataset.rendered, detail: JSON.parse(panel.dataset.detail || '{{}}') }}
-      : {{ rendered: 'timeout' }};
+      : {{ rendered: 'timeout', waited_ms: waited }};
+    timings[card.name] = waited;
+    fetch('/progress', {{ method: 'POST', body: JSON.stringify({{ results, timings }}) }});
   }}
   await new Promise(r => setTimeout(r, 300));
   results.__stray = stray;
   results.__cards = document.querySelectorAll('.document-card').length;
   document.getElementById('results').textContent = JSON.stringify(results);
+  await fetch('/report', {{ method: 'POST', body: JSON.stringify({{ results, timings }}) }});
 }})();
 </script></body></html>"""
 
@@ -252,9 +277,15 @@ class Harness:
             | {"conversation_id": 1, "title": d["name"], "size": len(d["body"])}
             for d in docs
         ]
-        page = HARNESS.format(pane=pane, cards=json.dumps(cards)).encode("utf-8")
+        page = HARNESS.format(pane=pane, cards=json.dumps(cards), budget=CARD_BUDGET_MS).encode(
+            "utf-8"
+        )
         chat_page = CHAT_HARNESS.format(pane=pane).encode("utf-8")
         bodies = {d["file_id"]: d for d in docs}
+
+        self.reported = threading.Event()
+        self.report: dict[str, Any] = {}
+        harness = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args: Any) -> None:
@@ -268,6 +299,15 @@ class Harness:
                     self.send_header(name.replace("_", "-"), value)
                 self.end_headers()
                 self.wfile.write(body)
+
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length)
+                if self.path in ("/progress", "/report"):
+                    harness.report = json.loads(body)
+                if self.path == "/report":
+                    harness.reported.set()
+                self._send(204, b"", "text/plain")
 
             def do_GET(self) -> None:  # noqa: N802
                 path = self.path.split("?", 1)[0]
@@ -334,6 +374,54 @@ def run_browser(url: str, *extra: str) -> str:
     return done.stdout
 
 
+def stop_browser(browser: subprocess.Popen[bytes]) -> None:
+    """Stop the browser and the helper processes it started (this one only, by its pid)."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(browser.pid)],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        browser.terminate()
+    try:
+        browser.wait(15)
+    except subprocess.TimeoutExpired:
+        browser.kill()
+        browser.wait()
+
+
+def run_harness(harness: Harness) -> dict[str, Any]:
+    """Open the harness page in a browser on the real clock; stop it once it reports."""
+    assert BROWSER is not None
+    with tempfile.TemporaryDirectory(
+        prefix="spark-preview-", ignore_cleanup_errors=True
+    ) as profile:
+        browser = subprocess.Popen(
+            [
+                BROWSER,
+                "--headless",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--window-size=1400,900",
+                f"--user-data-dir={profile}",
+                f"http://127.0.0.1:{harness.port}/harness",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            finished = harness.reported.wait(RUN_BUDGET_S)
+        finally:
+            stop_browser(browser)
+    assert finished, (
+        f"the harness did not finish in {RUN_BUDGET_S} s; "
+        f"cards that had reported: {harness.report.get('timings', {})}"
+    )
+    return harness.report
+
+
 @pytest.fixture(scope="module")
 def docs() -> list[dict[str, Any]]:
     return documents()
@@ -343,14 +431,12 @@ def docs() -> list[dict[str, Any]]:
 def results(docs: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
     harness = Harness(docs)
     try:
-        dom = run_browser(f"http://127.0.0.1:{harness.port}/harness", "--dump-dom")
+        report = run_harness(harness)
     finally:
         harness.close()
-    match = re.search(r'<pre id="results">(.*?)</pre>', dom, re.S)
-    assert match is not None, dom[-2000:]
-    text = html.unescape(match.group(1))
-    assert text != "pending", "the harness did not finish"
-    yield json.loads(text)
+    if os.environ.get("SPARK_TEST_SHOW_TIMINGS"):
+        print("preview card timings (ms):", report["timings"])
+    yield report["results"]
 
 
 def test_the_chat_page_draws_cards_and_opens_the_pane(docs: list[dict[str, Any]]) -> None:
