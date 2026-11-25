@@ -1,0 +1,119 @@
+/* Charts and diagrams (PC20): the card in the message, its toolbar, and the drawing in
+   the preview frame. Colours are the theme's variables; what a chart draws takes its
+   colours from the option SPARK builds. */
+
+.chart-card-wrapper { margin: 0.25rem 0 0.75rem; max-width: 100%; }
+
+.chart-card {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.75rem 0.75rem 0.5rem;
+    border: 1px solid var(--app-card-border);
+    border-radius: 10px;
+    background: var(--app-card-bg);
+    color: var(--app-text-primary);
+    width: min(100%, 760px);
+}
+
+.chart-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.chart-card-icon { color: var(--app-accent); font-size: 1.1rem; }
+
+.chart-card-title {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chart-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin: 0.4rem 0 0.25rem;
+}
+
+.chart-toolbar .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.chart-toolbar .btn:focus-visible,
+.chart-match-input:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.chart-match {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--app-text-muted);
+    cursor: pointer;
+}
+
+.chart-match-input { margin: 0; }
+
+.chart-toolbar-status {
+    font-size: 0.8rem;
+    color: var(--app-text-muted);
+}
+
+.chart-toolbar-status.chart-card-error,
+.chart-card-error { color: var(--app-danger); }
+
+.chart-card-canvas {
+    width: 100%;
+    overflow: hidden;
+}
+
+.chart-card[data-kind="diagram"] .chart-card-canvas {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: auto;
+}
+
+.chart-card[data-kind="diagram"] .chart-card-canvas svg {
+    max-width: 100%;
+    max-height: 100%;
+    height: auto;
+}
+
+.chart-card-caption {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: var(--app-text-secondary);
+}
+
+/* Off-screen holder for a saved image. */
+.chart-export-holder {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+    pointer-events: none;
+}
+
+/* In the preview frame. */
+.preview-chart { width: 100%; height: calc(100vh - 4rem); min-height: 320px; }
+.preview-diagram { display: flex; justify-content: center; padding: 1rem; }
+.preview-diagram svg { max-width: 100%; height: auto; }
+.preview-chart-caption { margin: 0.5rem 1rem; font-size: 0.9rem; opacity: 0.8; }
+
+/* In the pane: the chart toolbar sits where Download is for other documents. */
+.preview-toolbar .chart-toolbar { margin: 0; }
+
+@media (max-width: 767.98px) {
+    .chart-card { width: 100%; padding: 0.5rem; }
+    .chart-toolbar .btn span { display: none; }
+    .chart-card-canvas { height: 260px !important; }
+}

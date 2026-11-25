@@ -9,14 +9,18 @@
    ========================================================================== */
 
 // Mermaid initialisation (lazy — only if mermaid.js is loaded). Strict: labels are
-// sanitised by mermaid and diagrams cannot bind click handlers.
+// sanitised by mermaid and diagrams cannot bind click handlers. With diagrams.js loaded
+// its one configuration applies (HTML labels off, settings a diagram cannot change).
 function initMermaid() {
     if (typeof mermaid === 'undefined') return;
-    const theme = document.documentElement.getAttribute('data-bs-theme') === 'dark'
-        ? 'dark' : 'default';
+    const dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    if (window.SparkDiagrams) {
+        mermaid.initialize(SparkDiagrams.config(dark ? 'dark' : 'light'));
+        return;
+    }
     mermaid.initialize({
         startOnLoad: false,
-        theme: theme,
+        theme: dark ? 'dark' : 'default',
         securityLevel: 'strict',
     });
 }

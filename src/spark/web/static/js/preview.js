@@ -2,7 +2,9 @@
  * Spark: the document preview pane and document cards (CS39).
  *
  * show_document's result carries a card ({file_id, conversation_id, name, title, type,
- * kind, size}) on a line starting "[spark-preview]". The chat page draws it as a
+ * kind, size}) on a line starting "[spark-preview]"; create_chart and create_diagram
+ * answer with the same line, kind "chart" or "diagram" (drawn in the message by
+ * charts.js, and opened here from the chart API with the chart toolbar). The chat page draws it as a
  * document card in the message; the card opens (or reopens) the document in the pane
  * on the right: one tab per document, each with Download and Close, resizable,
  * closable, keyboard accessible, and a full-screen overlay at phone width.
@@ -28,8 +30,12 @@
         image: 'bi-file-earmark-image',
         markdown: 'bi-file-earmark-richtext',
         text: 'bi-file-earmark-text',
+        chart: 'bi-bar-chart-line',
+        diagram: 'bi-diagram-3',
         other: 'bi-file-earmark',
     };
+    // Charts and diagrams are drawn from the chart API (charts.js), not their stored bytes.
+    const ARTEFACT_KINDS = ['chart', 'diagram'];
     const KIND_LABELS = {
         pdf: 'PDF',
         docx: 'Word document',
@@ -37,6 +43,8 @@
         image: 'Image',
         markdown: 'Markdown',
         text: 'Text',
+        chart: 'Chart',
+        diagram: 'Diagram',
         other: 'File',
     };
 
@@ -273,14 +281,20 @@
         const card = entry.card;
         setNotice(entry, 'Loading…');
         try {
-            const resp = await fetch(fileUrl(card, false), { credentials: 'same-origin' });
-            if (!resp.ok) {
-                setNotice(entry, resp.status === 404
-                    ? 'This document is no longer available to you.'
-                    : 'The document could not be loaded.', true);
-                return;
+            let bytes;
+            if (ARTEFACT_KINDS.includes(card.kind) && window.SparkCharts) {
+                // The option SPARK built (or the diagram's source), as JSON for the frame.
+                bytes = await window.SparkCharts.framePayload(card);
+            } else {
+                const resp = await fetch(fileUrl(card, false), { credentials: 'same-origin' });
+                if (!resp.ok) {
+                    setNotice(entry, resp.status === 404
+                        ? 'This document is no longer available to you.'
+                        : 'The document could not be loaded.', true);
+                    return;
+                }
+                bytes = await resp.arrayBuffer();
             }
-            const bytes = await resp.arrayBuffer();
             const message = {
                 type: 'spark-preview-render',
                 kind: card.kind,
@@ -295,7 +309,9 @@
             entry.frame.contentWindow.postMessage(message, '*', [bytes]);
             setNotice(entry, '');
         } catch (err) {
-            setNotice(entry, 'The document could not be loaded.', true);
+            setNotice(entry, err && err.status === 404
+                ? 'This document is no longer available to you.'
+                : 'The document could not be loaded.', true);
         }
     }
 
@@ -339,6 +355,11 @@
                 </button>
             </div>
             <div class="preview-notice" role="status" hidden></div>`;
+        if (ARTEFACT_KINDS.includes(card.kind) && window.SparkCharts) {
+            // A chart or diagram: the chart toolbar (images, data) in place of Download.
+            const download = panel.querySelector('.preview-download');
+            download.replaceWith(window.SparkCharts.toolbar(card, { inPane: true }));
+        }
         const frame = document.createElement('iframe');
         frame.className = 'preview-frame';
         frame.setAttribute('sandbox', 'allow-scripts');
