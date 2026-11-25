@@ -32,13 +32,17 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 from warden.identity import SignInMethod, User, UserStatus
+from warden.identity.sso.presets import PRESETS, SetupGuide, setup_guide
 from warden.identity.sso.settings import SsoSettings, SsoSettingsError
 from warden.identity.sso.settings import SsoStillRequired as WardenSsoStillRequired
 
 __all__ = [
     "CHECKS",
+    "PRESET_NAMES",
+    "VALUE_LABELS",
     "GUARD_REFUSED",
     "REASONS",
     "SECRET_REFUSED",
@@ -49,6 +53,7 @@ __all__ = [
     "SsoStillRequired",
     "available",
     "check_text",
+    "guide_for",
     "save",
     "sso_only_users",
     "state",
@@ -148,6 +153,36 @@ class SsoChange:
     client_id: str | None
     enabled: bool
     client_secret: str | None = None
+    # One of PRESET_NAMES: which provider's setup steps the page shows; None keeps it.
+    provider_preset: str | None = None
+
+
+# The providers warden has setup steps for (guidance only: sign-in never reads the choice).
+PRESET_NAMES: Final[tuple[str, ...]] = tuple(p.preset for p in PRESETS)
+# What each value a setup step fills in is called on the screen.
+VALUE_LABELS: Final[dict[str, str]] = {
+    "callback_uri": "Redirect URI",
+    "scopes": "Scopes",
+    "issuer": "Issuer",
+    "display_name": "Application name",
+}
+
+
+def guide_for(identity: Any, preset: str, settings: SsoSettings) -> SetupGuide:
+    """warden's numbered setup steps for ``preset`` with this instance's values filled in.
+
+    The callback URI is the one to register with the provider; an unknown preset gets
+    the generic steps. What the instance is called is the name authenticator apps
+    show, else the host of its public address.
+    """
+    config = identity.config
+    name = config.identity.totp_issuer or urlsplit(config.http.public_base_url).hostname
+    return setup_guide(
+        preset,
+        settings=settings,
+        callback_uri=identity.sso.callback_url,
+        display_name=name or "this application",
+    )
 
 
 async def state(identity: Any) -> SsoState:
@@ -176,6 +211,8 @@ async def save(identity: Any, change: SsoChange, *, actor: str, source_ip: Any) 
     a setting warden's rules refuse (its message names fields only).
     """
     sso = identity.sso
+    if change.provider_preset is not None and change.provider_preset not in PRESET_NAMES:
+        raise ValueError("That is not a provider to show setup steps for.")
     if change.client_secret is not None:
         try:
             await sso.set_client_secret(change.client_secret, actor=actor, source_ip=source_ip)
@@ -190,6 +227,11 @@ async def save(identity: Any, change: SsoChange, *, actor: str, source_ip: Any) 
             enabled=change.enabled,
             issuer_url=change.issuer_url,
             client_id=change.client_id,
+            **(
+                {}
+                if change.provider_preset is None
+                else {"provider_preset": change.provider_preset}
+            ),
         )
     except WardenSsoStillRequired as exc:
         users = tuple(GuardedUser(str(user_id), email) for user_id, email in exc.users)

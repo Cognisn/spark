@@ -85,6 +85,13 @@ ADMIN_GROUPS: tuple[MenuGroup, ...] = (
                 "Invite people and follow pending invitations.",
             ),
             MenuEntry(
+                "/admin/sign-in",
+                "bi-box-arrow-in-right",
+                "Sign-in",
+                USERS_ADMIN,
+                "How people sign in, the default for everyone and the second factors allowed.",
+            ),
+            MenuEntry(
                 "/admin/sso",
                 "bi-building-lock",
                 "Single sign-on",

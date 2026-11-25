@@ -1,0 +1,125 @@
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
+{% block title %}Spark - Sign-in{% endblock %}
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Sign-in", "How people sign in to this Spark, the default for everyone, and the second factors allowed.") }}
+    {% include "_page_messages.html" %}
+
+    {% if result %}
+    <div class="app-card mb-4" id="sign-in-result">
+        <div class="card-header"><i class="bi bi-check-circle me-2" aria-hidden="true"></i> Saved</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if result.moved %}
+            <p id="result-moved">The default is now <strong>{{ result.default_label }}</strong>. Everyone who follows the default is moved:</p>
+            <ul class="mb-3">
+                <li id="result-changed">{{ result.changed }} {{ "person" if result.changed == 1 else "people" }} moved now, because they already have what it needs.</li>
+                <li id="result-pending">{{ result.pending }} {{ "person" if result.pending == 1 else "people" }} will move once they have what it needs. Their current method keeps working until then.</li>
+            </ul>
+            {% if result.pending_users %}
+            <p class="mb-2">Waiting for their credential:</p>
+            <ul class="mb-3" id="result-pending-users">
+                {% for user in result.pending_users %}<li><a href="/admin/users/{{ user.id }}">{{ user.email }}</a></li>{% endfor %}
+                {% if result.pending > result.pending_users|length %}<li>and {{ result.pending - result.pending_users|length }} more. Each is listed on their own user page.</li>{% endif %}
+            </ul>
+            {% endif %}
+            {% if result.failed %}
+            <div class="alert-app alert-app-warning mb-3" role="alert" id="result-links-failed">
+                <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                The set-up link could not be delivered to {{ result.failed }} {{ "person" if result.failed == 1 else "people" }}. Open each and choose Resend:
+                <ul class="mb-0 mt-2">
+                    {% for user in result.failed_users %}<li><a href="/admin/users/{{ user.id }}">{{ user.email }}</a></li>{% endfor %}
+                    {% if result.failed > result.failed_users|length %}<li>and {{ result.failed - result.failed_users|length }} more.</li>{% endif %}
+                </ul>
+            </div>
+            {% endif %}
+            {% else %}
+            <p class="mb-0" id="result-same">The settings are saved. Nobody's sign-in method changed.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if mailed_links %}
+    <div class="app-card mb-4" id="sign-in-links">
+        <div class="card-body" style="font-size: 0.875rem;">
+            <div class="alert-app alert-app-warning mb-3" role="status">
+                <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                Spark has no mail service, so give each person their link yourself, privately. Each works once, for a limited time, and will not be shown again.
+            </div>
+            <div class="app-table-responsive">
+            <table class="app-table" style="font-size: 0.8125rem;">
+                <thead><tr><th>Person</th><th>Link</th><th></th></tr></thead>
+                <tbody>
+                {% for item in mailed_links %}
+                <tr>
+                    <td>{{ item.to }}</td>
+                    <td><code id="setup-link-{{ loop.index }}" style="word-break: break-all;">{{ item.link }}</code></td>
+                    <td class="text-end"><button type="button" class="btn btn-app-ghost btn-sm" data-copy="#setup-link-{{ loop.index }}"><i class="bi bi-clipboard"></i> Copy</button></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/admin/sign-in" id="sign-in-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+        <div class="app-card mb-4">
+            <div class="card-header"><i class="bi bi-box-arrow-in-right me-2" aria-hidden="true"></i> Default sign-in method</div>
+            <div class="card-body" style="font-size: 0.875rem;">
+                <p style="color: var(--app-text-muted); font-size: 0.8125rem;">Everyone signs in this way unless an administrator gives them a method of their own on their user page. Changing the default moves everyone who follows it: now, if they already have what the new method needs, otherwise once they do. Until then their current method keeps working.</p>
+                <fieldset>
+                    <legend class="visually-hidden">Default sign-in method</legend>
+                    {% for method in methods %}
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="default_method" id="default-{{ method.value }}" value="{{ method.value }}" {% if default_method == method.value %}checked{% endif %} {% if not method.offered %}disabled{% endif %}>
+                        <label class="form-check-label" for="default-{{ method.value }}"><strong>{{ method.label }}</strong>
+                            <span class="d-block" style="color: var(--app-text-secondary);">{{ method.description }}{% if not method.offered %} <em>{{ method.why }}</em>{% endif %}</span>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </fieldset>
+                {% if not sso_available %}
+                <p class="mb-0 mt-2" style="font-size: 0.8125rem; color: var(--app-text-muted);">Single sign-on is not set up. <a href="{{ sso_path }}">Set it up</a> to choose it.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="app-card mb-4">
+            <div class="card-header"><i class="bi bi-shield-lock me-2" aria-hidden="true"></i> Second factors allowed</div>
+            <div class="card-body" style="font-size: 0.875rem;">
+                <p style="color: var(--app-text-muted); font-size: 0.8125rem;">What people can use as the second step after a password. Allow at least one. Recovery codes are always the backup. A person who holds a factor that is no longer allowed loses it once they have one that is.</p>
+                {% for factor in factors %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="factors" id="factor-{{ factor.value }}" value="{{ factor.value }}" {% if factor.allowed %}checked{% endif %} {% if not factor.offered %}disabled{% endif %}>
+                    <label class="form-check-label" for="factor-{{ factor.value }}"><strong>{{ factor.label }}</strong>
+                        <span class="d-block" style="color: var(--app-text-secondary);">{{ factor.description }}{% if not factor.offered %} <em>Passkeys cannot be used on this server.</em>{% endif %}</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-app-primary btn-sm mb-4"><i class="bi bi-save me-1" aria-hidden="true"></i> Save</button>
+    </form>
+
+    <div class="app-card mb-4" id="sso-dependants">
+        <div class="card-header"><i class="bi bi-building-lock me-2" aria-hidden="true"></i> People who sign in only through single sign-on</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if sso_only_users %}
+            <p style="color: var(--app-text-muted); font-size: 0.8125rem;">Single sign-on cannot be switched off while any active person below, or the default above, depends on it. Open each person to move them to another method first.</p>
+            <ul class="mb-0" id="sso-dependants-list">
+                {% for user in sso_only_users %}<li><a href="/admin/users/{{ user.id }}">{{ user.email }}</a> ({{ user.status }})</li>{% endfor %}
+            </ul>
+            {% else %}
+            <p class="mb-0">Nobody signs in only through single sign-on.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/copy.js"></script>{% endblock %}

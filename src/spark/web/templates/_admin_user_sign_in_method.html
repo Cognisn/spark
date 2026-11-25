@@ -1,0 +1,52 @@
+{#- A user's sign-in method: the one in force, whether it is their own or the instance default,
+    a change waiting for them (with Resend and Cancel), and the choices.
+    Expects user, sign_in_state, default_method, method_choices, method_label, in_force_label,
+    default_choice, sso_available and sso_off_flag. -#}
+{% set pending = sign_in_state.pending %}
+<div class="app-card mb-4" id="sign-in-method">
+    <div class="card-header"><i class="bi bi-box-arrow-in-right me-2" aria-hidden="true"></i> Sign-in method</div>
+    <div class="card-body" style="font-size: 0.875rem;">
+        <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Signs in with</span><span id="method-in-force">{{ in_force_label(sign_in_state.effective, sso_available) }}{% if sign_in_state.effective == "sso_only" and not sso_available %} <span class="badge-app badge-app-warning">{{ sso_off_flag }}</span>{% endif %}</span></div>
+        <div class="d-flex justify-content-between mb-3"><span style="color: var(--app-text-secondary);">Setting</span>
+            <span id="method-setting">{% if sign_in_state.setting is none %}Uses the instance default ({{ in_force_label(default_method, sso_available) }}){% else %}Their own method{% endif %}</span></div>
+
+        {% if pending %}
+        <div class="alert-app alert-app-warning mb-3" role="status" id="method-pending">
+            <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>
+            Changing to <strong>{{ in_force_label(pending.to_method, sso_available) }}</strong> since {{ pending.requested_at.strftime("%Y-%m-%d %H:%M") }}. Until then they keep signing in with {{ in_force_label(pending.from_method, sso_available) }}.
+            {% if pending.link == "set_password" %}
+            It completes when they set a password. {% if pending.link_sent_at %}A set-up link was issued on {{ pending.link_sent_at.strftime("%Y-%m-%d %H:%M") }}.{% else %}No set-up link has been issued: choose Resend.{% endif %}
+            {% elif pending.link == "passkey_registration" %}
+            It completes when they register a passkey. {% if pending.link_sent_at %}A registration link was issued on {{ pending.link_sent_at.strftime("%Y-%m-%d %H:%M") }}.{% else %}No registration link has been issued: choose Resend.{% endif %}
+            {% else %}
+            It completes the first time they sign in through single sign-on.
+            {% endif %}
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                {% if pending.link and user.status == "active" %}
+                <form method="POST" action="/admin/users/{{ user.id }}/sign-in-method/resend">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Resend the link</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="/admin/users/{{ user.id }}/sign-in-method/cancel">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-x-circle me-1" aria-hidden="true"></i>Cancel the change</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/admin/users/{{ user.id }}/sign-in-method" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label for="sign-in-method-choice" class="form-label mb-0">Change to</label>
+            <select id="sign-in-method-choice" name="method" class="form-select form-select-sm" style="width: 320px;">
+                <option value="{{ default_choice }}" {% if sign_in_state.setting is none %}selected{% endif %}>Use the instance default ({{ in_force_label(default_method, sso_available) }})</option>
+                {% for choice in method_choices %}
+                <option value="{{ choice.method.value }}" {% if sign_in_state.setting == choice.method %}selected{% endif %}>{{ choice.label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-app-outline btn-sm">Change</button>
+        </form>
+        <p class="mt-2 mb-0" style="font-size: 0.8125rem; color: var(--app-text-muted);">The change takes effect at once if they already have what the new method needs. Otherwise it waits for them, a set-up link is emailed where one is needed, and their current method keeps working.</p>
+    </div>
+</div>
