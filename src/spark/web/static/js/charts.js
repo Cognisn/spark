@@ -291,7 +291,14 @@
                 entry.caption.hidden = !payload.caption;
             }
             if (payload.kind === 'diagram') {
-                await root.SparkDiagrams.render(canvas, payload.source, theme);
+                const svg = await root.SparkDiagrams.render(canvas, payload.source, theme);
+                if (svg) {
+                    // Fit the whole diagram in the card's fixed height (Mermaid sizes it
+                    // to its natural width); the pane shows it full size.
+                    svg.style.maxWidth = '100%';
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                }
             } else {
                 const echarts = await loadECharts();
                 if (!entry.chart) {

@@ -54,7 +54,24 @@
                 && root.document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
             mermaid.initialize(config(pageTheme));
         }
-        return container.querySelector('svg');
+        const svg = container.querySelector('svg');
+        fitViewBox(svg);
+        return svg;
+    }
+
+    // Mermaid can measure its drawing short (the loop-back edges of a flowchart reach past
+    // it): fit the view box to what was drawn, with a margin, once it is in the page.
+    function fitViewBox(svg) {
+        if (!svg || typeof svg.getBBox !== 'function') return;
+        try {
+            const box = svg.getBBox();
+            if (!box.width || !box.height) return;
+            const pad = 8;
+            svg.setAttribute('viewBox',
+                `${box.x - pad} ${box.y - pad} ${box.width + pad * 2} ${box.height + pad * 2}`);
+        } catch (err) {
+            // Not laid out (hidden): keep Mermaid's own view box.
+        }
     }
 
     const SVG_NS = 'http://www.w3.org/2000/svg';

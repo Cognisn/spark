@@ -74,7 +74,7 @@ def _axis_name(name: str, theme: Theme, horizontal: bool) -> dict[str, Any]:
     return {
         "name": name,
         "nameLocation": "middle",
-        "nameGap": 34 if horizontal else 44,
+        "nameGap": 34 if horizontal else 30,
         "nameTextStyle": {"color": theme.muted},
     }
 
@@ -107,12 +107,14 @@ def _value_axis(title: str, theme: Theme, horizontal: bool, scale: bool = False)
     }
 
 
-def _grid(legend: bool) -> dict[str, Any]:
+def _grid(legend: bool, x_title: bool = False, y_title: bool = False) -> dict[str, Any]:
+    # containLabel keeps the axis labels inside the grid, not the axis titles: leave room
+    # for them (below and left of the labels) and for the legend under the chart.
     return {
-        "left": 16,
+        "left": 16 + (24 if y_title else 0),
         "right": 24,
         "top": 24,
-        "bottom": 40 if legend else 16,
+        "bottom": (40 if legend else 16) + (24 if x_title else 0),
         "containLabel": True,
     }
 
@@ -149,7 +151,11 @@ def _categorical(prepared: Prepared, shape: CategoryShape, theme: Theme) -> dict
     value = _value_axis(spec.y_title, theme, horizontal)
     option: dict[str, Any] = {
         "tooltip": {**_tooltip(theme, "axis"), "axisPointer": {"type": "shadow"}},
-        "grid": _grid(many),
+        "grid": _grid(
+            many,
+            bool(spec.y_title if horizontal else spec.x_title),
+            bool(spec.x_title if horizontal else spec.y_title),
+        ),
         "xAxis": value if horizontal else category,
         "yAxis": category if horizontal else value,
         "series": series,
@@ -221,7 +227,7 @@ def _scatter(prepared: Prepared, shape: PointShape, theme: Theme) -> dict[str, A
     many = len(series) > 1
     option: dict[str, Any] = {
         "tooltip": _tooltip(theme, "item"),
-        "grid": _grid(many),
+        "grid": _grid(many, bool(spec.x_title), bool(spec.y_title)),
         "xAxis": _value_axis(spec.x_title, theme, False, scale=True),
         "yAxis": _value_axis(spec.y_title, theme, False, scale=True),
         "series": series,
@@ -273,7 +279,10 @@ def _heatmap(prepared: Prepared, shape: GridShape, theme: Theme) -> dict[str, An
     low, high = min(values), max(values)
     return {
         "tooltip": {**_tooltip(theme, "item"), "position": "top"},
-        "grid": {**_grid(True), "bottom": 56},
+        "grid": {
+            **_grid(True, False, bool(spec.y_title)),
+            "bottom": 56 + (24 if spec.x_title else 0),
+        },
         "xAxis": {
             **_category_axis(list(shape.xs), spec.x_title, theme, False),
             "splitArea": {"show": False},
@@ -465,7 +474,7 @@ def _boxplot(prepared: Prepared, shape: BoxShape, theme: Theme) -> dict[str, Any
     names = [n for n, _, _ in shape.groups]
     return {
         "tooltip": _tooltip(theme, "item"),
-        "grid": _grid(False),
+        "grid": _grid(False, bool(spec.x_title), bool(spec.y_title)),
         "xAxis": _category_axis(names, spec.x_title, theme, False),
         "yAxis": _value_axis(spec.y_title, theme, False, scale=True),
         "series": [
