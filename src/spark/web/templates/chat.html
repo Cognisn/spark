@@ -1377,8 +1377,8 @@ function _appendActionBubble(role, text) {
             ? 'background: var(--app-accent); color: var(--app-text-on-accent);'
             : 'background: var(--app-bg-secondary); color: var(--app-text-primary); border: 1px solid var(--app-border);'
     }`;
-    if (role === 'assistant' && typeof marked !== 'undefined') {
-        try { bubble.innerHTML = marked.parse(text); } catch (e) { bubble.textContent = text; }
+    if (role === 'assistant' && window.SparkMarkdown) {
+        try { bubble.innerHTML = SparkMarkdown.render(text); } catch (e) { bubble.textContent = text; }
         bubble.classList.add('markdown-content');
     } else {
         bubble.textContent = text;

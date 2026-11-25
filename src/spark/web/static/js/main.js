@@ -8,7 +8,8 @@
    1. Markdown & Code Highlighting
    ========================================================================== */
 
-// Mermaid initialisation (lazy — only if mermaid.js is loaded)
+// Mermaid initialisation (lazy — only if mermaid.js is loaded). Strict: labels are
+// sanitised by mermaid and diagrams cannot bind click handlers.
 function initMermaid() {
     if (typeof mermaid === 'undefined') return;
     const theme = document.documentElement.getAttribute('data-bs-theme') === 'dark'
@@ -16,7 +17,7 @@ function initMermaid() {
     mermaid.initialize({
         startOnLoad: false,
         theme: theme,
-        securityLevel: 'loose',
+        securityLevel: 'strict',
     });
 }
 
@@ -25,57 +26,27 @@ document.addEventListener('app-theme-changed', () => initMermaid());
 document.addEventListener('DOMContentLoaded', () => initMermaid());
 
 
-// Marked.js configuration (lazy — only if marked is loaded)
-function configureMarked() {
-    if (typeof marked === 'undefined') return;
-
-    const renderer = new marked.Renderer();
-
-    // Code blocks — add copy button and mermaid support
-    // Marked v12+ passes a single token object {text, lang, escaped}
-    renderer.code = function (token) {
-        // Handle both old (code, language) and new ({text, lang}) signatures
-        let code, language;
-        if (typeof token === 'object' && token !== null && 'text' in token) {
-            code = token.text;
-            language = token.lang || '';
-        } else {
-            code = token;
-            language = arguments[1] || '';
-        }
-
-        if (language === 'mermaid') {
-            return `<div class="mermaid">${code}</div>`;
-        }
-        const escaped = escapeHtml(code);
-        const langClass = language ? ` class="language-${language}"` : '';
-        return `<div class="code-block-wrapper">
-            <div class="code-header">
-                <span class="code-language">${language || 'text'}</span>
-                <button class="btn btn-app-ghost btn-sm copy-btn" onclick="copyToClipboard(this)" title="Copy">
-                    <i class="bi bi-clipboard"></i>
-                </button>
-            </div>
-            <pre><code${langClass}>${escaped}</code></pre>
-        </div>`;
-    };
-
-    marked.setOptions({
-        renderer: renderer,
-        gfm: true,
-        breaks: true,
-    });
+/**
+ * Render markdown string to sanitised HTML, through the app's one renderer
+ * (static/js/markdown.js, loaded by base.html). The code blocks' copy buttons are
+ * answered by its delegated listener.
+ */
+function renderMarkdown(text) {
+    if (!window.SparkMarkdown) return escapeHtml(text);
+    return SparkMarkdown.render(text);
 }
-
-document.addEventListener('DOMContentLoaded', () => configureMarked());
 
 
 /**
- * Render markdown string to HTML.
+ * Render a reply that is still streaming into an element, sanitised on every call;
+ * blocks that have not changed since the last call keep their nodes.
  */
-function renderMarkdown(text) {
-    if (typeof marked === 'undefined') return escapeHtml(text);
-    return marked.parse(text);
+function renderMarkdownInto(el, text) {
+    if (!window.SparkMarkdown) {
+        el.textContent = text;
+        return;
+    }
+    SparkMarkdown.renderInto(el, text);
 }
 
 
@@ -84,7 +55,8 @@ function renderMarkdown(text) {
  */
 function highlightCodeBlocks(container) {
     if (typeof hljs === 'undefined') return;
-    container.querySelectorAll('pre code').forEach(block => {
+    // A block kept from an earlier render of a streaming reply is already highlighted.
+    container.querySelectorAll('pre code:not([data-highlighted]):not(.hljs)').forEach(block => {
         hljs.highlightElement(block);
     });
 }
@@ -134,15 +106,6 @@ function formatNumber(n) {
 function truncateText(text, maxLength = 100) {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
-}
-
-function copyToClipboard(btn) {
-    const code = btn.closest('.code-block-wrapper').querySelector('code');
-    navigator.clipboard.writeText(code.textContent).then(() => {
-        const icon = btn.querySelector('i');
-        icon.classList.replace('bi-clipboard', 'bi-check-lg');
-        setTimeout(() => icon.classList.replace('bi-check-lg', 'bi-clipboard'), 2000);
-    });
 }
 
 function formatFileSize(bytes) {

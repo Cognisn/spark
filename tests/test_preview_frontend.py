@@ -213,9 +213,9 @@ document.getElementById('out').textContent = JSON.stringify({{
 @pytest.mark.skipif(BROWSER is None, reason="no Chromium is installed")
 def test_the_release_notes_render_sanitised_in_a_browser() -> None:
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
-    match = re.search(r"<script>\s*window\.SparkMarkdown = .*?</script>", base, re.S)
-    assert match is not None
-    page = RELEASE_PAGE.format(renderer=match.group(0)).encode("utf-8")
+    renderer = '<script src="/static/js/markdown.js"></script>'
+    assert renderer in base
+    page = RELEASE_PAGE.format(renderer=renderer).encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args: Any) -> None:

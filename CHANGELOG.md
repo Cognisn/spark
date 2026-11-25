@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Markdown is rendered through the sanitiser everywhere.** SPARK's pages render Markdown through one renderer, `static/js/markdown.js` (`SparkMarkdown`, loaded by base.html), which passes marked's output through the self-hosted DOMPurify with one configuration: chat replies and their stream, a shared conversation's live view, debates, panels, action results and the actions assistant, help and the release notes. Rendered Markdown keeps HTML elements only (no SVG, MathML, styles, frames, objects or forms), drops style, id and name attributes and any class SPARK's renderer does not write, and opens links to other pages in a new tab without an opener or referrer. The code block's copy button no longer uses an inline handler; one delegated listener answers it. Mermaid runs at its strict security level. A streaming reply is drawn block by block, so only the blocks that change are parsed and sanitised again, which keeps long replies smooth.
+
 ## [0.3.0rc55] - 2026-11-25
 
 ### Added

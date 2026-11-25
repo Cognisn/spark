@@ -687,7 +687,8 @@ function updateStreamingMessage(content) {
     // The answer has started: the reasoning above it collapses
     collapseStreamingReasoning();
     const md = streamingMessageDiv.querySelector('.markdown-content');
-    md.innerHTML = renderMarkdown(content);
+    // Block by block: only the blocks that changed are parsed and sanitised again
+    renderMarkdownInto(md, content);
     highlightCodeBlocks(md);
     scrollToBottom();
 }
