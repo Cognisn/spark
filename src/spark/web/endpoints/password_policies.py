@@ -939,7 +939,7 @@ async def unpin_policy(
     return _done(f"{USERS_PATH}/{user.id}", "policy-unpinned")
 
 
-@router.post(PREVIEW_PATH, include_in_schema=False)
+@router.post(PREVIEW_PATH)
 async def preview_policy(
     request: Request, _: SparkIdentity = Depends(administrator)
 ) -> JSONResponse:
