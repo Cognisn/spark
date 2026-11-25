@@ -217,6 +217,8 @@ CHAT_HARNESS = """<!DOCTYPE html>
 <div id="tool-panel" style="display:flex"></div>
 <pre id="results">pending</pre>
 <script src="/static/vendor/marked/marked.umd.js"></script>
+<script src="/static/vendor/dompurify/purify.min.js"></script>
+<script src="/static/js/markdown.js"></script>
 <script src="/static/js/main.js"></script>
 <script src="/static/js/preview.js"></script>
 <script src="/static/js/chat.js"></script>

@@ -292,8 +292,8 @@ async function toggleActionTool(actionId, toolName, enabled) {
 function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
 function _renderMd(text) {
-    if (typeof marked !== 'undefined') {
-        try { return marked.parse(text); } catch (e) {}
+    if (window.SparkMarkdown) {
+        try { return SparkMarkdown.render(text); } catch (e) {}
     }
     return escapeHtml(text).replace(/\n/g, '<br>');
 }

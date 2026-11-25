@@ -218,7 +218,8 @@
             state.liveText += data.text || '';
             const bubble = liveBubble(state.turn.name);
             const body = bubble && bubble.querySelector('.markdown-content');
-            if (body) body.innerHTML = typeof renderMarkdown === 'function' ? renderMarkdown(state.liveText) : esc(state.liveText);
+            if (body && typeof renderMarkdownInto === 'function') renderMarkdownInto(body, state.liveText);
+            else if (body) body.textContent = state.liveText;
             if (typeof scrollToBottom === 'function') scrollToBottom();
             return;
         }
