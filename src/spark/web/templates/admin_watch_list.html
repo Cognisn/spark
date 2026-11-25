@@ -1,0 +1,109 @@
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
+{% block title %}Spark - {{ listed.name }}{% endblock %}
+{% block page %}
+<div class="admin-page-body">
+    {% call page_ui.header(listed.name, "A list of passwords that must not be used. Nothing entered here is shown again.") %}
+        <a class="btn btn-app-ghost btn-sm" href="/admin/watch-lists"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i> All lists</a>
+    {% endcall %}
+    {% include "_page_messages.html" %}
+    <div id="import-result" class="mb-3" role="status" hidden></div>
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-card-heading me-2" aria-hidden="true"></i> The list</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <form method="POST" action="/admin/watch-lists/{{ listed.id }}" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><label for="name" class="form-label">Name</label><input type="text" id="name" name="name" class="form-control form-control-sm" maxlength="64" value="{{ listed.name }}" required></div>
+                    <div class="col-md-8"><label for="reason" class="form-label">Reason shown to a person whose password is on it</label><input type="text" id="reason" name="reason" class="form-control form-control-sm" maxlength="200" value="{{ listed.reason }}" required></div>
+                </div>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-save me-1" aria-hidden="true"></i> Save</button>
+            </form>
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Kind</span><span>{{ "imported hashes" if imported else "typed in" }}</span></div>
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Passwords</span><span id="entry-count">{{ listed.entry_count }}</span></div>
+            {% if not imported %}<div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Terms</span><span id="term-count">{{ listed.terms|length }}</span></div>{% endif %}
+            {% if imported %}
+            <div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Last imported</span><span>{{ listed.last_imported_at.strftime("%Y-%m-%d %H:%M") if listed.last_imported_at else "never" }}</span></div>
+            {% if listed.import_threshold %}<div class="d-flex justify-content-between mb-2"><span style="color: var(--app-text-secondary);">Kept hashes seen at least</span><span>{{ listed.import_threshold }} times</span></div>{% endif %}
+            {% endif %}
+            <div class="d-flex justify-content-between mb-0"><span style="color: var(--app-text-secondary);">Checked by</span><span id="list-policies">{% for policy in policies %}<a class="ms-1" href="/admin/password-policies/{{ policy.id }}">{{ policy.settings.name }}</a>{% else %}no policy{% endfor %}</span></div>
+        </div>
+    </div>
+
+    {% if imported %}
+    <div class="app-card mb-4" id="import-card">
+        <div class="card-header"><i class="bi bi-upload me-2" aria-hidden="true"></i> Import a file of hashes</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <p style="color: var(--app-text-muted); font-size: 0.8125rem;">One SHA-1 hash per line in the Have I Been Pwned downloader format, <code>HASH:count</code> (the count is optional unless you set a threshold). The file replaces what the list holds now, or changes nothing if it cannot be read. The largest file is {{ max_import_mib }} MiB.</p>
+            <form id="import-form" data-import="/admin/watch-lists/{{ listed.id }}/import" class="d-flex flex-column gap-3" style="max-width: 520px;">
+                <div>
+                    <label for="import-file" class="form-label">File</label>
+                    <input id="import-file" type="file" class="form-control form-control-sm" required>
+                </div>
+                <div>
+                    <label for="import-threshold" class="form-label">Keep only hashes seen at least this many times</label>
+                    <input id="import-threshold" type="number" min="1" class="form-control form-control-sm" placeholder="Keep every hash">
+                </div>
+                <div><button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-upload me-1" aria-hidden="true"></i> Import</button></div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="app-card h-100" id="entries-card">
+                <div class="card-header"><i class="bi bi-key me-2" aria-hidden="true"></i> Passwords</div>
+                <div class="card-body" style="font-size: 0.875rem;">
+                    <p style="color: var(--app-text-muted); font-size: 0.8125rem;">One exact password per line, up to {{ max_entries }} at a time. Each is hashed at once and never shown again.</p>
+                    <form method="POST" action="/admin/watch-lists/{{ listed.id }}/entries" class="mb-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label for="entries-add" class="form-label">Add</label>
+                        <textarea id="entries-add" name="entries" class="form-control form-control-sm mb-2" rows="4" autocomplete="off" spellcheck="false" required></textarea>
+                        <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add</button>
+                    </form>
+                    <form method="POST" action="/admin/watch-lists/{{ listed.id }}/entries/remove">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label for="entries-remove" class="form-label">Remove</label>
+                        <textarea id="entries-remove" name="entries" class="form-control form-control-sm mb-2" rows="3" autocomplete="off" spellcheck="false" required></textarea>
+                        <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-dash-lg me-1" aria-hidden="true"></i> Remove</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="app-card h-100" id="terms-card">
+                <div class="card-header"><i class="bi bi-fonts me-2" aria-hidden="true"></i> Terms</div>
+                <div class="card-body" style="font-size: 0.875rem;">
+                    <p style="color: var(--app-text-muted); font-size: 0.8125rem;">A word a password may not contain, whatever its case: {{ term_range[0] }} to {{ term_range[1] }} characters, one per line, up to {{ max_entries }} at a time.</p>
+                    <form method="POST" action="/admin/watch-lists/{{ listed.id }}/terms" class="mb-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label for="terms-add" class="form-label">Add</label>
+                        <textarea id="terms-add" name="terms" class="form-control form-control-sm mb-2" rows="4" autocomplete="off" spellcheck="false" required></textarea>
+                        <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add</button>
+                    </form>
+                    <form method="POST" action="/admin/watch-lists/{{ listed.id }}/terms/remove">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label for="terms-remove" class="form-label">Remove</label>
+                        <textarea id="terms-remove" name="terms" class="form-control form-control-sm mb-2" rows="3" autocomplete="off" spellcheck="false" required></textarea>
+                        <button type="submit" class="btn btn-app-outline btn-sm"><i class="bi bi-dash-lg me-1" aria-hidden="true"></i> Remove</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="app-card mb-4" id="list-delete">
+        <div class="card-header"><i class="bi bi-trash me-2" aria-hidden="true"></i> Delete</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <p style="color: var(--app-text-muted); font-size: 0.8125rem;">A list a policy still checks cannot be deleted: take it off the policy first.</p>
+            <form method="POST" action="/admin/watch-lists/{{ listed.id }}/delete" onsubmit="return confirm('Delete this watch list?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-app-outline btn-sm" style="color: var(--app-danger);"><i class="bi bi-trash me-1" aria-hidden="true"></i> Delete the list</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/password_admin.js"></script>{% endblock %}

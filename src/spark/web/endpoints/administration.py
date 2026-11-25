@@ -68,6 +68,7 @@ from spark.identity.mail import captured, link_in
 from spark.identity.permissions import USERS_ADMIN
 from spark.identity.runtime import IdentityRuntime
 from spark.identity.web import INVITATION_PATH, PASSKEY_REGISTRATION_PATH, RESET_PATH, source_ip
+from spark.web.endpoints import password_policies
 from spark.web.endpoints.account import key_kind, screen
 from spark.web.endpoints.identity import identity_runtime, passkeys_available, redirect
 
@@ -104,6 +105,8 @@ DONE = {
     "method-resent": "A new set-up link is sent, and the old one no longer works.",
     "method-cancelled": "The change is cancelled. The user stays on their current method.",
     "saved": "The single sign-on settings are saved.",
+    "policy-pinned": "The password policy is pinned to this user.",
+    "policy-unpinned": "The pin is removed. Their roles, or the default, choose their policy.",
     "mfa-reset": (
         "Every second factor is removed and the user's sessions are ended. They set one up "
         "again at their next sign-in, or with a passkey registration link."
@@ -313,6 +316,8 @@ async def _user_page(
         "in_force_label": sign_in.in_force_label,
         "default_choice": sign_in.DEFAULT_CHOICE,
     }
+    # _admin_user_password_policy.html
+    context.update(await password_policies.user_context(runtime, user))
     context.update(extra or {})
     return screen(
         request,

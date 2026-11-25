@@ -232,6 +232,71 @@ a forced enrolment in two-step verification the recovery codes are shown first, 
 the new-password step. A user whose current password is too common is asked for a new
 one at their next password sign-in.
 
+### Password policies and live feedback
+
+Administration, Users and access, Password policies sets the rules, in warden's own
+vocabulary. A policy holds the shortest and longest length, the kinds of character
+(lower case, upper case, digit, other letter, symbol or space), the longest repeat of
+one character, whether the password may contain part of the person's email address or
+name, a passphrase rule (words and length, and whether a passphrase is excused the
+character kinds), tiers with the days before a password at that tier must change, how
+many earlier passwords it may not repeat, how long a password is held before it may be
+changed again, the watch lists and the breach range service it checks, and the
+re-check settings. The page refuses a policy warden refuses, with warden's reason, and
+keeps what was typed.
+
+Policies have a priority, 1 being the highest, and one default with none. A person who
+signs in with a password follows the policy pinned on them; otherwise the policy of
+highest priority among the roles they hold that map to one; otherwise the default.
+Map a role on the Password policies page, move a policy up or down to change who wins,
+and see why a policy applies, or pin and unpin one, on the person's own page. A policy
+that is pinned on someone cannot be deleted, and the default cannot be deleted.
+
+**Re-checking passwords already set.** A policy that keeps a sealed fingerprint of each
+password (it needs `warden.passwords.fingerprint_key_secret`) lets warden compare passwords in
+use against a watch list added later, flag the people whose password is on it, and, if
+the policy says so, end their sessions. Whether warden runs that check is the
+deployment's: warden runs no scheduler, so schedule `warden passwords recheck`. The
+policy's own switches (keep the fingerprint, end sessions on a match, ask for a new
+password at sign-in when the current one no longer meets the rules) are on its page.
+
+**Watch lists.** Watch lists, beside Password policies, holds lists of passwords that
+must not be used. A typed-in list holds exact passwords (up to 100 at a time, hashed at
+once and never shown again) and contained terms of 3 to 64 characters. An imported list
+holds the hashes of a file in the Have I Been Pwned downloader format, one
+`SHA-1:count` per line, replaced by each import (the largest file is 512 MiB, an
+optional threshold keeps only hashes seen at least that often, and a file warden cannot
+read changes nothing and names the line). A list shows its reason, the count held, when
+it was last imported, and the policies that check it; a list a policy still checks
+cannot be deleted. A policy may also ask the Have I Been Pwned range service: only the
+first five characters of a hash leave the server, never the password, and the policy
+says whether an unreachable service allows or refuses the password.
+
+**Live feedback.** Under the new-password field of every page that sets a password (an
+invitation, a reset or set-up link, the forced change at sign-in, and the account page)
+a checklist ticks as the person types. It is drawn from the policy warden describes for
+that place, bound to that place's own credential (the link's token, the pending change,
+or the session), and evaluated in the browser by warden's own `passwordrules.js`, which
+Spark serves at `/auth/password-rules.js` from the installed `cognisn-warden` package
+(Spark keeps no copy of it). A moment after the person stops typing the server checks
+the candidate too, which adds what the browser cannot know: the person's own details, a
+watch list match with its reason, and the range service. The server stays the authority:
+the form's own submit is checked again, and a refusal shows warden's reasons. Feedback
+answers are never cached, never stored and never audited, and are throttled by warden.
+
+The **Create a user** form on Administration > Users also shows a checklist under the
+password an administrator types for someone else. warden describes a policy only for the
+four places a person sets their own password, so this one is drawn from the policy the
+ticked roles would resolve to (the default when none maps) through an administrator-only
+route, and ticks in the browser alone: there is no one yet to check the candidate against,
+so the person's own details and the watch lists are checked when the form is saved, and the
+refusal shows warden's reasons.
+
+Spark's screens use warden's Python API, behind `spark.users.admin`, rather than
+mounting warden's bearer-token password administration routes; warden audits every
+change under `warden.identity.password_policy.*`, `warden.identity.watch_list.*` and
+`warden.identity.password.*` with the administrator as actor.
+
 ## API keys
 
 Users create their own API keys at **Account > My API keys** (`/account/api-keys`), with

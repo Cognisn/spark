@@ -92,6 +92,13 @@ ADMIN_GROUPS: tuple[MenuGroup, ...] = (
                 "How people sign in, the default for everyone and the second factors allowed.",
             ),
             MenuEntry(
+                "/admin/password-policies",
+                "bi-key",
+                "Password policies",
+                USERS_ADMIN,
+                "The rules passwords must meet, who they apply to, and the lists of passwords to refuse.",
+            ),
+            MenuEntry(
                 "/admin/sso",
                 "bi-building-lock",
                 "Single sign-on",

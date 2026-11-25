@@ -1,0 +1,73 @@
+{% extends "admin_layout.html" %}
+{% import "_page.html" as page_ui %}
+{% block title %}Spark - Watch lists{% endblock %}
+{% block page %}
+<div class="admin-page-body">
+    {{ page_ui.header("Watch lists", "Lists of passwords that must not be used, checked by the policies you attach them to.") }}
+    {% set tab = "lists" %}{% include "_password_admin_tabs.html" %}
+    {% include "_page_messages.html" %}
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-shield-exclamation me-2" aria-hidden="true"></i> Lists</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            {% if lists %}
+            <div class="app-table-responsive">
+            <table class="app-table" id="lists-table" style="font-size: 0.8125rem;">
+                <thead><tr><th>Name</th><th>Kind</th><th>Reason shown</th><th>Passwords</th><th>Terms</th><th>Last checked</th><th>Used by</th></tr></thead>
+                <tbody>
+                {% for item in lists %}
+                {% set listed = item.list %}
+                <tr>
+                    <td><a href="/admin/watch-lists/{{ listed.id }}">{{ listed.name }}</a></td>
+                    <td>{{ "imported hashes" if listed.kind.value == "imported" else "typed in" }}</td>
+                    <td>{{ listed.reason }}</td>
+                    <td>{{ listed.entry_count }}</td>
+                    <td>{{ listed.terms|length }}</td>
+                    <td>{% if listed.last_imported_at %}{{ listed.last_imported_at.strftime("%Y-%m-%d %H:%M") }}{% else %}<span style="color: var(--app-text-muted);">{{ "never imported" if listed.kind.value == "imported" else "not applicable" }}</span>{% endif %}</td>
+                    <td>{% for policy in item.policies %}<a class="me-1" href="/admin/password-policies/{{ policy.id }}">{{ policy.settings.name }}</a>{% else %}<span style="color: var(--app-text-muted);">no policy</span>{% endfor %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p class="mb-0" style="color: var(--app-text-secondary);">No watch lists yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="app-card mb-4">
+        <div class="card-header"><i class="bi bi-plus-circle me-2" aria-hidden="true"></i> New list</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <form method="POST" action="/admin/watch-lists" id="new-list-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><label for="name" class="form-label">Name</label><input type="text" id="name" name="name" class="form-control form-control-sm" maxlength="64" value="{{ form.name }}" required></div>
+                    <div class="col-md-5"><label for="reason" class="form-label">Reason shown to a person whose password is on it</label><input type="text" id="reason" name="reason" class="form-control form-control-sm" maxlength="200" value="{{ form.reason }}" required></div>
+                    <div class="col-md-3">
+                        <label for="kind" class="form-label">Kind</label>
+                        <select id="kind" name="kind" class="form-select form-select-sm">
+                            <option value="manual">Typed in: passwords and terms</option>
+                            <option value="imported">Imported: a file of hashes</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Create the list</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="app-card mb-4" id="range-service">
+        <div class="card-header"><i class="bi bi-cloud-check me-2" aria-hidden="true"></i> The breach range service</div>
+        <div class="card-body" style="font-size: 0.875rem;">
+            <p style="color: var(--app-text-muted); font-size: 0.8125rem;">Each policy chooses on its own page whether to ask the Have I Been Pwned range service. Only the first five characters of a password's hash are sent; the password never leaves this server.</p>
+            {% if range_users %}
+            <p class="mb-1">Asking the service now:</p>
+            <ul class="mb-0">{% for policy in range_users %}<li><a href="/admin/password-policies/{{ policy.id }}">{{ policy.settings.name }}</a>{% if policy.settings.hibp_on_unavailable == "refuse" %} (refuses a password when it cannot be reached){% endif %}</li>{% endfor %}</ul>
+            {% else %}
+            <p class="mb-0">No policy asks the service.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

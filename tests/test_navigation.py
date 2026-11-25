@@ -97,6 +97,7 @@ class TestMenus:
             "/admin/users",
             "/admin/invitations",
             "/admin/sign-in",
+            "/admin/password-policies",
             "/admin/sso",
             "/admin/api-keys",
             "/admin/connections",

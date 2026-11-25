@@ -16,6 +16,7 @@
         <input type="password" id="password" name="password" class="form-control"
                autocomplete="new-password" minlength="{{ min_length }}" required autofocus>
     </div>
+    {% set feedback_place = "invitation" %}{% set feedback_base = "/auth/invitation" %}{% set feedback_token = token %}{% include "_password_feedback.html" %}
     <div class="mb-4">
         <label for="confirm" class="form-label">Password again</label>
         <input type="password" id="confirm" name="confirm" class="form-control"
@@ -41,3 +42,4 @@
     <a href="/auth/sign-in">Back to sign-in</a>
 </p>
 {% endblock %}
+{% block scripts %}<script src="/auth/password-rules.js" defer></script><script src="/static/js/password_feedback.js" defer></script>{% endblock %}
