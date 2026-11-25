@@ -127,6 +127,8 @@ embedded_tools:
 
 `show_document` belongs to the documents category too, and is offered wherever the user has a file area: it shows a document link from one of the user's MCP servers, or a file in the conversation, in the preview pane beside the conversation. See [Document Preview](conversations.md#document-preview), and the [fetch rules](deployment/index.md#what-the-server-fetches-for-document-previews).
 
+`create_chart` and `create_diagram` belong to the documents category as well, and are offered wherever the user has a file area: they draw a chart from a SPARK chart definition, or a Mermaid diagram, in the conversation and keep it as an artefact with a title. Every create tool (`create_word`, `create_excel`, `create_powerpoint`, `create_pdf`, `create_chart` and `create_diagram`) takes a required title and answers with the new file's id. See [Charts and Diagrams](charts.md).
+
 ### Document Creation
 
 Create Word, Excel, PowerPoint, and PDF documents with advanced formatting. Requires `allowed_paths` to be configured and Documents mode set to `read_write`.
