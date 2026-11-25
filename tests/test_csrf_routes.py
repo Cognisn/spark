@@ -46,6 +46,8 @@ ROUTERS_WITH_STATE_CHANGES = {
     "mcp_servers",
     "memories",
     "panel",
+    "password_feedback",
+    "password_policies",
     "settings",
     "skills",
     "streaming",

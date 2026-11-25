@@ -105,7 +105,7 @@ def _tokened(route: str, base: str, credential: str, *, check: bool) -> None:
             return _refused()
         return await _answer(request, {credential: token}, check=check)
 
-    router.add_api_route(base + route, handle, methods=["POST"], include_in_schema=False)
+    router.add_api_route(base + route, handle, methods=["POST"])
 
 
 _tokened(PASSWORD_POLICY_SUFFIX, INVITATION_BASE, "invitation_token", check=False)
@@ -135,7 +135,7 @@ def _bound(place: str, route: str, find: Any, *, check: bool) -> None:
             return _refused()
         return await _answer(request, credential, check=check)
 
-    router.add_api_route(PLACES[place] + route, handle, methods=["POST"], include_in_schema=False)
+    router.add_api_route(PLACES[place] + route, handle, methods=["POST"])
 
 
 _bound("challenge", PASSWORD_POLICY_SUFFIX, _forced_change, check=False)

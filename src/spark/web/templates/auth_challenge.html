@@ -94,4 +94,4 @@
     <a href="/auth/sign-in">Start again</a>
 </p>
 {% endblock %}
-{% block scripts %}{% if webauthn %}<script src="/static/js/webauthn.js"></script>{% endif %}{% endblock %}
+{% block scripts %}{% if webauthn %}<script src="/static/js/webauthn.js"></script>{% endif %}{% if purpose == "change" %}<script src="/auth/password-rules.js" defer></script><script src="/static/js/password_feedback.js" defer></script>{% endif %}{% endblock %}
