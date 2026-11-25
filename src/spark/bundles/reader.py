@@ -11,8 +11,9 @@ administrator) an archive that:
   absolute path, a parent component, a backslash, a hidden or device name, an
   unknown table), a member that is a link or another non-regular file, an
   encrypted member, or the same member twice;
-* has no readable manifest, another format, a ``format_version`` other than
-  :data:`~spark.bundles.format.FORMAT_VERSION`, or a bad bundle id;
+* has no readable manifest, another format, a ``format_version`` it does not read
+  (:data:`~spark.bundles.format.READ_VERSIONS`: 1 and 2), or a bad bundle id;
+* is version 1 and carries what only version 2 has (projects);
 * lists members it lacks or lacks members it has, or has a member whose size or
   sha256 differs from the manifest (a file's content must also match its name);
 * holds anything shaped like a credential (:mod:`spark.bundles.secrets`).
@@ -102,6 +103,10 @@ class Bundle:
     def bundle_id(self) -> str:
         return str(self.manifest["bundle_id"])
 
+    @property
+    def format_version(self) -> int:
+        return int(self.manifest["format_version"])
+
     def _read(self, name: str) -> bytes:
         try:
             return self._zip.read(name)
@@ -113,7 +118,7 @@ class Bundle:
         member = bf.data_member(table)
         if member not in self.manifest["members"]:
             return
-        columns = set(bf.TABLES[table])
+        columns = bf.columns_for(table, self.format_version)
         for number, line in enumerate(self._read(member).decode("utf-8").splitlines(), 1):
             if not line.strip():
                 continue
@@ -234,10 +239,10 @@ def _manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
     if doc.get("format") != bf.FORMAT:
         raise BundleRefused("this is not a Spark user bundle")
     version = doc.get("format_version")
-    if type(version) is not int or version != bf.FORMAT_VERSION:
+    if type(version) is not int or version not in bf.READ_VERSIONS:
         raise BundleRefused(
-            f"the bundle format version is {version!r}; this Spark reads version "
-            f"{bf.FORMAT_VERSION} only"
+            f"the bundle format version is {version!r}; this Spark reads versions "
+            f"{', '.join(str(v) for v in bf.READ_VERSIONS)}"
         )
     if not isinstance(doc.get("bundle_id"), str) or not _BUNDLE_ID.match(doc["bundle_id"]):
         raise BundleRefused("the bundle id is not valid")
@@ -252,6 +257,14 @@ def _manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
 
 def _verify(archive: zipfile.ZipFile, doc: dict[str, Any]) -> None:
     listed = set(doc["members"])
+    for name in sorted(listed):
+        data = _DATA.match(name)
+        if data and data.group(1) in bf.TABLES:
+            if not bf.columns_for(data.group(1), int(doc["format_version"])):
+                raise BundleRefused(
+                    f"the bundle is format version {doc['format_version']}, which has no "
+                    f"{data.group(1)}"
+                )
     present = {i.filename for i in archive.infolist()} - {bf.MANIFEST}
     for name in sorted(present - listed):
         raise BundleRefused(f"the bundle member {name} is not listed in the manifest")

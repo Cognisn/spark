@@ -112,6 +112,8 @@ async def test_the_bundle_holds_every_section_and_opens(
             "action_tool_permissions": 3,
             "action_runs": 1,
             "user_files": 2,
+            "projects": 2,
+            "project_resources": 1,
         }
         assert counts == expected
         assert set(counts) == set(bf.TABLES)

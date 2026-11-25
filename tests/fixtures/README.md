@@ -26,3 +26,9 @@ current code played no part. Do not regenerate them from the current tree.
   format: `tests/test_bundles_fixture.py` reads and imports it as committed, so a
   change that stops version 1 bundles importing fails. Regenerate it only for a new
   format version, under a new name.
+- `bundles/synthetic-v2.zip`: the same synthetic personal user in format version 2,
+  exported the same way after `tests/bundle_seed.py` gained a project ("Garden") with a
+  sub-project ("Shade bed") holding the garden chat, and the notes file as a resource of
+  the project. `tests/test_projects_bundles.py` reads and imports it as committed, so a
+  change that stops version 2 bundles importing fails. Regenerate it only for a new
+  format version, under a new name.

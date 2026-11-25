@@ -45,6 +45,7 @@ _SCOPES: Mapping[str, str] = {
     "debate_exhibits": (
         f"turn_id IN (SELECT id FROM debate_turns WHERE conversation_id IN ({_OWNED}))"
     ),
+    "project_resources": "project_id IN (SELECT id FROM projects WHERE user_guid = ?)",
 }
 _SKILL_FILE_MAX = 16 << 20
 

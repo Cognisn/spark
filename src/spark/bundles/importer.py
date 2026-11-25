@@ -24,7 +24,11 @@ What changes on the way in:
 * skills are kept in the file area under ``.../skills/<name>/`` and listed:
   a server's skills are instance-wide (Q26);
 * on PostgreSQL, imported memory and context vectors are added to their pgvector
-  tables.
+  tables;
+* projects (format version 2) arrive owned by the target user and shared with nobody,
+  parents before their sub-projects, each conversation in its project and each resource
+  linked to its imported file; a project that would sit below the fifth level is skipped
+  and listed. The report lists every project imported, by its path.
 
 A bundle is imported once per user: the report is written to
 ``imports/<bundle id>/report.json`` in the user's area in the same transaction,
@@ -65,7 +69,9 @@ __all__ = [
 Within = Callable[[Connection, "ImportReport"], Awaitable[None]]
 
 # Tables without a user_guid column (scoped through their conversation or turn).
-_NO_OWNER = frozenset({"conversation_skills", "debate_agents", "debate_turns", "debate_exhibits"})
+_NO_OWNER = frozenset(
+    {"conversation_skills", "debate_agents", "debate_turns", "debate_exhibits", "project_resources"}
+)
 # (table, column) -> (the table it refers to, whether a missing row clears it instead).
 _REFERENCES: Mapping[tuple[str, str], tuple[str, bool]] = {
     **{
@@ -97,7 +103,13 @@ _REFERENCES: Mapping[tuple[str, str], tuple[str, bool]] = {
     ("action_tool_permissions", "action_id"): ("autonomous_actions", False),
     ("action_runs", "action_id"): ("autonomous_actions", False),
     ("user_files", "conversation_id"): ("conversations", True),
+    ("conversations", "project_id"): ("projects", True),
+    ("projects", "parent_id"): ("projects", False),
+    ("project_resources", "project_id"): ("projects", False),
+    ("project_resources", "file_id"): ("user_files", False),
 }
+# A project below this level is not imported (PC6).
+_MAX_DEPTH = 5
 _SERVER_TRANSPORTS = frozenset({"http", "sse"})
 _RECEIPT = "report.json"
 
@@ -137,6 +149,7 @@ class ImportReport:
     warnings: list[str] = field(default_factory=list)
     actions_disabled: list[str] = field(default_factory=list)
     skills_placed: list[str] = field(default_factory=list)
+    projects: list[str] = field(default_factory=list)
     # Old id -> new id per table (for tests and diagnostics; never shown or stored).
     ids: dict[str, dict[int, int]] = field(default_factory=dict)
 
@@ -151,6 +164,7 @@ class ImportReport:
             "warnings": list(self.warnings),
             "actions_disabled": list(self.actions_disabled),
             "skills_placed": list(self.skills_placed),
+            "projects": list(self.projects),
         }
 
     @property
@@ -526,6 +540,60 @@ class _Run:
                 continue
             self.count("preferences")
 
+    async def projects(self) -> None:
+        """The project trees, parents first: owned by the target user, shared with nobody."""
+        pending = list(self.rows("projects"))
+        placed: dict[int, tuple[int, int, str]] = {}  # new id -> (root id, depth, path)
+        while pending:
+            waiting = []
+            for row in pending:
+                parent = row.get("parent_id")
+                root: int | None = None
+                depth, path, new_parent = 1, "", None
+                if parent is not None:
+                    new_parent = self.ids("projects").get(int(parent))
+                    if new_parent is None:
+                        waiting.append(row)
+                        continue
+                    root, depth, path = placed[new_parent]
+                    depth += 1
+                name = str(row.get("name") or "Imported project")
+                label = f"{path} > {name}" if path else name
+                if depth > _MAX_DEPTH:
+                    self.report.skipped.append(
+                        f"project {label} (below the fifth level, with its sub-projects)"
+                    )
+                    continue
+                values = {**row, "parent_id": new_parent, "root_id": root, "depth": depth}
+                new = await self.insert("projects", values)
+                if new is None:
+                    continue
+                if root is None:
+                    root = new
+                    await self.conn.execute(
+                        "UPDATE projects SET root_id = ? WHERE id = ?", (new, new)
+                    )
+                placed[new] = (root, depth, label)
+                self.count("projects")
+                self.report.projects.append(label)
+            if len(waiting) == len(pending):
+                self.orphans["projects"] = self.orphans.get("projects", 0) + len(waiting)
+                break
+            pending = waiting
+
+    async def project_resources(self) -> None:
+        """Each resource linked to its imported file (after the files are recorded)."""
+        for row in self.rows("project_resources"):
+            mapped = self.remap("project_resources", row)
+            if mapped is None:
+                continue
+            mapped["added_by"] = self.user
+            new = await self.insert(
+                "project_resources", mapped, conflict="ON CONFLICT (project_id, file_id) DO NOTHING"
+            )
+            if new is not None:
+                self.count("project_resources")
+
     def finish(self) -> None:
         for table, n in sorted(self.orphans.items()):
             self.report.skipped.append(f"{n} {table} row referring to data not in the bundle")
@@ -586,23 +654,8 @@ async def _record_files(run: _Run, files: _Files, target: ImportTarget) -> None:
                 source=new.source,
             )
         )
-    receipt = json.dumps(run.report.summary(), indent=2, sort_keys=True).encode("utf-8")
-    receipt_key = f"imports/{run.report.bundle_id}/{_RECEIPT}"
-    await asyncio.to_thread(_put, target.store, target.user_guid, receipt_key, receipt)
-    files.written.append(receipt_key)
-    new_files.append(
-        files_db.NewUserFile(key=receipt_key, filename=_RECEIPT, size=len(receipt), source="import")
-    )
-    try:
-        ids = await files_db.record_user_files(
-            run.conn, run.user, new_files, quota_bytes=target.quota_bytes
-        )
-    except files_db.QuotaExceeded as exc:
-        raise OverQuota(
-            "the bundle's files would take the user over their storage quota "
-            f"({exc.used + exc.requested} of {exc.quota} bytes)"
-        ) from None
-    for file_id, (new, row) in zip(ids, files.rows, strict=False):
+    ids = await _charge(run, target, new_files)
+    for file_id, (new, row) in zip(ids, files.rows, strict=True):
         if "skill" in row:
             continue
         run.ids("user_files")[int(row["id"])] = file_id
@@ -613,6 +666,37 @@ async def _record_files(run: _Run, files: _Files, target: ImportTarget) -> None:
         )
         run.count("user_files")
     run.report.skills_placed = sorted({str(r["skill"]) for _, r in files.rows if "skill" in r})
+    # Resources refer to the files just recorded; the receipt is written last, complete.
+    await run.project_resources()
+    run.finish()
+    receipt = json.dumps(run.report.summary(), indent=2, sort_keys=True).encode("utf-8")
+    receipt_key = f"imports/{run.report.bundle_id}/{_RECEIPT}"
+    await asyncio.to_thread(_put, target.store, target.user_guid, receipt_key, receipt)
+    files.written.append(receipt_key)
+    await _charge(
+        run,
+        target,
+        [
+            files_db.NewUserFile(
+                key=receipt_key, filename=_RECEIPT, size=len(receipt), source="import"
+            )
+        ],
+    )
+
+
+async def _charge(
+    run: _Run, target: ImportTarget, new_files: list[files_db.NewUserFile]
+) -> list[int]:
+    """Record files in the target's area, charged to their quota (all or nothing)."""
+    try:
+        return await files_db.record_user_files(
+            run.conn, run.user, new_files, quota_bytes=target.quota_bytes
+        )
+    except files_db.QuotaExceeded as exc:
+        raise OverQuota(
+            "the bundle's files would take the user over their storage quota "
+            f"({exc.used + exc.requested} of {exc.quota} bytes)"
+        ) from None
 
 
 def _remove(store: FileStore, user: str, keys: list[str]) -> None:
@@ -657,6 +741,7 @@ async def import_bundle(
             if claimed is None:
                 raise AlreadyImported("this bundle was already imported for this user")
             run = _Run(conn, bundle, target, report)
+            await run.projects()
             await run.plain("conversations")
             await run.messages()
             for table in (
@@ -679,7 +764,6 @@ async def import_bundle(
             await run.approvals()
             await run.actions()
             await run.preferences()
-            run.finish()
             await _record_files(run, files, target)
             if within is not None:
                 await within(conn, report)

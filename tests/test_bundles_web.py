@@ -229,7 +229,7 @@ def test_an_administrator_imports_a_bundle_and_sees_the_report(
     assert event.actor == admin_id
     assert event.resource_id == ada_id
     details = event.details
-    assert details["rows"] == 36 and details["dropped"] == 8
+    assert details["rows"] == 39 and details["dropped"] == 8
     assert details["format_version"] == bf.FORMAT_VERSION
     assert "content" not in json.dumps(details)
 
@@ -255,7 +255,7 @@ def test_imported_through_the_page_matches_the_source_row_for_row(
             await source.close()
 
     compared: dict[str, int] = server.portal.call(check)  # type: ignore[attr-defined]
-    assert sum(compared.values()) == 36
+    assert sum(compared.values()) == 39  # 36, and two projects and a resource (version 2)
 
 
 @pytest.mark.postgres
@@ -318,7 +318,7 @@ def test_another_format_version_is_refused(server: TestClient, bundle: tuple[byt
         for name in zf.namelist():
             members[name] = zf.read(name)
     manifest = json.loads(members[bf.MANIFEST])
-    manifest["format_version"] = 2
+    manifest["format_version"] = bf.FORMAT_VERSION + 1
     members[bf.MANIFEST] = json.dumps(manifest).encode()
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as zf:
