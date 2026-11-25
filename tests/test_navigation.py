@@ -96,6 +96,7 @@ class TestMenus:
         assert _admin_hrefs(groups) == [
             "/admin/users",
             "/admin/invitations",
+            "/admin/sign-in",
             "/admin/sso",
             "/admin/api-keys",
             "/admin/connections",
