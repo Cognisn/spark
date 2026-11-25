@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc54] - 2026-11-25
+
 ### Added
 
 - **Document preview (rulings CS37 to CS39).** A new built-in tool, `show_document` (documents category), shows a document in a pane on the right of the conversation: a link returned by one of the sender's MCP servers (such as a KVASIR document link), or a file in the conversation (one of the sender's own files from elsewhere is copied in). The document is kept as a file of the conversation in the sender's file area (`source` `preview`), under the attachment limit and their quota, and the message carries a card with its name, type and size that reopens it. Every member of a shared conversation can open it through the conversation's access decision (`GET /preview/api/<conversation>/files/<file>`, audited as `spark.file.downloaded`); a removed member and anyone else get 404. When the assistant shows a document in someone's turn it opens in every viewer's pane.
