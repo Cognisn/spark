@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc53] - 2026-11-25
+
 ### Added
 
 - **Sign-in settings (server mode).** Administration, Users and access, Sign-in sets the default sign-in method for everyone (Password + MFA, Passkey, SSO, or Password + MFA or SSO, each with a plain description; SSO selectable only once single sign-on is set up, Passkey only where passkeys work) and the second factors the instance allows (an authenticator app and a passkey or security key, at least one). Saving a new default says how many people moved at once and how many wait for their credential, names anyone whose set-up link was not delivered, lists the people who depend on single sign-on, and, without a mail service, shows each link once.
