@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Artefact titles and kinds (PC5).** Every file in a user's area now has a title, the name the conversation shows for it, and a kind: `document` (made by a create tool), `chart`, `diagram`, `preview` (fetched for the document preview) or `attachment` (provided by a person). A new revision (`artefact_titles`) adds both to existing files: the title is the file name, and the kind follows how the file arrived. Titles are always one line of plain text, at most 120 characters, with no markup characters. The repository can rename a person's own file, and in a conversation its owner or a contributor can rename any of its files (a viewer cannot); it can also list a conversation's files with their titles and kinds for anyone who may read it.
+
 ## [0.3.0rc57] - 2026-11-26
 
 ### Changed
