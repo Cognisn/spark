@@ -125,6 +125,8 @@ embedded_tools:
     max_file_size_mb: 50
 ```
 
+`show_document` belongs to the documents category too, and is offered wherever the user has a file area: it shows a document link from one of the user's MCP servers, or a file in the conversation, in the preview pane beside the conversation. See [Document Preview](conversations.md#document-preview), and the [fetch rules](deployment/index.md#what-the-server-fetches-for-document-previews).
+
 ### Document Creation
 
 Create Word, Excel, PowerPoint, and PDF documents with advanced formatting. Requires `allowed_paths` to be configured and Documents mode set to `read_write`.

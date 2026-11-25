@@ -25,6 +25,7 @@ from spark.web.endpoints.mcp_servers import router as mcp_servers_router
 from spark.web.endpoints.memories import router as memories_router
 from spark.web.endpoints.navigation import router as navigation_router
 from spark.web.endpoints.panel import router as panel_router
+from spark.web.endpoints.preview import router as preview_router
 from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import admin_router as settings_admin_router
 from spark.web.endpoints.settings import router as settings_router
@@ -54,6 +55,11 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(voice_router)
     app.include_router(memories_router)
     app.include_router(files_router)
+    app.include_router(preview_router)
+    # show_document's link sources: the app's MCP manager, found when a tool runs.
+    from spark.preview import sources as preview_sources
+
+    preview_sources.bind(lambda: getattr(app.state, "mcp_manager", None))
     app.include_router(skills_router)
     app.include_router(knowledge_router)
     app.include_router(actions_router)

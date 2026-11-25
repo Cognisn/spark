@@ -181,6 +181,20 @@ Debates and panels cannot be shared.
 
 Every share, role change, removal, transfer and refused message is recorded in the audit trail, with the address it came from.
 
+## Document Preview
+
+The assistant can show you a document in a pane on the right of the conversation, with the `show_document` tool: a document link returned by one of your MCP servers (for example a document link from a knowledge base), or a file in the conversation. Ask it to "show me" a document, or it may offer to.
+
+- **The pane** opens beside the conversation with one tab per document. Drag its left edge (or focus the edge and use the left and right arrow keys) to make it wider or narrower; your width is remembered. Each tab has **Download** and **Close**, and the pane's own close button closes every tab. In the tab strip, the arrow keys move between tabs and **Delete** closes one. At phone width the pane covers the screen; **Escape** or Close returns to the conversation.
+- **The card.** Each document shown leaves a card in the conversation with its name, type and size. Click the card to open the document again.
+- **What is shown.** PDF; Word documents (.docx); Excel workbooks (.xlsx and .xls) and CSV files, as read-only tables with a tab per sheet (the first 1,000 rows); images (PNG, JPEG, GIF, WebP, BMP and SVG, shown as pictures only); Markdown; and text and code with line numbers (HTML is shown as its text, never as a page). Anything else shows its name, type and size, with **Download**.
+- **Kept with the conversation.** A document fetched from a link is stored in your file area as a file of the conversation, so it stays available after the link expires. It counts towards your storage quota and must be within the attachment size limit. A file of yours from elsewhere is copied into the conversation when it is shown.
+- **Shared conversations.** Everyone with access to the conversation can open its documents, and when the assistant shows one in someone's turn it opens in every viewer's pane. A person removed from the conversation can no longer open them.
+
+Documents are drawn inside a sealed frame: nothing in a document can run in Spark's page, reach your session, or load anything from the internet. Spark serves every library the preview uses itself, so no page asks a third party for them.
+
+Spark fetches a link only from the address of an MCP server you are connected to, and never follows it to another site. The assistant tells you plainly when it cannot show something, for example a link to another site, a document larger than the attachment limit, or a file that is not what it says it is.
+
 ## Conversation Export
 
 Export a conversation from the chat settings menu. In a shared conversation everyone with access can export it. Available formats:

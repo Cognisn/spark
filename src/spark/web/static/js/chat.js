@@ -4,6 +4,10 @@
  */
 
 const TOOL_RESULTS_MARKER = '[TOOL_RESULTS]';
+// The tool that shows a document in the preview pane; its results carry a card.
+const PREVIEW_TOOL = 'show_document';
+// Tool use ids of show_document calls seen in the history being drawn.
+let _previewToolUses = new Set();
 
 // Running token totals
 let totalTokensIn = 0;
@@ -62,16 +66,22 @@ function clearEmptyState() {
    ========================================================================== */
 
 let _loadingHistory = false;
+let _historyLoaded = false;
 
 async function loadChatHistory(conversationId) {
     _loadingHistory = true;
     const container = document.getElementById('chat-messages');
+    // A reload after another member's turn opens the documents it showed.
+    if (window.SparkPreview) SparkPreview.beginHistory(!_historyLoaded);
+    _historyLoaded = true;
+    _previewToolUses = new Set();
     try {
         const resp = await fetch(`/chat/${conversationId}/api/history`);
         const messages = await resp.json();
         container.innerHTML = '';
 
         if (!messages.length) {
+            if (window.SparkPreview) SparkPreview.endHistory();
             container.innerHTML = `
                 <div class="chat-empty-state text-center py-5" style="color: var(--app-text-muted);">
                     <i class="bi bi-chat-dots" style="font-size: 2.5rem;"></i>
@@ -82,6 +92,7 @@ async function loadChatHistory(conversationId) {
 
         messages.forEach(msg => appendMessage(msg));
         _loadingHistory = false;
+        if (window.SparkPreview) SparkPreview.endHistory();
         scrollToBottom();
 
         // Load tool activity into the sidecar panel from the database
@@ -160,9 +171,15 @@ function _appendMessage(msg) {
         try {
             const blocks = JSON.parse(content);
             if (Array.isArray(blocks) && blocks.length > 0) {
-                // Skip tool_result-only blocks (already shown in tool group)
+                // Tool results are shown in the tool group; a document shown is a card.
                 const onlyToolResults = blocks.every(b => b.type === 'tool_result');
-                if (onlyToolResults) return;
+                if (onlyToolResults) {
+                    appendPreviewCards(blocks);
+                    return;
+                }
+                blocks.forEach(b => {
+                    if (b && b.type === 'tool_use' && b.name === PREVIEW_TOOL && b.id) _previewToolUses.add(b.id);
+                });
 
                 // Check there's at least one meaningful block
                 const hasContent = blocks.some(b =>
@@ -199,6 +216,25 @@ function _appendMessage(msg) {
     }
 
     appendTextMessage(role, content, timestamp, msg.model_id || null, msg.reasoning);
+}
+
+function _toolResultText(block) {
+    const content = block.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map(part => (part && part.type === 'text' ? part.text || '' : '')).join('\n');
+    }
+    return '';
+}
+
+// The cards of the show_document calls whose results these blocks carry.
+function appendPreviewCards(blocks) {
+    if (!window.SparkPreview) return;
+    blocks.forEach(block => {
+        if (!block || block.is_error || !_previewToolUses.has(block.tool_use_id)) return;
+        const card = SparkPreview.parse(_toolResultText(block));
+        if (card) SparkPreview.appendCard(card);
+    });
 }
 
 function _lastBubble() {
@@ -565,7 +601,8 @@ function appendToolInlineIndicator(count, statuses) {
 }
 
 function appendToolResults(results) {
-    // Tool results shown in sidecar panel, not inline.
+    // Tool results shown in sidecar panel, not inline; a document shown is a card.
+    if (Array.isArray(results)) appendPreviewCards(results);
 }
 
 function appendApprovalCard(toolName, params, toolUseId) {
@@ -779,9 +816,9 @@ function appendStreamingToolStart(toolName, params, toolUseId) {
     _streamingToolCount++;
     _streamingToolStatuses.push('running');
 
-    // Auto-open panel if closed
+    // Auto-open panel if closed (a document shown opens the preview pane instead)
     const panel = document.getElementById('tool-panel');
-    if (panel.style.display !== 'flex') toggleToolPanel();
+    if (panel.style.display !== 'flex' && toolName !== PREVIEW_TOOL) toggleToolPanel();
 
     // Add to sidecar panel
     const panelItemId = _addToolPanelItem(toolName, params, 'running', null, null);
@@ -796,6 +833,14 @@ function updateStreamingToolComplete(toolUseId, toolName, result, status, inspec
     // Update status tracking
     const idx = _streamingToolStatuses.indexOf('running');
     if (idx !== -1) _streamingToolStatuses[idx] = status;
+    // A document shown: its card in the conversation, and the document in the pane.
+    if (toolName === PREVIEW_TOOL && status !== 'error' && window.SparkPreview) {
+        const card = SparkPreview.parse(result);
+        if (card && SparkPreview.appendCard(card)) {
+            SparkPreview.open(card, { focus: false });
+            scrollToBottom();
+        }
+    }
 }
 
 function finaliseStreamingToolGroup() {

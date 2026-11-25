@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Document preview (rulings CS37 to CS39).** A new built-in tool, `show_document` (documents category), shows a document in a pane on the right of the conversation: a link returned by one of the sender's MCP servers (such as a KVASIR document link), or a file in the conversation (one of the sender's own files from elsewhere is copied in). The document is kept as a file of the conversation in the sender's file area (`source` `preview`), under the attachment limit and their quota, and the message carries a card with its name, type and size that reopens it. Every member of a shared conversation can open it through the conversation's access decision (`GET /preview/api/<conversation>/files/<file>`, audited as `spark.file.downloaded`); a removed member and anyone else get 404. When the assistant shows a document in someone's turn it opens in every viewer's pane.
+- **The fetch guard.** SPARK's server fetches a link only from the exact host (and port) of an MCP server the sender is connected to over HTTP and their roles grant, over `https` or that server's own scheme; it resolves the host once and pins the connection to that address, refuses a private, loopback or link-local address the MCP server is not at, never follows a redirect to another host, stops at the attachment limit and after 30 seconds, checks the declared type against the content's first bytes, and sends no cookie, credential, proxy or netrc setting beyond what the URL carries. Each refusal is a plain reason the model is told. The rules are in the deployment guide.
+- **The preview pane and its renderers.** The pane is resizable (pointer or keyboard), closable, tabbed with Download and Close per document, keyboard accessible, and a full-screen overlay at phone width. Each document renders in its own `<iframe sandbox="allow-scripts">` (`/preview/frame`) under a Content Security Policy that allows SPARK's own scripts and no network access: PDF with PDF.js 4.10.38, Word with docx-preview 0.4.1 (and JSZip 3.10.2), Excel, legacy Excel and CSV with SheetJS Community Edition 0.20.3 as read-only tables with sheet tabs and a 1,000-row cap, images natively (SVG only as an image), Markdown with marked 18.3.0 and DOMPurify 3.5.0, text and code with line numbers (HTML as text), and anything else as its details with Download. Every library is served from `static/vendor`, pinned by version and SHA-256 in the licence audit and listed in `THIRD-PARTY-NOTICES.md`.
+
+### Changed
+
+- **Markdown is self-hosted.** base.html loads marked and DOMPurify from `static/vendor` instead of cdn.jsdelivr.net, and the update notice's release notes are rendered through a sanitised renderer (`SparkMarkdown.safe`). The chat, actions and help pages no longer load marked from the CDN.
+
 ## [0.3.0rc53] - 2026-11-25
 
 ### Added
