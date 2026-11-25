@@ -152,6 +152,20 @@ def now_step() -> int:
     return totp.step_for(time.time())
 
 
+# A code one step old is accepted inside warden's drift window; computed in the last
+# seconds of a step it can be two steps old by the time warden checks it (a busy
+# machine), so the helpers wait for the next step first.
+_STEP_MARGIN = 3.0
+
+
+def settled_step() -> int:
+    """The current TOTP step, after waiting out the end of a step about to change."""
+    left = totp.PERIOD - (time.time() % totp.PERIOD)
+    if left < _STEP_MARGIN:
+        time.sleep(left + 0.05)
+    return now_step()
+
+
 async def enrol_totp(identity: Any, email: str, password: str = PASSWORD) -> Factor:
     """Give a user with a password and no factor a TOTP factor, through warden's challenge.
 
@@ -163,7 +177,7 @@ async def enrol_totp(identity: Any, email: str, password: str = PASSWORD) -> Fac
     challenge = result.challenge
     assert challenge is not None and challenge.purpose == "enrol", result
     enrolment = await identity.begin_enrolment(challenge=challenge.token)
-    step = now_step() - 1
+    step = settled_step() - 1
     codes, outcome = await identity.confirm_enrolment(
         totp.code_at(enrolment.secret, step), challenge=challenge.token
     )
@@ -201,7 +215,7 @@ def remember_factor(client: TestClient, email: str, factor: Factor) -> None:
 
 def second_factor_answer(factor: Factor) -> tuple[str, str]:
     """The next code warden will take: a TOTP code in its window, else a recovery code."""
-    step = max(now_step() - 1, factor.last_step + 1)
+    step = max(settled_step() - 1, factor.last_step + 1)
     if step <= now_step() + 1:
         factor.last_step = step
         return "totp", totp.code_at(factor.secret, step)
@@ -234,7 +248,7 @@ def answer_challenge(client: TestClient, email: str, password: str, resp: Any) -
     assert page.status_code == 200, page.text
     if 'id="totp-secret"' in page.text:
         secret = secret_on(page)
-        step = now_step() - 1
+        step = settled_step() - 1
         done = _challenge_form(
             client,
             "/auth/challenge/enrol",
