@@ -124,6 +124,7 @@ globalThis.EventSource = class {
 };
 globalThis.EventSource.CLOSED = 2;
 globalThis.renderMarkdown = (t) => String(t);
+globalThis.renderMarkdownInto = (el, t) => { el.innerHTML = String(t); };
 globalThis.highlightCodeBlocks = () => {};
 globalThis.renderMermaidDiagrams = () => {};
 globalThis.escapeHtml = (t) => String(t);
