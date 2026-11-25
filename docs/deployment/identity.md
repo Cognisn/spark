@@ -284,6 +284,14 @@ watch list match with its reason, and the range service. The server stays the au
 the form's own submit is checked again, and a refusal shows warden's reasons. Feedback
 answers are never cached, never stored and never audited, and are throttled by warden.
 
+The **Create a user** form on Administration > Users also shows a checklist under the
+password an administrator types for someone else. warden describes a policy only for the
+four places a person sets their own password, so this one is drawn from the policy the
+ticked roles would resolve to (the default when none maps) through an administrator-only
+route, and ticks in the browser alone: there is no one yet to check the candidate against,
+so the person's own details and the watch lists are checked when the form is saved, and the
+refusal shows warden's reasons.
+
 Spark's screens use warden's Python API, behind `spark.users.admin`, rather than
 mounting warden's bearer-token password administration routes; warden audits every
 change under `warden.identity.password_policy.*`, `warden.identity.watch_list.*` and

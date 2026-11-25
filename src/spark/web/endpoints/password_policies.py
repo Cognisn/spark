@@ -64,6 +64,7 @@ POLICIES_PATH = "/admin/password-policies"
 ROLES_PATH = "/admin/password-policy-roles"
 LISTS_PATH = "/admin/watch-lists"
 USERS_PATH = "/admin/users"
+PREVIEW_PATH = "/admin/password-policy-preview"
 # Exact passwords or terms in one request (warden's own bound for its routes).
 MAX_ENTRIES = 100
 MAX_ENTRY_LENGTH = 1024
@@ -936,3 +937,28 @@ async def unpin_policy(
         user.id, actor=_actor(identity), source_ip=source_ip(runtime, request)
     )
     return _done(f"{USERS_PATH}/{user.id}", "policy-unpinned")
+
+
+@router.post(PREVIEW_PATH, include_in_schema=False)
+async def preview_policy(
+    request: Request, _: SparkIdentity = Depends(administrator)
+) -> JSONResponse:
+    """The rules a password typed for a new user would meet, for the roles ticked on the form.
+
+    The Create user form has no credential of the new person to bind warden's description
+    routes to, so this describes the policy the roles would resolve to (the default when none
+    maps), for the browser's checklist only. warden still enforces the policy on submit and the
+    refusal is shown. Nothing is stored and no password is sent here.
+    """
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    roles = body.get("roles") if isinstance(body, dict) else None
+    if not isinstance(roles, list) or not all(isinstance(r, str) for r in roles):
+        return JSONResponse({"detail": "Send the roles as a list."}, status_code=400)
+    enforcement = _runtime(request).identity.password_enforcement
+    policy = await enforcement.policy_for_roles(roles)
+    return JSONResponse(
+        enforcement.advice(policy).describe(), headers={"Cache-Control": "no-store"}
+    )

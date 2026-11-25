@@ -209,6 +209,7 @@ class TestAccess:
             ("POST", w + "/import"),
             ("POST", u),
             ("POST", u + "/unpin"),
+            ("POST", "/admin/password-policy-preview"),
         ]
 
     def test_another_role_is_refused_everywhere(self, admin: TestClient) -> None:
@@ -656,6 +657,48 @@ def _json(client: TestClient, path: str, page: Any, **body: Any) -> Any:
         json=body,
         headers={**ORIGIN, CSRF_HEADER: form_token(page)},
     )
+
+
+@pytest.mark.postgres
+class TestAdministratorSetPassword:
+    """The Create user form: the checklist follows the roles ticked (browser rules only)."""
+
+    PREVIEW = "/admin/password-policy-preview"
+
+    def test_the_create_user_form_has_a_checklist_without_a_server_check(
+        self, admin: TestClient
+    ) -> None:
+        page = _page(admin, "/admin/users")
+        assert 'data-place="administrator"' in page.text
+        assert f'data-policy-url="{self.PREVIEW}"' in page.text
+        assert "data-check-url" not in page.text
+        assert "data-roles=" in page.text
+        assert 'src="/auth/password-rules.js"' in page.text
+        assert 'src="/static/js/password_feedback.js"' in page.text
+
+    def test_the_preview_describes_the_policy_the_roles_would_get(self, admin: TestClient) -> None:
+        page = _page(admin, "/admin/users")
+        default = _json(admin, self.PREVIEW, page, roles=[]).json()
+        policy = _create(admin, "Staff", 1, min_length="21")
+        admin.post("/admin/password-policy-roles/user", data={"policy_id": str(policy)})
+        mapped = _json(admin, self.PREVIEW, page, roles=["user"]).json()
+        assert mapped["rules"]["min_length"] == 21
+        assert default["rules"]["min_length"] != 21
+        none = _json(admin, self.PREVIEW, page, roles=["no_such_role"]).json()
+        assert none["rules"]["min_length"] == default["rules"]["min_length"]
+
+    def test_the_preview_needs_the_administrator_and_a_token(self, admin: TestClient) -> None:
+        make_user(admin, ADA, USER)
+        other = another_client(admin)
+        sign_in(other, ADA)
+        assert other.post(self.PREVIEW, json={"roles": []}).status_code == 403
+        del admin.headers[CSRF_HEADER]
+        assert admin.post(self.PREVIEW, json={"roles": []}).status_code == 403
+
+    def test_a_bad_body_is_refused(self, admin: TestClient) -> None:
+        page = _page(admin, "/admin/users")
+        resp = _json(admin, self.PREVIEW, page, roles="administrator")
+        assert resp.status_code == 400
 
 
 @pytest.mark.postgres

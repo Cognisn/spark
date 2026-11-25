@@ -69,6 +69,14 @@
             return;
         }
 
+        // The Create user form describes the policy for the roles ticked, and has no server check
+        // (there is no credential of the new person to bind it to); the server still decides on save.
+        function chosenRoles() {
+            return Array.prototype.filter.call(document.querySelectorAll(root.dataset.roles), function (box) {
+                return box.checked;
+            }).map(function (box) { return box.value; });
+        }
+
         function mark(code, state) {
             var item = items[code];
             if (!item) { return; }
@@ -113,7 +121,7 @@
                 items[code] = item;
                 mark(code, 'pending');
             });
-            if (policy.history_count > 0) {
+            if (policy.history_count > 0 && !root.dataset.roles) {
                 var which = policy.history_count === 1 ? 'your last password' : 'any of your last ' + policy.history_count + ' passwords';
                 setLine(lines.history, 'It must not be the same as ' + which + '. Spark checks this when you save.');
             }
@@ -138,6 +146,9 @@
 
         function checkOnServer() {
             var mine = ++sequence;
+            if (!root.dataset.checkUrl) {
+                return;
+            }
             if (!input.value) {
                 setLine(reason, '');
                 return;
@@ -155,9 +166,19 @@
             timer = window.setTimeout(checkOnServer, DEBOUNCE_MS);
         });
 
-        post(root, root.dataset.policyUrl, {}).then(draw).catch(function () {
-            note.textContent = 'Spark checks your password when you save it, and says what it needs.';
-        });
+        function load() {
+            var payload = root.dataset.roles ? { roles: chosenRoles() } : {};
+            post(root, root.dataset.policyUrl, payload).then(draw).catch(function () {
+                note.textContent = 'Spark checks your password when you save it, and says what it needs.';
+            });
+        }
+
+        if (root.dataset.roles) {
+            document.querySelectorAll(root.dataset.roles).forEach(function (box) {
+                box.addEventListener('change', load);
+            });
+        }
+        load();
     }
 
     function start() {
