@@ -691,10 +691,22 @@ class RunningTurn:
         }.get(event_type)
         if phase is None:
             return
+        event: dict[str, Any] = {"phase": phase, "tool_name": str(data.get("tool_name", ""))}
+        if (
+            phase == "end"
+            and event["tool_name"] == "show_document"
+            and data.get("status") != "error"
+        ):
+            # A document shown opens in every viewer's preview pane (CS39): its card only.
+            from dataclasses import asdict
+
+            from spark.preview.service import parse_card
+
+            card = parse_card(str(data.get("result", "")))
+            if card is not None and card.conversation_id == self.conversation_id:
+                event["card"] = asdict(card)
         with self._lock:
-            self._events.append(
-                ("tool", {"phase": phase, "tool_name": str(data.get("tool_name", ""))})
-            )
+            self._events.append(("tool", event))
 
     # On the event loop.
 

@@ -16,6 +16,7 @@ Exit status 0 when the closure complies, 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from collections.abc import Iterable, Mapping
@@ -61,9 +62,13 @@ EXCEPTIONS: dict[str, str] = {
 }
 
 # Third-party files shipped inside the wheel (not Python packages). Each needs its licence text
-# beside it, a permissive or font licence, and a line in THIRD-PARTY-NOTICES.md.
+# beside it, a permissive or font licence, and a line in THIRD-PARTY-NOTICES.md. A library
+# (one with a "version") is pinned: the notice names its version, and every file it ships
+# has its SHA-256 here, checked against the file in the tree. Where a library offers a choice
+# of licences, "licence" is the one SPARK takes and "offered" says what was offered.
 ROOT = Path(__file__).resolve().parent.parent
 NOTICES = "THIRD-PARTY-NOTICES.md"
+_VENDOR = "src/spark/web/static/vendor"
 BUNDLED_ASSETS: dict[str, dict[str, object]] = {
     "Inter": {
         "licence": "OFL-1.1",
@@ -74,6 +79,84 @@ BUNDLED_ASSETS: dict[str, dict[str, object]] = {
             "src/spark/web/static/fonts/inter-latin-600.woff2",
             "src/spark/web/static/fonts/inter-latin-700.woff2",
         ],
+    },
+    # The document preview's renderers (CS38): served from SPARK itself, never a CDN.
+    "PDF.js": {
+        "version": "4.10.38",
+        "source": "npm pdfjs-dist@4.10.38, build/",
+        "licence": "Apache-2.0",
+        "licence_file": f"{_VENDOR}/pdfjs/LICENSE.txt",
+        "files": [f"{_VENDOR}/pdfjs/pdf.min.mjs", f"{_VENDOR}/pdfjs/pdf.worker.min.mjs"],
+        "sha256": {
+            f"{_VENDOR}/pdfjs/pdf.min.mjs": (
+                "27fc2a057a00f92a4334ad06e17dbd7259912954e9fb7f76400bcca5fd190a9c"
+            ),
+            f"{_VENDOR}/pdfjs/pdf.worker.min.mjs": (
+                "1baa1844c89c80a5b2797c916e75ab29254be46d8e9cb53cb6364d7aad84be36"
+            ),
+        },
+    },
+    "docx-preview": {
+        "version": "0.4.1",
+        "source": "npm docx-preview@0.4.1, dist/",
+        "licence": "Apache-2.0",
+        "licence_file": f"{_VENDOR}/docx-preview/LICENSE.txt",
+        "files": [f"{_VENDOR}/docx-preview/docx-preview.min.js"],
+        "sha256": {
+            f"{_VENDOR}/docx-preview/docx-preview.min.js": (
+                "c4a133c65a112799e35b143c572dfff9e923a3bf39b5fd3b07a06aa0f8f530c2"
+            ),
+        },
+    },
+    "JSZip": {
+        "version": "3.10.2",
+        "source": "npm jszip@3.10.2, dist/",
+        "licence": "MIT",
+        "offered": "MIT OR GPL-3.0-or-later; SPARK takes MIT",
+        "licence_file": f"{_VENDOR}/jszip/LICENSE.txt",
+        "files": [f"{_VENDOR}/jszip/jszip.min.js"],
+        "sha256": {
+            f"{_VENDOR}/jszip/jszip.min.js": (
+                "7f839b2d4688b845c105ebf5d2f9803075f91ea0fe72bdaac176c3a04dd3d2c1"
+            ),
+        },
+    },
+    "SheetJS Community Edition": {
+        "version": "0.20.3",
+        "source": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz, package/dist/",
+        "licence": "Apache-2.0",
+        "licence_file": f"{_VENDOR}/sheetjs/LICENSE.txt",
+        "files": [f"{_VENDOR}/sheetjs/xlsx.full.min.js"],
+        "sha256": {
+            f"{_VENDOR}/sheetjs/xlsx.full.min.js": (
+                "cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41"
+            ),
+        },
+    },
+    "marked": {
+        "version": "18.3.0",
+        "source": "npm marked@18.3.0, lib/",
+        "licence": "MIT",
+        "licence_file": f"{_VENDOR}/marked/LICENSE.txt",
+        "files": [f"{_VENDOR}/marked/marked.umd.js"],
+        "sha256": {
+            f"{_VENDOR}/marked/marked.umd.js": (
+                "f8c7f128939415995e2219e8a84bec42fab27f5980d22e361339e6901da5eadf"
+            ),
+        },
+    },
+    "DOMPurify": {
+        "version": "3.5.0",
+        "source": "npm dompurify@3.5.0, dist/",
+        "licence": "Apache-2.0",
+        "offered": "MPL-2.0 OR Apache-2.0; SPARK takes Apache-2.0",
+        "licence_file": f"{_VENDOR}/dompurify/LICENSE.txt",
+        "files": [f"{_VENDOR}/dompurify/purify.min.js"],
+        "sha256": {
+            f"{_VENDOR}/dompurify/purify.min.js": (
+                "f69a46022ab1f53e969c8ebbca98172c8995785a9b3be72ea4a12d25b1a1bf67"
+            ),
+        },
     },
 }
 _ALLOWED_ASSET_LICENCES = {"OFL-1.1", "MIT", "Apache-2.0", "BSD-3-Clause", "ISC"}
@@ -249,11 +332,26 @@ def check_bundled_assets(
         licence_file = root / str(asset["licence_file"])
         if not licence_file.is_file() or not licence_file.read_text(encoding="utf-8").strip():
             problems.append(f"{name}: licence text {asset['licence_file']} is missing")
+        digests: Mapping[str, str] = asset.get("sha256", {})  # type: ignore[assignment]
+        version = asset.get("version")
         for relative in asset["files"]:  # type: ignore[attr-defined]
-            if not (root / relative).is_file():
+            path = root / relative
+            if not path.is_file():
                 problems.append(f"{name}: bundled file {relative} is missing")
+                continue
+            expected = digests.get(relative)
+            if version is not None and expected is None:
+                problems.append(f"{name}: bundled file {relative} has no pinned checksum")
+            elif expected is not None:
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                if actual != expected:
+                    problems.append(
+                        f"{name}: bundled file {relative} does not match its pinned checksum"
+                    )
         if name not in notice_text or licence not in notice_text:
             problems.append(f"{name}: {NOTICES} does not name it and its licence {licence}")
+        elif version is not None and f"{name} {version}" not in notice_text:
+            problems.append(f"{name}: {NOTICES} does not name its version {version}")
     return problems
 
 

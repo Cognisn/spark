@@ -27,6 +27,7 @@ __all__ = [
     "delete_conversation_files",
     "delete_file",
     "delete_user_file",
+    "get_conversation_file",
     "get_conversation_files",
     "get_shared_attachment",
     "get_usage",
@@ -172,6 +173,22 @@ async def get_shared_attachment(db: Executor, user_guid: str, file_id: int) -> R
                     AND m.conversation_id IN ({READABLE_CONVERSATIONS})
                     AND m.content LIKE ?))""",
         (file_id, user_guid, user_guid, f"%- file {int(file_id)}: %"),
+    )
+
+
+async def get_conversation_file(
+    db: Executor, user_guid: str, conversation_id: int, file_id: int
+) -> Row | None:
+    """A file of ``conversation_id`` (uploaded into it, created in it or shown in it),
+    whoever stored it, when ``user_guid`` may read the conversation; or None.
+
+    The document preview opens files only this way, so every member of a shared
+    conversation reaches its files and nobody else does.
+    """
+    return await db.fetch_one(
+        f"""SELECT * FROM user_files WHERE id = ? AND conversation_id = ?
+            AND conversation_id IN ({READABLE_CONVERSATIONS})""",
+        (file_id, conversation_id, user_guid),
     )
 
 

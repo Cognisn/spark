@@ -224,6 +224,11 @@
         }
         if (kind === 'tool') {
             if (isMine(data) || !state.turn || state.turn.user_guid === state.me) return;
+            // A document shown in another member's turn opens in this viewer's pane too.
+            if (data.phase === 'end' && data.card && window.SparkPreview) {
+                const card = SparkPreview.parse(`${SparkPreview.MARKER} ${JSON.stringify(data.card)}`);
+                if (card) SparkPreview.open(card, { focus: false });
+            }
             const bubble = liveBubble(state.turn.name);
             const body = bubble && bubble.querySelector('.markdown-content');
             if (body && data.phase === 'approval') {

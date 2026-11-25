@@ -59,6 +59,12 @@ Click **New Conversation** and choose a name and model. If a default model is co
 - **Export** — Download conversation as Markdown, HTML, CSV, or JSON
 - **Linked Conversations** — Share context between conversations
 
+### Document Preview
+- Ask the assistant to show you a document: a document link from one of your MCP servers, or a file in the conversation
+- It opens in a pane on the right, one tab per document, with **Download** and **Close**; drag the pane's edge to resize it
+- PDF, Word, Excel and CSV, images, Markdown, and text and code are shown; anything else can be downloaded
+- A card in the conversation reopens the document; everyone in a shared conversation can open it
+
 ### Managing Conversations
 - **Star** — Mark as favourite (appears at top of list and on dashboard)
 - **Rename** — Click the conversation name in the chat header
