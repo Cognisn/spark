@@ -58,8 +58,6 @@ async def _readable(request: Request, file_id: int) -> Row | Response:
     row = await files_db.get_readable_file(database(request), user, file_id)
     if row is None or row["kind"] not in ARTEFACT_KINDS:
         return not_found()
-    if row["conversation_id"] is None and row["user_guid"] != user:
-        return not_found()
     return row
 
 

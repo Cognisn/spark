@@ -235,11 +235,6 @@ def _table(data: Mapping[str, Any]) -> Table:
     rows = data.get("rows")
     if not isinstance(rows, list) or not rows:
         raise ChartRefused("data.rows must be a list of rows, each a list of cells.")
-    if len(rows) > LIMITS.rows:
-        raise ChartRefused(
-            f"data has {len(rows):,} rows; a chart takes at most {LIMITS.rows:,}. "
-            "Summarise or filter the data first."
-        )
     out: list[tuple[Cell, ...]] = []
     for number, row in enumerate(rows, 1):
         if not isinstance(row, list) or len(row) != len(columns):

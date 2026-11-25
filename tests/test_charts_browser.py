@@ -188,6 +188,11 @@ async function lastSave(count) {{
     const reply = document.querySelector('.mermaid[data-processed]');
     out.replyDiagram = {{ svg: !!(reply && reply.querySelector('svg')),
       foreignObjects: reply ? reply.querySelectorAll('foreignObject').length : -1 }};
+    // A theme change sets Mermaid up again (main.js): still the one configuration.
+    document.dispatchEvent(new Event('app-theme-changed'));
+    const again = mermaid.mermaidAPI.getConfig();
+    out.afterThemeChange = {{ securityLevel: again.securityLevel, htmlLabels: again.htmlLabels,
+      flowchartHtmlLabels: again.flowchart && again.flowchart.htmlLabels }};
     out.pwned = !!window.__pwned;
     out.cardsCount = document.querySelectorAll('.chart-card').length;
 
@@ -430,6 +435,11 @@ def test_mermaid_is_strict_with_html_labels_off_everywhere(desktop: dict[str, An
     assert desktop["mermaid"]["flowchartHtmlLabels"] is False
     assert {"securityLevel", "htmlLabels", "flowchart"} <= set(desktop["mermaid"]["secure"])
     assert desktop["replyDiagram"] == {"svg": True, "foreignObjects": 0}
+    assert desktop["afterThemeChange"] == {
+        "securityLevel": "strict",
+        "htmlLabels": False,
+        "flowchartHtmlLabels": False,
+    }
     assert desktop["pwned"] is False and desktop["pwnedAfter"] is False
 
 
