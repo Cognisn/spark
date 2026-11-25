@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc52] - 2026-11-25
+
 ### Fixed
 
 - **The container image builds again.** The licence audit in the Dockerfile checks the bundled Inter font against `THIRD-PARTY-NOTICES.md`, but the build context did not hold that file, so the image build failed. The build context now allows it and the builder stage copies it beside `scripts/`, so the audit runs in the image exactly as on the host, with no check skipped. The runtime image also carries it at `/usr/share/doc/spark/THIRD-PARTY-NOTICES.md`, and the font's licence text already ships beside the fonts in the package. A test fails if a file the Dockerfile copies, or the notices file the audit reads, is not allowed by `.dockerignore`.
