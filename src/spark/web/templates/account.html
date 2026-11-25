@@ -49,6 +49,7 @@
                         <input type="password" id="confirm" name="confirm" class="form-control" autocomplete="new-password" minlength="{{ min_length }}" required>
                     </div>
                 </div>
+                {% set feedback_place = "account" %}{% set feedback_base = "/account" %}{% include "_password_feedback.html" %}
                 <p style="font-size: 0.8125rem; color: var(--app-text-muted);">At least {{ min_length }} characters. Your other sessions are signed out.</p>
                 <button type="submit" class="btn btn-app-primary btn-sm"><i class="bi bi-check-lg me-1"></i> Change password</button>
             </form>

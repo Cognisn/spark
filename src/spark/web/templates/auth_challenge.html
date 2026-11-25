@@ -21,6 +21,7 @@
         <input type="password" id="password" name="password" class="form-control"
                autocomplete="new-password" minlength="{{ min_length }}" required autofocus>
     </div>
+    {% set feedback_place = "challenge" %}{% set feedback_base = "/auth/challenge" %}{% include "_password_feedback.html" %}
     <div class="mb-4">
         <label for="confirm" class="form-label">New password again</label>
         <input type="password" id="confirm" name="confirm" class="form-control"

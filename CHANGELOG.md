@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Password policies and watch lists (server mode).** Administration, Users and access, Password policies lists the policies by priority with the roles each covers and how many people it applies to, creates and edits a policy with every rule warden supports (lengths, character kinds, repeats, the person's own details, a passphrase rule, tiers with change periods, history, minimum age, the watch lists and breach range service it checks, and the re-check switches), moves a policy up or down, maps roles to policies, and shows warden's reason when it refuses one. Watch lists, beside it, creates lists of passwords to refuse, adds and removes passwords (hashed at once, never shown again) and terms, imports a file of hashes in the Have I Been Pwned downloader format with an optional threshold, and shows when each was last imported and which policies check it. A user's page shows the policy that applies and why, with Pin and Unpin. All of it is behind `spark.users.admin`.
+- **Live password feedback.** Under the new-password field of an invitation, a reset or set-up link, the forced change at sign-in and the account page, a checklist ticks as the person types, from the policy warden describes for that place and warden's own `passwordrules.js`, which Spark serves from the installed package and keeps no copy of. The server checks the candidate too (the person's own details, watch lists with their reason, the breach range service) and stays the authority when the form is saved.
+
 ## [0.3.0rc53] - 2026-11-25
 
 ### Added
