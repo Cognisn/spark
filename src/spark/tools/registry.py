@@ -30,6 +30,7 @@ from typing import Any, Final, Literal, TypeAlias
 from spark.database.files import QuotaExceeded
 from spark.files import FileAreaNotConfigured, PathRefused
 from spark.files.scope import ToolScopeUnavailable
+from spark.files.titles import TitleRefused
 from spark.mode import Mode
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,8 @@ TOOL_CATEGORIES: Mapping[str, tuple[str, ...]] = {
         "list_my_files",
         "read_my_file",
         "show_document",
+        "create_chart",
+        "create_diagram",
     ),
     "archives": ("list_archive", "extract_archive"),
     "web": ("web_search", "web_fetch"),
@@ -272,7 +275,13 @@ def unavailable_reason(
 
 
 # Refusals from the file tools, reported to the model as they are.
-FILE_TOOL_REFUSALS = (PathRefused, QuotaExceeded, ToolScopeUnavailable, FileAreaNotConfigured)
+FILE_TOOL_REFUSALS = (
+    PathRefused,
+    QuotaExceeded,
+    ToolScopeUnavailable,
+    FileAreaNotConfigured,
+    TitleRefused,
+)
 
 
 def _get_tool_documentation(tool_name: str) -> str:
@@ -428,6 +437,13 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
         tools.extend(show_document_tools())
 
+        # Charts and Mermaid diagrams, drawn by SPARK and kept as artefacts (PC19, PC20)
+        from spark.tools.charts import get_tools as chart_tools
+        from spark.tools.diagrams import get_tools as diagram_tools
+
+        tools.extend(chart_tools())
+        tools.extend(diagram_tools())
+
     # Archives — the user's file area (server) or filesystem allowed_paths
     arc_config = embedded.get("archives", {})
     if arc_config.get("enabled", True) and _file_tools_available(fs_config):
@@ -535,6 +551,16 @@ def execute_builtin_tool(
             from spark.tools.show_document import execute as show_document_execute
 
             return show_document_execute(tool_input, config)
+
+        # A chart or a Mermaid diagram, kept in the sender's area as an artefact
+        if tool_name == "create_chart":
+            from spark.tools.charts import execute as chart_execute
+
+            return chart_execute(tool_input, config)
+        if tool_name == "create_diagram":
+            from spark.tools.diagrams import execute as diagram_execute
+
+            return diagram_execute(tool_input, config)
 
         # Documents (create)
         doc_create_tools = {

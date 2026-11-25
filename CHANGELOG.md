@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Every create tool takes a title and returns the new file's id (PC5).** `create_word`, `create_excel`, `create_powerpoint` and `create_pdf` now require a short title, store it with the file (kind `document`) and set it as the document's title metadata, and answer with the title and the file id. In personal mode the document is still written to the allowed folder, and a copy is kept in the personal file area so it has an id. A document shown with `show_document` keeps its title on the stored file.
+
 ### Added
 
 - **Artefact titles and kinds (PC5).** Every file in a user's area now has a title, the name the conversation shows for it, and a kind: `document` (made by a create tool), `chart`, `diagram`, `preview` (fetched for the document preview) or `attachment` (provided by a person). A new revision (`artefact_titles`) adds both to existing files: the title is the file name, and the kind follows how the file arrived. Titles are always one line of plain text, at most 120 characters, with no markup characters. The repository can rename a person's own file, and in a conversation its owner or a contributor can rename any of its files (a viewer cannot); it can also list a conversation's files with their titles and kinds for anyone who may read it.
+- **Charts (PC19).** A new built-in tool, `create_chart` (documents category), draws a chart from a SPARK chart definition: a type (bar, line, area, scatter, pie or donut, heatmap, treemap, Sankey, network graph, radar, funnel, box plot), data inline as columns and rows or from a CSV or Excel file of the conversation (by file id, with sheet and columns), the columns that play each part (x, y, series, size, colour), axis titles and the options a type takes. SPARK checks the definition against a closed vocabulary and its limits and refuses anything else with a message saying what to change; it builds the ECharts option itself, data only (no function, formatter, markup, picture or link from the model), in SPARK's light and dark themes with a colour-blind-safe palette. The chart is kept as a file of the conversation in the sender's area (its definition and a snapshot of the columns it uses), under the quota. A file another user keeps elsewhere answers as not found.
+- **Diagrams as artefacts (PC20).** A new built-in tool, `create_diagram`, keeps a Mermaid diagram with a title and caption as a file of the conversation. Its source may not carry Mermaid directives or a configuration block.
 
 ## [0.3.0rc57] - 2026-11-26
 

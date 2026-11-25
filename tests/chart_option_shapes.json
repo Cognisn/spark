@@ -1,0 +1,2521 @@
+{
+ "area": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "areaStyle": {
+      "opacity": "float"
+     },
+     "connectNulls": "bool",
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "showSymbol": "bool",
+     "stack": "str",
+     "symbolSize": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "boundaryGap": "bool",
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "areaStyle": {
+      "opacity": "float"
+     },
+     "connectNulls": "bool",
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "showSymbol": "bool",
+     "stack": "str",
+     "symbolSize": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "boundaryGap": "bool",
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  }
+ },
+ "bar": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "stack": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "stack": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  }
+ },
+ "boxplot": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "series": [
+    {
+     "data": [
+      [
+       "int"
+      ]
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "float",
+      "color": "str"
+     },
+     "name": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "series": [
+    {
+     "data": [
+      [
+       "int"
+      ]
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "float",
+      "color": "str"
+     },
+     "name": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "name": "str",
+    "nameGap": "int",
+    "nameLocation": "str",
+    "nameTextStyle": {
+     "color": "str"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  }
+ },
+ "funnel": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "bottom": "int",
+     "data": [
+      {
+       "name": "str",
+       "value": "int"
+      }
+     ],
+     "gap": "int",
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "position": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "left": "str",
+     "sort": "str",
+     "top": "int",
+     "type": "str",
+     "width": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "bottom": "int",
+     "data": [
+      {
+       "name": "str",
+       "value": "int"
+      }
+     ],
+     "gap": "int",
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "position": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "left": "str",
+     "sort": "str",
+     "top": "int",
+     "type": "str",
+     "width": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ },
+ "graph": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "categories": [
+      {
+       "name": "str"
+      }
+     ],
+     "data": [
+      {
+       "category": "int",
+       "name": "str",
+       "symbolSize": "float",
+       "value": "int"
+      }
+     ],
+     "draggable": "bool",
+     "edgeSymbol": [
+      "str"
+     ],
+     "edgeSymbolSize": "int",
+     "emphasis": {
+      "focus": "str",
+      "label": {
+       "show": "bool"
+      }
+     },
+     "force": {
+      "edgeLength": [
+       "int"
+      ],
+      "gravity": "float",
+      "repulsion": "int"
+     },
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "position": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "layout": "str",
+     "lineStyle": {
+      "color": "str",
+      "curveness": "float",
+      "opacity": "float"
+     },
+     "links": [
+      {
+       "lineStyle": {
+        "width": "float"
+       },
+       "source": "str",
+       "target": "str",
+       "value": "int"
+      }
+     ],
+     "roam": "bool",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "categories": [
+      {
+       "name": "str"
+      }
+     ],
+     "data": [
+      {
+       "category": "int",
+       "name": "str",
+       "symbolSize": "float",
+       "value": "int"
+      }
+     ],
+     "draggable": "bool",
+     "edgeSymbol": [
+      "str"
+     ],
+     "edgeSymbolSize": "int",
+     "emphasis": {
+      "focus": "str",
+      "label": {
+       "show": "bool"
+      }
+     },
+     "force": {
+      "edgeLength": [
+       "int"
+      ],
+      "gravity": "float",
+      "repulsion": "int"
+     },
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "position": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "layout": "str",
+     "lineStyle": {
+      "color": "str",
+      "curveness": "float",
+      "opacity": "float"
+     },
+     "links": [
+      {
+       "lineStyle": {
+        "width": "float"
+       },
+       "source": "str",
+       "target": "str",
+       "value": "int"
+      }
+     ],
+     "roam": "bool",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ },
+ "heatmap": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "series": [
+    {
+     "data": [
+      [
+       "int"
+      ]
+     ],
+     "emphasis": {
+      "itemStyle": {
+       "borderColor": "str",
+       "borderWidth": "int"
+      }
+     },
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "position": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "visualMap": {
+    "bottom": "int",
+    "calculable": "bool",
+    "inRange": {
+     "color": [
+      "str"
+     ]
+    },
+    "itemHeight": "int",
+    "left": "str",
+    "max": "int",
+    "min": "int",
+    "orient": "str",
+    "textStyle": {
+     "color": "str"
+    }
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "splitArea": {
+     "show": "bool"
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "splitArea": {
+     "show": "bool"
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "series": [
+    {
+     "data": [
+      [
+       "int"
+      ]
+     ],
+     "emphasis": {
+      "itemStyle": {
+       "borderColor": "str",
+       "borderWidth": "int"
+      }
+     },
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "position": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "visualMap": {
+    "bottom": "int",
+    "calculable": "bool",
+    "inRange": {
+     "color": [
+      "str"
+     ]
+    },
+    "itemHeight": "int",
+    "left": "str",
+    "max": "int",
+    "min": "int",
+    "orient": "str",
+    "textStyle": {
+     "color": "str"
+    }
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "splitArea": {
+     "show": "bool"
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "data": [
+     "str"
+    ],
+    "splitArea": {
+     "show": "bool"
+    },
+    "type": "str"
+   }
+  }
+ },
+ "line": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "connectNulls": "bool",
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "showSymbol": "bool",
+     "symbolSize": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "boundaryGap": "bool",
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "connectNulls": "bool",
+     "data": [
+      "int"
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "showSymbol": "bool",
+     "symbolSize": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "axisPointer": {
+     "type": "str"
+    },
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool",
+     "overflow": "str",
+     "rotate": "int",
+     "width": "int"
+    },
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisTick": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "boundaryGap": "bool",
+    "data": [
+     "str"
+    ],
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  }
+ },
+ "pie": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "avoidLabelOverlap": "bool",
+     "center": [
+      "str"
+     ],
+     "data": [
+      {
+       "name": "str",
+       "value": "int"
+      }
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "labelLine": {
+      "lineStyle": {
+       "color": "str"
+      }
+     },
+     "radius": [
+      "str"
+     ],
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "avoidLabelOverlap": "bool",
+     "center": [
+      "str"
+     ],
+     "data": [
+      {
+       "name": "str",
+       "value": "int"
+      }
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "labelLine": {
+      "lineStyle": {
+       "color": "str"
+      }
+     },
+     "radius": [
+      "str"
+     ],
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ },
+ "radar": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "radar": {
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisName": {
+     "color": "str"
+    },
+    "center": [
+     "str"
+    ],
+    "indicator": [
+     {
+      "max": "float",
+      "name": "str"
+     }
+    ],
+    "radius": "str",
+    "splitArea": {
+     "show": "bool"
+    },
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    }
+   },
+   "series": [
+    {
+     "areaStyle": {
+      "opacity": "float"
+     },
+     "data": [
+      {
+       "name": "str",
+       "value": [
+        "int"
+       ]
+      }
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "radar": {
+    "axisLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "axisName": {
+     "color": "str"
+    },
+    "indicator": [
+     {
+      "max": "float",
+      "name": "str"
+     }
+    ],
+    "radius": "str",
+    "splitArea": {
+     "show": "bool"
+    },
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    }
+   },
+   "series": [
+    {
+     "areaStyle": {
+      "opacity": "float"
+     },
+     "data": [
+      {
+       "name": "str",
+       "value": [
+        "int"
+       ]
+      }
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ },
+ "sankey": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "series": [
+    {
+     "bottom": "int",
+     "data": [
+      {
+       "itemStyle": {
+        "borderColor": "str",
+        "color": "str"
+       },
+       "name": "str"
+      }
+     ],
+     "emphasis": {
+      "focus": "str",
+      "label": {
+       "show": "bool"
+      }
+     },
+     "label": {
+      "color": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "layoutIterations": "int",
+     "left": "int",
+     "lineStyle": {
+      "color": "str",
+      "curveness": "float",
+      "opacity": "float"
+     },
+     "links": [
+      {
+       "source": "str",
+       "target": "str",
+       "value": "int"
+      }
+     ],
+     "nodeAlign": "str",
+     "nodeGap": "int",
+     "right": "int",
+     "top": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "series": [
+    {
+     "bottom": "int",
+     "data": [
+      {
+       "itemStyle": {
+        "borderColor": "str",
+        "color": "str"
+       },
+       "name": "str"
+      }
+     ],
+     "emphasis": {
+      "focus": "str",
+      "label": {
+       "show": "bool"
+      }
+     },
+     "label": {
+      "color": "str",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "layoutIterations": "int",
+     "left": "int",
+     "lineStyle": {
+      "color": "str",
+      "curveness": "float",
+      "opacity": "float"
+     },
+     "links": [
+      {
+       "source": "str",
+       "target": "str",
+       "value": "int"
+      }
+     ],
+     "nodeAlign": "str",
+     "nodeGap": "int",
+     "right": "int",
+     "top": "int",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ },
+ "scatter": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "data": [
+      {
+       "symbolSize": "float",
+       "value": [
+        "int"
+       ]
+      }
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "grid": {
+    "bottom": "int",
+    "containLabel": "bool",
+    "left": "int",
+    "right": "int",
+    "top": "int"
+   },
+   "legend": {
+    "bottom": "int",
+    "data": [
+     "str"
+    ],
+    "inactiveColor": "str",
+    "pageIconColor": "str",
+    "pageIconInactiveColor": "str",
+    "pageTextStyle": {
+     "color": "str"
+    },
+    "textStyle": {
+     "color": "str"
+    },
+    "type": "str"
+   },
+   "series": [
+    {
+     "data": [
+      {
+       "symbolSize": "float",
+       "value": [
+        "int"
+       ]
+      }
+     ],
+     "emphasis": {
+      "focus": "str"
+     },
+     "name": "str",
+     "type": "str"
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   },
+   "xAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   },
+   "yAxis": {
+    "axisLabel": {
+     "color": "str",
+     "hideOverlap": "bool"
+    },
+    "axisLine": {
+     "show": "bool"
+    },
+    "scale": "bool",
+    "splitLine": {
+     "lineStyle": {
+      "color": "str"
+     }
+    },
+    "type": "str"
+   }
+  }
+ },
+ "treemap": {
+  "dark": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "series": [
+    {
+     "bottom": "int",
+     "breadcrumb": {
+      "show": "bool"
+     },
+     "data": [
+      {
+       "children": [
+        {
+         "name": "str",
+         "value": "int"
+        }
+       ],
+       "itemStyle": {
+        "color": "str"
+       },
+       "name": "str"
+      }
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int",
+      "gapWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "left": "int",
+     "levels": [
+      {
+       "itemStyle": {
+        "borderColor": "str",
+        "borderWidth": "int",
+        "gapWidth": "int"
+       }
+      }
+     ],
+     "nodeClick": "bool",
+     "right": "int",
+     "roam": "bool",
+     "top": "int",
+     "type": "str",
+     "upperLabel": {
+      "color": "str",
+      "height": "int",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     }
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "title": {
+    "left": "str",
+    "subtext": "str",
+    "subtextStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "text": "str",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str",
+     "fontSize": "int"
+    },
+    "top": "int"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  },
+  "light": {
+   "animation": "bool",
+   "aria": {
+    "enabled": "bool",
+    "label": {
+     "description": "str"
+    }
+   },
+   "backgroundColor": "str",
+   "color": [
+    "str"
+   ],
+   "series": [
+    {
+     "bottom": "int",
+     "breadcrumb": {
+      "show": "bool"
+     },
+     "data": [
+      {
+       "children": [
+        {
+         "name": "str",
+         "value": "int"
+        }
+       ],
+       "itemStyle": {
+        "color": "str"
+       },
+       "name": "str"
+      }
+     ],
+     "itemStyle": {
+      "borderColor": "str",
+      "borderWidth": "int",
+      "gapWidth": "int"
+     },
+     "label": {
+      "color": "str",
+      "formatter": "str",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     },
+     "left": "int",
+     "levels": [
+      {
+       "itemStyle": {
+        "borderColor": "str",
+        "borderWidth": "int",
+        "gapWidth": "int"
+       }
+      }
+     ],
+     "nodeClick": "bool",
+     "right": "int",
+     "roam": "bool",
+     "top": "int",
+     "type": "str",
+     "upperLabel": {
+      "color": "str",
+      "height": "int",
+      "show": "bool",
+      "textBorderColor": "str",
+      "textBorderWidth": "int"
+     }
+    }
+   ],
+   "textStyle": {
+    "color": "str",
+    "fontFamily": "str"
+   },
+   "tooltip": {
+    "backgroundColor": "str",
+    "borderColor": "str",
+    "confine": "bool",
+    "textStyle": {
+     "color": "str",
+     "fontFamily": "str"
+    },
+    "trigger": "str"
+   }
+  }
+ }
+}

@@ -39,6 +39,8 @@ This directory contains comprehensive documentation for all embedded tools avail
 | `list_my_files` | List the files in your own file area, with their ids and keys |
 | `read_my_file` | Read one of your own files by id (attachments and created documents) |
 | `show_document` | Show a document in the preview pane beside the conversation: a link from one of your MCP servers, or a file by id |
+| `create_chart` | Draw a chart (bar, line, area, scatter, pie, heatmap, treemap, Sankey, network, radar, funnel, box plot) from inline data or a CSV or Excel file, kept as an artefact |
+| `create_diagram` | Draw a Mermaid diagram, kept as an artefact with a title |
 
 Files attached in chat are named at the end of the message by file id: read them with `read_my_file` and the id. In server mode the document and archive tools take a key in the user's own file area, as `list_my_files` shows it, not an attachment's bare name.
 

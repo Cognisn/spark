@@ -157,7 +157,7 @@ def _from_file(db: BridgeLike, user: str, conversation_id: int, file_id: int, ti
         own: Row | None = db.call(files_db.get_user_file, user, file_id)
         if own is None:
             raise missing
-        row = _copy_in(db, user, conversation_id, own)
+        row = _copy_in(db, user, conversation_id, own, title)
     try:
         head = _head(str(row["user_guid"]), str(row["storage_key"]))
     except (FileNotFoundError, OSError) as exc:
@@ -165,7 +165,7 @@ def _from_file(db: BridgeLike, user: str, conversation_id: int, file_id: int, ti
     return _checked(_card(row, conversation_id, title), head)
 
 
-def _copy_in(db: BridgeLike, user: str, conversation_id: int, own: Row) -> Row:
+def _copy_in(db: BridgeLike, user: str, conversation_id: int, own: Row, title: Any) -> Row:
     """One of the sender's own files, copied into the conversation for its members."""
     area = files_pkg.file_area(db)
     name = safe_name(str(own["filename"]))
@@ -179,6 +179,7 @@ def _copy_in(db: BridgeLike, user: str, conversation_id: int, own: Row) -> Row:
                 mime_type=own["mime_type"],
                 conversation_id=conversation_id,
                 source=PREVIEW_SOURCE,
+                title=_title(title, str(own["title"] or name)),
             )
     except FileNotFoundError as exc:
         raise ShowRefused(f"File {own['id']} is no longer stored.") from exc
@@ -215,6 +216,7 @@ def _from_link(
             mime_type=fetched.media_type,
             conversation_id=conversation_id,
             source=PREVIEW_SOURCE,
+            title=_title(title, name),
         )
     except (UploadTooLarge, files_db.QuotaExceeded) as exc:
         raise ShowRefused(str(exc)) from exc

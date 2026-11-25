@@ -10,7 +10,7 @@ Creates a Microsoft Excel (.xlsx) workbook with formatted sheets. Use for genera
 |-----------|------|----------|-------------|
 | path | string | Yes | Output file path (must end in .xlsx, within allowed paths) |
 | sheets | array | Yes | Array of sheet definitions |
-| title | string | No | Workbook title metadata |
+| title | string | Yes | A short, specific title such as "Quarterly sales review" (no file extension, at most 120 characters). It names the document in the conversation, is stored with the file and is set as its title metadata |
 | author | string | No | Workbook author metadata |
 
 ### Sheet Definition
@@ -34,6 +34,9 @@ Values in rows are automatically detected:
 - Floats: "3.14" → 3.14
 - Strings: anything else stays as text
 - Formulas: use Excel formula syntax e.g. "=SUM(B2:B10)"
+
+
+The answer names the title, where the document was written and its file id (`file 12`), which `show_document` and `read_my_file` take. In personal mode the document is written to the allowed folder and a copy is kept in your files for its id. A missing or blank title is refused before anything is written.
 
 ## Examples
 

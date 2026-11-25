@@ -239,10 +239,16 @@ class TestReadDocuments:
 # -- Document creation ----------------------------------------------------------
 
 _CREATE_INPUTS: dict[str, dict[str, Any]] = {
-    "create_word": {"content": [{"type": "paragraph", "text": "Synthetic"}]},
-    "create_excel": {"sheets": [{"name": "S", "headers": ["a"], "rows": [[1]]}]},
-    "create_powerpoint": {"slides": [{"layout": "title", "title": "Synthetic"}]},
-    "create_pdf": {"content": [{"type": "paragraph", "text": "Synthetic"}]},
+    "create_word": {"title": "Synthetic", "content": [{"type": "paragraph", "text": "Synthetic"}]},
+    "create_excel": {
+        "title": "Synthetic",
+        "sheets": [{"name": "S", "headers": ["a"], "rows": [[1]]}],
+    },
+    "create_powerpoint": {
+        "title": "Synthetic",
+        "slides": [{"layout": "title", "title": "Synthetic"}],
+    },
+    "create_pdf": {"title": "Synthetic", "content": [{"type": "paragraph", "text": "Synthetic"}]},
 }
 _SUFFIX = {
     "create_word": ".docx",
@@ -291,7 +297,7 @@ class TestCreateDocuments:
         image.write_bytes(_PNG)
         content = [{"type": "image", "image_path": str(image)}]
         document_creation.execute(
-            "create_word", {"path": "img.docx", "content": content}, scope=server
+            "create_word", {"path": "img.docx", "title": "Img", "content": content}, scope=server
         )
         doc = Document(str(area.store.local_path(ALICE, "img.docx")))
         assert len(doc.inline_shapes) == 0
@@ -304,7 +310,7 @@ class TestCreateDocuments:
         area.store.put(ALICE, "pics/dot.png", _PNG)
         content = [{"type": "image", "image_path": "pics/dot.png"}]
         document_creation.execute(
-            "create_word", {"path": "img.docx", "content": content}, scope=server
+            "create_word", {"path": "img.docx", "title": "Img", "content": content}, scope=server
         )
         doc = Document(str(area.store.local_path(ALICE, "img.docx")))
         assert len(doc.inline_shapes) == 1
@@ -620,8 +626,9 @@ class TestRegistry:
             "create_pdf", {"path": "out.pdf", **_CREATE_INPUTS["create_pdf"]}, config
         )
         assert is_error is False, text
-        assert text == "PDF document created: out.pdf"
-        assert bridge.call(files_db.get_user_file_by_key, ALICE, "out.pdf") is not None
+        row = bridge.call(files_db.get_user_file_by_key, ALICE, "out.pdf")
+        assert row is not None
+        assert text == f'PDF document "Synthetic" created: out.pdf, file {row["id"]}.'
 
     def test_server_mode_without_a_user_is_an_error(self, server_mode: Path) -> None:
         from spark.tools.registry import execute_builtin_tool

@@ -15,8 +15,16 @@ from typing import Any
 from spark.database.files import QuotaExceeded
 from spark.files.paths import PathRefused
 from spark.files.scope import ToolScope
+from spark.files.titles import require_title
 
 logger = logging.getLogger(__name__)
+
+# Every create tool takes a short title (PC5): stored with the file, shown as its name.
+_TITLE_DESCRIPTION = (
+    "Required. A short, specific title for the document, such as 'Quarterly sales review' "
+    "(no file extension). It names the document in the conversation and is set as its "
+    "title metadata."
+)
 
 TOOLS = [
     {
@@ -92,10 +100,10 @@ TOOLS = [
                         "required": ["type"],
                     },
                 },
-                "title": {"type": "string", "description": "Document title metadata."},
+                "title": {"type": "string", "description": _TITLE_DESCRIPTION},
                 "author": {"type": "string", "description": "Document author metadata."},
             },
-            "required": ["path", "content"],
+            "required": ["path", "title", "content"],
         },
     },
     {
@@ -151,10 +159,10 @@ TOOLS = [
                         "required": ["name", "rows"],
                     },
                 },
-                "title": {"type": "string", "description": "Workbook title metadata."},
+                "title": {"type": "string", "description": _TITLE_DESCRIPTION},
                 "author": {"type": "string", "description": "Workbook author metadata."},
             },
-            "required": ["path", "sheets"],
+            "required": ["path", "title", "sheets"],
         },
     },
     {
@@ -214,10 +222,10 @@ TOOLS = [
                         "required": ["layout"],
                     },
                 },
-                "title": {"type": "string", "description": "Presentation title metadata."},
+                "title": {"type": "string", "description": _TITLE_DESCRIPTION},
                 "author": {"type": "string", "description": "Presentation author metadata."},
             },
-            "required": ["path", "slides"],
+            "required": ["path", "title", "slides"],
         },
     },
     {
@@ -278,7 +286,7 @@ TOOLS = [
                         "required": ["type"],
                     },
                 },
-                "title": {"type": "string", "description": "Document title (shown in header)."},
+                "title": {"type": "string", "description": _TITLE_DESCRIPTION},
                 "author": {"type": "string", "description": "Document author metadata."},
                 "page_size": {
                     "type": "string",
@@ -286,7 +294,7 @@ TOOLS = [
                     "description": "Page size. Default: A4.",
                 },
             },
-            "required": ["path", "content"],
+            "required": ["path", "title", "content"],
         },
     },
 ]
@@ -323,12 +331,26 @@ def _image_resolver(scope: ToolScope) -> ImageResolver:
     return resolve
 
 
+_MIME = {
+    "create_word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "create_excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "create_powerpoint": (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ),
+    "create_pdf": "application/pdf",
+}
+
+
 def execute(tool_name: str, tool_input: dict[str, Any], *, scope: ToolScope) -> str:
     """Execute a document creation tool, writing only inside ``scope``.
 
-    Raises :class:`~spark.files.paths.PathRefused` for an output path outside
-    it, and in server mode :class:`~spark.database.files.QuotaExceeded` when the
-    document would exceed the user's quota (nothing is written then).
+    The required title is neutralised as text, stored with the file (kind
+    ``document``) and named in the answer with the new file's id (PC5). Raises
+    :class:`~spark.files.titles.TitleRefused` for a missing, blank or over-long title
+    and :class:`~spark.files.paths.PathRefused` for an output path outside the scope,
+    before anything is written, and in server mode
+    :class:`~spark.database.files.QuotaExceeded` when the document would exceed the
+    user's quota (nothing is written then).
     """
     creators: dict[str, Callable[[Path, dict[str, Any], ImageResolver], str]] = {
         "create_word": _create_word,
@@ -340,21 +362,31 @@ def execute(tool_name: str, tool_input: dict[str, Any], *, scope: ToolScope) -> 
     if creator is None:
         return f"Unknown document creation tool: {tool_name}"
 
+    title = require_title(tool_input.get("title"))
     target = scope.resolve(str(tool_input["path"]))
     images = _image_resolver(scope)
     details: list[str] = []
+    document = {**tool_input, "title": title}
 
     def write(path: Path) -> None:
-        details.append(creator(path, tool_input, images))
+        details.append(creator(path, document, images))
 
     try:
-        scope.write([(target, write)])
+        _, file_id = scope.write_artefact(
+            target, write, title=title, kind="document", mime_type=_MIME[tool_name]
+        )
     except (PathRefused, QuotaExceeded):
         raise
     except Exception as e:
         logger.error("Document creation error (%s): %s", tool_name, e, exc_info=True)
         return f"Error creating document: {e}"
-    return f"{_LABELS[tool_name]} created: {scope.show(target)}{details[0] if details else ''}"
+    made = f'{_LABELS[tool_name]} "{title}" created: {scope.show(target)}'
+    made += details[0] if details else ""
+    if file_id is None:
+        return f"{made}."
+    if scope.is_server:
+        return f"{made}, file {file_id}."
+    return f"{made}, kept in your files as file {file_id}."
 
 
 # ---------------------------------------------------------------------------

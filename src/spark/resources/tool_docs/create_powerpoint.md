@@ -10,7 +10,7 @@ Creates a Microsoft PowerPoint (.pptx) presentation. Use for generating slide de
 |-----------|------|----------|-------------|
 | path | string | Yes | Output file path (must end in .pptx, within allowed paths) |
 | slides | array | Yes | Array of slide definitions |
-| title | string | No | Presentation title metadata |
+| title | string | Yes | A short, specific title such as "Quarterly sales review" (no file extension, at most 120 characters). It names the document in the conversation, is stored with the file and is set as its title metadata |
 | author | string | No | Presentation author metadata |
 
 ### Slide Layouts
@@ -75,6 +75,9 @@ Empty slide. Use for custom content or as a separator.
 |----------|------|-------------|
 | layout | "blank" | Required |
 | notes | string | Speaker notes |
+
+
+The answer names the title, where the document was written and its file id (`file 12`), which `show_document` and `read_my_file` take. In personal mode the document is written to the allowed folder and a copy is kept in your files for its id. A missing or blank title is refused before anything is written.
 
 ## Examples
 
