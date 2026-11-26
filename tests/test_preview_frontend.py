@@ -76,7 +76,7 @@ class TestNoCdn:
 
     def test_no_vendored_library_asks_a_cdn(self) -> None:
         files = [p for p in VENDOR.rglob("*") if p.suffix in (".js", ".mjs")]
-        assert len(files) == 7
+        assert len(files) == 9  # the preview's seven, ECharts and Mermaid (PC20)
         for path in files:
             assert not CDN_HOSTS.search(path.read_text(encoding="utf-8")), path.name
 
@@ -136,6 +136,7 @@ class TestSandbox:
         assert re.findall(r"<script[^>]*>", frame) == [
             '<script src="/static/vendor/dompurify/purify.min.js">',
             '<script src="/static/vendor/marked/marked.umd.js">',
+            '<script src="/static/js/diagrams.js">',  # the one Mermaid configuration (PC20)
             '<script src="/static/js/preview_frame.js">',
         ]
         assert "style=" not in frame

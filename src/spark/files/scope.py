@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ from spark.db.engine import Row
 from spark.files.area import BridgeLike, FileArea
 from spark.files.paths import contain, contain_any
 
-__all__ = ["Located", "ToolScope", "ToolScopeUnavailable", "Writer", "tool_scope"]
+__all__ = ["Keeper", "Located", "ToolScope", "ToolScopeUnavailable", "Writer", "tool_scope"]
 
 # How many of the user's most recent files a name that matches nothing lists.
 RECENT_FILES: Final = 5
@@ -73,6 +74,16 @@ def _file_line(row: Row) -> str:
     return f"- file {row['id']}: {row['filename']}"
 
 
+@dataclass(frozen=True)
+class Keeper:
+    """Personal mode's file area, where a document a create tool writes to an allowed
+    root is also kept, so it has a file id and appears with the conversation's artefacts."""
+
+    area: FileArea
+    user_guid: str
+    conversation_id: int | None = None
+
+
 class ToolScope:
     """The permitted area for one tool call."""
 
@@ -84,20 +95,22 @@ class ToolScope:
         user_guid: str | None = None,
         conversation_id: int | None = None,
         db: BridgeLike | None = None,
+        keeper: Keeper | None = None,
     ) -> None:
         self.roots = tuple(roots)
         self.area = area
         self.user_guid = user_guid
         self.conversation_id = conversation_id
         self.db = db
+        self.keeper = keeper
 
     @classmethod
-    def personal(cls, roots: Sequence[Path]) -> ToolScope:
+    def personal(cls, roots: Sequence[Path], *, keeper: Keeper | None = None) -> ToolScope:
         if not roots:
             raise ToolScopeUnavailable(
                 "File tools need allowed_paths to be configured (Settings, Filesystem)."
             )
-        return cls(roots)
+        return cls(roots, keeper=keeper)
 
     @classmethod
     def server(
@@ -241,6 +254,66 @@ class ToolScope:
             writer(target)
         return [t for t, _ in targets]
 
+    def write_artefact(
+        self,
+        target: Path,
+        writer: Writer,
+        *,
+        title: str,
+        kind: str,
+        mime_type: str | None = None,
+    ) -> tuple[Path, int | None]:
+        """Produce one contained artefact with its title and kind; return it with its id.
+
+        Server mode records it in the user's area (under the quota) as a file of the
+        conversation. Personal mode writes it in place and, with a :class:`Keeper`,
+        keeps a copy in the personal file area for its id; without one the id is None.
+        """
+        if self.area is not None and self.user_guid is not None:
+            [(path, file_id)] = self.area.create_recorded(
+                self.user_guid,
+                [(target, writer)],
+                conversation_id=self.conversation_id,
+                mime_type=mime_type,
+                artefacts=[(title, kind)],
+            )
+            return path, file_id
+        target.parent.mkdir(parents=True, exist_ok=True)
+        writer(target)
+        keeper = self.keeper
+        if keeper is None:
+            return target, None
+        with target.open("rb") as handle:
+            kept = keeper.area.save(
+                keeper.user_guid,
+                f"created/{uuid.uuid4().hex}/{target.name}",
+                handle,
+                filename=target.name,
+                mime_type=mime_type,
+                conversation_id=keeper.conversation_id,
+                source="created",
+                title=title,
+                kind=kind,
+            )
+        return target, kept
+
+
+def _keeper(config: dict[str, Any]) -> Keeper | None:
+    """Personal mode's file area for the signed-in local user, when there is one."""
+    user = config.get("_user_guid") or config.get("_kg_user_guid")
+    db = config.get("_files_db") or config.get("_kg_db")
+    if not user or db is None:
+        return None
+    from spark import files as files_pkg
+    from spark.files.area import FileAreaNotConfigured
+
+    try:
+        area = files_pkg.file_area(db)
+    except FileAreaNotConfigured:
+        return None
+    cid = config.get("_kg_conversation_id")
+    return Keeper(area, str(user), int(cid) if cid else None)
+
 
 def _allowed_roots(config: dict[str, Any]) -> list[Path]:
     fs = (config.get("embedded_tools") or {}).get("filesystem") or {}
@@ -257,7 +330,7 @@ def tool_scope(config: dict[str, Any], *, server: bool) -> ToolScope:
     graph's ``_kg_user_guid``) and the bridge (``_files_db`` or ``_kg_db``).
     """
     if not server:
-        return ToolScope.personal(_allowed_roots(config))
+        return ToolScope.personal(_allowed_roots(config), keeper=_keeper(config))
     user = config.get("_user_guid") or config.get("_kg_user_guid")
     db = config.get("_files_db") or config.get("_kg_db")
     if not user or db is None:

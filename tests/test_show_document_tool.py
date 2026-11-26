@@ -210,6 +210,7 @@ class TestLinks:
         assert (card.kind, card.type, card.size) == ("pdf", "application/pdf", len(body))
         row = bridge.call(files_db.get_conversation_file, ADA, cid, card.file_id)
         assert row is not None and row["source"] == "preview" and row["user_guid"] == ADA
+        assert (row["title"], row["kind"]) == ("Q3 report", "preview")  # PC5
         with files_pkg.file_store().open(ADA, row["storage_key"]) as handle:
             assert handle.read() == body
         assert "Quarterly report.pdf (PDF" in text
@@ -339,6 +340,12 @@ class TestFiles:
         assert card is not None and card.file_id != fid and card.kind == "pdf"
         copy = bridge.call(files_db.get_conversation_file, ADA, cid, card.file_id)
         assert copy["source"] == "preview" and copy["filename"] == "plan.pdf"
+        assert (copy["title"], copy["kind"]) == ("plan.pdf", "preview")  # PC5: the file's own title
+        text, error = run({"file_id": fid, "title": "The plan"}, config(bridge, ADA, cid))
+        card = service.parse_card(text)
+        assert card is not None
+        titled = bridge.call(files_db.get_conversation_file, ADA, cid, card.file_id)
+        assert titled["title"] == "The plan"
 
     def test_another_persons_file_from_elsewhere_is_refused(self, area: Path, bridge: Any) -> None:
         cid = conversation(bridge)

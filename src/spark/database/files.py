@@ -29,13 +29,18 @@ __all__ = [
     "delete_user_file",
     "get_conversation_file",
     "get_conversation_files",
+    "get_file_title",
+    "get_readable_file",
     "get_shared_attachment",
     "get_usage",
     "get_user_file",
     "get_user_file_by_key",
+    "list_conversation_artefacts",
     "list_user_files",
     "record_user_file",
     "record_user_files",
+    "set_conversation_file_title",
+    "set_file_title",
 ]
 
 
@@ -62,6 +67,22 @@ class NewUserFile:
     mime_type: str | None = None
     conversation_id: int | None = None
     source: str = "upload"
+    # The artefact's title and kind (PC5); None takes the file name and the source's kind.
+    title: str | None = None
+    kind: str | None = None
+
+    def artefact(self) -> tuple[str, str]:
+        """The title and kind to store: given, or from the file name and the source.
+
+        Raises ``ValueError`` for a kind outside :data:`spark.files.titles.KINDS`.
+        """
+        from spark.files.titles import KINDS, TITLE_LIMIT, clean_text, kind_for_source
+
+        kind = self.kind if self.kind is not None else kind_for_source(self.source)
+        if kind not in KINDS:
+            raise ValueError(f"A file's kind is one of: {', '.join(KINDS)}.")
+        title = clean_text(self.title, limit=TITLE_LIMIT) if self.title is not None else ""
+        return title or clean_text(self.filename, limit=TITLE_LIMIT) or "file", kind
 
 
 async def _lock_usage(conn: Connection, user_guid: str) -> int:
@@ -91,6 +112,7 @@ async def record_user_files(
     A key already recorded is replaced and charged only the difference in size.
     ``quota_bytes`` of None means no quota. Raises :class:`QuotaExceeded`.
     """
+    artefacts = [new.artefact() for new in new_files]
     async with db.transaction() as conn:
         used = await _lock_usage(conn, user_guid)
         delta = 0
@@ -107,18 +129,20 @@ async def record_user_files(
             (delta, user_guid),
         )
         ids: list[int] = []
-        for new in new_files:
+        for new, (title, kind) in zip(new_files, artefacts, strict=True):
             new_id = await conn.fetch_value(
                 """INSERT INTO user_files
                     (user_guid, storage_key, filename, size_bytes, mime_type,
-                     conversation_id, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                     conversation_id, source, title, kind)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (user_guid, storage_key) DO UPDATE SET
                         filename = excluded.filename,
                         size_bytes = excluded.size_bytes,
                         mime_type = excluded.mime_type,
                         conversation_id = excluded.conversation_id,
                         source = excluded.source,
+                        title = excluded.title,
+                        kind = excluded.kind,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING id""",
                 (
@@ -129,6 +153,8 @@ async def record_user_files(
                     new.mime_type,
                     new.conversation_id,
                     new.source,
+                    title,
+                    kind,
                 ),
             )
             ids.append(int(new_id))
@@ -190,6 +216,78 @@ async def get_conversation_file(
             AND conversation_id IN ({READABLE_CONVERSATIONS})""",
         (file_id, conversation_id, user_guid),
     )
+
+
+async def get_readable_file(db: Executor, user_guid: str, file_id: int) -> Row | None:
+    """A file ``user_guid`` may open: one of their own, or a file of a conversation they
+    may read (uploaded into it, created in it or shown in it, by any member); or None.
+
+    The chart API opens artefacts this way, then asks the conversation's access
+    decision; nothing else of another person's area is reachable.
+    """
+    return await db.fetch_one(
+        f"""SELECT * FROM user_files WHERE id = ? AND (user_guid = ?
+            OR conversation_id IN ({READABLE_CONVERSATIONS}))""",
+        (file_id, user_guid, user_guid),
+    )
+
+
+async def list_conversation_artefacts(
+    db: Executor, user_guid: str, conversation_id: int
+) -> list[Row]:
+    """Every member's files of a conversation ``user_guid`` may read, oldest first, with
+    their titles and kinds (empty when they may not read it)."""
+    return await db.fetch_all(
+        f"""SELECT * FROM user_files WHERE conversation_id = ?
+            AND conversation_id IN ({READABLE_CONVERSATIONS}) ORDER BY created_at, id""",
+        (conversation_id, user_guid),
+    )
+
+
+async def get_file_title(db: Executor, user_guid: str, file_id: int) -> str | None:
+    """The title of one of the user's own files, or None."""
+    value = await db.fetch_value(
+        "SELECT title FROM user_files WHERE id = ? AND user_guid = ?", (file_id, user_guid)
+    )
+    return None if value is None else str(value)
+
+
+async def set_file_title(db: Executor, user_guid: str, file_id: int, title: str) -> Row | None:
+    """Rename one of the user's own files; return the row, or None for another's.
+
+    Raises :class:`spark.files.titles.TitleRefused` (a ``ValueError``) for a blank or
+    over-long title.
+    """
+    from spark.files.titles import require_title
+
+    cleaned = require_title(title)
+    return await db.fetch_one(
+        """UPDATE user_files SET title = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_guid = ? RETURNING *""",
+        (cleaned, file_id, user_guid),
+    )
+
+
+async def set_conversation_file_title(
+    db: Executor, user_guid: str, conversation_id: int, file_id: int, title: str
+) -> Row | None:
+    """Rename a file of a conversation, whoever stored it, as its owner or a contributor.
+
+    Returns the row, or None when the file is not one of the conversation's. Raises
+    :class:`spark.database.scope.NotOwned` for a stranger,
+    :class:`spark.database.scope.NotPermitted` for a viewer and
+    :class:`spark.files.titles.TitleRefused` for a blank or over-long title.
+    """
+    from spark.files.titles import require_title
+
+    cleaned = require_title(title)
+    async with db.transaction() as conn:
+        await require_access(conn, user_guid, conversation_id, Capability.CONTRIBUTE)
+        return await conn.fetch_one(
+            """UPDATE user_files SET title = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND conversation_id = ? RETURNING *""",
+            (cleaned, file_id, conversation_id),
+        )
 
 
 async def get_user_file_by_key(db: Executor, user_guid: str, key: str) -> Row | None:

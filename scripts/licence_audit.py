@@ -158,6 +158,31 @@ BUNDLED_ASSETS: dict[str, dict[str, object]] = {
             ),
         },
     },
+    # Charts and diagrams (PC20): served from SPARK itself, never a CDN.
+    "Apache ECharts": {
+        "version": "6.1.0",
+        "source": "npm echarts@6.1.0, dist/ (NOTICE.txt and LICENSE-d3.txt beside it)",
+        "licence": "Apache-2.0",
+        "licence_file": f"{_VENDOR}/echarts/LICENSE.txt",
+        "files": [f"{_VENDOR}/echarts/echarts.min.js"],
+        "sha256": {
+            f"{_VENDOR}/echarts/echarts.min.js": (
+                "b66b25aeb4df84e33199dc21694014d336d222cbd9deb0e5a7c14bd6aa0d0fd0"
+            ),
+        },
+    },
+    "Mermaid": {
+        "version": "11.17.2",
+        "source": "npm mermaid@11.17.2, dist/",
+        "licence": "MIT",
+        "licence_file": f"{_VENDOR}/mermaid/LICENSE.txt",
+        "files": [f"{_VENDOR}/mermaid/mermaid.min.js"],
+        "sha256": {
+            f"{_VENDOR}/mermaid/mermaid.min.js": (
+                "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
+            ),
+        },
+    },
 }
 _ALLOWED_ASSET_LICENCES = {"OFL-1.1", "MIT", "Apache-2.0", "BSD-3-Clause", "ISC"}
 

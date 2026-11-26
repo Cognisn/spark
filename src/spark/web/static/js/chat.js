@@ -6,8 +6,21 @@
 const TOOL_RESULTS_MARKER = '[TOOL_RESULTS]';
 // The tool that shows a document in the preview pane; its results carry a card.
 const PREVIEW_TOOL = 'show_document';
-// Tool use ids of show_document calls seen in the history being drawn.
+// The tools that keep a chart or a diagram; their results carry a card drawn by charts.js.
+const ARTEFACT_TOOLS = new Set(['create_chart', 'create_diagram']);
+// Tool use ids of show_document, create_chart and create_diagram calls seen in the
+// history being drawn.
 let _previewToolUses = new Set();
+
+function _isCardTool(name) {
+    return name === PREVIEW_TOOL || ARTEFACT_TOOLS.has(name);
+}
+
+// Draw a card: a chart or diagram in the message (charts.js), else a document card.
+function _drawCard(card) {
+    if (window.SparkCharts && SparkCharts.isArtefact(card)) return SparkCharts.appendCard(card);
+    return window.SparkPreview ? SparkPreview.appendCard(card) : null;
+}
 
 // Running token totals
 let totalTokensIn = 0;
@@ -178,7 +191,7 @@ function _appendMessage(msg) {
                     return;
                 }
                 blocks.forEach(b => {
-                    if (b && b.type === 'tool_use' && b.name === PREVIEW_TOOL && b.id) _previewToolUses.add(b.id);
+                    if (b && b.type === 'tool_use' && _isCardTool(b.name) && b.id) _previewToolUses.add(b.id);
                 });
 
                 // Check there's at least one meaningful block
@@ -227,13 +240,14 @@ function _toolResultText(block) {
     return '';
 }
 
-// The cards of the show_document calls whose results these blocks carry.
+// The cards of the show_document, create_chart and create_diagram calls whose results
+// these blocks carry.
 function appendPreviewCards(blocks) {
     if (!window.SparkPreview) return;
     blocks.forEach(block => {
         if (!block || block.is_error || !_previewToolUses.has(block.tool_use_id)) return;
         const card = SparkPreview.parse(_toolResultText(block));
-        if (card) SparkPreview.appendCard(card);
+        if (card) _drawCard(card);
     });
 }
 
@@ -837,10 +851,15 @@ function updateStreamingToolComplete(toolUseId, toolName, result, status, inspec
     // A document shown: its card in the conversation, and the document in the pane.
     if (toolName === PREVIEW_TOOL && status !== 'error' && window.SparkPreview) {
         const card = SparkPreview.parse(result);
-        if (card && SparkPreview.appendCard(card)) {
+        if (card && _drawCard(card)) {
             SparkPreview.open(card, { focus: false });
             scrollToBottom();
         }
+    }
+    // A chart or diagram made: drawn in the conversation.
+    if (ARTEFACT_TOOLS.has(toolName) && status !== 'error' && window.SparkPreview) {
+        const card = SparkPreview.parse(result);
+        if (card && _drawCard(card)) scrollToBottom();
     }
 }
 

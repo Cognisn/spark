@@ -10,6 +10,7 @@ from spark.web.endpoints.administration import router as administration_router
 from spark.web.endpoints.audit import router as audit_router
 from spark.web.endpoints.auth import router as auth_router
 from spark.web.endpoints.bundles import router as bundles_router
+from spark.web.endpoints.charts import router as charts_router
 from spark.web.endpoints.chat import router as chat_router
 from spark.web.endpoints.connections import router as connections_router
 from spark.web.endpoints.conversations import router as conversations_router
@@ -64,6 +65,8 @@ def register_routes(app: FastAPI) -> None:
     from spark.preview import sources as preview_sources
 
     preview_sources.bind(lambda: getattr(app.state, "mcp_manager", None))
+    # Charts and diagrams: the option SPARK builds, through the conversation's access.
+    app.include_router(charts_router)
     app.include_router(skills_router)
     app.include_router(knowledge_router)
     app.include_router(actions_router)

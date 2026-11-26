@@ -12,6 +12,8 @@
  *   image     an <img> from a blob: URL (SVG too: an image never runs its scripts)
  *   markdown  marked, then DOMPurify
  *   text      text and code with line numbers
+ *   chart     ECharts, from the option SPARK built (the pane sends the chart API's JSON)
+ *   diagram   Mermaid at the strict level with HTML labels off (diagrams.js)
  *   other     name, type and size: the pane offers Download
  *
  * Every document is untrusted: nothing it holds becomes markup except through
@@ -269,6 +271,36 @@
         return { lines: shown.length };
     }
 
+    // A chart: the ECharts option SPARK built (data only), drawn to fill the frame.
+    async function renderChart(doc) {
+        await loadScript('echarts/echarts.min.js');
+        const payload = JSON.parse(decodeText(doc.bytes));
+        if (!payload || payload.kind !== 'chart' || !payload.option) throw new Error('not a chart');
+        clear();
+        const holder = element('div', 'preview-chart');
+        holder.setAttribute('role', 'img');
+        holder.setAttribute('aria-label', 'Chart: ' + (payload.title || doc.name || ''));
+        root.appendChild(holder);
+        const chart = window.echarts.init(holder, null, { renderer: 'canvas' });
+        chart.setOption(payload.option);
+        window.addEventListener('resize', () => chart.resize());
+        if (payload.caption) root.appendChild(element('p', 'preview-chart-caption', payload.caption));
+        return { type: payload.type, series: (payload.option.series || []).length };
+    }
+
+    // A diagram: Mermaid at the strict level, HTML labels off (diagrams.js has the settings).
+    async function renderDiagram(doc) {
+        await loadScript('mermaid/mermaid.min.js');
+        const payload = JSON.parse(decodeText(doc.bytes));
+        if (!payload || payload.kind !== 'diagram') throw new Error('not a diagram');
+        clear();
+        const holder = element('div', 'preview-diagram');
+        root.appendChild(holder);
+        const svg = await window.SparkDiagrams.render(holder, payload.source, doc.theme);
+        if (payload.caption) root.appendChild(element('p', 'preview-chart-caption', payload.caption));
+        return { svg: !!svg, foreignObjects: holder.querySelectorAll('foreignObject').length };
+    }
+
     function renderOther(doc) {
         clear();
         const box = element('div', 'preview-details');
@@ -291,13 +323,16 @@
         image: renderImage,
         markdown: renderMarkdown,
         text: renderText,
+        chart: renderChart,
+        diagram: renderDiagram,
         other: renderOther,
     };
 
     async function render(doc) {
         const renderer = RENDERERS[doc.kind] || renderOther;
         // Pages (PDF, Word, sheets, images) stay on paper; text follows the app's theme.
-        const themed = doc.theme === 'dark' && ['markdown', 'text', 'other'].includes(doc.kind);
+        const themed = doc.theme === 'dark'
+            && ['markdown', 'text', 'other', 'chart', 'diagram'].includes(doc.kind);
         document.body.dataset.theme = themed ? 'dark' : 'light';
         status('Loading the preview…');
         try {

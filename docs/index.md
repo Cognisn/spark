@@ -23,6 +23,7 @@ Spark is a secure personal AI research kit -- a multi-provider LLM web interface
 
 - [Conversations](conversations.md) -- Chat interface, message handling, context compaction, linking, export
 - [Tools](tools.md) -- Built-in tools (filesystem, documents, archives, web, memory, datetime), permissions
+- [Charts and Diagrams](charts.md) -- Charts and Mermaid diagrams the assistant draws, their limits, and saving them
 - [MCP Integration](mcp-integration.md) -- Setting up MCP servers, tool management, per-conversation control
 - [Memory](memory.md) -- Persistent memory system, categories, semantic search, import/export
 - [Autonomous Actions](autonomous-actions.md) -- Scheduled AI tasks, cron/one-off, daemon/tray

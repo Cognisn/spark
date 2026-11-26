@@ -171,6 +171,7 @@ def _scripted_run() -> list[dict[str, Any]]:
                     "name": "create_word",
                     "input": {
                         "path": "report.docx",
+                        "title": "Nightly report",  # every create tool takes a title (PC5)
                         "content": [{"type": "paragraph", "text": "nightly report"}],
                     },
                 },

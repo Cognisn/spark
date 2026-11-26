@@ -7,7 +7,9 @@ type against the first bytes of the content (magic bytes), so a response that sa
 it is a PDF and is in fact HTML is refused rather than shown.
 
 A type the preview cannot show is :attr:`Kind.OTHER`: the pane shows its name, type
-and size, with Download.
+and size, with Download. A chart or diagram SPARK made (:data:`CHART_TYPE`,
+:data:`DIAGRAM_TYPE`) is drawn from the chart API (``/charts/api/<file id>``), never
+from its stored bytes.
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ import enum
 from typing import Final
 
 __all__ = [
+    "CHART_TYPE",
+    "DIAGRAM_TYPE",
     "GENERIC_TYPES",
     "Kind",
     "base_type",
@@ -34,6 +38,9 @@ class Kind(enum.StrEnum):
     IMAGE = "image"
     MARKDOWN = "markdown"
     TEXT = "text"
+    # A chart or a Mermaid diagram SPARK keeps as an artefact: drawn from the chart API.
+    CHART = "chart"
+    DIAGRAM = "diagram"
     OTHER = "other"
 
 
@@ -59,6 +66,9 @@ _IMAGES: Final = frozenset(
     {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/svg+xml"}
 )
 _MARKDOWN: Final = frozenset({"text/markdown", "text/x-markdown"})
+# The stored forms of create_chart and create_diagram (spark.charts.artefact).
+CHART_TYPE: Final = "application/vnd.spark.chart+json"
+DIAGRAM_TYPE: Final = "application/vnd.spark.diagram+json"
 _TEXT_APPLICATION: Final = frozenset(
     {
         "application/json",
@@ -133,6 +143,8 @@ _LABELS: Final[dict[Kind, str]] = {
     Kind.IMAGE: "image",
     Kind.MARKDOWN: "Markdown",
     Kind.TEXT: "text",
+    Kind.CHART: "chart",
+    Kind.DIAGRAM: "diagram",
     Kind.OTHER: "file",
 }
 
@@ -151,6 +163,10 @@ def _suffix(name: str) -> str:
 
 
 def _kind_of_type(media: str) -> Kind | None:
+    if media == CHART_TYPE:
+        return Kind.CHART
+    if media == DIAGRAM_TYPE:
+        return Kind.DIAGRAM
     if media in _PDF:
         return Kind.PDF
     if media in _DOCX:
@@ -248,6 +264,8 @@ def content_matches(kind: Kind, media: str, head: bytes) -> bool:
         return _image_matches(media, head)
     if kind in (Kind.MARKDOWN, Kind.TEXT):
         return _is_text(head)
+    if kind in (Kind.CHART, Kind.DIAGRAM):
+        return _is_text(head) and head.lstrip().startswith(b"{")
     return True
 
 

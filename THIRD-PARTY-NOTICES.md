@@ -66,3 +66,37 @@ asks a content delivery network for them.
 - Copyright Dr.-Ing. Mario Heiderich, Cure53 (https://github.com/cure53/DOMPurify).
 - Licence: offered as MPL-2.0 or Apache-2.0; SPARK uses it under the Apache License 2.0
   (Apache-2.0). The licence text is in `vendor/dompurify/LICENSE.txt`.
+
+## Chart and diagram libraries
+
+Charts and Mermaid diagrams are drawn in the browser with the libraries below. Each is taken
+unmodified from the npm package named, kept under `src/spark/web/static/vendor/` with its
+licence text beside it, pinned by version and SHA-256 in `scripts/licence_audit.py`, and
+served from SPARK itself: no page asks a content delivery network for them.
+
+### Apache ECharts 6.1.0
+
+- Files: `vendor/echarts/echarts.min.js`, with `NOTICE.txt` and `LICENSE-d3.txt`, from the
+  npm package `echarts` 6.1.0.
+- Copyright 2017-2026 The Apache Software Foundation (https://echarts.apache.org). This
+  product includes software developed at The Apache Software Foundation
+  (https://www.apache.org/).
+- Licence: Apache License 2.0 (Apache-2.0). The licence text, with its subcomponents, is in
+  `vendor/echarts/LICENSE.txt` and the notice in `vendor/echarts/NOTICE.txt`.
+- Parts of the treemap, tree and force layouts and of the number utilities embed d3.js
+  (https://github.com/d3/d3), copyright Mike Bostock, under the BSD 3-Clause License
+  (BSD-3-Clause), in `vendor/echarts/LICENSE-d3.txt`.
+
+### Mermaid 11.17.2
+
+- Files: `vendor/mermaid/mermaid.min.js`, from the npm package `mermaid` 11.17.2.
+- Copyright (c) 2014 - 2022 Knut Sveidqvist and the Mermaid contributors
+  (https://github.com/mermaid-js/mermaid).
+- Licence: MIT License (MIT). The licence text is in `vendor/mermaid/LICENSE.txt`.
+- The bundle includes, unmodified, libraries under permissive licences, among them
+  DOMPurify 3.4.12 (used under Apache-2.0; also offered under MPL-2.0), lodash-es (MIT),
+  Cytoscape.js with its layout extensions (MIT), d3 and d3-sankey (ISC and BSD-3-Clause),
+  dagre-d3-es (MIT), KaTeX (MIT), khroma (MIT), roughjs (MIT), stylis (MIT), dayjs (MIT),
+  marked (MIT), uuid (MIT), @braintree/sanitize-url (MIT), @iconify/utils (MIT) and
+  @mermaid-js/parser with Langium (MIT) and Chevrotain (Apache-2.0). Their notices are kept
+  in the bundle's licence comments.

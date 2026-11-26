@@ -113,10 +113,13 @@ class FileArea:
         mime_type: str | None = None,
         conversation_id: int | None = None,
         source: str = "upload",
+        title: str | None = None,
+        kind: str | None = None,
     ) -> int:
         """Store an upload under the upload limit and the user's quota; return its id.
 
-        Raises :class:`~spark.files.store.UploadTooLarge`,
+        ``title`` and ``kind`` name the artefact (default: the file name, and the kind
+        its source implies). Raises :class:`~spark.files.store.UploadTooLarge`,
         :class:`~spark.database.files.QuotaExceeded` or
         :class:`~spark.files.paths.PathRefused`.
         """
@@ -133,6 +136,8 @@ class FileArea:
                         mime_type=mime_type,
                         conversation_id=conversation_id,
                         source=source,
+                        title=title,
+                        kind=kind,
                     ),
                 )
             )
@@ -185,7 +190,36 @@ class FileArea:
         Each target must be a path inside the user's area (from
         :meth:`MountedVolumeStore.local_path`). All or nothing.
         """
+        return [
+            path
+            for path, _ in self.create_recorded(
+                user_guid,
+                targets,
+                conversation_id=conversation_id,
+                mime_type=mime_type,
+                source=source,
+            )
+        ]
+
+    def create_recorded(
+        self,
+        user_guid: str,
+        targets: Sequence[tuple[Path, Callable[[Path], None]]],
+        *,
+        conversation_id: int | None = None,
+        mime_type: str | None = None,
+        source: str = "created",
+        artefacts: Sequence[tuple[str | None, str | None]] | None = None,
+    ) -> list[tuple[Path, int]]:
+        """:meth:`create_many`, returning each file's path with its new id.
+
+        ``artefacts`` gives each target's title and kind, in order (None for the
+        defaults: the file name, and the kind of ``source``).
+        """
         area = self.store.area(user_guid)
+        named = list(artefacts) if artefacts is not None else [(None, None)] * len(targets)
+        if len(named) != len(targets):
+            raise ValueError("one title and kind for each target")
         staged: list[tuple[Path, Path]] = []
         try:
             for target, writer in targets:
@@ -197,7 +231,7 @@ class FileArea:
                 os.close(fd)
                 staged.append((Path(tmp_name), target))
                 writer(Path(tmp_name))
-            self._db.call(
+            ids: list[int] = self._db.call(
                 files_db.record_user_files,
                 user_guid,
                 [
@@ -208,8 +242,10 @@ class FileArea:
                         mime_type=mime_type,
                         conversation_id=conversation_id,
                         source=source,
+                        title=title,
+                        kind=kind,
                     )
-                    for tmp, target in staged
+                    for (tmp, target), (title, kind) in zip(staged, named, strict=True)
                 ],
                 quota_bytes=self._limits().quota_bytes,
             )
@@ -219,7 +255,7 @@ class FileArea:
         finally:
             for tmp, _ in staged:
                 tmp.unlink(missing_ok=True)
-        return [target for _, target in staged]
+        return [(target, file_id) for (_, target), file_id in zip(staged, ids, strict=True)]
 
     def check_space(self, user_guid: str, nbytes: int) -> None:
         """Raise :class:`QuotaExceeded` if ``nbytes`` more would exceed the quota now.
