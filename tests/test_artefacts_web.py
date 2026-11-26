@@ -434,3 +434,26 @@ class TestRename:
         _as(client, ADA)
         assert client.patch(f"/artefacts/api/{fid}", json={"title": ""}).status_code == 400
         assert calls == []
+
+
+class TestChatPage:
+    def test_the_page_carries_the_panel_and_its_script(
+        self, client: TestClient, shared: int
+    ) -> None:
+        page = client.get(f"/chat/{shared}")
+        assert page.status_code == 200, page.text[:300]
+        for needle in (
+            'id="tool-panel"',
+            'id="sidecar-artefacts-toggle"',
+            'id="sidecar-tools-toggle"',
+            'id="sidecar-agents-toggle"',
+            'id="btn-tool-panel"',
+            'id="sidecar-dot"',
+            '<script src="/static/js/sidecar.js"></script>',
+            '<link rel="stylesheet" href="/static/css/sidecar.css">',
+            "SparkSidecar.init({ conversationId });",
+        ):
+            assert needle in page.text, needle
+        assert "switchSidecarTab" not in page.text
+        for asset in ("/static/js/sidecar.js", "/static/css/sidecar.css"):
+            assert client.get(asset).status_code == 200, asset
