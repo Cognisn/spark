@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc59] - 2026-11-26
+
 ### Added
 
 - **Projects (rulings PC6 to PC15).** A project has a name, a description, instructions and resources, and holds conversations and sub-projects up to five levels deep (deeper is refused with a message). A conversation in a project receives, in its system prompt after the global instructions and before its own, the instructions of every level from the top-level project down, each labelled with its level and project name, with the rule that a deeper level refines or overrides a higher one; its inherited resources are listed by name, id, type and size, and `read_my_file` and `list_my_files` read and list them by level (another project's resource is not found). Resources live in the project owner's file area and count against the owner's quota whoever uploads them. Moves need ownership of the conversation and the destination, go between projects only through no project, and report who would gain or lose sight of the conversation before they are confirmed. Deleting keeps the conversations (moved up, or out to no project) or deletes everything, with a preview of what is affected; starters whose conversations are deleted are told in Spark and by email. Personal mode has all of this except sharing. The JSON API is under `/projects/api`; `POST /conversations/api/create` takes `project_id`. See `docs/projects.md`.
