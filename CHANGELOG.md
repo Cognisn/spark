@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One panel for artefacts, tools and agents (PC2 to PC5).** The chat page's Tool Activity panel is now the conversation panel: Artefacts, Tools and Agents as three collapsible sections with counts, in their own template, script and style (`_sidecar.html`, `sidecar.js`, `sidecar.css`). Artefacts is open and Tools and Agents are closed when a conversation opens; a section opens while something runs in it and then stays as the user leaves it; each choice is remembered in the browser (guarded, so it works when storage throws); the panel opens by itself the first time an artefact appears in a conversation; its button shows a dot for new items; at phone width it is a full-screen overlay. Section headers are buttons inside headings with `aria-expanded`, and toggling keeps the focus. The tool and agent rendering, events and resize are unchanged (the panel no longer opens itself when a tool starts; the button's dot says so).
+- **The artefacts list.** `GET /artefacts/api/<conversation>` answers the panel's three groups: generated or retrieved (documents SPARK created, documents fetched for preview, charts and diagrams), provided (files attached in the conversation, each labelled with who attached it in a shared conversation) and project resources by level, each with its title, file name, type, size, time and the message that produced it, through the conversation's access decision: every member sees the same list, a removed member is refused at once. An item opens in the preview pane, a project resource included (`/preview/api` opens the resources a conversation inherits), and the conversation scrolls to and marks its message. New artefacts and renames reach every viewer through the live updates (`artefacts_changed`).
+- **Renaming an artefact.** `PATCH /artefacts/api/<file>` renames a file of a conversation for its owner or a Contributor (Read-only is refused, a stranger gets 404); the title is checked and neutralised, the change is audited (`spark.artefact.renamed`) and the new title shows for everyone viewing the conversation.
+
 ## [0.3.0rc60] - 2026-11-26
 
 ### Added

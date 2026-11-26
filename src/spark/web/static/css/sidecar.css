@@ -1,0 +1,186 @@
+/* The conversation's right-hand panel (PC2 to PC5): Artefacts, Tools and Agents.
+   Colours come from the app's variables, so light and dark both work. */
+
+.sidecar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 380px;
+    min-width: 0;
+    border-left: 1px solid var(--app-border);
+    background: var(--app-bg-primary);
+}
+.sidecar[hidden] { display: none; }
+/* Beside the document preview the panel narrows, then returns when the pane closes. */
+.sidecar[data-layout="narrow"] { width: 260px !important; }
+.sidecar.sidecar-resizing { user-select: none; }
+
+.sidecar-resize {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    width: 4px;
+    cursor: col-resize;
+    background: transparent;
+}
+.sidecar-resize:hover,
+.sidecar-resize:focus-visible { background: var(--app-accent); opacity: 0.4; outline: none; }
+
+.sidecar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+    border-bottom: 1px solid var(--app-border);
+}
+.sidecar-title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+}
+.sidecar-title:focus { outline: none; }
+.sidecar-sections { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+.sidecar-section { border-bottom: 1px solid var(--app-border); }
+.sidecar-heading { margin: 0; font-size: 0.8125rem; }
+.sidecar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    background: none;
+    color: var(--app-text-primary, inherit);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+.sidecar-toggle:hover { background: var(--app-bg-secondary); }
+.sidecar-toggle:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; }
+.sidecar-label { flex: 1 1 auto; }
+.sidecar-chevron { font-size: 0.7rem; transition: transform 0.15s ease; }
+.sidecar-toggle[aria-expanded="false"] .sidecar-chevron { transform: rotate(-90deg); }
+.sidecar-count {
+    min-width: 1.5rem;
+    padding: 0.0625rem 0.4rem;
+    border-radius: 999px;
+    background: var(--app-bg-tertiary, var(--app-bg-secondary));
+    color: var(--app-text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-align: center;
+}
+.sidecar-body[hidden] { display: none; }
+.sidecar-scroll { max-height: 45vh; overflow-y: auto; }
+
+.sidecar-empty { margin: 0; padding: 0.75rem; color: var(--app-text-muted); font-size: 0.75rem; }
+#sidecar-artefacts-list { padding: 0 0.5rem 0.5rem; }
+.sidecar-group-title {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+}
+.sidecar-group-count { font-weight: 400; }
+.sidecar-items { margin: 0; padding: 0; list-style: none; }
+.sidecar-item {
+    display: flex;
+    align-items: stretch;
+    gap: 0.25rem;
+    margin-bottom: 0.25rem;
+    border: 1px solid var(--app-border);
+    border-radius: 0.5rem;
+    background: var(--app-bg-secondary);
+}
+.sidecar-open {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.sidecar-open:hover { color: var(--app-accent); }
+.sidecar-open:focus-visible,
+.sidecar-rename:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; }
+.sidecar-open > .bi { margin-top: 0.125rem; font-size: 1rem; color: var(--app-accent); }
+.sidecar-item-text { display: flex; flex-direction: column; min-width: 0; }
+.sidecar-item-title {
+    overflow: hidden;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sidecar-item-detail,
+.sidecar-item-when {
+    overflow: hidden;
+    font-size: 0.6875rem;
+    color: var(--app-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sidecar-rename { align-self: center; flex-shrink: 0; color: var(--app-text-muted); }
+.sidecar-rename-form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.4rem 0.5rem;
+}
+.sidecar-rename-form input { flex: 1 1 8rem; min-width: 0; }
+.sidecar-rename-error { flex-basis: 100%; font-size: 0.75rem; color: var(--app-danger); }
+
+/* The message an item came from, after it is opened. */
+.sidecar-origin { animation: sidecar-origin 2.4s ease-out; }
+@keyframes sidecar-origin {
+    0%, 60% { background: color-mix(in srgb, var(--app-accent) 18%, transparent); }
+    100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sidecar-origin { animation: none; outline: 2px solid var(--app-accent); outline-offset: 2px; }
+    .sidecar-chevron { transition: none; }
+}
+
+/* The toolbar button's dot for new items. */
+#btn-tool-panel { position: relative; }
+.sidecar-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--app-accent);
+    box-shadow: 0 0 0 2px var(--app-bg-primary);
+}
+.sidecar-dot[hidden] { display: none; }
+
+/* Phone width: a full-screen overlay. */
+@media (max-width: 767.98px) {
+    .sidecar {
+        position: fixed;
+        inset: 0;
+        z-index: 1055;
+        width: 100% !important;
+        border-left: 0;
+    }
+    .sidecar-resize { display: none; }
+    .sidecar-scroll { max-height: none; }
+    .sidecar-toggle { padding: 0.75rem; }
+}

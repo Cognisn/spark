@@ -223,7 +223,14 @@
             if (typeof scrollToBottom === 'function') scrollToBottom();
             return;
         }
+        if (kind === 'artefacts_changed') {
+            // Someone renamed an artefact: the panel asks for its list again.
+            if (window.SparkSidecar) SparkSidecar.refresh();
+            return;
+        }
         if (kind === 'tool') {
+            // A tool that ended may have made an artefact, whoever's turn it is.
+            if (data.phase === 'end' && window.SparkSidecar) SparkSidecar.refresh();
             if (isMine(data) || !state.turn || state.turn.user_guid === state.me) return;
             // A document shown in another member's turn opens in this viewer's pane too.
             if (data.phase === 'end' && data.card && window.SparkPreview) {
@@ -276,7 +283,7 @@
     function watch() {
         if (!state.enabled || state.watch || !window.EventSource) return;
         const source = new EventSource(`/stream/conversation?conversation_id=${state.conversationId}`);
-        ['ready', 'turn_started', 'delta', 'tool', 'turn_finished', 'members_changed', 'member_removed', 'removed', 'deleted']
+        ['ready', 'turn_started', 'delta', 'tool', 'turn_finished', 'artefacts_changed', 'members_changed', 'member_removed', 'removed', 'deleted']
             .forEach(kind => source.addEventListener(kind, e => {
                 let data = {};
                 try { data = JSON.parse(e.data || '{}'); } catch (err) { data = {}; }
