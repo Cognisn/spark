@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc58] - 2026-11-26
+
 ### Changed
 
 - **Every create tool takes a title and returns the new file's id (PC5).** `create_word`, `create_excel`, `create_powerpoint` and `create_pdf` now require a short title, store it with the file (kind `document`) and set it as the document's title metadata, and answer with the title and the file id. In personal mode the document is still written to the allowed folder, and a copy is kept in the personal file area so it has an id. A document shown with `show_document` keeps its title on the stored file.
