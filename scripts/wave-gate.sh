@@ -114,7 +114,10 @@ mypy_strict() {
         src/spark/knowledge/jobs.py src/spark/knowledge/build_jobs.py \
         src/spark/web/endpoints/knowledge.py \
         src/spark/mcp_integration src/spark/web/endpoints/mcp_servers.py \
-        src/spark/settings_values.py src/spark/bootstrap
+        src/spark/settings_values.py src/spark/bootstrap \
+        src/spark/charts src/spark/projects src/spark/preview \
+        src/spark/tools/charts.py src/spark/tools/diagrams.py \
+        src/spark/web/endpoints/charts.py src/spark/web/endpoints/projects.py
 }
 
 postgres_suites() {
