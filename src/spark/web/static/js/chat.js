@@ -16,6 +16,25 @@ function _isCardTool(name) {
     return name === PREVIEW_TOOL || ARTEFACT_TOOLS.has(name);
 }
 
+// Project tools (PC17, PC18): their results carry a project card, drawn by
+// project_cards.js, loaded the first time a card appears.
+const PROJECT_TOOLS = new Set(['create_project', 'suggest_project', 'update_project', 'move_conversation_to_project']);
+function _projectCard(text) {
+    const container = document.getElementById('chat-messages');
+    if (!container || String(text || '').indexOf('[spark-project-card]') === -1) return;
+    const slot = document.createElement('div');
+    slot.className = 'chat-message-wrapper assistant project-card-wrapper';
+    container.appendChild(slot);
+    const draw = () => window.SparkProjectCards && SparkProjectCards.fill(slot, text);
+    if (window.SparkProjectCards) return draw();
+    let script = document.getElementById('project-cards-js');
+    if (!script) {
+        script = Object.assign(document.createElement('script'), { id: 'project-cards-js', src: '/static/js/project_cards.js' });
+        document.head.appendChild(script);
+    }
+    script.addEventListener('load', draw);
+}
+
 // Draw a card: a chart or diagram in the message (charts.js), else a document card.
 function _drawCard(card) {
     if (window.SparkCharts && SparkCharts.isArtefact(card)) return SparkCharts.appendCard(card);
@@ -192,6 +211,7 @@ function _appendMessage(msg) {
                 }
                 blocks.forEach(b => {
                     if (b && b.type === 'tool_use' && _isCardTool(b.name) && b.id) _previewToolUses.add(b.id);
+                    if (b && b.type === 'tool_use' && PROJECT_TOOLS.has(b.name) && b.id) _previewToolUses.add(b.id);
                 });
 
                 // Check there's at least one meaningful block
@@ -243,6 +263,7 @@ function _toolResultText(block) {
 // The cards of the show_document, create_chart and create_diagram calls whose results
 // these blocks carry.
 function appendPreviewCards(blocks) {
+    blocks.forEach(b => { if (b && !b.is_error && _previewToolUses.has(b.tool_use_id)) _projectCard(_toolResultText(b)); });
     if (!window.SparkPreview) return;
     blocks.forEach(block => {
         if (!block || block.is_error || !_previewToolUses.has(block.tool_use_id)) return;
@@ -856,6 +877,8 @@ function updateStreamingToolComplete(toolUseId, toolName, result, status, inspec
             scrollToBottom();
         }
     }
+    // A project card: a suggestion, an update or a move waiting for the user.
+    if (PROJECT_TOOLS.has(toolName) && status !== 'error') { _projectCard(result); scrollToBottom(); }
     // A chart or diagram made: drawn in the conversation.
     if (ARTEFACT_TOOLS.has(toolName) && status !== 'error' && window.SparkPreview) {
         const card = SparkPreview.parse(result);

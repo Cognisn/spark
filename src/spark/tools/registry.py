@@ -94,6 +94,12 @@ TOOL_CATEGORIES: Mapping[str, tuple[str, ...]] = {
     "knowledge": ("query_knowledge_graph",),
     "core": ("get_current_datetime", "get_tool_documentation"),
     "agents": ("spawn_agent", "list_provider_models"),
+    "projects": (
+        "create_project",
+        "suggest_project",
+        "update_project",
+        "move_conversation_to_project",
+    ),
 }
 
 # Categories that act on the machine Spark runs on (its shell, its disks, its
@@ -477,6 +483,12 @@ def get_builtin_tools(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     tools.extend(mem_tools)
 
+    # Projects: create, suggest, update and move through cards (PC17, PC18); they act
+    # only in a conversation turn, for its sender
+    from spark.tools.projects import get_tools as project_tools
+
+    tools.extend(project_tools())
+
     permissions = tool_permissions(config)
     return [t for t in tools if is_tool_available(t["name"], permissions=permissions)]
 
@@ -561,6 +573,12 @@ def execute_builtin_tool(
             from spark.tools.diagrams import execute as diagram_execute
 
             return diagram_execute(tool_input, config)
+
+        # Projects: created on the user's request, otherwise cards the user confirms
+        if tool_name in TOOL_CATEGORIES["projects"]:
+            from spark.tools.projects import execute as projects_execute
+
+            return projects_execute(tool_name, tool_input, config)
 
         # Documents (create)
         doc_create_tools = {

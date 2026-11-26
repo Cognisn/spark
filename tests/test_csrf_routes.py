@@ -48,6 +48,7 @@ ROUTERS_WITH_STATE_CHANGES = {
     "panel",
     "password_feedback",
     "password_policies",
+    "project_cards",
     "projects",
     "settings",
     "skills",
