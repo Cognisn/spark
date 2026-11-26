@@ -2,7 +2,7 @@
 ``conversations.project_id``.
 
 Revision ID: projects
-Revises: conversation_sharing
+Revises: artefact_titles
 
 A project belongs to the user ``projects.user_guid`` names. A sub-project names its
 ``parent_id``; every project of one tree carries the id of its top-level project in
@@ -28,7 +28,7 @@ from __future__ import annotations
 from alembic import op
 
 revision = "projects"
-down_revision = "conversation_sharing"
+down_revision = "artefact_titles"
 branch_labels = None
 depends_on = None
 

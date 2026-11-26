@@ -14,11 +14,11 @@ from spark.db import migrate
 from spark.mode import DatabaseSettings, Dialect
 
 REVISION = "projects"
-PREVIOUS = "conversation_sharing"
+PREVIOUS = "artefact_titles"
 TABLES = {"projects", "project_members", "project_resources", "project_notices"}
 
 
-def test_revision_follows_conversation_sharing() -> None:
+def test_revision_follows_artefact_titles() -> None:
     script = migrate._scripts().get_revision(REVISION)
     assert script is not None
     assert script.down_revision == PREVIOUS
