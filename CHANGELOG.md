@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Built-in skills for charts, diagrams and projects (PC21, PC5).** Spark now carries three skills of its own, bundled read-only in `src/spark/resources/skills/` and available in both modes to every user: `charts` (when a chart helps, choosing among the twelve types, the whole definition with a worked example for each type as its own reference file, reading data from conversation files, limits, titles and captions, and the title guidance for `create_word`, `create_excel`, `create_powerpoint` and `create_pdf`), `mermaid-diagrams` (the diagram types, common syntax mistakes, when to draw a diagram rather than a chart, `create_diagram`) and `projects` (when to suggest a project, drafting its name, description and instructions, when to create directly and when to suggest, how update and move cards work, and never pressing a suggestion after Dismiss). Titles are taught as short and specific, with no file extension and never "Untitled". A built-in skill cannot be edited or deleted and always wins its name.
+- **An administrator switch for each built-in skill.** The instance setting `skills.disabled_builtin` (a list of names, empty by default) switches built-in skills off for every user: a switched-off skill is not offered to the model, whatever a user chose. Administrators set it with the Instance switch on the skills page (server mode: administrators only, stored in the database and audited; personal mode: `config.yaml`). `GET /skills/api/list` now also answers `instance_enabled` for each skill, `can_switch_builtin`, `server`, `setting` and `switched_off`.
+- **A coverage test for the skills.** It reads the chart schema and the parameters of `create_chart`, `create_diagram`, the four document tools and the four project tools, and fails when a chart type, definition field, encoding, option, limit or tool parameter is not named in the matching skill; every JSON example in the chart skill must also be accepted by the chart definition's own checks.
+
 ## [0.3.0rc64] - 2026-11-27
 
 ### Added

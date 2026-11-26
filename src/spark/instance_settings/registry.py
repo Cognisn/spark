@@ -319,6 +319,8 @@ _SPECS: tuple[SettingSpec, ...] = (
     _ratio("conversation.rollup_summary_ratio", 0.3),
     _ratio("conversation.emergency_rollup_threshold", 0.95),
     _toggle("conversation.prompt_caching", default=True),
+    # Built-in skills the administrator has switched off for every user (PC21)
+    SettingSpec("skills.disabled_builtin", Kind.STR_LIST, _I, []),
     _int_spec("conversation.max_tool_iterations", 25, 1),
     _int_spec("conversation.max_tool_result_tokens", 4000, 1),
     # Agents and actions (administrator)
