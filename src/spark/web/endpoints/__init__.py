@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from spark.web.endpoints.account import router as account_router
 from spark.web.endpoints.actions import router as actions_router
 from spark.web.endpoints.administration import router as administration_router
+from spark.web.endpoints.artefacts import router as artefacts_router
 from spark.web.endpoints.audit import router as audit_router
 from spark.web.endpoints.auth import router as auth_router
 from spark.web.endpoints.bundles import router as bundles_router
@@ -69,6 +70,7 @@ def register_routes(app: FastAPI) -> None:
     preview_sources.bind(lambda: getattr(app.state, "mcp_manager", None))
     # Charts and diagrams: the option SPARK builds, through the conversation's access.
     app.include_router(charts_router)
+    app.include_router(artefacts_router)
     # The project tools' cards: read, accept and turn down (PC17, PC18).
     app.include_router(project_cards_router)
     app.include_router(skills_router)

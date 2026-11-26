@@ -121,6 +121,7 @@ __all__ = [
     "PROJECT_CARD_DISMISSED",
     "PROJECT_CREATED_BY_TOOL",
     "PROJECT_UPDATED_BY_TOOL",
+    "ARTEFACT_RENAMED",
 ]
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,7 @@ PROJECT_CARD_ACCEPTED: Final = "spark.project.card_accepted"
 PROJECT_CARD_DISMISSED: Final = "spark.project.card_dismissed"
 PROJECT_CREATED_BY_TOOL: Final = "spark.project.created_by_tool"
 PROJECT_UPDATED_BY_TOOL: Final = "spark.project.updated_by_tool"
+ARTEFACT_RENAMED: Final = "spark.artefact.renamed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +273,7 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     PROJECT_UPDATED_BY_TOOL: ActionDef(
         Severity.INFO, "the project tool changed project {resource_id} for {actor}"
     ),
+    ARTEFACT_RENAMED: ActionDef(Severity.INFO, "{actor} renamed artefact {resource_id}"),
 }
 
 

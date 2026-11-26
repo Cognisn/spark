@@ -129,8 +129,10 @@ async function loadChatHistory(conversationId) {
 
         // Load tool activity into the sidecar panel from the database
         await loadToolActivity(conversationId);
-        // Load agent run history into the agents tab
+        // Load agent run history into the Agents section
         await loadAgentHistory(conversationId);
+        // The panel's artefacts: the history may have added some (another member's turn)
+        if (window.SparkSidecar) SparkSidecar.refresh();
     } catch (err) {
         container.innerHTML = `<div class="alert-app alert-app-danger">Failed to load history.</div>`;
     }
@@ -175,10 +177,16 @@ let _renderingMsg = null;
 
 function appendMessage(msg) {
     _renderingMsg = msg;
+    const container = document.getElementById('chat-messages');
+    const before = container ? container.children.length : 0;
     try {
         _appendMessage(msg);
     } finally {
         _renderingMsg = null;
+        // Mark what the message drew, so the panel can scroll to the message an artefact came from
+        if (container && msg && msg.id !== undefined && msg.id !== null) {
+            for (let i = before; i < container.children.length; i++) container.children[i].dataset.messageId = String(msg.id);
+        }
     }
 }
 
@@ -569,24 +577,7 @@ function updateToolPanelItem(itemId, status, result, inspection) {
 }
 
 function _updateToolPanelBadge() {
-    const badge = document.getElementById('tool-panel-badge');
-    const total = document.getElementById('tool-panel-total');
-    if (badge) {
-        if (_toolPanelCount > 0) {
-            badge.textContent = _toolPanelCount;
-            badge.style.display = '';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
-    if (total) total.textContent = _toolPanelCount;
-}
-
-function toggleToolPanel() {
-    const panel = document.getElementById('tool-panel');
-    const isOpen = panel.style.display === 'flex';
-    panel.style.display = isOpen ? 'none' : 'flex';
-    sessionStorage.setItem('spark-tool-panel', isOpen ? 'closed' : 'open');
+    if (window.SparkSidecar) SparkSidecar.setCount('tools', _toolPanelCount);
 }
 
 function clearToolPanel() {
@@ -626,7 +617,7 @@ function appendToolInlineIndicator(count, statuses) {
 
     const div = document.createElement('div');
     div.className = 'tool-inline-indicator';
-    div.onclick = () => { if (document.getElementById('tool-panel').style.display !== 'flex') toggleToolPanel(); };
+    div.onclick = () => { if (window.SparkSidecar) SparkSidecar.reveal('tools'); };
     div.innerHTML = `
         <i class="bi bi-tools" style="font-size: 0.75rem;"></i>
         <span>Used ${count} tool${count !== 1 ? 's' : ''}</span>
@@ -852,9 +843,9 @@ function appendStreamingToolStart(toolName, params, toolUseId) {
     _streamingToolCount++;
     _streamingToolStatuses.push('running');
 
-    // Auto-open panel if closed (a document shown opens the preview pane instead)
-    const panel = document.getElementById('tool-panel');
-    if (panel.style.display !== 'flex' && toolName !== PREVIEW_TOOL) toggleToolPanel();
+    // The Tools section expands while a tool runs, and the panel's button shows a dot
+    // (a document shown opens the preview pane instead)
+    if (toolName !== PREVIEW_TOOL && window.SparkSidecar) SparkSidecar.running('tools');
 
     // Add to sidecar panel
     const panelItemId = _addToolPanelItem(toolName, params, 'running', null, null);
@@ -866,6 +857,8 @@ function updateStreamingToolComplete(toolUseId, toolName, result, status, inspec
     if (panelItemId) {
         updateToolPanelItem(panelItemId, status, result, inspection);
     }
+    // A tool may have made a document, chart or diagram: ask the panel for its artefacts
+    if (window.SparkSidecar) SparkSidecar.refresh();
     // Update status tracking
     const idx = _streamingToolStatuses.indexOf('running');
     if (idx !== -1) _streamingToolStatuses[idx] = status;
@@ -1138,39 +1131,8 @@ function _updateAgentDateGroupCount(groupId) {
     if (countEl) countEl.textContent = `(${count} run${count !== 1 ? 's' : ''})`;
 }
 
-function switchSidecarTab(tab) {
-    const toolsTab = document.getElementById('sidecar-tab-tools');
-    const agentsTab = document.getElementById('sidecar-tab-agents');
-    const toolsBody = document.getElementById('tool-panel-body');
-    const agentsBody = document.getElementById('agent-panel-body');
-
-    if (tab === 'tools') {
-        toolsTab.style.color = 'var(--app-accent)';
-        toolsTab.style.borderBottom = '2px solid var(--app-accent)';
-        agentsTab.style.color = 'var(--app-text-muted)';
-        agentsTab.style.borderBottom = '2px solid transparent';
-        toolsBody.style.display = '';
-        agentsBody.style.display = 'none';
-    } else {
-        agentsTab.style.color = 'var(--app-accent)';
-        agentsTab.style.borderBottom = '2px solid var(--app-accent)';
-        toolsTab.style.color = 'var(--app-text-muted)';
-        toolsTab.style.borderBottom = '2px solid transparent';
-        agentsBody.style.display = '';
-        toolsBody.style.display = 'none';
-    }
-}
-
 function _updateAgentPanelBadge() {
-    const badge = document.getElementById('agent-panel-badge');
-    if (badge) {
-        if (_agentPanelCount > 0) {
-            badge.textContent = _agentPanelCount;
-            badge.style.display = '';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
+    if (window.SparkSidecar) SparkSidecar.setCount('agents', _agentPanelCount);
 }
 
 function _addAgentPanelItem(agentName, agentId, task, status, resultText, toolCallsJson, timestamp, inputTokens, outputTokens, modelId) {
@@ -1275,10 +1237,8 @@ function toggleAgentPanelItem(itemId) {
 }
 
 function appendStreamingAgentStart(agentName, agentId, task, modelId) {
-    // Switch to agents tab and auto-open panel
-    switchSidecarTab('agents');
-    const panel = document.getElementById('tool-panel');
-    if (panel.style.display !== 'flex') toggleToolPanel();
+    // The Agents section expands while an agent runs, and the panel's button shows a dot
+    if (window.SparkSidecar) SparkSidecar.running('agents');
 
     _addAgentPanelItem(agentName, agentId, task, 'running', null, null, null, 0, 0);
 }
@@ -1381,10 +1341,6 @@ async function loadAgentHistory(conversationId) {
         const empty = document.getElementById('agent-panel-empty');
         if (empty) empty.style.display = 'none';
 
-        // Update badge
-        const badge = document.getElementById('agent-panel-badge');
-        if (badge) { badge.textContent = runs.length; badge.style.display = ''; }
-
         runs.reverse(); // Oldest first
 
         // Group runs by date
@@ -1408,41 +1364,4 @@ async function loadAgentHistory(conversationId) {
             });
         });
     } catch (err) { /* Non-critical */ }
-}
-
-
-/* ==========================================================================
-   8. Sidecar Resize
-   ========================================================================== */
-
-let _sidecarResizing = false;
-let _sidecarStartX = 0;
-let _sidecarStartWidth = 0;
-
-function startSidecarResize(event) {
-    _sidecarResizing = true;
-    _sidecarStartX = event.clientX;
-    const panel = document.getElementById('tool-panel');
-    _sidecarStartWidth = panel.offsetWidth;
-    document.addEventListener('mousemove', doSidecarResize);
-    document.addEventListener('mouseup', stopSidecarResize);
-    event.preventDefault();
-}
-
-function doSidecarResize(event) {
-    if (!_sidecarResizing) return;
-    const panel = document.getElementById('tool-panel');
-    // Dragging left = wider, dragging right = narrower
-    const diff = _sidecarStartX - event.clientX;
-    const newWidth = Math.max(250, Math.min(800, _sidecarStartWidth + diff));
-    panel.style.width = newWidth + 'px';
-}
-
-function stopSidecarResize() {
-    _sidecarResizing = false;
-    document.removeEventListener('mousemove', doSidecarResize);
-    document.removeEventListener('mouseup', stopSidecarResize);
-    // Save width preference
-    const panel = document.getElementById('tool-panel');
-    sessionStorage.setItem('spark-sidecar-width', panel.style.width);
 }
