@@ -86,11 +86,19 @@ async def members(db: Executor, user_guid: str, conversation_id: int) -> list[Ro
 
 
 async def is_shared(db: Executor, user_guid: str, conversation_id: int) -> bool:
-    """Whether a conversation the user may read has anyone besides its owner."""
+    """Whether a conversation the user may read has anyone besides its owner: a member,
+    or someone who sees it through its project (the project's owner when someone else
+    started it, or a member of the project with the scope ``all_conversations``)."""
     found = await db.fetch_value(
-        f"""SELECT 1 FROM conversation_members
-            WHERE conversation_id = ? AND role <> 'owner'
-            AND conversation_id IN ({READABLE_CONVERSATIONS})""",
+        f"""SELECT 1 FROM conversations c WHERE c.id = ?
+            AND c.id IN ({READABLE_CONVERSATIONS})
+            AND (EXISTS (SELECT 1 FROM conversation_members cm
+                    WHERE cm.conversation_id = c.id AND cm.role <> 'owner')
+                OR EXISTS (SELECT 1 FROM projects p WHERE p.id = c.project_id
+                    AND p.user_guid <> c.user_guid)
+                OR EXISTS (SELECT 1 FROM projects p
+                    JOIN project_members pm ON pm.project_id = p.root_id
+                    WHERE p.id = c.project_id AND pm.scope = 'all_conversations'))""",
         (conversation_id, user_guid),
     )
     return found is not None
@@ -114,6 +122,7 @@ async def share(
         )
         if user_guid == owner:
             raise ValueError("the owner already has the conversation")
+        await _within_project(conn, conversation_id, user_guid)
         previous = await conn.fetch_value(
             "SELECT role FROM conversation_members WHERE conversation_id = ? AND user_guid = ?",
             (conversation_id, user_guid),
@@ -133,6 +142,29 @@ async def share(
             (role.value, conversation_id, user_guid),
         )
         return MemberChange("changed", Role(previous))
+
+
+OUTSIDE_PROJECT = (
+    "This conversation is in a project: share it only with people who have access to "
+    "the project."
+)
+
+
+async def _within_project(conn: Executor, conversation_id: int, user_guid: str) -> None:
+    """The share limit (PC9): a conversation in a project is shared, or transferred, only
+    to the project's owner or a member of its tree. Raises ``ValueError`` otherwise."""
+    allowed = await conn.fetch_value(
+        """SELECT CASE WHEN c.project_id IS NULL THEN 1
+                WHEN p.user_guid = ? THEN 1
+                WHEN EXISTS (SELECT 1 FROM project_members pm
+                    WHERE pm.project_id = p.root_id AND pm.user_guid = ?) THEN 1
+                ELSE 0 END
+            FROM conversations c LEFT JOIN projects p ON p.id = c.project_id
+            WHERE c.id = ?""",
+        (user_guid, user_guid, conversation_id),
+    )
+    if not allowed:
+        raise ValueError(OUTSIDE_PROJECT)
 
 
 async def remove_member(
@@ -196,6 +228,7 @@ async def transfer(db: Executor, actor_guid: str, conversation_id: int, new_owne
         await require_access(conn, actor_guid, conversation_id, Capability.MANAGE)
         if new_owner == actor_guid or not new_owner:
             raise ValueError("transfer to someone else")
+        await _within_project(conn, conversation_id, new_owner)
         now = _now()
         held = await conn.fetch_value(
             "SELECT role FROM conversation_members WHERE conversation_id = ? AND user_guid = ?",

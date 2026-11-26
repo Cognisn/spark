@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Projects (rulings PC6 to PC15).** A project has a name, a description, instructions and resources, and holds conversations and sub-projects up to five levels deep (deeper is refused with a message). A conversation in a project receives, in its system prompt after the global instructions and before its own, the instructions of every level from the top-level project down, each labelled with its level and project name, with the rule that a deeper level refines or overrides a higher one; its inherited resources are listed by name, id, type and size, and `read_my_file` and `list_my_files` read and list them by level (another project's resource is not found). Resources live in the project owner's file area and count against the owner's quota whoever uploads them. Moves need ownership of the conversation and the destination, go between projects only through no project, and report who would gain or lose sight of the conversation before they are confirmed. Deleting keeps the conversations (moved up, or out to no project) or deletes everything, with a preview of what is affected; starters whose conversations are deleted are told in Spark and by email. Personal mode has all of this except sharing. The JSON API is under `/projects/api`; `POST /conversations/api/create` takes `project_id`. See `docs/projects.md`.
+- **Project sharing (server mode).** Only top-level projects are shared, per person, as Contributor or Read-only, with the scope "project only" or "project and all conversations"; the latter shows every conversation in the project, now and later, at the person's role, and narrowing it returns conversations to private at once (individual shares stay). The project's owner sees every conversation in the project as a Contributor. A conversation in a project can be shared or transferred only to people with access to the project. Transfer gives a member the project, its resources and their storage usage (refused over the new owner's quota); the old owner stays a Contributor. Every change is audited (`spark.project.*`).
+- **User bundle format version 2.** Bundles carry projects: the tree, descriptions, instructions, resources and where each conversation sits. A personal export imports into a server account owned by the target user and shared with nobody, and the import report lists the projects. Version 1 bundles still import.
+
 ## [0.3.0rc58] - 2026-11-26
 
 ### Changed

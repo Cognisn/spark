@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from spark.database import conversation_members, conversations, user_identities
 from spark.database.scope import Capability, NotOwned, NotPermitted, Role
 from spark.identity.access import current_identity, current_user_guid
+from spark.projects.access import ProjectNeed, ProjectRefused, require_project
 from spark.web.db import database
 from spark.web.models import not_offered
 from spark.web.scope import (
@@ -185,6 +186,26 @@ async def create_conversation(request: Request) -> JSONResponse:
                 "is_human": True,
             }
 
+    # A standard conversation may start in a project (owner or Contributor; PC10), checked
+    # before anything is created.
+    project_id = data.get("project_id")
+    if project_id not in (None, ""):
+        if conversation_type != "standard":
+            return JSONResponse(
+                {"error": "Debates and panels are not placed in projects."}, status_code=400
+            )
+        if isinstance(project_id, bool) or not str(project_id).strip().isdigit():
+            return JSONResponse({"error": "project_id must be a project id."}, status_code=400)
+        project_id = int(str(project_id).strip())
+        try:
+            await require_project(database(request), user_guid, project_id, ProjectNeed.CONTRIBUTE)
+        except NotPermitted:
+            return forbidden("Your role in this project does not allow starting conversations.")
+        except NotOwned:
+            return not_found("Project not found")
+    else:
+        project_id = None
+
     # Every model chosen here, the debate's and panel's agents included, must be offered.
     chosen: list[object] = [model_id]
     if debate is not None:
@@ -203,6 +224,15 @@ async def create_conversation(request: Request) -> JSONResponse:
             instructions=instructions,
             web_search_enabled=web_search,
         )
+        if project_id is not None:
+            from spark.database import projects as projects_db
+
+            try:
+                await projects_db.place_conversation(database(request), user_guid, cid, project_id)
+            except (NotOwned, ProjectRefused) as refused:
+                # Access changed in between: the empty conversation goes again.
+                await conversations.delete_conversation(database(request), cid, user_guid)
+                return JSONResponse({"error": str(refused)}, status_code=400)
         if conversation_type == "debate" and debate is not None:
             from spark.database import debates
 
@@ -235,7 +265,14 @@ async def create_conversation(request: Request) -> JSONResponse:
             await conversations.update_conversation(
                 database(request), cid, user_guid, kg_local_enabled=1
             )
-        return JSONResponse({"id": cid, "name": name, "conversation_type": conversation_type})
+        return JSONResponse(
+            {
+                "id": cid,
+                "name": name,
+                "conversation_type": conversation_type,
+                "project_id": project_id,
+            }
+        )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 

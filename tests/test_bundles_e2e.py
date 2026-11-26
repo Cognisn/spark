@@ -56,7 +56,7 @@ async def test_sqlite_export_imported_into_postgresql_row_for_row(
     assert {k: v for k, v in compared.items() if v} == {
         k: v for k, v in report.imported.items() if k != "preferences"
     }
-    assert sum(compared.values()) == 36
+    assert sum(compared.values()) == 39  # 36, and two projects and a resource (version 2)
     assert vectors == 3
     for row in await spark_db.fetch_all(
         "SELECT storage_key, filename FROM user_files WHERE user_guid = ? AND storage_key LIKE ?",

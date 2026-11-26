@@ -846,6 +846,7 @@ class ConversationManager:
             kg_block=kg_block,
             attachments_line=attachments_line,
             shared=shared,
+            project_block=self._project_block(conversation_id, user_guid),
         )
         system = self._with_skills(base_system, skills)
         logger.debug(
@@ -1364,6 +1365,19 @@ class ConversationManager:
             return "\n".join(parts) + "\n"
         return ""
 
+    def _project_block(self, conversation_id: int, user_guid: str) -> str:
+        """The project context of a conversation in a project, read afresh every turn (a
+        moved conversation takes its new level's from its next turn), or "". A failure is
+        logged and the turn goes on without it."""
+        from spark.projects import prompt as project_prompt
+
+        try:
+            context = self._db.call(project_prompt.conversation_context, user_guid, conversation_id)
+        except Exception:  # noqa: BLE001 - a project's context never breaks a turn
+            logger.warning("Project context unavailable", exc_info=True)
+            return ""
+        return context.render() if context is not None else ""
+
     def _build_system_instructions(
         self,
         conv: dict,
@@ -1373,11 +1387,14 @@ class ConversationManager:
         kg_block: str = "",
         attachments_line: str = "",
         shared: bool = False,
+        project_block: str = "",
     ) -> str:
         """Assemble system instructions from all sources.
 
         A ``shared`` conversation is read by several people: the instructions say so, and
-        leave the memory tools out (none are offered).
+        leave the memory tools out (none are offered). ``project_block`` is the project
+        context of a conversation in a project (:meth:`_project_block`): it follows the
+        global instructions and comes before the conversation's own (PC7, PC8).
         """
         parts: list[str] = []
 
@@ -1423,7 +1440,11 @@ class ConversationManager:
         if self._global_instructions:
             parts.append(self._global_instructions)
 
-        # 3. Conversation-specific instructions
+        # 2a. The project path's instructions and resources, top level first
+        if project_block:
+            parts.append(project_block)
+
+        # 3. Conversation-specific instructions (after the project's: they come last)
         conv_instructions = conv.get("instructions")
         if conv_instructions:
             parts.append(conv_instructions)

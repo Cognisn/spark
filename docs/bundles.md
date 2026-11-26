@@ -44,7 +44,7 @@ migration is not offered.
   the tray daemon's registry.
 - Any other user's data, and the user's own guid.
 
-## The format, version 1
+## The format, version 2
 
 A bundle is one zip archive:
 
@@ -61,7 +61,7 @@ preferences.json           the user's preferences
 | Field | Meaning |
 |---|---|
 | `format` | always `spark-user-bundle` |
-| `format_version` | `1`; an import refuses any other version |
+| `format_version` | `2` for a bundle this Spark writes; an import reads `1` and `2` and refuses any other |
 | `bundle_id` | 32 hexadecimal characters, random, one per export |
 | `created_at`, `spark_version`, `source_mode` | when, by which Spark, in which mode (`personal`) |
 | `counts` | rows per table |
@@ -72,6 +72,21 @@ Rows carry only the columns Spark lists for their table (`spark.bundles.format.T
 and never a `user_guid`. Ids are the exporting database's; references between rows use
 them. A binary value (an embedding) is written as `{"$hex": "..."}`. A `user_files`
 row names its content with `blob`, the sha256 of `files/<sha256>`.
+
+### What version 2 adds
+
+Version 2 carries the user's projects (see [Projects](projects.md)):
+
+- `data/projects.jsonl`: each project's `id`, `parent_id` (none for a top-level
+  project), `name`, `description`, `instructions`, `created_at` and `updated_at`;
+- `data/project_resources.jsonl`: which file of the bundle (`file_id`, a `user_files`
+  id) is a resource of which project (`project_id`), and when it was added;
+- `project_id` on each conversation: the project it sits in, if any.
+
+A personal export has no members or sharing to carry, and the bundle never names who
+added a resource. Version 1 bundles have none of this and still import as before. A
+bundle that says it is version 1 but carries a project table or a conversation's
+`project_id` is refused.
 
 ## Importing (server mode)
 
@@ -115,11 +130,16 @@ through the user's file area, which contains every key again.
   user's file area under `imports/<bundle id>/.../skills/<name>/` and listed. An
   administrator can install one for everyone.
 - On PostgreSQL, imported memory and context vectors are added to their vector index.
+- Projects (version 2) arrive **owned by the user and shared with nobody**: each
+  sub-project under its imported parent, each conversation in its imported project,
+  each resource linked to its imported file (added by the user). A project that would
+  sit below the fifth level is skipped, with its sub-projects, and listed.
 
 ### The report, the receipt and importing again
 
 The report lists the rows imported per table, entities merged, actions imported
-disabled, skills kept, what was left out and why, what was skipped, and warnings. It
+disabled, skills kept, the projects imported (each by its path, such as
+`Garden > Shade bed`), what was left out and why, what was skipped, and warnings. It
 is also kept in the user's files as `imports/<bundle id>/report.json`. That receipt is
 written in the same transaction as the data, so **a bundle is imported once per
 user**: importing it again for the same user is refused and changes nothing. The same

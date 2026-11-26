@@ -1,4 +1,4 @@
-"""The user bundle format, version 1: layout, the table allow-list and the writer.
+"""The user bundle format, version 2: layout, the table allow-list and the writer.
 
 A bundle is one zip archive (see ``docs/bundles.md``)::
 
@@ -12,6 +12,13 @@ Rows carry the columns listed in :data:`TABLES` and nothing else: never a
 ``user_guid`` (an import assigns the target user) and never a column that is
 not listed. A ``bytes`` value is written as ``{"$hex": "..."}``. Ids are the
 exporting database's; an import maps them to new ids.
+
+**Versions.** Version 2 adds projects (PC15): the tables ``projects`` (the tree by
+``parent_id``, names, descriptions, instructions) and ``project_resources`` (which file
+of the bundle is a resource of which project), and ``conversations.project_id`` (where
+each conversation sits). Version 1 bundles still read and import
+(:data:`READ_VERSIONS`); a version 1 bundle carrying any of these is refused
+(:func:`columns_for`).
 """
 
 from __future__ import annotations
@@ -32,9 +39,11 @@ __all__ = [
     "FORMAT",
     "FORMAT_VERSION",
     "MANIFEST",
+    "READ_VERSIONS",
     "PREFERENCES",
     "TABLES",
     "BundleWriter",
+    "columns_for",
     "data_member",
     "decode_value",
     "encode_value",
@@ -42,14 +51,27 @@ __all__ = [
 ]
 
 FORMAT: Final = "spark-user-bundle"
-FORMAT_VERSION: Final = 1
+FORMAT_VERSION: Final = 2
+# The versions this Spark reads and imports.
+READ_VERSIONS: Final = (1, 2)
 MANIFEST: Final = "manifest.json"
 PREFERENCES: Final = "preferences.json"
 
 # Table -> the columns a bundle carries, in import order (a table after those it refers to).
 TABLES: Final[Mapping[str, tuple[str, ...]]] = {
+    # Version 2: a project tree before the conversations placed in it.
+    "projects": (
+        "id",
+        "parent_id",
+        "name",
+        "description",
+        "instructions",
+        "created_at",
+        "updated_at",
+    ),
     "conversations": (
         "id",
+        "project_id",
         "name",
         "model_id",
         "created_at",
@@ -302,7 +324,27 @@ TABLES: Final[Mapping[str, tuple[str, ...]]] = {
         "updated_at",
         "blob",
     ),
+    # Version 2: which of the bundle's files is a resource of which project.
+    "project_resources": ("id", "project_id", "file_id", "added_at"),
 }
+
+# What version 1 did not have: its tables, and its columns of older tables.
+_SINCE_2_TABLES: Final = frozenset({"projects", "project_resources"})
+_SINCE_2_COLUMNS: Final[Mapping[str, frozenset[str]]] = {
+    "conversations": frozenset({"project_id"}),
+}
+
+
+def columns_for(table: str, version: int) -> frozenset[str]:
+    """The columns a bundle of format ``version`` may carry for ``table`` (none for a
+    table that version does not have)."""
+    if version < 2 and table in _SINCE_2_TABLES:
+        return frozenset()
+    columns = frozenset(TABLES[table])
+    if version < 2:
+        columns -= _SINCE_2_COLUMNS.get(table, frozenset())
+    return columns
+
 
 SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 # One component of a path inside a skill: plain names only, never hidden, never a device.

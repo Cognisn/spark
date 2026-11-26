@@ -7,6 +7,12 @@ with these tools. Both act for the turn's user only (``_user_guid``), through
 answered exactly as an id that does not exist. Personal mode reads the
 personal area (``<data dir>/files``), whatever allowed_paths says.
 
+In a conversation in a project (PC7, PC11) both tools also reach the resources the
+conversation inherits from every level of its project path: listed by level, and read
+by id from the project owner's area, for whoever sends the turn, as long as they may read
+the conversation (:func:`spark.database.projects.resource_for_conversation`). Another
+project's resource answers as a file that does not exist.
+
 The attachment note lives here too, beside the tool it names: the send routes
 end a message with it (:mod:`spark.web.attachments`), :func:`split_note` reads
 it back (the current marker and every earlier one), and a turn that carries
@@ -155,18 +161,50 @@ def _describe(row: Row) -> str:
     return f"{row['filename']} ({mime}, {int(row['size_bytes']):,} bytes)"
 
 
+def _project_levels(user: str, db: BridgeLike, config: dict[str, Any]) -> list[Any]:
+    """The turn's conversation's project path with its resources (none outside a project,
+    or when the user may not read the conversation)."""
+    cid = config.get("_kg_conversation_id")
+    if cid is None:
+        return []
+    from spark.database import projects as projects_db
+    from spark.database.scope import NotOwned
+
+    try:
+        levels: list[Any] = db.call(projects_db.conversation_resources, user, int(cid))
+    except NotOwned:
+        return []
+    return levels
+
+
+def _project_lines(levels: Sequence[Any]) -> list[str]:
+    if not any(level.resources for level in levels):
+        return []
+    from spark.projects.prompt import neutral_name
+
+    lines = ["Project resources of this conversation (read one with read_my_file and its id):"]
+    for level in levels:
+        for row in level.resources:
+            lines.append(
+                f"- file {row['file_id']}: {_describe(row)}, from level {level.level} "
+                f'("{neutral_name(level.name)}")'
+            )
+    return lines
+
+
 def _list(user: str, db: BridgeLike, args: dict[str, Any], config: dict[str, Any]) -> str:
     rows: list[Row] = db.call(files_db.list_user_files, user)
     cid = config.get("_kg_conversation_id")
     if args.get("conversation_only") is True:
         rows = [r for r in rows if cid is not None and r["conversation_id"] == int(cid)]
-    if not rows:
+    project = _project_lines(_project_levels(user, db, config))
+    if not rows and not project:
         return (
             "You have no files."
             if not args.get("conversation_only")
             else ("No files are attached to this conversation.")
         )
-    lines = ["Your files (read one with read_my_file and its file id):"]
+    lines = ["Your files (read one with read_my_file and its file id):"] if rows else []
     for row in rows:
         here = (
             " [this conversation]" if cid is not None and row["conversation_id"] == int(cid) else ""
@@ -175,7 +213,25 @@ def _list(user: str, db: BridgeLike, args: dict[str, Any], config: dict[str, Any
             f"- file {row['id']}: {_describe(row)}, added {row['created_at']}, "
             f"key {row['storage_key']}{here}"
         )
+    if project:
+        if lines:
+            lines.append("")
+        lines.extend(project)
     return "\n".join(lines)
+
+
+def _inherited(user: str, db: BridgeLike, config: dict[str, Any], file_id: int) -> Row | None:
+    """A resource the turn's conversation inherits from its project path, as a file row of
+    the project owner's area (``user_guid`` names the owner), or None."""
+    cid = config.get("_kg_conversation_id")
+    if cid is None:
+        return None
+    from spark.database import projects as projects_db
+
+    found: Row | None = db.call(projects_db.resource_for_conversation, user, int(cid), file_id)
+    if found is None:
+        return None
+    return {**found, "id": int(found["file_id"]), "user_guid": found["owner_guid"]}
 
 
 def _read_text(area: FileArea, user: str, row: Row, args: dict[str, Any]) -> tuple[str, bool]:
@@ -202,25 +258,32 @@ def _read_text(area: FileArea, user: str, row: Row, args: dict[str, Any]) -> tup
     return f"{header}.\n\n{page}", False
 
 
-def _read(user: str, db: BridgeLike, args: dict[str, Any]) -> tuple[str, bool]:
+def _read(
+    user: str, db: BridgeLike, args: dict[str, Any], config: dict[str, Any]
+) -> tuple[str, bool]:
     file_id = _file_id(args.get("file_id"))
     if file_id is None:
         return "read_my_file needs file_id: a file id from list_my_files.", True
     not_found = f"File {file_id} was not found in your files.", True
     row: Row | None = db.call(files_db.get_user_file, user, file_id)
+    # A project resource the conversation inherits is read from its owner's area.
+    owner = user
     if row is None:
-        return not_found
+        row = _inherited(user, db, config, file_id)
+        if row is None:
+            return not_found
+        owner = str(row["user_guid"])
     area = files_pkg.file_area(db)
     key = str(row["storage_key"])
-    if not area.store.local_path(user, key).is_file():
+    if not area.store.local_path(owner, key).is_file():
         return not_found
     reader = _DOCUMENT_READERS.get(f".{key.rsplit('.', 1)[-1].lower()}" if "." in key else "")
     if reader is not None:
         from spark.tools.documents import execute as read_document
 
-        content = read_document(reader, {"path": key}, scope=ToolScope.server(area, user))
+        content = read_document(reader, {"path": key}, scope=ToolScope.server(area, owner))
         return f"File {row['id']}: {_describe(row)}.\n\n{content}", False
-    return _read_text(area, user, row, args)
+    return _read_text(area, owner, row, args)
 
 
 # -- The attachment note and the turn's attachments ---------------------------------------
@@ -306,5 +369,5 @@ def execute(tool_name: str, tool_input: dict[str, Any], config: dict[str, Any]) 
     if tool_name == "list_my_files":
         return _list(user, db, tool_input, config), False
     if tool_name == "read_my_file":
-        return _read(user, db, tool_input)
+        return _read(user, db, tool_input, config)
     return f"Unknown file tool: {tool_name}", True

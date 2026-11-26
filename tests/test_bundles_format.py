@@ -78,7 +78,7 @@ def _open(data: bytes, limits: Limits | None = None) -> Any:
 def test_round_trip_rows_blobs_skills_and_preferences() -> None:
     with _open(_bundle()) as bundle:
         assert bundle.manifest["format"] == "spark-user-bundle"
-        assert bundle.manifest["format_version"] == bf.FORMAT_VERSION == 1
+        assert bundle.manifest["format_version"] == bf.FORMAT_VERSION == 2
         assert len(bundle.manifest["bundle_id"]) == 32
         assert bundle.manifest["counts"] == {"conversations": 1, "messages": 1, "user_files": 1}
         # A column outside the allow-list (the owner) is never written.
@@ -122,7 +122,7 @@ def test_writer_refuses_an_unsafe_skill_path() -> None:
 # -- The version check --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("version", [0, 2, 99, "1", None, True])
+@pytest.mark.parametrize("version", [0, 3, 99, "1", "2", None, True])
 def test_refuses_a_format_version_it_does_not_read(version: Any) -> None:
     members = _members(_bundle())
     doc = json.loads(members[bf.MANIFEST])

@@ -18,6 +18,7 @@ Spark is a secure personal AI research kit -- a multi-provider LLM web interface
 - [Containers](container.md) -- The container image, the web and worker roles, Compose and upgrades
 - [Server Deployment](deployment/index.md) -- Running a multi-user Spark server: Compose, secrets, TLS, identity, backups and upgrades
 - [User Bundles](bundles.md) -- Exporting a personal user's data and importing it into a server
+- [Projects](projects.md) -- Projects and sub-projects: instructions, resources, sharing, moves, deletion and transfer
 
 ### Features
 

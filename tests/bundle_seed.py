@@ -46,6 +46,7 @@ class Seeded:
     memories: list[int] = field(default_factory=list)
     actions: list[int] = field(default_factory=list)
     files: dict[str, bytes] = field(default_factory=dict)
+    projects: list[int] = field(default_factory=list)
 
 
 def write_skill(skills_dir: Path, name: str = "note-taker") -> None:
@@ -65,6 +66,33 @@ def write_skill(skills_dir: Path, name: str = "note-taker") -> None:
 async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seeded:
     """Seed ``user``'s data (and other rows a bundle must leave behind)."""
     s = Seeded(user)
+    # Format version 2: a project with a sub-project, holding the garden chat.
+    garden = await ins(
+        db,
+        "projects",
+        user_guid=user,
+        depth=1,
+        name="Garden",
+        description="Everything about the garden",
+        instructions="Use metric units.",
+        created_at=WHEN,
+        updated_at=LATER,
+    )
+    await db.execute("UPDATE projects SET root_id = ? WHERE id = ?", (garden, garden))
+    shade = await ins(
+        db,
+        "projects",
+        user_guid=user,
+        parent_id=garden,
+        root_id=garden,
+        depth=2,
+        name="Shade bed",
+        description="",
+        instructions="Prefer perennials.",
+        created_at=WHEN,
+        updated_at=WHEN,
+    )
+    s.projects = [garden, shade]
     chat = await ins(
         db,
         "conversations",
@@ -79,6 +107,7 @@ async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seede
         rag_threshold=0.45,
         is_favourite=1,
         kg_local_enabled=1,
+        project_id=shade,
         user_guid=user,
     )
     debate = await ins(
@@ -460,7 +489,7 @@ async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seede
         ):
             store.put(user, key, data)
             s.files[key] = data
-            await ins(
+            file_id = await ins(
                 db,
                 "user_files",
                 user_guid=user,
@@ -473,12 +502,23 @@ async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seede
                 created_at=WHEN,
                 updated_at=WHEN,
             )
+        # The notes are a resource of the garden project.
+        await ins(
+            db,
+            "project_resources",
+            project_id=garden,
+            file_id=file_id,
+            added_by=user,
+            added_at=WHEN,
+        )
         await db.execute(
             "INSERT INTO user_file_usage (user_guid, bytes_used) VALUES (?, ?)",
             (user, sum(len(d) for d in s.files.values())),
         )
     # Rows a bundle leaves behind: another user's, usage, violations, the daemon registry.
     other = await ins(db, "conversations", name="Not yours", user_guid=OTHER_USER)
+    elsewhere = await ins(db, "projects", user_guid=OTHER_USER, depth=1, name="Not yours")
+    await db.execute("UPDATE projects SET root_id = ? WHERE id = ?", (elsewhere, elsewhere))
     await ins(
         db, "messages", conversation_id=other, role="user", content="private", user_guid=OTHER_USER
     )

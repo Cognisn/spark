@@ -29,6 +29,7 @@ from spark.web.endpoints.panel import router as panel_router
 from spark.web.endpoints.password_feedback import router as password_feedback_router
 from spark.web.endpoints.password_policies import router as password_policies_router
 from spark.web.endpoints.preview import router as preview_router
+from spark.web.endpoints.projects import router as projects_router
 from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import admin_router as settings_admin_router
 from spark.web.endpoints.settings import router as settings_router
@@ -77,3 +78,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(usage_router)
     app.include_router(connections_router)
     app.include_router(bundles_router)
+    app.include_router(projects_router)

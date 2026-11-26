@@ -105,6 +105,17 @@ __all__ = [
     "USAGE_VIEWED",
     "USAGE_BUDGET_CHANGED",
     "MAIL_TEST_SENT",
+    "PROJECT_CREATED",
+    "PROJECT_UPDATED",
+    "PROJECT_MOVED",
+    "PROJECT_MEMBER_ADDED",
+    "PROJECT_MEMBER_CHANGED",
+    "PROJECT_MEMBER_REMOVED",
+    "PROJECT_RESOURCE_ADDED",
+    "PROJECT_RESOURCE_REMOVED",
+    "PROJECT_CONVERSATION_MOVED",
+    "PROJECT_DELETED",
+    "PROJECT_TRANSFERRED",
 ]
 
 logger = logging.getLogger(__name__)
@@ -134,6 +145,17 @@ CONVERSATION_ROLE_CHANGED: Final = "spark.conversation.role_changed"
 CONVERSATION_MEMBER_REMOVED: Final = "spark.conversation.member_removed"
 CONVERSATION_TRANSFERRED: Final = "spark.conversation.transferred"
 CONVERSATION_SEND_REFUSED: Final = "spark.conversation.send_refused"
+PROJECT_CREATED: Final = "spark.project.created"
+PROJECT_UPDATED: Final = "spark.project.updated"
+PROJECT_MOVED: Final = "spark.project.moved"
+PROJECT_MEMBER_ADDED: Final = "spark.project.member_added"
+PROJECT_MEMBER_CHANGED: Final = "spark.project.member_changed"
+PROJECT_MEMBER_REMOVED: Final = "spark.project.member_removed"
+PROJECT_RESOURCE_ADDED: Final = "spark.project.resource_added"
+PROJECT_RESOURCE_REMOVED: Final = "spark.project.resource_removed"
+PROJECT_CONVERSATION_MOVED: Final = "spark.project.conversation_moved"
+PROJECT_DELETED: Final = "spark.project.deleted"
+PROJECT_TRANSFERRED: Final = "spark.project.transferred"
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +227,27 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     CONVERSATION_SEND_REFUSED: ActionDef(
         Severity.NOTICE, "a message of {actor} in conversation {resource_id} was refused"
     ),
+    PROJECT_CREATED: ActionDef(Severity.INFO, "{actor} created project {resource_id}"),
+    PROJECT_UPDATED: ActionDef(Severity.INFO, "{actor} changed project {resource_id}"),
+    PROJECT_MOVED: ActionDef(Severity.INFO, "{actor} moved project {resource_id}"),
+    PROJECT_MEMBER_ADDED: ActionDef(Severity.NOTICE, "{actor} shared project {resource_id}"),
+    PROJECT_MEMBER_CHANGED: ActionDef(
+        Severity.NOTICE, "{actor} changed a member of project {resource_id}"
+    ),
+    PROJECT_MEMBER_REMOVED: ActionDef(
+        Severity.NOTICE, "{actor} removed a person from project {resource_id}"
+    ),
+    PROJECT_RESOURCE_ADDED: ActionDef(
+        Severity.INFO, "{actor} added a resource to project {resource_id}"
+    ),
+    PROJECT_RESOURCE_REMOVED: ActionDef(
+        Severity.INFO, "{actor} removed a resource from project {resource_id}"
+    ),
+    PROJECT_CONVERSATION_MOVED: ActionDef(
+        Severity.INFO, "{actor} moved conversation {resource_id} between projects"
+    ),
+    PROJECT_DELETED: ActionDef(Severity.NOTICE, "{actor} deleted project {resource_id}"),
+    PROJECT_TRANSFERRED: ActionDef(Severity.NOTICE, "{actor} transferred project {resource_id}"),
 }
 
 
