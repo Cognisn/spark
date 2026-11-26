@@ -9,7 +9,8 @@ first locks the user's counter row, so parallel uploads cannot overrun a quota.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from spark.database.scope import (
@@ -24,6 +25,8 @@ __all__ = [
     "NewUserFile",
     "QuotaExceeded",
     "add_file",
+    "artefact_origins",
+    "artefact_titles",
     "delete_conversation_files",
     "delete_file",
     "delete_user_file",
@@ -242,6 +245,55 @@ async def list_conversation_artefacts(
             AND conversation_id IN ({READABLE_CONVERSATIONS}) ORDER BY created_at, id""",
         (conversation_id, user_guid),
     )
+
+
+# A file id named in a message: a card line's ``"file_id": 12`` (inside a tool result the
+# quotes are escaped), a created file's "kept in your files as file 12", or an attachment
+# note's "- file 12: name".
+_FILE_MENTION = re.compile(r'file_id\\*"?\s*:\s*(\d+)|\bfile (\d+)(?!\d)')
+
+
+async def artefact_origins(
+    db: Executor, user_guid: str, conversation_id: int, file_ids: Iterable[int]
+) -> dict[int, int]:
+    """The id of the first message of the conversation that names each file (the message
+    that produced or attached it), for the files that any message names.
+
+    Only messages of a conversation ``user_guid`` may read are looked at; the result has
+    no entry for a file no message names.
+    """
+    wanted = {int(i) for i in file_ids}
+    if not wanted:
+        return {}
+    rows = await db.fetch_all(
+        f"""SELECT id, content FROM messages WHERE conversation_id = ?
+            AND conversation_id IN ({READABLE_CONVERSATIONS}) AND content LIKE '%file%'
+            ORDER BY timestamp, id""",
+        (conversation_id, user_guid),
+    )
+    found: dict[int, int] = {}
+    for row in rows:
+        for match in _FILE_MENTION.finditer(str(row["content"] or "")):
+            number = int(match.group(1) or match.group(2))
+            if number in wanted and number not in found:
+                found[number] = int(row["id"])
+    return found
+
+
+async def artefact_titles(db: Executor, file_ids: Iterable[int]) -> dict[int, tuple[str, str]]:
+    """``{file id: (title, kind)}`` for the files named.
+
+    Unscoped: the caller has already decided that the person may see each file (a
+    resource a conversation inherits); it is never reachable from a request on its own.
+    """
+    ids = sorted({int(i) for i in file_ids})
+    if not ids:
+        return {}
+    marks = ", ".join("?" for _ in ids)
+    rows = await db.fetch_all(
+        f"SELECT id, title, kind FROM user_files WHERE id IN ({marks})", tuple(ids)
+    )
+    return {int(r["id"]): (str(r["title"]), str(r["kind"])) for r in rows}
 
 
 async def get_file_title(db: Executor, user_guid: str, file_id: int) -> str | None:
