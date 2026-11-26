@@ -317,6 +317,25 @@ user is offered only the skills they have turned on, globally and for the conver
   (`|` or `>`) or an empty body makes the skill invalid, with the reason shown. A skill
   written for 0.2 that uses other keys shows as invalid until it is edited.
 
+### Built-in skills
+
+Spark carries three skills of its own, so the model you have chosen knows how to use the chart, diagram and project tools. They are bundled in the package, read-only and updated with each release. They are available in personal and server mode, to every user.
+
+| Skill | What it teaches the model |
+|---|---|
+| `charts` | When a chart helps, how to choose among the twelve types, the whole chart definition with a worked example for every type, reading data from a CSV or Excel file of the conversation, limits, and titles and captions. It also holds the title guidance for the document tools (`create_word`, `create_excel`, `create_powerpoint`, `create_pdf`). |
+| `mermaid-diagrams` | The Mermaid diagram types, the mistakes that most often break a diagram, when to draw a diagram rather than a chart, and `create_diagram`. |
+| `projects` | When to suggest a project (instructions you keep repeating, the same files across conversations, one subject over several chats), how to draft its name, description and instructions, when to create one directly and when to suggest, how update and move cards work, and never pressing a suggestion after you dismiss it. |
+
+The model sees each skill's one-line description in every conversation and loads the full skill when your request matches it, for example when you ask for a chart, a diagram or a project. You can also load one yourself by starting a message with `/charts`, `/mermaid-diagrams` or `/projects`.
+
+Built-in skills cannot be edited or deleted, and a skill you import or create with the name of a built-in skill is refused (a built-in skill always wins its name). Like any skill, each user can turn a built-in skill off for themselves, globally or for a conversation, on the skills page.
+
+**The administrator's switch.** An administrator can switch a built-in skill off for the whole instance, for example to keep a deployment's prompts small. A skill switched off is offered to nobody, whatever each user has chosen, and shows as "Switched off for everyone" on the skills page. Switch skills on and off with the Instance switch beside each built-in skill on the skills page. The switch saves the instance setting `skills.disabled_builtin` (a list of skill names; empty by default, so every built-in skill is on):
+
+- **Server mode:** only an administrator sees the switch and can save the setting. It is stored in the database and every change is recorded in the audit log (`spark.settings.instance.changed`). A change applies to each user's next message.
+- **Personal mode:** the one local user is the administrator. The setting is saved to `config.yaml` under `skills:` as `disabled_builtin`.
+
 ## Tool Permissions
 
 When the AI first uses a tool in a conversation, Spark prompts for permission with four options:

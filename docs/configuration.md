@@ -284,6 +284,15 @@ embedded_tools:
 
 See [Tools](tools.md) and [Web Search](web-search.md) for details.
 
+### Skills
+
+```yaml
+skills:
+  disabled_builtin: []   # names of built-in skills switched off for every user
+```
+
+`disabled_builtin` lists the built-in skills (`charts`, `mermaid-diagrams`, `projects`) an administrator has switched off for the instance. The default is empty: every built-in skill is on. A listed skill is not offered to any user's model, whatever the user has chosen. Set it with the Instance switch on the skills page (see [Built-in skills](tools.md#built-in-skills)); on a server it is an instance setting in the database, changed by administrators only and audited.
+
 ### Default Model
 
 ```yaml

@@ -21,6 +21,8 @@
     <p style="color: var(--app-text-muted); font-size: 0.875rem;">
         Skills are reusable capabilities the assistant loads on demand. Build one by asking
         the assistant to use the <code>skill-creator</code> skill, or import a skill folder as a zip.
+        Built-in skills (charts, Mermaid diagrams and projects) ship with Spark, cannot be edited
+        and are updated with each release; an administrator can switch one off for the whole instance.
     </p>
 
     <div id="invalid-skills"></div>
@@ -53,10 +55,35 @@
 <script>
 document.addEventListener('DOMContentLoaded', loadSkills);
 
+// The administrator's switch for the built-in skills: the instance setting below, saved
+// through the settings API of the mode (audited on a server).
+const DISABLED_BUILTIN_SETTING = 'skills.disabled_builtin';
+let canSwitchBuiltin = false;
+let switchedOff = [];
+let saveUrl = '/settings/api/save';
+
+async function switchBuiltin(name, offered) {
+    const next = offered ? switchedOff.filter(n => n !== name) : [...new Set([...switchedOff, name])];
+    const resp = await fetch(saveUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ [DISABLED_BUILTIN_SETTING]: next }),
+    });
+    if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        AppToast.danger('Not saved', body.detail || 'The setting could not be saved.');
+    }
+    loadSkills();
+}
+
 async function loadSkills() {
     try {
         const resp = await fetch('/skills/api/list');
-        const skills = (await resp.json()).skills;
+        const data = await resp.json();
+        const skills = data.skills;
+        canSwitchBuiltin = data.can_switch_builtin === true;
+        switchedOff = data.switched_off || [];
+        saveUrl = data.server ? '/settings/api/instance' : '/settings/api/save';
         const valid = skills.filter(s => s.valid);
         const invalid = skills.filter(s => !s.valid);
 
@@ -80,7 +107,7 @@ async function loadSkills() {
             return;
         }
         container.innerHTML = valid.map(s => `
-            <div class="app-card d-flex align-items-center p-3 mb-2">
+            <div class="app-card d-flex align-items-center p-3 mb-2" ${s.instance_enabled ? '' : 'style="opacity: 0.6;"'}>
                 <div class="form-check form-switch me-3 mb-0">
                     <input class="form-check-input" type="checkbox" ${s.enabled ? 'checked' : ''}
                            onchange="toggleSkill('${escapeHtml(s.name)}', this.checked)">
@@ -89,11 +116,19 @@ async function loadSkills() {
                     <div style="font-weight: 600; color: var(--app-text-primary);">
                         ${escapeHtml(s.name)}
                         <span class="badge ms-2" style="background: var(--app-bg-secondary); color: var(--app-text-muted); border: 1px solid var(--app-border);">
-                            ${s.source === 'bundled' ? 'Bundled' : 'User'}
+                            ${s.source === 'bundled' ? 'Built in' : 'User'}
                         </span>
+                        ${s.instance_enabled ? '' : '<span class="badge ms-1 text-bg-warning">Switched off for everyone</span>'}
                     </div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">${escapeHtml(s.description)}</div>
                 </div>
+                ${s.source === 'bundled' && canSwitchBuiltin ? `
+                <div class="form-check form-switch me-3 mb-0" title="Offer this built-in skill on this instance">
+                    <input class="form-check-input" type="checkbox" ${s.instance_enabled ? 'checked' : ''}
+                           aria-label="Offer ${escapeHtml(s.name)} on this instance"
+                           onchange="switchBuiltin('${escapeHtml(s.name)}', this.checked)">
+                    <label class="form-check-label" style="font-size: 0.75rem; color: var(--app-text-muted);">Instance</label>
+                </div>` : ''}
                 <a class="btn btn-app-ghost btn-sm" href="/skills/api/download?name=${encodeURIComponent(s.name)}" title="Download as zip">
                     <i class="bi bi-download"></i>
                 </a>

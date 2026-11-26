@@ -18,12 +18,30 @@ from spark.db.dialect import upsert
 from spark.db.engine import Executor
 
 __all__ = [
+    "SETTING_DISABLED_BUILTIN",
+    "disabled_builtin",
     "get_conversation_skill_states",
     "get_skill_states",
     "resolve_enabled",
     "set_conversation_skill_enabled",
     "set_skill_enabled",
 ]
+
+#: The instance setting naming the built-in skills switched off for every user.
+SETTING_DISABLED_BUILTIN = "skills.disabled_builtin"
+
+
+def disabled_builtin() -> frozenset[str]:
+    """The built-in skills the administrator has switched off (none when no settings
+    source is configured, as in tools and tests that act for no instance)."""
+    from spark.instance_settings import accessor
+
+    try:
+        value = accessor.get(SETTING_DISABLED_BUILTIN)
+    except RuntimeError:
+        return frozenset()
+    return frozenset(str(name) for name in value or ())
+
 
 _SET_SKILL = upsert(
     "skills",
@@ -84,7 +102,12 @@ async def resolve_enabled(
     user_guid: str,
     conversation_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Valid skills that are enabled globally and for the conversation."""
+    """Valid skills that are enabled globally and for the conversation.
+
+    A built-in (bundled) skill the administrator has switched off for the instance
+    (``skills.disabled_builtin``) is never offered, whatever the user chose.
+    """
+    switched_off = disabled_builtin()
     global_states = await get_skill_states(db, user_guid)
     conv_states = (
         await get_conversation_skill_states(db, user_guid, conversation_id)
@@ -94,6 +117,8 @@ async def resolve_enabled(
     out = []
     for skill in manager.list_skills():
         name = skill["name"]
+        if skill.get("source") == "bundled" and name in switched_off:
+            continue
         if not global_states.get(name, True):
             continue
         if not conv_states.get(name, True):

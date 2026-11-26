@@ -14,8 +14,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from spark import mode
 from spark.identity.access import current_user_guid, require_permission
 from spark.identity.permissions import SETTINGS_INSTANCE
+from spark.instance_settings import access
 from spark.web.db import database
 
 logger = logging.getLogger(__name__)
@@ -46,12 +48,29 @@ async def skills_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "skills.html")
 
 
+def _server() -> bool:
+    """Server mode? (False when the mode was never configured, as in some tests.)"""
+    try:
+        return mode.is_server()
+    except RuntimeError:
+        return False
+
+
 @router.get("/api/list")
 async def list_skills(request: Request) -> JSONResponse:
-    """All discovered skills (including invalid), joined with enable state."""
+    """All discovered skills (including invalid), joined with enable state.
+
+    ``enabled`` is the user's own switch. ``instance_enabled`` is the administrator's
+    (``skills.disabled_builtin``, built-in skills only): a skill the instance has
+    switched off is offered to nobody. ``can_switch_builtin`` says whether this user may
+    change it, and ``server`` which setting endpoint saves it (``/settings/api/instance``
+    on a server, ``/settings/api/save`` in personal mode); both check the administrator
+    again on the server.
+    """
     from spark.database import skills as skills_db
 
     manager = _manager(request)
+    switched_off = skills_db.disabled_builtin()
     states = await skills_db.get_skill_states(database(request), current_user_guid(request))
     out = []
     for skill in manager.list_skills(include_invalid=True):
@@ -63,9 +82,20 @@ async def list_skills(request: Request) -> JSONResponse:
                 "valid": skill["valid"],
                 "error": skill["error"],
                 "enabled": states.get(skill["name"], True),
+                "instance_enabled": not (
+                    skill["source"] == "bundled" and skill["name"] in switched_off
+                ),
             }
         )
-    return JSONResponse({"skills": out})
+    return JSONResponse(
+        {
+            "skills": out,
+            "server": _server(),
+            "can_switch_builtin": access.access_check().is_administrator(request),
+            "setting": skills_db.SETTING_DISABLED_BUILTIN,
+            "switched_off": sorted(switched_off),
+        }
+    )
 
 
 @router.post("/api/toggle")
