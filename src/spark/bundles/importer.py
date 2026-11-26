@@ -52,6 +52,7 @@ from spark.database import files as files_db
 from spark.db.engine import Connection, Executor
 from spark.files.paths import PathRefused
 from spark.files.store import FileStore
+from spark.files.titles import KINDS, TITLE_LIMIT, clean_text
 from spark.index.vectors import CONTEXT, MEMORIES, EmbeddingDimensionMismatch, vector_store
 from spark.instance_settings import registry, repository
 from spark.mode import Dialect
@@ -603,6 +604,20 @@ def _put(store: FileStore, user: str, key: str, data: bytes) -> None:
     store.put(user, key, data)
 
 
+def _bundle_title(value: object) -> str | None:
+    """A file's title from the bundle, neutralised as the app does; None (the file name
+    is used) when it is missing, not text or blank."""
+    if not isinstance(value, str):
+        return None
+    return clean_text(value, limit=TITLE_LIMIT) or None
+
+
+def _bundle_kind(value: object) -> str | None:
+    """A file's kind from the bundle; None (the source's kind is used) when it is
+    missing or not one of the allowed kinds."""
+    return value if isinstance(value, str) and value in KINDS else None
+
+
 async def _write_files(bundle: Bundle, target: ImportTarget, files: _Files) -> None:
     """Write the bundle's file contents and skill files into this attempt's folder of the area."""
     for row in bundle.rows("user_files"):
@@ -620,6 +635,8 @@ async def _write_files(bundle: Bundle, target: ImportTarget, files: _Files) -> N
             mime_type=row.get("mime_type"),
             conversation_id=row.get("conversation_id"),
             source=str(row.get("source") or "upload"),
+            title=_bundle_title(row.get("title")),
+            kind=_bundle_kind(row.get("kind")),
         )
         files.rows.append((new, row))
     for skill, relative, data in bundle.skill_files():
@@ -652,6 +669,8 @@ async def _record_files(run: _Run, files: _Files, target: ImportTarget) -> None:
                 mime_type=new.mime_type,
                 conversation_id=mapped,
                 source=new.source,
+                title=new.title,
+                kind=new.kind,
             )
         )
     ids = await _charge(run, target, new_files)
