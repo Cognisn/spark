@@ -29,6 +29,7 @@ from spark.web.endpoints.panel import router as panel_router
 from spark.web.endpoints.password_feedback import router as password_feedback_router
 from spark.web.endpoints.password_policies import router as password_policies_router
 from spark.web.endpoints.preview import router as preview_router
+from spark.web.endpoints.project_cards import router as project_cards_router
 from spark.web.endpoints.projects import router as projects_router
 from spark.web.endpoints.provider_guides import router as provider_guides_router
 from spark.web.endpoints.settings import admin_router as settings_admin_router
@@ -68,6 +69,8 @@ def register_routes(app: FastAPI) -> None:
     preview_sources.bind(lambda: getattr(app.state, "mcp_manager", None))
     # Charts and diagrams: the option SPARK builds, through the conversation's access.
     app.include_router(charts_router)
+    # The project tools' cards: read, accept and turn down (PC17, PC18).
+    app.include_router(project_cards_router)
     app.include_router(skills_router)
     app.include_router(knowledge_router)
     app.include_router(actions_router)

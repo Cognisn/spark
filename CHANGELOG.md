@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project tools (PC17, PC18).** Four built-in tools in a new projects category (`spark.tools.projects`, held by the user and power_user roles): `create_project` creates a project, or a sub-project within the five levels, with its name, description and instructions, but only when the user's own message in the turn asks for a project; a request that appears only in a tool result, a document or the model's own text creates nothing. `suggest_project` shows a card (Create, Edit, Dismiss) and creates nothing until the user accepts; SPARK suggests once per conversation and never again after Dismiss. `update_project` shows a before-and-after card for a project the user owns (name, description, instructions, the user's files in this conversation as resources) and changes nothing until they confirm. `move_conversation_to_project` shows who would gain or lose sight of the conversation and moves it only when they confirm. The tools never delete, share or change members. Each card shown, accepted or turned down, and each project created or changed by the tools, is audited in server mode.
 
+- **Project cards in the conversation.** The project tools' cards are drawn in the message from the server's copy (`/project-cards/api`), never from the model's text. Only the person whose turn showed a card sees what it proposes and acts on it; other members of a shared conversation see what kind of card it is and what became of it. Confirming runs with the person's rights at that moment; a card is used once; a move whose warning changed since it was shown is shown again.
+
 ## [0.3.0rc59] - 2026-11-26
 
 ### Added
