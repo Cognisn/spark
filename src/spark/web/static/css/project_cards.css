@@ -1,0 +1,74 @@
+/* Project cards (PC17, PC18): a suggested project, a change to a project and a move of
+   the conversation, each waiting for the user's choice. Colours are the theme's
+   variables. */
+
+.project-card-wrapper { margin: 0.25rem 0 0.75rem; max-width: 100%; }
+
+.project-card {
+    box-sizing: border-box;
+    padding: 0.75rem;
+    border: 1px solid var(--app-card-border);
+    border-left: 3px solid var(--app-accent);
+    border-radius: 10px;
+    background: var(--app-card-bg);
+    color: var(--app-text-primary);
+    width: min(100%, 640px);
+}
+
+.project-card[data-state="accepted"],
+.project-card[data-state="dismissed"],
+.project-card[data-state="cancelled"],
+.project-card[data-state="expired"] { border-left-color: var(--app-card-border); }
+
+.project-card-header { display: flex; align-items: center; gap: 0.5rem; }
+.project-card-icon { color: var(--app-accent); font-size: 1.1rem; }
+.project-card-title { font-weight: 600; }
+.project-card-state { font-size: 0.8rem; color: var(--app-text-muted); margin: 0.15rem 0 0.4rem; }
+
+.project-card-body { display: flex; flex-direction: column; gap: 0.5rem; }
+.project-card-label { font-size: 0.75rem; font-weight: 600; color: var(--app-text-muted); }
+
+.project-card-value {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 12rem;
+    overflow: auto;
+    font-size: 0.875rem;
+}
+
+.project-card-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.project-card-pair .project-card-field { padding: 0.35rem 0.5rem; border-radius: 6px; background: var(--app-bg-secondary, transparent); }
+
+.project-card-reason,
+.project-card-target { margin: 0; font-size: 0.875rem; }
+.project-card-reason { color: var(--app-text-muted); font-style: italic; }
+.project-card-files { margin: 0; padding-left: 1.2rem; font-size: 0.875rem; }
+
+.project-card-warning {
+    padding: 0.5rem 0.6rem;
+    border-radius: 6px;
+    border: 1px solid var(--app-card-border);
+    font-size: 0.875rem;
+}
+
+.project-card-warning ul { margin: 0.25rem 0 0; padding-left: 1.2rem; }
+.project-card-warning-widen,
+.project-card-warning-narrow,
+.project-card-warning-both { border-color: var(--bs-warning, #b58100); }
+
+.project-card-message { margin-top: 0.4rem; font-size: 0.8rem; color: var(--bs-danger, #b02a37); }
+
+.project-card-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+
+.project-card-actions .btn:focus-visible,
+.project-card-editor .form-control:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.project-card-editor { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.project-card-editor label { display: flex; flex-direction: column; gap: 0.2rem; }
+
+@media (max-width: 575.98px) {
+    .project-card-pair { grid-template-columns: 1fr; }
+}

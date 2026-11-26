@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 
 from spark import files as files_pkg
 from spark.database import files as files_db
+from spark.database import projects as projects_db
 from spark.database.scope import Capability
 from spark.files.area import FileAreaNotConfigured
 from spark.files.paths import PathRefused
@@ -114,11 +115,19 @@ async def preview_file(request: Request, conversation_id: int, file_id: int) -> 
     row = await files_db.get_conversation_file(
         database(request), access.user_guid, conversation_id, file_id
     )
+    owner = str(row["user_guid"]) if row is not None else ""
+    if row is None:
+        # A resource the conversation inherits from its project opens here too (the
+        # projects access decision says which; nothing else of the owner's area does).
+        row = await projects_db.resource_for_conversation(
+            database(request), access.user_guid, conversation_id, file_id
+        )
+        owner = str(row["owner_guid"]) if row is not None else ""
     if row is None:
         return _error(404, "File not found.")
     try:
         store = files_pkg.file_store()
-        handle = await asyncio.to_thread(store.open, str(row["user_guid"]), str(row["storage_key"]))
+        handle = await asyncio.to_thread(store.open, owner, str(row["storage_key"]))
     except FileAreaNotConfigured as exc:
         return _error(503, f"File storage is not available: {exc}.")
     except (FileNotFoundError, PathRefused):

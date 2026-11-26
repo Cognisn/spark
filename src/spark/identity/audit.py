@@ -116,6 +116,12 @@ __all__ = [
     "PROJECT_CONVERSATION_MOVED",
     "PROJECT_DELETED",
     "PROJECT_TRANSFERRED",
+    "PROJECT_CARD_SHOWN",
+    "PROJECT_CARD_ACCEPTED",
+    "PROJECT_CARD_DISMISSED",
+    "PROJECT_CREATED_BY_TOOL",
+    "PROJECT_UPDATED_BY_TOOL",
+    "ARTEFACT_RENAMED",
 ]
 
 logger = logging.getLogger(__name__)
@@ -156,6 +162,12 @@ PROJECT_RESOURCE_REMOVED: Final = "spark.project.resource_removed"
 PROJECT_CONVERSATION_MOVED: Final = "spark.project.conversation_moved"
 PROJECT_DELETED: Final = "spark.project.deleted"
 PROJECT_TRANSFERRED: Final = "spark.project.transferred"
+PROJECT_CARD_SHOWN: Final = "spark.project.card_shown"
+PROJECT_CARD_ACCEPTED: Final = "spark.project.card_accepted"
+PROJECT_CARD_DISMISSED: Final = "spark.project.card_dismissed"
+PROJECT_CREATED_BY_TOOL: Final = "spark.project.created_by_tool"
+PROJECT_UPDATED_BY_TOOL: Final = "spark.project.updated_by_tool"
+ARTEFACT_RENAMED: Final = "spark.artefact.renamed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +260,20 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ),
     PROJECT_DELETED: ActionDef(Severity.NOTICE, "{actor} deleted project {resource_id}"),
     PROJECT_TRANSFERRED: ActionDef(Severity.NOTICE, "{actor} transferred project {resource_id}"),
+    PROJECT_CARD_SHOWN: ActionDef(
+        Severity.INFO, "a project card {resource_id} was shown to {actor}"
+    ),
+    PROJECT_CARD_ACCEPTED: ActionDef(Severity.INFO, "{actor} accepted project card {resource_id}"),
+    PROJECT_CARD_DISMISSED: ActionDef(
+        Severity.INFO, "{actor} turned down project card {resource_id}"
+    ),
+    PROJECT_CREATED_BY_TOOL: ActionDef(
+        Severity.INFO, "the project tool created project {resource_id} for {actor}"
+    ),
+    PROJECT_UPDATED_BY_TOOL: ActionDef(
+        Severity.INFO, "the project tool changed project {resource_id} for {actor}"
+    ),
+    ARTEFACT_RENAMED: ActionDef(Severity.INFO, "{actor} renamed artefact {resource_id}"),
 }
 
 

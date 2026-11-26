@@ -1,0 +1,76 @@
+{#- The conversation's right-hand panel (PC2 to PC5): Artefacts, Tools and Agents as three
+    collapsible sections. sidecar.js owns the panel, its sections and the artefacts list;
+    chat.js draws tool calls into #tool-panel-body and agent runs into #agent-panel-body.
+    Each section header is a button inside a heading (aria-expanded, aria-controls), so the
+    panel reads as headings with regions for a screen reader, and toggling a section keeps
+    the focus on its button. A full-screen overlay at phone width. -#}
+<aside id="tool-panel" class="sidecar" aria-label="Artefacts, tools and agents" data-layout="hidden" hidden>
+    <div id="sidecar-resize-handle" class="sidecar-resize" role="separator" aria-orientation="vertical"
+         aria-label="Resize the panel" aria-controls="tool-panel" tabindex="0"></div>
+    <div class="sidecar-header">
+        <h2 id="sidecar-title" class="sidecar-title" tabindex="-1">Conversation panel</h2>
+        <button type="button" id="sidecar-close" class="btn btn-app-ghost btn-sm" title="Close" aria-label="Close the panel">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="sidecar-sections">
+
+        <section class="sidecar-section" aria-label="Artefacts">
+            <h3 class="sidecar-heading">
+                <button type="button" id="sidecar-artefacts-toggle" class="sidecar-toggle"
+                        aria-expanded="true" aria-controls="sidecar-artefacts-body">
+                    <i class="bi bi-chevron-down sidecar-chevron" aria-hidden="true"></i>
+                    <i class="bi bi-files" aria-hidden="true"></i>
+                    <span class="sidecar-label">Artefacts</span>
+                    <span id="sidecar-artefacts-count" class="sidecar-count">0</span>
+                </button>
+            </h3>
+            <div id="sidecar-artefacts-body" class="sidecar-body" role="region" aria-labelledby="sidecar-artefacts-toggle">
+                <div id="sidecar-artefacts-list" aria-live="polite">
+                    <p class="sidecar-empty">No artefacts yet. Documents, charts and files for this conversation appear here.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="sidecar-section" aria-label="Tools">
+            <h3 class="sidecar-heading">
+                <button type="button" id="sidecar-tools-toggle" class="sidecar-toggle"
+                        aria-expanded="false" aria-controls="sidecar-tools-body">
+                    <i class="bi bi-chevron-down sidecar-chevron" aria-hidden="true"></i>
+                    <i class="bi bi-tools" aria-hidden="true"></i>
+                    <span class="sidecar-label">Tools</span>
+                    <span id="sidecar-tools-count" class="sidecar-count">0</span>
+                </button>
+            </h3>
+            <div id="sidecar-tools-body" class="sidecar-body" role="region" aria-labelledby="sidecar-tools-toggle" hidden>
+                <div id="tool-panel-body" class="sidecar-scroll px-2 py-2" style="font-size: 0.8125rem;">
+                    <div id="tool-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
+                        <i class="bi bi-tools" style="font-size: 1.5rem; opacity: 0.3;" aria-hidden="true"></i>
+                        <p class="mt-2 mb-0" style="font-size: 0.75rem;">No tool calls yet</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="sidecar-section" aria-label="Agents">
+            <h3 class="sidecar-heading">
+                <button type="button" id="sidecar-agents-toggle" class="sidecar-toggle"
+                        aria-expanded="false" aria-controls="sidecar-agents-body">
+                    <i class="bi bi-chevron-down sidecar-chevron" aria-hidden="true"></i>
+                    <i class="bi bi-robot" aria-hidden="true"></i>
+                    <span class="sidecar-label">Agents</span>
+                    <span id="sidecar-agents-count" class="sidecar-count">0</span>
+                </button>
+            </h3>
+            <div id="sidecar-agents-body" class="sidecar-body" role="region" aria-labelledby="sidecar-agents-toggle" hidden>
+                <div id="agent-panel-body" class="sidecar-scroll px-2 py-2" style="font-size: 0.8125rem;">
+                    <div id="agent-panel-empty" class="text-center py-4" style="color: var(--app-text-muted);">
+                        <i class="bi bi-robot" style="font-size: 1.5rem; opacity: 0.3;" aria-hidden="true"></i>
+                        <p class="mt-2 mb-0" style="font-size: 0.75rem;">No agents spawned yet</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</aside>

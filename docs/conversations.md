@@ -18,7 +18,7 @@ The chat page provides:
 
 - **Message input** with Enter to send and Shift+Enter for new lines
 - **Streaming responses** with real-time text rendering
-- **Tool call cards** showing each tool invocation with expandable parameters and results
+- **The conversation panel** on the right, with Artefacts, Tools and Agents sections (see [The Conversation Panel](#the-conversation-panel))
 - **Token counter** displaying input/output tokens for the current exchange
 - **Voice input** via the microphone button (browser speech recognition)
 - **Voice mode** for hands-free conversation (see [Voice](voice.md))
@@ -194,6 +194,20 @@ The assistant can show you a document in a pane on the right of the conversation
 Documents are drawn inside a sealed frame: nothing in a document can run in Spark's page, reach your session, or load anything from the internet. Spark serves every library the preview uses itself, so no page asks a third party for them.
 
 Spark fetches a link only from the address of an MCP server you are connected to, and never follows it to another site. The assistant tells you plainly when it cannot show something, for example a link to another site, a document larger than the attachment limit, or a file that is not what it says it is.
+
+## The Conversation Panel
+
+One panel on the right of the conversation holds three sections, each a button with a count: **Artefacts**, **Tools** and **Agents**. Open it with the **Panel** button in the toolbar; at phone width it fills the screen, and Escape or its close button returns to the conversation.
+
+- **Artefacts** is open when a conversation opens; Tools and Agents are closed. A section opens by itself while something runs in it (a tool call, an agent) and then stays as you leave it. The sections you open and close are remembered in your browser, one choice per section; if your browser blocks storage the panel still works and starts from the defaults each time.
+- **The first time** an artefact appears in a conversation the panel opens by itself. After that, new items light a dot on the Panel button while the panel is closed, and opening it clears the dot.
+- **Tools** lists the tool calls of the conversation by day, with their parameters and results, and **Agents** the agent runs, as they always have.
+- **Artefacts** has up to three groups. **Generated or retrieved** holds documents the assistant created, documents it fetched to show you, and charts and diagrams. **Provided** (**Provided by you** in a conversation you have not shared) holds the files attached in the conversation; in a shared conversation each file says who attached it. **Project resources** appears only in a conversation inside a project and lists the resources it inherits, one group for each level of the project.
+- **Each item** shows its title, with its file name, type and size beneath, and when it appeared. Click it to open it in the document preview pane (charts and diagrams too); the conversation scrolls to the message that produced it and marks the message briefly. While the preview pane is open the panel narrows (at phone width it steps aside), and it returns when you close the pane.
+- **Renaming.** The conversation's owner and its Contributors can rename a generated or provided artefact with the pencil button: type a new title of up to 120 characters and press Enter or Save. Read-only members and project resources have no pencil. Each rename is recorded in the audit trail (server mode), and everyone viewing the conversation sees the new title.
+- **Shared conversations.** Everyone with access sees the same list, and new items appear without reloading. A person removed from the conversation can no longer list or open its artefacts.
+
+Drag the panel's left edge (or focus it and use the left and right arrow keys) to change its width.
 
 ## Conversation Export
 

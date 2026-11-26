@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc61] - 2026-11-26
+
+### Added
+
+- **One panel for artefacts, tools and agents (PC2 to PC5).** The chat page's Tool Activity panel is now the conversation panel: Artefacts, Tools and Agents as three collapsible sections with counts, in their own template, script and style (`_sidecar.html`, `sidecar.js`, `sidecar.css`). Artefacts is open and Tools and Agents are closed when a conversation opens; a section opens while something runs in it and then stays as the user leaves it; each choice is remembered in the browser (guarded, so it works when storage throws); the panel opens by itself the first time an artefact appears in a conversation; its button shows a dot for new items; at phone width it is a full-screen overlay. Section headers are buttons inside headings with `aria-expanded`, and toggling keeps the focus. The tool and agent rendering, events and resize are unchanged (the panel no longer opens itself when a tool starts; the button's dot says so).
+- **The artefacts list.** `GET /artefacts/api/<conversation>` answers the panel's three groups: generated or retrieved (documents SPARK created, documents fetched for preview, charts and diagrams), provided (files attached in the conversation, each labelled with who attached it in a shared conversation) and project resources by level, each with its title, file name, type, size, time and the message that produced it, through the conversation's access decision: every member sees the same list, a removed member is refused at once. An item opens in the preview pane, a project resource included (`/preview/api` opens the resources a conversation inherits), and the conversation scrolls to and marks its message. New artefacts and renames reach every viewer through the live updates (`artefacts_changed`).
+- **Renaming an artefact.** `PATCH /artefacts/api/<file>` renames a file of a conversation for its owner or a Contributor (Read-only is refused, a stranger gets 404); the title is checked and neutralised, the change is audited (`spark.artefact.renamed`) and the new title shows for everyone viewing the conversation.
+
+## [0.3.0rc60] - 2026-11-26
+
+### Added
+
+- **Project cards are kept on the server (PC17, PC18).** A new revision (`project_cards`) adds the table that holds the project tools' pending actions: a suggested project, a change to a project or a move of a conversation, each bound to the person whose turn showed it and to its conversation, under an unguessable id, until it is accepted, turned down or expires (24 hours). A conversation holds at most one suggestion, enforced by the database. The downgrade drops the table.
+
+- **Project tools (PC17, PC18).** Four built-in tools in a new projects category (`spark.tools.projects`, held by the user and power_user roles): `create_project` creates a project, or a sub-project within the five levels, with its name, description and instructions, but only when the user's own message in the turn asks for a project; a request that appears only in a tool result, a document or the model's own text creates nothing. `suggest_project` shows a card (Create, Edit, Dismiss) and creates nothing until the user accepts; SPARK suggests once per conversation and never again after Dismiss. `update_project` shows a before-and-after card for a project the user owns (name, description, instructions, the user's files in this conversation as resources) and changes nothing until they confirm. `move_conversation_to_project` shows who would gain or lose sight of the conversation and moves it only when they confirm. The tools never delete, share or change members. Each card shown, accepted or turned down, and each project created or changed by the tools, is audited in server mode.
+
+- **Project cards in the conversation.** The project tools' cards are drawn in the message from the server's copy (`/project-cards/api`), never from the model's text. Only the person whose turn showed a card sees what it proposes and acts on it; other members of a shared conversation see what kind of card it is and what became of it. Confirming runs with the person's rights at that moment; a card is used once; a move whose warning changed since it was shown is shown again.
+
 ## [0.3.0rc59] - 2026-11-26
 
 ### Added

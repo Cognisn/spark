@@ -75,6 +75,14 @@ Files attached in chat are named at the end of the message by file id: read them
 | `spawn_agent` | Spawn a sub-agent to work on an independent task |
 | `list_provider_models` | List available models from the current provider |
 
+### Projects
+| Tool | Description |
+|------|-------------|
+| `create_project` | Create a project the user asked for, with its name, description and instructions (optionally a sub-project) |
+| `suggest_project` | Suggest a project with a card (Create, Edit, Dismiss); once per conversation, never after Dismiss |
+| `update_project` | Propose a change to a project the user owns, shown before and after, applied when they confirm |
+| `move_conversation_to_project` | Propose moving this conversation into or out of a project, with who would gain or lose sight of it |
+
 ### Memory (always available)
 | Tool | Description |
 |------|-------------|
