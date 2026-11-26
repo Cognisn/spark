@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc65] - 2026-11-27
+
 ### Added
 
 - **Built-in skills for charts, diagrams and projects (PC21, PC5).** Spark now carries three skills of its own, bundled read-only in `src/spark/resources/skills/` and available in both modes to every user: `charts` (when a chart helps, choosing among the twelve types, the whole definition with a worked example for each type as its own reference file, reading data from conversation files, limits, titles and captions, and the title guidance for `create_word`, `create_excel`, `create_powerpoint` and `create_pdf`), `mermaid-diagrams` (the diagram types, common syntax mistakes, when to draw a diagram rather than a chart, `create_diagram`) and `projects` (when to suggest a project, drafting its name, description and instructions, when to create directly and when to suggest, how update and move cards work, and never pressing a suggestion after Dismiss). Titles are taught as short and specific, with no file extension and never "Untitled". A built-in skill cannot be edited or deleted and always wins its name.
