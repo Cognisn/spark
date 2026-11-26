@@ -1,0 +1,25 @@
+{# The delete dialog (PC13): keep the conversations or delete everything, with the counts
+   from the delete preview. Driven by static/js/projects.js. #}
+<div class="modal fade" id="deleteProjectModal" tabindex="-1" aria-labelledby="delete-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="delete-title"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="delete-summary"></p>
+                <fieldset>
+                    <legend class="form-label">What happens to its conversations</legend>
+                    <div id="delete-modes"></div>
+                </fieldset>
+                <p class="form-text mt-2">Resources and sub-projects are deleted either way, which frees the owner's storage. This cannot be undone.</p>
+                <div class="alert-app alert-app-danger mt-2" id="delete-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-app-danger" id="delete-confirm">Delete project</button>
+            </div>
+        </div>
+    </div>
+</div>

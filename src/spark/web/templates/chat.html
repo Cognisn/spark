@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/static/css/preview.css">
 <link rel="stylesheet" href="/static/css/charts.css">
 <link rel="stylesheet" href="/static/css/sidecar.css">
+<link rel="stylesheet" href="/static/css/projects.css">
 <style>
     .attachment-chips, #attach-pending { display: flex; flex-wrap: wrap; gap: 0.375rem; }
     .attachment-chips { margin-top: 0.5rem; }
@@ -65,6 +66,9 @@
                 <i class="bi bi-layout-sidebar-inset-reverse" aria-hidden="true"></i><span class="toolbar-label">Panel</span>
                 <span id="sidecar-dot" class="sidecar-dot" hidden><span class="visually-hidden">New items</span></span>
             </button>
+            {% if not my_role or my_role == 'owner' %}
+            <button class="btn btn-app-ghost btn-sm" id="btn-move-conversation" title="Move to a project" aria-label="Move this conversation to a project"><i class="bi bi-folder-symlink" aria-hidden="true"></i><span class="toolbar-label">Move</span></button>
+            {% endif %}
             {% if sharing and my_role == 'owner' %}
             <button class="btn btn-app-ghost btn-sm" id="btn-share" title="Share this conversation" aria-label="Share this conversation"><i class="bi bi-share" aria-hidden="true"></i><span class="toolbar-label">Share</span></button>
             {% endif %}
@@ -74,6 +78,10 @@
             <button class="btn btn-app-ghost btn-sm toolbar-danger" title="Delete conversation" aria-label="Delete conversation" onclick="confirmDeleteConversation()" style="color: var(--app-danger);" data-owner-only {% if my_role and my_role != 'owner' %}hidden{% endif %}><i class="bi bi-trash" aria-hidden="true"></i><span class="toolbar-label">Delete</span></button>
         </div>
     </div>
+
+    {# Where the conversation sits: each level of its project is a link (PC16). #}
+    <div id="project-crumbs-chat" class="project-crumbs-bar px-3" data-conversation-id="{{ conversation.id }}"
+         data-conversation-name="{{ conversation.name }}" hidden></div>
 
     {% if model_notice %}
     <!-- The conversation's model has left the models offered: it keeps working -->
@@ -478,6 +486,7 @@
     </div>
 </div>
 {% if sharing and my_role == 'owner' %}{% include "_share_dialog.html" %}{% endif %}
+{% if not my_role or my_role == 'owner' %}{% with move_prefix='conv-move', move_modal='convMoveModal', move_title='Move conversation' %}{% include "_project_move_dialog.html" %}{% endwith %}{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -488,6 +497,7 @@
 <script src="/static/js/preview.js"></script>
 <script src="/static/js/charts.js"></script>
 <script src="/static/js/sidecar.js"></script>
+<script src="/static/js/projects.js"></script>
 <script src="/static/js/chat.js"></script>
 <script src="/static/js/sse-client.js"></script>
 <script src="/static/js/share.js"></script>

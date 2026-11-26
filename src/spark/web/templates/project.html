@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Spark - {{ project.name }}{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/projects.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid project-page" style="max-width: 960px;" id="project-page"
+     data-project-id="{{ project.id }}" data-server="{{ 1 if server else 0 }}" data-me="{{ me }}">
+
+    <div id="project-crumbs" class="project-crumbs-bar"></div>
+
+    <div class="d-flex align-items-start justify-content-between gap-2 mb-3 flex-wrap">
+        <div>
+            <h1 class="project-title" id="project-name">{{ project.name }}</h1>
+            <span class="badge project-role" id="project-role" hidden></span>
+        </div>
+        <div class="d-flex gap-1 flex-wrap">
+            <button type="button" class="btn btn-app-ghost btn-sm" id="project-edit-details" hidden><i class="bi bi-pencil me-1" aria-hidden="true"></i>Edit details</button>
+            <button type="button" class="btn btn-app-ghost btn-sm" id="project-move" hidden><i class="bi bi-folder-symlink me-1" aria-hidden="true"></i>Move</button>
+            <button type="button" class="btn btn-app-ghost btn-sm" id="project-transfer" hidden><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>Transfer</button>
+            <button type="button" class="btn btn-app-ghost btn-sm" id="project-delete" style="color: var(--app-danger);" hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete</button>
+        </div>
+    </div>
+    <div class="alert-app alert-app-danger" id="project-error" role="alert" hidden></div>
+
+    <p id="project-description" class="project-description">{{ project.description }}</p>
+
+    <section class="project-section" aria-labelledby="instructions-heading">
+        <div class="d-flex align-items-center justify-content-between">
+            <h2 class="project-heading" id="instructions-heading"><i class="bi bi-card-text me-2" aria-hidden="true"></i>Instructions</h2>
+            <button type="button" class="btn btn-app-ghost btn-sm" id="instructions-edit" hidden>Edit</button>
+        </div>
+        <div id="instructions-view" class="project-markdown"></div>
+        <div id="instructions-editor-wrap" class="project-editor" hidden>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="instructions-text">Instructions (Markdown)</label>
+                    <textarea class="form-control" id="instructions-text" rows="12" maxlength="50000"></textarea>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-label" id="instructions-preview-label">Preview</div>
+                    <div id="instructions-preview" class="project-markdown project-preview" aria-labelledby="instructions-preview-label" aria-live="polite"></div>
+                </div>
+            </div>
+            <div class="alert-app alert-app-danger mt-2" id="instructions-error" role="alert" hidden></div>
+            <div class="mt-2 d-flex gap-2">
+                <button type="button" class="btn btn-app-primary btn-sm" id="instructions-save">Save</button>
+                <button type="button" class="btn btn-app-ghost btn-sm" id="instructions-cancel">Cancel</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="project-section" aria-labelledby="resources-heading">
+        <h2 class="project-heading" id="resources-heading"><i class="bi bi-paperclip me-2" aria-hidden="true"></i>Resources</h2>
+        <ul id="resources-list" class="project-list list-unstyled"></ul>
+        <div id="resources-upload" hidden>
+            <label class="form-label" for="resource-file">Add a file</label>
+            <input type="file" class="form-control form-control-sm" id="resource-file">
+            <div class="form-text">Files count against the project owner's storage, and the upload limit applies.</div>
+        </div>
+        <div class="alert-app alert-app-danger mt-2" id="resources-error" role="alert" hidden></div>
+    </section>
+
+    <section class="project-section" aria-labelledby="subprojects-heading">
+        <div class="d-flex align-items-center justify-content-between">
+            <h2 class="project-heading" id="subprojects-heading"><i class="bi bi-diagram-3 me-2" aria-hidden="true"></i>Sub-projects</h2>
+            <button type="button" class="btn btn-app-ghost btn-sm" id="subprojects-new" data-new-project="{{ project.id }}" hidden><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New sub-project</button>
+        </div>
+        <ul id="subprojects-list" class="project-list list-unstyled"></ul>
+    </section>
+
+    <section class="project-section" aria-labelledby="conversations-heading">
+        <div class="d-flex align-items-center justify-content-between">
+            <h2 class="project-heading" id="conversations-heading"><i class="bi bi-chat-dots me-2" aria-hidden="true"></i>Conversations</h2>
+            <button type="button" class="btn btn-app-primary btn-sm" id="conversation-new" hidden><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New conversation</button>
+        </div>
+        <ul id="conversations-list" class="project-list list-unstyled"></ul>
+        <div class="alert-app alert-app-danger mt-2" id="conversations-error" role="alert" hidden></div>
+    </section>
+
+    {% include "_project_members_dialog.html" %}
+</div>
+
+{% include "_project_delete_dialog.html" %}
+{% with move_prefix='move', move_modal='moveModal', move_title='Move sub-project' %}{% include "_project_move_dialog.html" %}{% endwith %}
+{% include "_new_project_dialog.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/projects.js"></script>
+{% endblock %}

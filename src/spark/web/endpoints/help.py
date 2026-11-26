@@ -38,6 +38,35 @@ Spark is a secure personal AI research kit that lets you interact with multiple 
 """,
     },
     {
+        "id": "projects",
+        "title": "Projects",
+        "category": "Features",
+        "content": """## Projects
+
+A project gathers conversations around one subject, with instructions and files that every conversation in it receives.
+
+### Finding and creating projects
+- The **Projects** tree sits above your conversations on the **Conversations** page. Use the arrow keys to move, **Right** and **Left** to expand and collapse, and **Enter** to open. Spark remembers what you expanded in this browser.
+- Projects other people shared with you are under **Shared with me**, marked with the sharing icon.
+- Conversations in a project are listed under it, not in the main list.
+- **New project** creates a top-level project; **New sub-project** on a project page adds one inside it, up to five levels deep.
+
+### The project page
+- **Instructions**: the owner edits them with a live Markdown preview. Spark tells you if a save is refused.
+- **Resources**: upload files (the upload limit and the owner's storage apply). Contributors can remove only the files they added.
+- **Conversations**: **New conversation** starts one at this level, which receives the instructions and resources of every level above it.
+- **Members** (owner, top-level projects, server mode): add people by name or email, choose **Read-only** or **Contributor**, and **Project only** or **Project and all conversations** for each person.
+
+### Moving, deleting and transferring
+- **Move** a conversation from the chat header. If the move would show it to more people, or hide it from people who see it now, Spark names them and asks you to confirm.
+- **Delete** a project: keep its conversations (they move up to the parent, or to no project for a top-level project) or delete everything. The dialog shows how many conversations, resources, sub-projects and members are affected.
+- **Transfer** a top-level project to a member, or to a person you add in the same step. You stay as a Contributor with all conversations.
+
+### Where a conversation sits
+The chat header shows the project path; each level is a link to its project page. A conversation in a project can be shared only with people who have access to the project.
+""",
+    },
+    {
         "id": "conversations",
         "title": "Conversations",
         "category": "Features",

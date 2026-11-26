@@ -68,3 +68,31 @@ def _redirect(target: str):  # type: ignore[no-untyped-def]
 
 for _old, _new in MOVED.items():
     router.add_api_route(_old, _redirect(_new), methods=["GET"], include_in_schema=False)
+
+
+@router.get("/projects/{project_id:int}", response_class=HTMLResponse, response_model=None)
+async def project_page(request: Request, project_id: int) -> Response:
+    """The page of one project (PC16). The page is the shell; its sections draw from the
+    projects API, which decides what each role sees. A project the user may not reach is a
+    404, as it is through the API."""
+    from spark.database.scope import NotOwned
+    from spark.identity.access import current_user_guid
+    from spark.projects.access import ProjectNeed, require_project
+    from spark.web.db import database
+
+    me = current_user_guid(request)
+    try:
+        access = await require_project(database(request), me, project_id, ProjectNeed.VIEW)
+    except NotOwned:
+        raise HTTPException(status_code=404, detail="Project not found") from None
+    project = {
+        "id": access.id,
+        "name": str(access.project["name"]),
+        "description": str(access.project["description"] or ""),
+    }
+    response: HTMLResponse = request.app.state.templates.TemplateResponse(
+        request,
+        "project.html",
+        {"project": project, "server": _server(), "me": me},
+    )
+    return response

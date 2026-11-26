@@ -395,6 +395,13 @@
     }
 
     let searchTimer = null;
+    let limitPromise = null;
+
+    function projectLimit() {
+        if (!window.SparkProjects || !SparkProjects.pickerLimit) return Promise.resolve(null);
+        if (!limitPromise) limitPromise = SparkProjects.pickerLimit(state.conversationId).catch(() => null);
+        return limitPromise;
+    }
 
     function search(query) {
         clearTimeout(searchTimer);
@@ -402,7 +409,17 @@
         if (query.trim().length < 2) { box.innerHTML = ''; return; }
         searchTimer = setTimeout(async () => {
             const resp = await fetch(`/conversations/api/people?q=${encodeURIComponent(query.trim())}`, { headers: { Accept: 'application/json' } });
-            const people = resp.ok ? await resp.json() : [];
+            let people = resp.ok ? await resp.json() : [];
+            // A conversation in a project is shared only with the project's people (PC9).
+            const limit = await projectLimit();
+            people = window.SparkProjects ? SparkProjects.pickerPeople(people, limit) : people;
+            const note = document.getElementById('share-project-note');
+            if (note) {
+                note.hidden = !limit;
+                note.textContent = limit && limit.people
+                    ? 'This conversation is in a project: you can share it only with people who have access to the project.'
+                    : (limit ? 'This conversation is in a project: it can be shared only with people who have access to the project. Spark tells you if someone does not.' : '');
+            }
             const known = new Set(state.members.map(m => m.name));
             if (!people.length) { box.innerHTML = '<div class="form-text">No one found.</div>'; return; }
             box.innerHTML = people.map((p, i) => `
@@ -422,6 +439,7 @@
     }
 
     function openDialog() {
+        limitPromise = null;
         renderMembers();
         const el = document.getElementById('shareModal');
         if (el && window.bootstrap) bootstrap.Modal.getOrCreateInstance(el).show();

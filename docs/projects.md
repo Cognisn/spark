@@ -145,6 +145,32 @@ instructions, descriptions, resources and where each conversation sits. Imported
 server account, the projects belong to that user and are shared with nobody. See
 [User Bundles](bundles.md).
 
+## Using projects in the interface
+
+**The tree.** The Conversations page opens with a Projects tree above the conversation list: owned projects first, then **Shared with me** (marked with the sharing icon, with the owner's name). Projects nest up to five levels. A project expands to show its sub-projects and the conversations you can see in it; those conversations are not repeated in the main list. Expansion is remembered in your browser (and the tree still works when the browser refuses storage). Keyboard: Up and Down move, Home and End jump, Right expands (or enters the first child), Left collapses (or goes to the parent), Enter opens.
+
+**The project page** (`/projects/<id>`) shows only what your role allows:
+
+| Section | Owner | Contributor | Read-only |
+|---|---|---|---|
+| Description and name | edit | view | view |
+| Instructions | edit, with a Markdown preview | view | view |
+| Resources | upload, remove any | upload, remove their own | view and download |
+| Sub-projects | create (to level 5), move | view | view |
+| Conversations | New conversation at any level | New conversation at any level | view those they can see |
+| Members (top-level, server mode) | add, change role or scope, remove | none | none |
+| Transfer (top-level, server mode), Delete | yes | none | none |
+
+When the API refuses something, the screen shows the API's own message (for example a full storage quota, an upload over the limit, or a role that does not allow the change).
+
+**Breadcrumbs.** The chat header of a conversation in a project shows its path; each level links to that project's page.
+
+**Moving a conversation.** Use **Move** in the chat header. When the move would show the conversation to more people, or hide it from people who see it now, the dialog lists each person and the effect, and asks you to confirm before it moves anything.
+
+**Deleting a project.** The dialog shows how many conversations (and how many were started by others), resources, sub-projects and members are affected, and asks whether to keep the conversations or delete everything.
+
+**Sharing a conversation in a project.** The share dialog offers only people who have access to the project. If Spark cannot list them for you, it still refuses anyone outside the project with its own message.
+
 ## The API
 
 All routes are under `/projects/api`, answer JSON, and need the session's CSRF token and

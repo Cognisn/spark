@@ -1,0 +1,23 @@
+{# New project or sub-project. Driven by static/js/projects.js: a button with
+   data-new-project (empty for a top-level project, or the parent's id) opens it. #}
+<div class="modal fade" id="newProjectModal" tabindex="-1" aria-labelledby="new-project-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="modal-content" id="new-project-form">
+            <div class="modal-header">
+                <h5 class="modal-title" id="new-project-title">New project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="new-project-name">Name</label>
+                <input type="text" class="form-control" id="new-project-name" maxlength="200" required>
+                <label class="form-label mt-3" for="new-project-description">Description (optional)</label>
+                <textarea class="form-control" id="new-project-description" rows="3" maxlength="2000"></textarea>
+                <div class="alert-app alert-app-danger mt-3" id="new-project-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-app-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
