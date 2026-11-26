@@ -23,7 +23,9 @@ Replies are scripted by directives in the newest user message:
 - ``[[sleep S]]`` waits S seconds before replying (a turn kept in flight);
 - ``[[call NAME {json}]]`` calls the tool NAME with those arguments, once;
   the next request, carrying the tool's result, is answered with
-  ``TOOL RESULT SEEN: <the result>`` so the suite can see what SPARK passed on.
+  ``TOOL RESULT SEEN: <the result>`` so the suite can see what SPARK passed on;
+- ``[[call64 NAME base64]]`` does the same with the arguments as base64 of their
+  JSON, for arguments holding a ``]`` (a list), which ``call`` cannot carry.
 
 A knowledge-graph extraction request (the ``record_graph_fragment`` tool) is
 answered with one entity per ``KG(name)`` in the text and one relationship per
@@ -36,6 +38,7 @@ text); ``POST /_stub/reset`` clears it.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -54,7 +57,7 @@ PROMPT_TOKENS = 10
 CERT_DIR = os.environ.get("LIVE_STUB_CERTS", "/etc/spark-live")
 SYSTEM_KEPT = 50_000  # characters of a system prompt kept in the record
 
-_DIRECTIVE = re.compile(r"\[\[(tokens|sleep|call|prompt)\s+([^\]]*?)\]\]")
+_DIRECTIVE = re.compile(r"\[\[(tokens|sleep|call64|call|prompt)\s+([^\]]*?)\]\]")
 _KG_ITEM = re.compile(r"KG\(([^)]+)\)")
 
 _lock = threading.Lock()
@@ -123,6 +126,11 @@ def ollama_reply(body: dict[str, Any]) -> tuple[dict[str, Any], int, int]:
     if last.get("role") == "tool":
         text = "TOOL RESULT SEEN: " + _text(last.get("content"))
         return {"role": "assistant", "content": text}, prompt, max(1, len(text) // 4)
+    if "call64" in found:
+        name, _, raw = found["call64"].partition(" ")
+        arguments = json.loads(base64.b64decode(raw.strip()) or b"{}")
+        call = {"function": {"name": name, "arguments": arguments}}
+        return {"role": "assistant", "content": "", "tool_calls": [call]}, prompt, 1
     if "call" in found:
         name, _, raw = found["call"].partition(" ")
         call = {"function": {"name": name, "arguments": json.loads(raw or "{}")}}
