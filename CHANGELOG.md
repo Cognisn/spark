@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **User bundles keep each file's title and kind.** A bundle (format version 2) now carries `title` and `kind` on every `user_files` row and an import restores them, so a chart, a diagram or a renamed document comes back as itself instead of an attachment named by its file name. The kind is checked against the allowed kinds and the title is neutralised as elsewhere; a missing or unrecognised value, and every bundle written before this change (version 1 or an earlier version 2), import with the defaults (the file name, and the kind from the file's source).
 
+## [0.3.0rc62] - 2026-11-26
+
+### Fixed
+
+- **Closing a standalone database is bounded and says what it waited on.** The database the tray daemon and the scheduler open on their own loop thread now gives up closing after 15 seconds (was 30), logging the loop thread's stack and the work still pending on it. Stopping a loop thread cancels the tasks still pending on it, lets them finish within two seconds, tells anything waiting on them that they were cancelled, and logs what it cancelled; a loop thread that does not stop in time is logged with the stack that holds it.
+
 ## [0.3.0rc61] - 2026-11-26
 
 ### Added

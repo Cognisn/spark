@@ -8,6 +8,7 @@ opens the :class:`~spark.db.engine.Database` on it and returns the bridge.
 from __future__ import annotations
 
 import itertools
+import logging
 from dataclasses import dataclass, field
 
 from spark.db import migrate
@@ -18,7 +19,13 @@ from spark.mode import DatabaseSettings
 
 __all__ = ["StandaloneDatabase", "open_standalone"]
 
+log = logging.getLogger(__name__)
+
 _counter = itertools.count(1)
+
+# A close normally takes milliseconds (seconds when the disk is stalled); past this it
+# gives up, says what was still pending, and stops the loop thread (its own bound).
+CLOSE_TIMEOUT = 15.0
 
 
 @dataclass
@@ -29,13 +36,29 @@ class StandaloneDatabase:
     _loop_thread: LoopThread
     loop_thread_name: str
     _closed: bool = field(default=False)
+    close_timeout: float = field(default=CLOSE_TIMEOUT)
 
     def close(self) -> None:
+        """Close the database and stop its loop thread, within a bounded time.
+
+        If the database does not close within ``close_timeout`` seconds, the loop
+        thread's stack and the tasks pending on it are logged, the loop thread is
+        stopped (cancelling them) and :class:`TimeoutError` is raised.
+        """
         if self._closed:
             return
         self._closed = True
         try:
-            self._loop_thread.run(self.sync_db.database.close(), timeout=30)
+            self._loop_thread.run(self.sync_db.database.close(), timeout=self.close_timeout)
+        except TimeoutError:
+            log.warning(
+                "database on %s did not close within %g s; pending: %s; the loop thread is at:\n%s",
+                self.loop_thread_name,
+                self.close_timeout,
+                "; ".join(self._loop_thread.pending()) or "nothing",
+                self._loop_thread.where(),
+            )
+            raise
         finally:
             self._loop_thread.stop()
 
