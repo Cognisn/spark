@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc61] - 2026-11-26
+
 ### Added
 
 - **One panel for artefacts, tools and agents (PC2 to PC5).** The chat page's Tool Activity panel is now the conversation panel: Artefacts, Tools and Agents as three collapsible sections with counts, in their own template, script and style (`_sidecar.html`, `sidecar.js`, `sidecar.css`). Artefacts is open and Tools and Agents are closed when a conversation opens; a section opens while something runs in it and then stays as the user leaves it; each choice is remembered in the browser (guarded, so it works when storage throws); the panel opens by itself the first time an artefact appears in a conversation; its button shows a dot for new items; at phone width it is a full-screen overlay. Section headers are buttons inside headings with `aria-expanded`, and toggling keeps the focus. The tool and agent rendering, events and resize are unchanged (the panel no longer opens itself when a tool starts; the button's dot says so).
