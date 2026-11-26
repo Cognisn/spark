@@ -1,0 +1,48 @@
+{# Members and transfer (PC9, PC14), the owner of a top-level project only, server mode.
+   Each person has a role (Read-only or Contributor) and a scope (project only, or project
+   and all conversations). Driven by static/js/projects.js. #}
+<section id="members-section" class="project-section" aria-labelledby="members-heading" hidden>
+    <h2 class="project-heading" id="members-heading"><i class="bi bi-people me-2" aria-hidden="true"></i>Members</h2>
+    <p class="form-text">Share this project with people on this instance. <strong>Project and all conversations</strong> is live: every conversation in the project, now and later and whoever started it, is visible to that person. Changing someone to <strong>Project only</strong> returns those conversations to private for whoever started them, except those shared one by one.</p>
+    <div id="members-list" aria-live="polite"></div>
+    <div class="alert-app alert-app-danger" id="members-error" role="alert" hidden></div>
+    <h3 class="project-subheading">Add a person</h3>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+        <label class="visually-hidden" for="member-role">Role</label>
+        <select class="form-select form-select-sm project-member-select" id="member-role">
+            <option value="viewer">Read-only</option>
+            <option value="contributor">Contributor</option>
+        </select>
+        <label class="visually-hidden" for="member-scope">Scope</label>
+        <select class="form-select form-select-sm project-member-select" id="member-scope">
+            <option value="all_conversations">Project and all conversations</option>
+            <option value="project_only">Project only</option>
+        </select>
+    </div>
+    <label class="form-label" for="member-search">Name or email</label>
+    <input type="search" class="form-control form-control-sm" id="member-search" autocomplete="off"
+           placeholder="At least 2 characters" aria-describedby="member-search-help">
+    <div class="form-text" id="member-search-help">Choose a person from the results to add them with the role and scope above.</div>
+    <div id="member-results" class="mt-2" aria-live="polite"></div>
+</section>
+
+<div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transfer-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transfer-title"><i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>Transfer ownership</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>The new owner takes over this project, its sub-projects and resources, with their storage use. You stay as a Contributor with all conversations; conversations stay with whoever started them. The transfer is refused if the new owner's storage cannot hold the resources. A person who is not yet a member is added in the same step.</p>
+                <label class="form-label" for="transfer-search">New owner</label>
+                <input type="search" class="form-control form-control-sm" id="transfer-search" autocomplete="off" placeholder="Name or email (at least 2 characters)">
+                <div id="transfer-results" class="mt-2" aria-live="polite"></div>
+                <div class="alert-app alert-app-danger mt-2" id="transfer-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>

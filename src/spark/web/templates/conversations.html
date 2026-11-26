@@ -2,8 +2,27 @@
 
 {% block title %}Spark - Conversations{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="/static/css/projects.css">
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid" style="max-width: 900px;">
+
+    <!-- Projects (PC16): a tree up to five levels; conversations in a project sit under it -->
+    <section class="project-tree-section mb-4" aria-labelledby="projects-heading">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <h4 id="projects-heading" style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Projects</h4>
+            <button type="button" class="btn btn-app-ghost btn-sm" data-new-project="" id="btn-new-project">
+                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i> New project
+            </button>
+        </div>
+        <div id="projects-tree" class="app-card project-tree-host">
+            <div class="text-muted small p-2">Loading projects...</div>
+        </div>
+        <p id="projects-empty" class="form-text mt-1" hidden>No projects yet. A project gathers conversations around one subject, with instructions and files they all receive.</p>
+    </section>
+    {% include "_new_project_dialog.html" %}
 
     <div class="d-flex align-items-center justify-content-between mb-3">
         <h4 style="font-family: var(--app-font-heading); font-weight: 700; margin-bottom: 0;">Conversations</h4>
@@ -201,6 +220,7 @@
 
 {% block scripts %}
 <script src="/static/js/model_picker.js"></script>
+<script src="/static/js/projects.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => { loadConversations(); loadShared(); });
 
@@ -272,7 +292,8 @@ async function leaveShared(id, name) {
 async function loadConversations() {
     try {
         const resp = await fetch('/conversations/api/list');
-        const convs = await resp.json();
+        // Conversations in a project are listed under it in the Projects tree.
+        const convs = (await resp.json()).filter(c => !c.project_id);
         const container = document.getElementById('conversation-list');
 
         if (!convs.length) {

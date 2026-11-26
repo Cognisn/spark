@@ -1,0 +1,25 @@
+{# The move dialog (PC12). Included with move_prefix ("conv-move" moves a conversation,
+   "move" moves a sub-project), move_modal (the modal's id) and move_title. The API's
+   widen or narrow report is shown as a warning before the move is confirmed.
+   Driven by static/js/projects.js. #}
+<div class="modal fade" id="{{ move_modal }}" tabindex="-1" aria-labelledby="{{ move_prefix }}-title" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="{{ move_prefix }}-title"><i class="bi bi-folder-symlink me-2" aria-hidden="true"></i>{{ move_title }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="{{ move_prefix }}-destination">Move to</label>
+                <select class="form-select" id="{{ move_prefix }}-destination"></select>
+                <div class="form-text">You can move something only where you own both it and its destination. A move between different projects goes through "No project".</div>
+                <div class="alert-app alert-app-warning mt-3" id="{{ move_prefix }}-warning" role="alert" hidden></div>
+                <div class="alert-app alert-app-danger mt-3" id="{{ move_prefix }}-error" role="alert" hidden></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-app-ghost" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-app-primary" id="{{ move_prefix }}-confirm">Move</button>
+            </div>
+        </div>
+    </div>
+</div>
