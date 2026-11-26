@@ -38,8 +38,41 @@ def _can_load_embeddings(items: list[pytest.Item]) -> bool:
     return any(scripts not in Path(str(item.path)).parents for item in items)
 
 
+# The provider SDKs conduit imports lazily (importlib.import_module in
+# conduit.providers.*) when it builds a provider or lists a connection's models. The
+# connections tests reach anthropic and openai through conduit's registry. Module names
+# only: importing them builds no client and makes no network call.
+PROVIDER_SDKS: tuple[str, ...] = ("anthropic", "openai")
+
+
+def warm_provider_sdks() -> list[str]:
+    """Import each installed provider SDK not yet imported; return the names imported.
+
+    The first import of a provider SDK can take tens of seconds on a cold file cache
+    (anthropic took 41.6 s in wave 29) and would otherwise be charged to whichever test
+    first builds a provider. An SDK already imported costs a dictionary lookup. One that
+    is not installed, or fails to import, is left for the tests to meet as before.
+    """
+    import importlib
+    import importlib.util
+
+    warmed: list[str] = []
+    for name in PROVIDER_SDKS:
+        if name in sys.modules:
+            continue
+        try:
+            if importlib.util.find_spec(name) is None:
+                continue
+            importlib.import_module(name)
+        except Exception:  # noqa: BLE001 - warm-up is best effort
+            continue
+        warmed.append(name)
+    return warmed
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
-    """Load the embedding model once, before the first test, outside any test's timeout.
+    """Import the provider SDKs and load the embedding model once, before the first test,
+    outside any test's timeout.
 
     Importing sentence_transformers and loading the model takes tens of seconds on a busy
     machine; whichever test first indexed a message would be charged that and could exceed
@@ -57,6 +90,13 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     if not _can_load_embeddings(list(session.items)):
         return
+    started = time.perf_counter()
+    warmed = warm_provider_sdks()
+    if warmed:
+        say(
+            f"provider SDK warm-up: imported {', '.join(warmed)} "
+            f"in {time.perf_counter() - started:.1f} s"
+        )
     started = time.perf_counter()
     try:
         from spark.index.embeddings import DEFAULT_MODEL, SentenceTransformerEmbedding
