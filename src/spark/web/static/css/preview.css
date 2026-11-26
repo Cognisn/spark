@@ -94,20 +94,29 @@
 .preview-panel[hidden] { display: none; }
 .preview-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem;
     padding: 0.375rem 0.5rem 0.375rem 0.75rem;
     border-bottom: 1px solid var(--app-border);
     font-size: 0.8125rem;
 }
-.preview-toolbar-text { flex: 1; min-width: 0; }
+.preview-toolbar-text { flex: 1 1 10rem; min-width: min(10rem, 100%); }
+/* A chart's toolbar keeps its own size and wraps under the file line, never over it. */
+.preview-toolbar .chart-toolbar { flex: 0 1 auto; }
 .preview-toolbar-name {
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.preview-toolbar-meta { color: var(--app-text-muted); font-size: 0.75rem; }
+.preview-toolbar-meta {
+    color: var(--app-text-muted);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .preview-toolbar .btn { display: inline-flex; align-items: center; gap: 0.25rem; }
 .preview-notice {
     padding: 0.375rem 0.75rem;
