@@ -83,6 +83,15 @@ Version 2 carries the user's projects (see [Projects](projects.md)):
   id) is a resource of which project (`project_id`), and when it was added;
 - `project_id` on each conversation: the project it sits in, if any.
 
+- `title` and `kind` on each `user_files` row: what the file is called and what it is
+  (`document`, `chart`, `diagram`, `preview` or `attachment`), so a chart, a diagram or
+  a renamed document comes back as itself. Both are optional. A bundle written before
+  they were carried (an earlier version 2 bundle) has neither, and a missing, blank or
+  unrecognised value falls back to the defaults: the title is the file name and the kind
+  follows the file's source. An imported title is neutralised as the app does (one line
+  of plain text, no markup characters, at most 120 characters). A version 1 bundle that
+  carries either column is refused.
+
 A personal export has no members or sharing to carry, and the bundle never names who
 added a resource. Version 1 bundles have none of this and still import as before. A
 bundle that says it is version 1 but carries a project table or a conversation's

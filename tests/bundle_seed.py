@@ -499,6 +499,8 @@ async def seed(db: Executor, user: str, store: FileStore | None = None) -> Seede
                 mime_type="application/pdf" if key.endswith(".pdf") else "text/plain",
                 conversation_id=conversation,
                 source="upload" if conversation else "created",
+                title="Garden plan" if conversation else "Shade bed notes",
+                kind="attachment" if conversation else "document",
                 created_at=WHEN,
                 updated_at=WHEN,
             )

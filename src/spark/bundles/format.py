@@ -320,6 +320,8 @@ TABLES: Final[Mapping[str, tuple[str, ...]]] = {
         "mime_type",
         "conversation_id",
         "source",
+        "title",
+        "kind",
         "created_at",
         "updated_at",
         "blob",
@@ -332,6 +334,9 @@ TABLES: Final[Mapping[str, tuple[str, ...]]] = {
 _SINCE_2_TABLES: Final = frozenset({"projects", "project_resources"})
 _SINCE_2_COLUMNS: Final[Mapping[str, frozenset[str]]] = {
     "conversations": frozenset({"project_id"}),
+    # An artefact's title and kind. Optional in version 2: a bundle written before they
+    # were carried has neither, and its files import with the defaults.
+    "user_files": frozenset({"title", "kind"}),
 }
 
 
