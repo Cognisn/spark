@@ -396,3 +396,14 @@ def test_chat_js_keeps_the_event_contract() -> None:
     # The resize functions moved to sidecar.js.
     assert "function startSidecarResize" not in chat
     assert "function startSidecarResize" in SIDECAR_JS.read_text(encoding="utf-8")
+
+
+def test_the_live_channel_refreshes_the_panel() -> None:
+    share = (JS / "share.js").read_text(encoding="utf-8")
+    watched = re.search(r"\[('ready'[^\]]+)\]\s*\.forEach", share)
+    assert watched and "'artefacts_changed'" in watched.group(1)
+    renamed = share[share.index("kind === 'artefacts_changed'") :]
+    assert "SparkSidecar.refresh()" in renamed.split("return;")[0]
+    # A tool that ended (anyone's turn) may have made an artefact.
+    ended = share[share.index("if (kind === 'tool')") :]
+    assert "data.phase === 'end' && window.SparkSidecar" in ended.split("return;")[0]
