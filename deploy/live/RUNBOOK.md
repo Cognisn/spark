@@ -21,6 +21,8 @@ The live suite drives a running server-mode stack over HTTP, as browsers on the 
 - `test_rc1.py`: the A18 rc1 checklist (identity, SSO, a forbidden tool category, the send route's stop at 100% of a role's credit allowance, a personal bundle, untrusted content, the worker and its failover, an attachment kept to its owner, a knowledge-graph build, a connection key changed on one replica used by the other, identity mail).
 - `test_conduit.py`: connections, discovery, overlays and residency; assignment and allowances; credits (the 80% warning, the stop at 100% with a turn in flight finishing, the usage CSV); MCP over HTTP with its audit event; a skill loaded with `use_skill`; a forced compaction; personal mode's one-time upgrade of a 0.2 `config.yaml` to connections.
 - `test_live_provider.py`: one live chat through a connection to a real service, only on Matthew's word.
+- `test_projects_live.py`, `test_charts_live.py`, `test_personal_live.py`, `test_skills_live.py` and `test_screens_live.py` (wave 32): projects, charts and diagrams, the right-hand panel, the project tools, the built-in skills and their switch, personal mode with its version 2 bundle imported into a server account, and the screens in a headless Chromium (`cdp.py`, on the port block's N+60 to N+62) in both themes at desktop and phone width. Screenshots and saved files go under `<sandbox>\browser\<run>`.
+- Every case is listed in `tests/live/coverage.py`, rendered as `docs/live-integration-coverage.md` by `python -m tests.live.coverage`; the default suite checks both.
 
 ## The model stub's directives
 
@@ -30,6 +32,7 @@ Written in the user's message:
 - `[[prompt N]]`: report `prompt_eval_count` N (default 10), so a turn's credits are predictable.
 - `[[sleep S]]`: wait S seconds before replying (a turn kept in flight).
 - `[[call NAME {json}]]`: call the tool NAME once; the next request, carrying its result, is answered `TOOL RESULT SEEN: <result>`.
+- `[[call64 NAME base64]]`: the same, with the arguments as base64 of their JSON, for arguments holding a list (`call` stops at the first `]`).
 
 `GET /_stub/requests` lists what was received (keys only as a SHA-256 prefix); `POST /_stub/reset` clears it. The stub lists `llama3-stub`, `tiny-stub` and `extra-stub`, none of which conduit's catalogue declares. The suite creates the `stub-ollama` connection first and then declares the first two as overlays on it (`tiny-stub` with a 4,096-token window, for compaction), as an administrator would; since 0.3.0rc17 a declaration rebuilds that connection's provider, so the models are usable at once.
 

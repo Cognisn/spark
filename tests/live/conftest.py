@@ -35,12 +35,16 @@ from tests.live.client import Browser
 STATE_ENV = "SPARK_LIVE_STACK"
 _LINK = r"(http://127\.0\.0\.1:\d+{path}\?token=[A-Za-z0-9_\-\.%=]+)"
 
+#: Checks of the suite itself that need no stack: the default suite runs them.
+OFFLINE = frozenset({"test_coverage_registry.py", "test_model_stub.py"})
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     here = Path(__file__).parent
     skip = pytest.mark.skip(reason=f"{STATE_ENV} names no live stack (deploy/live/stack.py)")
     for item in items:
-        if here in Path(str(item.fspath)).parents:
+        path = Path(str(item.fspath))
+        if here in path.parents and path.name not in OFFLINE:
             item.add_marker(pytest.mark.integration)
             if not os.environ.get(STATE_ENV):
                 item.add_marker(skip)
