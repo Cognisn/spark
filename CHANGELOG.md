@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project cards are kept on the server (PC17, PC18).** A new revision (`project_cards`) adds the table that holds the project tools' pending actions: a suggested project, a change to a project or a move of a conversation, each bound to the person whose turn showed it and to its conversation, under an unguessable id, until it is accepted, turned down or expires (24 hours). A conversation holds at most one suggestion, enforced by the database. The downgrade drops the table.
+
 ## [0.3.0rc59] - 2026-11-26
 
 ### Added
