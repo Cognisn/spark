@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closing a standalone database is bounded and says what it waited on.** The database the tray daemon and the scheduler open on their own loop thread now gives up closing after 15 seconds (was 30), logging the loop thread's stack and the work still pending on it. Stopping a loop thread cancels the tasks still pending on it, lets them finish within two seconds, tells anything waiting on them that they were cancelled, and logs what it cancelled; a loop thread that does not stop in time is logged with the stack that holds it.
+
 ## [0.3.0rc59] - 2026-11-26
 
 ### Added

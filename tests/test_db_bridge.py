@@ -228,6 +228,54 @@ class TestLoopThread:
         finally:
             lt.stop()
 
+    def test_stop_on_an_idle_loop_reports_nothing_cancelled(self):
+        lt = LoopThread(name="lt-idle")
+        lt.start()
+        report = lt.stop()
+        assert report.stopped
+        assert report.cancelled == ()
+
+    def test_stop_cancels_and_reports_work_left_on_the_loop(self, caplog):
+        lt = LoopThread(name="lt-pending")
+        loop = lt.start()
+
+        async def waits_for_ever() -> None:
+            await asyncio.Event().wait()
+
+        left = asyncio.run_coroutine_threadsafe(waits_for_ever(), loop)
+        with caplog.at_level("WARNING", logger="spark.db.loop"):
+            report = lt.stop(timeout=5)
+        assert report.stopped
+        assert len(report.cancelled) == 1
+        assert "waits_for_ever" in report.cancelled[0]
+        assert left.cancelled()
+        assert loop.is_closed()
+        assert "waits_for_ever" in caplog.text
+
+    def test_stop_is_bounded_and_names_what_blocks_the_loop(self, caplog):
+        lt = LoopThread(name="lt-blocked")
+        loop = lt.start()
+        release = threading.Event()
+
+        def blocks_the_loop() -> None:
+            release.wait(30)
+
+        loop.call_soon_threadsafe(blocks_the_loop)
+        time.sleep(0.2)
+        started = time.perf_counter()
+        try:
+            with caplog.at_level("WARNING", logger="spark.db.loop"):
+                report = lt.stop(timeout=0.5)
+            assert time.perf_counter() - started < 3
+            assert not report.stopped
+            assert "blocks_the_loop" in caplog.text
+        finally:
+            release.set()
+        deadline = time.monotonic() + 5
+        while loop.is_running() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not loop.is_running()
+
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
     def test_uses_the_selector_loop_on_windows(self):
         loop = new_event_loop()
