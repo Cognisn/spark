@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc64] - 2026-11-27
+
 ### Added
 
 - **Projects in the interface.** The Conversations page has a Projects tree above the list: a collapsible tree up to five levels, projects shared with you under "Shared with me" with the sharing icon, conversations listed under their project (and no longer in the main list), expansion remembered in the browser, keyboard navigation and a New project dialog. Each project has a page (`/projects/<id>`) with its description, instructions (an editor with a live, sanitised Markdown preview and a save that shows the API's refusal), resources (upload with the upload limit and the owner's quota messages, download, removal by role), sub-projects, conversations with New conversation at any level, and, for the owner of a top-level project in server mode, Members (add by name or email, role and scope for each person, change, remove) and Transfer. Moving a conversation (from the chat header) shows the API's widen or narrow report as a warning before it is confirmed; deleting a project offers keep or delete everything with the counts from the delete preview. The chat header shows the project path as breadcrumbs, each level a link, and the conversation share dialog offers only the project's people for a conversation in a project. User guide pages for projects are added to Help and `docs/projects.md`.
