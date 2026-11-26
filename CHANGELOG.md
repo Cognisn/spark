@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc66] - 2026-11-27
+
 ### Added
 
 - **Live checks of projects, charts, the panel and the built-in skills.** The live suite (`tests/live`, run against the stack in `deploy/live`) gains cases for every part of PC1 to PC23: a three-level project shared with a Contributor, a Read-only member and a non-member (instructions top level first with the nearest level winning, resources charged to the owner, each sharing scope, a scope change that keeps an individual share, the share limit, moves with their warnings, both deletion choices with notices and mail, transfer, the panel's three groups and renames by role, and the project tools' direct creation, suggestion, Dismiss and update cards); every chart type, a chart from a CSV file and one from an Excel sheet, a diagram, a member of a shared conversation opening them and a refused definition explained to the model; personal mode's projects, charts, panel and skills, and its version 2 bundle imported into a server account; the administrator's switch for a built-in skill; and the screens in a headless Chromium in both themes at desktop and phone width, with PNG, SVG and CSV saves checked as files.
