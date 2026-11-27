@@ -126,7 +126,7 @@ def test_export_needs_a_signed_in_session(personal: TestClient) -> None:
 @pytest.fixture
 def server(tmp_path: Path, server_db: DatabaseSettings) -> Iterator[TestClient]:  # noqa: F811
     files_pkg.configure(
-        _Settings({"files.root": str(tmp_path / "volume"), "files.quota_mb": 1}),
+        _Settings({"files.root": str(tmp_path / "volume")}),
         data_dir=tmp_path,
         runtime_mode=Mode.SERVER,
     )
@@ -346,7 +346,9 @@ def test_over_the_quota_is_refused(server: TestClient, bundle: tuple[bytes, Path
     admin, _ = _signed_in(server, "root@example.com", ADMINISTRATOR)
     _, ada_id = _signed_in(server, "ada@example.com", USER)
     app: Any = server.app
-    # Ada's area already holds her whole quota (1 MB in the fixture).
+    resp = admin.post("/settings/api/instance", json={"files.quota_mb": 1})
+    assert resp.status_code == 200, resp.text
+    # Ada's area already holds her whole quota (1 MB, the administrator's setting).
     server.portal.call(  # type: ignore[attr-defined]
         app.state.database.execute,
         "INSERT INTO user_file_usage (user_guid, bytes_used) VALUES (?, ?)",

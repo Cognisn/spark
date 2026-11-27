@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 
 from spark import files as files_pkg
 from spark.identity import audit as spark_audit
-from spark.identity.permissions import POWER_USER, USER
+from spark.identity.permissions import ADMINISTRATOR, POWER_USER, USER
 from spark.mode import Mode
 from spark.projects import notices
 from tests.test_conversation_sharing_web import (  # noqa: F401
@@ -60,7 +60,7 @@ class _Settings:
 
 @pytest.fixture
 def storage(client: TestClient, tmp_path: Path) -> Iterator[dict[str, Any]]:
-    """The file area's settings, live: a test sets ``files.quota_mb``."""
+    """The file area's start-up settings (its root); limits are the administrator's."""
     values: dict[str, Any] = {"files.root": str(tmp_path / "volume")}
     files_pkg.configure(_Settings(values), data_dir=tmp_path, runtime_mode=Mode.SERVER)
     yield values
@@ -137,6 +137,17 @@ def upload(who: Person, pid: int, name: str, data: bytes) -> Any:
     return who.browser.post(
         f"/projects/api/{pid}/resources", files={"file": (name, data, "text/plain")}
     )
+
+
+@pytest.fixture
+def admin(people: dict[str, Person], client: TestClient) -> Person:
+    return person(client, "root@example.com", ADMINISTRATOR)
+
+
+def set_quota(admin: Person, megabytes: int) -> None:
+    """The administrator's per-user quota, as the Settings page sets it."""
+    resp = admin.browser.post("/settings/api/instance", json={"files.quota_mb": megabytes})
+    assert resp.status_code == 200, resp.text
 
 
 def usage(who: Person) -> int:
@@ -341,10 +352,10 @@ class TestResources:
         assert events(people["ada"].browser, spark_audit.PROJECT_RESOURCE_ADDED)
 
     def test_the_owners_quota_refuses_a_contributors_upload(
-        self, people: dict[str, Person], plan: dict[str, int], storage: dict[str, Any]
+        self, people: dict[str, Person], plan: dict[str, int], admin: Person
     ) -> None:
-        storage["files.quota_mb"] = 0.001  # about 1 KB
-        refused = upload(people["cora"], plan["plan"], "big.txt", b"x" * 5000)
+        set_quota(admin, 1)
+        refused = upload(people["cora"], plan["plan"], "big.txt", b"x" * 1_200_000)
         assert refused.status_code == 507 and "owner's storage" in refused.json()["error"]
 
     def test_removing_ones_own_only(self, people: dict[str, Person], plan: dict[str, int]) -> None:
@@ -426,28 +437,32 @@ class TestMovesDeletionAndTransfer:
         self,
         people: dict[str, Person],
         plan: dict[str, int],
-        storage: dict[str, Any],
+        admin: Person,
         mail: list[dict[str, Any]],
     ) -> None:
-        upload(people["ada"], plan["plan"], "data.txt", b"d" * 3000)
-        storage["files.quota_mb"] = 0.002  # about 2 KB: Cora cannot hold 3,000 bytes
+        upload(people["ada"], plan["plan"], "data.txt", b"d" * 100_000)
+        set_quota(admin, 1)
+        held = people["cora"].browser.post(
+            "/files/api", files={"file": ("held.bin", b"h" * 1_000_000, "text/plain")}
+        )
+        assert held.status_code == 201, held.text  # Cora's area is nearly full
         url = f"/projects/api/{plan['plan']}/transfer"
         refused = people["ada"].browser.post(url, json={"user_guid": people["cora"].guid})
         assert refused.status_code == 507
-        storage["files.quota_mb"] = 1
+        set_quota(admin, 2)
         assert (
             people["cora"].browser.post(url, json={"user_guid": people["vic"].guid}).status_code
             == 403
         )
         done = people["ada"].browser.post(url, json={"user_guid": people["cora"].guid})
         assert done.status_code == 200, done.text
-        assert usage(people["cora"]) == 3000 and usage(people["ada"]) == 0
+        assert usage(people["cora"]) == 1_100_000 and usage(people["ada"]) == 0
         body = people["cora"].browser.get(f"/projects/api/{plan['plan']}", headers=FETCH).json()
         assert body["project"]["role"] == "owner"
         fid = body["resources"][0]["file_id"]
         assert (
             people["vic"].browser.get(f"/projects/api/{plan['plan']}/resources/{fid}").content
-            == b"d" * 3000
+            == b"d" * 100_000
         )
         ada = people["ada"].browser.get(f"/projects/api/{plan['plan']}", headers=FETCH).json()
         assert (ada["project"]["role"], ada["project"]["scope"]) == (

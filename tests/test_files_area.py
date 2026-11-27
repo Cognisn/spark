@@ -15,6 +15,7 @@ from spark import files as files_pkg
 from spark.database import files as files_db
 from spark.files.area import FileArea, FileAreaNotConfigured, FileLimits
 from spark.files.store import MountedVolumeStore, UploadTooLarge
+from spark.instance_settings import accessor
 from spark.mode import DatabaseSettings, Dialect, Mode, RuntimeSettings
 
 ALICE = "user-alice-0001"
@@ -64,6 +65,8 @@ class TestLimits:
 class TestConfiguration:
     @pytest.fixture(autouse=True)
     def _reset(self) -> Iterator[None]:
+        # No instance settings source left over from another test: limits come from konfig.
+        accessor.reset()
         yield
         files_pkg.reset()
 

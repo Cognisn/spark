@@ -39,11 +39,6 @@ from tests.live.live_helpers import (
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(900)]
 
 NEAREST = "a deeper level refines or overrides a higher one"
-#: The defect the quota case waits on (Skuld question, wave 32).
-QUOTA_QUESTION = (
-    "Skuld question 93: in server mode the file area reads files.quota_mb from the "
-    "start-up settings, not the administrator's instance setting"
-)
 
 
 @dataclass
@@ -423,15 +418,11 @@ def _usage(stack: Stack, person: Person) -> int:
     return int(found[0][0]) if found else 0
 
 
-@pytest.mark.xfail(strict=True, reason=QUOTA_QUESTION)
 def test_transfer_is_refused_when_the_new_owner_lacks_the_quota(
     stack: Stack, admin: Person, team: Team
 ) -> None:
     """PC14: with the administrator's quota (files.quota_mb) at 1 MB, a transfer to someone
-    whose area already holds 700 kB refuses a project of 400 kB (507) and moves nothing.
-
-    Fails on 0.3.0rc65: the quota an administrator sets on the instance is not what the
-    file area reads (see the reason)."""
+    whose area already holds 700 kB refuses a project of 400 kB (507) and moves nothing."""
     owner, colin = team.owner, team.contributor
     project = create_project(owner.browser, f"Well {stack.run}")
     share(owner, project, colin, "contributor", "all_conversations")

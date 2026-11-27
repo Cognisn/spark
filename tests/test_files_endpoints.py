@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from spark import files as files_pkg
 from spark.database import conversations as convdb
+from spark.instance_settings import accessor
 from spark.mode import Mode
 from spark.web.server import attach_database, create_app
 from tests.web_helpers import sign_in
@@ -39,6 +40,8 @@ def _mock_settings_get(key: str, default: object = None, *, cast: type | None = 
 
 @pytest.fixture
 def file_settings(tmp_path: Path) -> Iterator[_Settings]:
+    # No instance settings source left over from another test: these limits come from konfig.
+    accessor.reset()
     settings = _Settings({"files.root": str(tmp_path / "volume")})
     files_pkg.configure(settings, data_dir=tmp_path, runtime_mode=Mode.SERVER)
     yield settings

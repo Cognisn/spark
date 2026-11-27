@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The administrator's file limits apply in server mode.** `files.quota_mb` and `files.max_upload_mb` were stored when an administrator changed them on the Settings page but ignored: the file area read the start-up settings and so always used 1024 MB and 50 MB. In server mode it now reads both from the instance settings at each check, so uploads, chat attachments, project resources (charged to the owner), project transfers and bundle imports see a change at once, without a restart. Personal mode still reads `config.yaml`. `docs/configuration.md` says where each limit is set in each mode, and the live transfer-over-quota case is no longer an expected failure.
+
 ## [0.3.0rc68] - 2026-11-27
 
 ### Changed
