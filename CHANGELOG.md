@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A Contributor's share picker is limited to the project's people too.** A new read, `GET /projects/api/{id}/people`, lists a top-level project's owner and members (warden user id, display name and initials; no role, scope or email) for anyone who may view the project, in server mode only; a sub-project answers for its top-level project, and anyone without access, or personal mode, gets 404. The share picker for a conversation in a project now filters the people search by that id for the owner and a Contributor alike, so a same-name person outside the project is never offered, and the "Spark tells you if someone does not" note is gone. The owner-only members list is unchanged, and the server's refusal stays as the guard.
+
 ## [0.3.0rc68] - 2026-11-27
 
 ### Changed

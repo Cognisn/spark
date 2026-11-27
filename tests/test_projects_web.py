@@ -163,6 +163,65 @@ class TestProjectRoutes:
         assert vic["project"]["role"] == "viewer" and vic["members"] is None
         assert vic["project"]["can_contribute"] is False
 
+    def test_the_people_read_answers_anyone_who_may_view_the_project(
+        self, people: dict[str, Person], plan: dict[str, int]
+    ) -> None:
+        everyone = {people[w].warden_id for w in ("ada", "cora", "vic", "pat")}
+        for who in ("ada", "cora", "vic", "pat"):
+            for pid in (plan["plan"], plan["detail"]):  # a sub-project answers for its top
+                got = people[who].browser.get(f"/projects/api/{pid}/people", headers=FETCH)
+                assert got.status_code == 200, (who, pid, got.text)
+                found = got.json()["people"]
+                assert {p["id"] for p in found} == everyone, (who, pid)
+                assert found[0]["id"] == people["ada"].warden_id  # the owner first
+                for entry in found:
+                    assert set(entry) == {"id", "name", "initials"}, entry
+                    assert entry["name"] and entry["initials"]
+                assert "no-store" in got.headers["cache-control"]
+
+    def test_the_people_read_carries_no_role_scope_or_email(
+        self, people: dict[str, Person], plan: dict[str, int]
+    ) -> None:
+        got = people["vic"].browser.get(f"/projects/api/{plan['plan']}/people", headers=FETCH)
+        assert got.status_code == 200
+        entry = got.json()["people"][1]
+        assert "role" not in entry and "scope" not in entry and "email" not in entry
+        # the members list with role and scope stays the owner's
+        assert (
+            people["vic"]
+            .browser.get(f"/projects/api/{plan['plan']}/members", headers=FETCH)
+            .status_code
+            == 403
+        )
+        assert (
+            people["cora"]
+            .browser.get(f"/projects/api/{plan['plan']}/members", headers=FETCH)
+            .status_code
+            == 403
+        )
+
+    def test_the_people_read_is_not_found_without_access(
+        self, people: dict[str, Person], plan: dict[str, int]
+    ) -> None:
+        for pid in (plan["plan"], plan["detail"], 987654):
+            got = people["sam"].browser.get(f"/projects/api/{pid}/people", headers=FETCH)
+            assert got.status_code == 404, (pid, got.text)
+            assert "people" not in got.json()
+        # another user's project id looks the same as one that does not exist
+        own = people["sam"].browser.post("/projects/api", json={"name": "Mine"})
+        assert own.status_code == 201, own.text
+        mine = int(own.json()["project"]["id"])
+        assert (
+            people["ada"].browser.get(f"/projects/api/{mine}/people", headers=FETCH).status_code
+            == 404
+        )
+        assert (
+            people["sam"]
+            .browser.get(f"/projects/api/{mine}/people", headers=FETCH)
+            .json()["people"][0]["id"]
+            == people["sam"].warden_id
+        )
+
     def test_only_the_owner_edits_and_manages(
         self, people: dict[str, Person], plan: dict[str, int]
     ) -> None:

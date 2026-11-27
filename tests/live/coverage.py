@@ -271,6 +271,14 @@ CASES: tuple[Case, ...] = (
         "A project conversation is shared only with the project's people (the picker limit).",
     ),
     Case(
+        "PCV-1.05b",
+        "projects-charts",
+        "wave 33",
+        "PC9",
+        PROJECTS + "test_a_contributors_share_picker_offers_only_the_projects_people",
+        "A Contributor's share picker offers only the project's people, by id, not a same-name outsider.",
+    ),
+    Case(
         "PCV-1.06",
         "projects-charts",
         "scope 1",

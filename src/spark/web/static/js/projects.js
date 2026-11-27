@@ -276,12 +276,12 @@
     }
 
     /** The people a conversation in a project may be shared with. ``limit`` is null (no
-     * project), or {people: [{name}]} (the project's people) or {people: null} (not known
-     * to this user: the API decides and refuses with its message). */
+     * project), or {people: [{id}]} (the project's people, by warden user id), or
+     * {people: null} (the read failed: the API still refuses anyone outside the project). */
     function pickerPeople(found, limit) {
         if (!limit || !limit.people) return found;
-        const names = new Set(limit.people.map(p => String(p.name || '').toLowerCase()));
-        return found.filter(p => names.has(String(p.name || '').toLowerCase()));
+        const ids = new Set(limit.people.map(p => String(p.id || '').toLowerCase()));
+        return found.filter(p => ids.has(String(p.id || '').toLowerCase()));
     }
 
     const logic = {
@@ -831,9 +831,9 @@
             const ctx = await call('GET', `/projects/api/conversations/${conversationId}/context`);
             if (!ctx.ok || !ctx.body.path || !ctx.body.path.length) return null;
             const root = ctx.body.path[0].id;
-            const members = await call('GET', `/projects/api/${root}/members`);
+            const members = await call('GET', `/projects/api/${root}/people`);
             if (!members.ok) return { people: null };
-            return { people: (members.body.members || []).map(m => ({ name: m.name })) };
+            return { people: (members.body.people || []).map(m => ({ id: m.id, name: m.name })) };
         };
 
         const start = () => { initTree(); initNewProject(); initPage(); initChatHeader(); };
