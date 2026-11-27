@@ -430,12 +430,10 @@ def test_an_mcp_tool_over_http_through_conduit_is_called_and_audited(
 
     marker = f"mcp-{stack.run}"
     since = time.time()
-    # An MCP tool asks the user first (built-in tools are auto-approved on this stack);
-    # Alice allows it once, as the chat page's dialogue would.
-    events = alice.browser.chat(
-        conv, f"[[call {name} {json.dumps({'text': marker})}]]", approve="once"
-    )
-    assert named(events, "permission_request"), [e.name for e in events]
+    # This stack turns Auto-approve Tools on, and an MCP tool takes the same check as a
+    # built-in one: its first use runs without the permission dialogue.
+    events = alice.browser.chat(conv, f"[[call {name} {json.dumps({'text': marker})}]]")
+    assert not named(events, "permission_request"), [e.name for e in events]
     assert named(events, "complete"), [e.name for e in events]
     follow = [r for r in _chats_since(stack, since) if r["last_role"] == "tool"]
     assert follow, "SPARK did not answer the tool call"

@@ -93,6 +93,23 @@ def _live_setting(key: str, fallback: Any) -> Any:
     return fallback if value is None else value
 
 
+# The instance's "Auto-approve Tools" switch, read at each tool permission check
+_AUTO_APPROVE_TOOLS = "tool_permissions.auto_approve"
+
+
+def _auto_approve_tools() -> bool:
+    """Whether a tool's first use in a conversation runs without asking: the instance
+    setting ``tool_permissions.auto_approve``, read now through the settings accessor
+    (``config.yaml`` in personal mode, the administrator's setting in server mode).
+    Off when it cannot be read, so the dialogue is never skipped by mistake."""
+    from spark.instance_settings import accessor
+
+    try:
+        return accessor.get(_AUTO_APPROVE_TOOLS) is True
+    except Exception:  # noqa: BLE001 - an unreadable setting asks, as the default does
+        return False
+
+
 @dataclass(frozen=True)
 class TurnCallbacks:
     """One turn's interactive callbacks: tool approval, agent model approval and
@@ -1565,6 +1582,10 @@ class ConversationManager:
             tool_permissions.is_tool_allowed, user_guid, conversation_id, tool_name
         )
 
+        # A forced prompt asks every time, whatever was allowed before and whatever
+        # the auto-approve setting says.
+        forced = False
+
         # System commands: always prompt when require_approval is on,
         # unless running without a callback (autonomous actions).
         if (
@@ -1575,6 +1596,7 @@ class ConversationManager:
             .get("require_approval", True)
         ):
             permission = None  # Force re-prompt
+            forced = True
 
         # Email send_email: always prompt when require_approval is on,
         # unless running without a callback (autonomous actions).
@@ -1586,11 +1608,13 @@ class ConversationManager:
             .get("require_approval", True)
         ):
             permission = None  # Force re-prompt
+            forced = True
 
         # Skill authoring: always prompt, even when previously always-allowed,
         # unless running without a callback (autonomous actions).
         if tool_name in ("create_skill", "update_skill") and ask:
             permission = None  # Force re-prompt
+            forced = True
 
         # Skill loading is transparent: use_skill / read_skill_resource never
         # prompt for approval. Loading a skill is a read-only progressive-disclosure
@@ -1603,6 +1627,11 @@ class ConversationManager:
         # The user's own file area is theirs to read: listing and reading it never
         # prompt (wave 5 Q27). The tools themselves are scoped to the user.
         if tool_name in ("list_my_files", "read_my_file"):
+            permission = True
+
+        # Auto-approve Tools: a first use (nothing stored for this tool) runs without
+        # the dialogue, for this call only; a deny stays and forced prompts still ask.
+        if permission is None and ask and not forced and _auto_approve_tools():
             permission = True
 
         if permission is None:

@@ -46,14 +46,12 @@ def turn(person: Person, conversation_id: int, message: str, **kwargs: Any) -> l
 def tool_records(
     stack: Stack, person: Person, conversation_id: int, text: str, tool: str, arguments: Any
 ) -> tuple[list[Event], dict[str, Any], dict[str, Any]]:
-    """A turn in which the model calls ``tool`` (answering its permission prompt once):
-    the events, the first request the model was sent, and the request that carried the
-    tool's result back to the model."""
+    """A turn in which the model calls ``tool`` (the stack turns Auto-approve Tools on, so
+    no permission prompt is answered): the events, the first request the model was sent,
+    and the request that carried the tool's result back to the model."""
     marker = f"turn-{time.time_ns()}"
     since = time.time()
-    events = turn(
-        person, conversation_id, f"{text} {marker} {call64(tool, arguments)}", approve="once"
-    )
+    events = turn(person, conversation_id, f"{text} {marker} {call64(tool, arguments)}")
     sent = [r for r in chats_since(stack, since) if marker in r["user"]]
     assert sent, "the turn never reached the model"
     follow = [r for r in sent if r["last_role"] == "tool"]

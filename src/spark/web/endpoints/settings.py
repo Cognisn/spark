@@ -1184,7 +1184,18 @@ def _build_sections(settings: _SettingsGetter) -> list[dict[str, Any]]:
                     "id": "tool_perms",
                     "title": "Tool Permissions",
                     "fields": [
-                        _toggle("tool_permissions.auto_approve", "Auto-approve Tools", settings),
+                        {
+                            **_toggle(
+                                "tool_permissions.auto_approve", "Auto-approve Tools", settings
+                            ),
+                            "help": (
+                                "On: the first use of a tool in a conversation runs without "
+                                "asking, for every user of this instance. Still asked or refused: "
+                                "a tool the user has denied stays denied, run_command and "
+                                "send_email still ask while they require approval, and creating "
+                                "or updating a skill always asks."
+                            ),
+                        },
                     ],
                 },
             ],

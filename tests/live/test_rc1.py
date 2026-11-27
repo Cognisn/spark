@@ -232,8 +232,9 @@ def test_a_tool_category_a_user_may_not_have_is_refused(
     assert "spawn_agent" not in sent[0]["tools"], "the User's request offered spawn_agent"
     follow = [r for r in sent if r["last_role"] == "tool"]
     assert follow, "SPARK did not answer the tool call"
-    # SPARK refuses the call with its generic refusal and never runs the tool.
-    assert "denied permission for this tool call" in follow[0]["last"], follow[0]["last"]
+    # Auto-approve Tools is on for this stack, so no dialogue stands in the way: SPARK
+    # refuses the call by the User's role and never runs the tool.
+    assert "your role does not allow" in follow[0]["last"], follow[0]["last"]
 
 
 # -- item 8: an attachment kept to its owner ----------------------------------------------
