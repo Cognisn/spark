@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc67] - 2026-11-27
+
 ### Fixed
 
 - **The chat page starts up again.** The served chat page threw `ReferenceError: configureMarked is not defined` on load, because `configureMarked()` was removed from `main.js` (the markdown module configures `marked` itself) but its call stayed in `chat.html`; nothing after that line of the start-up ran, so no history, chart card or panel was drawn. The stale call is gone, and a new browser test (`tests/test_chat_page_browser.py`) opens the real served page for a conversation with a reply and a chart and fails on any page error.
