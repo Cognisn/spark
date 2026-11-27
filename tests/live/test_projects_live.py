@@ -278,6 +278,10 @@ def test_a_contributors_share_picker_offers_only_the_projects_people(
         assert twin.warden_id not in {p["id"] for p in found}
         assert not twin.browser.get(f"/projects/api/{tree.top}/people").is_success
 
+        # The people search itself does find the outsider: only the project limit hides them.
+        raw = ok(team.contributor.browser.get(f"/conversations/api/people?q={twin.email[:6]}"))
+        assert twin.warden_id in {p["id"] for p in raw}, raw
+
         conv = new_conversation(team.contributor, model_id, "Picker view", project_id=tree.middle)
         shots = stack.sandbox / "browser" / stack.run / "people-read"
         shots.mkdir(parents=True, exist_ok=True)
@@ -294,7 +298,8 @@ def test_a_contributors_share_picker_offers_only_the_projects_people(
             twin_term = team.contributor.email.split("@")[0][:6]
             for label, query in (("project-person", term), ("same-name", twin_term)):
                 page.evaluate(
-                    "(() => { const i = document.getElementById('share-search');"
+                    "(() => { document.getElementById('share-results').innerHTML = '';"
+                    " const i = document.getElementById('share-search');"
                     f" i.value = {query!r}; i.dispatchEvent(new Event('input', {{bubbles: true}})); }})()"
                 )
                 page.wait(
