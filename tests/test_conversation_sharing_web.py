@@ -21,6 +21,7 @@ shares it with Cora (contributor) and Vic (read-only); Sam is a stranger.
 
 from __future__ import annotations
 
+import itertools
 import threading
 import time
 from dataclasses import dataclass
@@ -113,9 +114,9 @@ class Person:
 
 
 # One address per signed-in browser, from the three documentation ranges, so each is distinct
-# (and audited as its own) however many people the session signs in.
-_ADDRESSES = iter(
-    f"{net}.{host}" for net in ("192.0.2", "198.51.100", "203.0.113") for host in range(10, 250)
+# (and audited as its own); the pool wraps rather than runs out in a long run.
+_ADDRESSES = itertools.cycle(
+    [f"{net}.{host}" for net in ("192.0.2", "198.51.100", "203.0.113") for host in range(10, 250)]
 )
 
 

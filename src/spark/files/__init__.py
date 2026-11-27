@@ -8,6 +8,10 @@ administrator edits apply at once.
 Settings keys: ``files.root`` (the storage root; required in server mode,
 defaulting to ``<data directory>/files`` in personal mode),
 ``files.max_upload_mb`` and ``files.quota_mb`` (per user; 0 means no limit).
+``files.root`` is a start-up setting. The two limits are the administrator's
+instance settings in server mode, read from the instance settings accessor at each
+check (the start-up settings are used only before the accessor holds the database
+settings, which a running server never is); personal mode reads ``config.yaml``.
 """
 
 from __future__ import annotations
@@ -72,10 +76,34 @@ def file_store() -> MountedVolumeStore:
     return MountedVolumeStore(data_dir / "files")
 
 
+class _InstanceLimits:
+    """The two limit keys read from the administrator's instance settings."""
+
+    def __init__(self, source: Any) -> None:
+        self._source = source
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._source.get(key)
+
+
+def _limit_settings(settings: SettingsLike, mode: Mode) -> SettingsLike:
+    """Where the limits are read: the instance settings in server mode, else ``settings``."""
+    if mode is Mode.SERVER:
+        from spark.instance_settings import accessor
+
+        try:
+            source = accessor.current()
+        except RuntimeError:  # not configured yet (start-up, and tests without an app)
+            return settings
+        if isinstance(source, accessor.ServerSettings):
+            return _InstanceLimits(source)
+    return settings
+
+
 def file_limits() -> FileLimits:
-    """The limits as currently configured."""
+    """The limits as currently configured (the administrator's, in server mode)."""
     settings, _, mode = _configured()
-    return FileLimits.from_settings(settings, server=mode is Mode.SERVER)
+    return FileLimits.from_settings(_limit_settings(settings, mode), server=mode is Mode.SERVER)
 
 
 def file_area(db: Any) -> FileArea:

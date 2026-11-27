@@ -284,6 +284,22 @@ embedded_tools:
 
 See [Tools](tools.md) and [Web Search](web-search.md) for details.
 
+### Files
+
+```yaml
+files:
+  # root: /var/lib/spark/files   # storage root (required in server mode)
+  quota_mb: 1024                 # per user; 0 means no limit
+  max_upload_mb: 50              # largest single upload; 0 means no limit
+```
+
+Where the two limits are set depends on the mode:
+
+- **Personal mode:** `files.quota_mb` and `files.max_upload_mb` are read from `config.yaml` (or `SPARK__FILES__QUOTA_MB` and `SPARK__FILES__MAX_UPLOAD_MB`). Without a quota setting a personal install has no quota.
+- **Server mode:** both are instance settings, kept in the database and changed by administrators on the Settings page (or through `POST /settings/api/instance`). A change applies to the next upload, project resource, project transfer and bundle import on every replica, without a restart. `config.yaml` and `SPARK__FILES__...` environment variables are not read for them; until an administrator sets one, the defaults are 1024 MB per user and 50 MB per upload. `files.root` remains a start-up setting.
+
+The quota counts every file in a user's area, including a project's resources (charged to the project's owner) and chat attachments.
+
 ### Skills
 
 ```yaml

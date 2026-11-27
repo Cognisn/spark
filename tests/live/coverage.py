@@ -308,7 +308,7 @@ CASES: tuple[Case, ...] = (
         "scope 1",
         "PC11, PC14, Q93",
         PROJECTS + "test_transfer_is_refused_when_the_new_owner_lacks_the_quota",
-        "A transfer over the new owner's quota is refused (strict xfail until Q93 is fixed).",
+        "A transfer over the new owner's quota is refused.",
     ),
     Case(
         "PCV-1.10",

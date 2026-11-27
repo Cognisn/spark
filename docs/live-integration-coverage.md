@@ -61,7 +61,7 @@ This page is generated from the registry in `tests/live/coverage.py` with `pytho
 | PCV-1.06 | scope 1 | PC12 | server | Moves warn before widening or narrowing, go through no project, and only for the owner. | `test_projects_live.py::test_moves_warn_before_widening_or_narrowing_and_follow_the_rules` |
 | PCV-1.07 | scope 1 | PC13 | server | Deleting keeps or deletes conversations, with counts, notices and mail. | `test_projects_live.py::test_deleting_keeps_or_deletes_conversations_with_counts_and_notices` |
 | PCV-1.08 | scope 1 | PC14 | server | A transfer moves the tree, its files and their usage; the old owner stays a Contributor. | `test_projects_live.py::test_transfer_moves_the_project_and_its_files_to_the_new_owner` |
-| PCV-1.09 | scope 1 | PC11, PC14, Q93 | server | A transfer over the new owner's quota is refused (strict xfail until Q93 is fixed). | `test_projects_live.py::test_transfer_is_refused_when_the_new_owner_lacks_the_quota` |
+| PCV-1.09 | scope 1 | PC11, PC14, Q93 | server | A transfer over the new owner's quota is refused. | `test_projects_live.py::test_transfer_is_refused_when_the_new_owner_lacks_the_quota` |
 | PCV-1.10 | scope 1 | PC2 to PC5 | server | The panel lists its three groups and renames by role, audited. | `test_projects_live.py::test_the_panel_lists_three_groups_and_renames_by_role` |
 | PCV-1.11 | scope 1 | PC17 | server | create_project creates on the user's request and refuses without one. | `test_projects_live.py::test_create_project_on_request_creates_it_and_refuses_without_one` |
 | PCV-1.12 | scope 1 | PC17 | server | A suggestion is a card; after Dismiss no second suggestion is shown. | `test_projects_live.py::test_a_suggestion_is_a_card_dismissed_once_and_never_shown_again` |
