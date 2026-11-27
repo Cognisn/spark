@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The chat page starts up again.** The served chat page threw `ReferenceError: configureMarked is not defined` on load, because `configureMarked()` was removed from `main.js` (the markdown module configures `marked` itself) but its call stayed in `chat.html`; nothing after that line of the start-up ran, so no history, chart card or panel was drawn. The stale call is gone, and a new browser test (`tests/test_chat_page_browser.py`) opens the real served page for a conversation with a reply and a chart and fails on any page error.
+- **The right-hand panel fits a phone screen.** The chat header's buttons no longer run past the edge of a 390 pixel screen, which had made the page wider than the screen and so the full-screen panel overlay too; the header and its button row now wrap. A browser test checks that nothing in the overlay scrolls sideways and that the close button lies inside the window and takes the keyboard.
+- **A chart's file line no longer sits under its toolbar.** In the preview pane, the line giving a chart's type and size was squeezed to nothing and drawn over Save as PNG, Save as SVG and Match theme. The pane's header now wraps, the file line keeps a readable width and is trimmed with an ellipsis, and the toolbar wraps beneath it. A browser test checks the boxes do not overlap, in light and dark and at the narrowest pane width.
+
 ## [0.3.0rc66] - 2026-11-27
 
 ### Added
