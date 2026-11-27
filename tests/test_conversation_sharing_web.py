@@ -21,6 +21,7 @@ shares it with Cora (contributor) and Vic (read-only); Sam is a stranger.
 
 from __future__ import annotations
 
+import itertools
 import threading
 import time
 from dataclasses import dataclass
@@ -112,7 +113,8 @@ class Person:
     warden_id: str
 
 
-_ADDRESSES = iter(range(10, 250))
+# Each signed-in person gets a documentation address; the pool wraps rather than runs out.
+_ADDRESSES = itertools.cycle(range(10, 250))
 
 
 def person(client: TestClient, email: str, *roles: str) -> Person:
