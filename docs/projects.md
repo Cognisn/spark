@@ -68,7 +68,9 @@ graphs.
 
 **The share limit.** A conversation in a project can be shared individually, or
 transferred, only to people who already have access to the project (its owner and
-members). Spark refuses anyone else, whatever the screen offers.
+members). Spark refuses anyone else, whatever the screen offers. The share picker offers
+only those people, for the owner and for a Contributor alike, matched by user id so a
+same-name person outside the project is never shown.
 
 **Removing a member** ends their access to the project and to its conversations they
 did not start, including individual shares of them. The conversations they started stay
@@ -187,6 +189,7 @@ the public origin for every change. A project or conversation you may not reach 
 | `POST /projects/api/{id}/move` | move a sub-project under another project of its tree: `parent_id` |
 | `GET`, `POST /projects/api/{id}/resources` | list; upload (multipart `file`) |
 | `GET`, `DELETE /projects/api/{id}/resources/{file_id}` | download; remove |
+| `GET /projects/api/{id}/people` | the owner and every member of the top-level project (`id`, `name`, `initials`), for anyone who may view it; server mode, 404 otherwise |
 | `GET`, `POST /projects/api/{id}/members` | list; share or change: `user_id` (a person) or `user_guid` (a member), `role` (`contributor` or `viewer`), `scope` (`project_only` or `all_conversations`) |
 | `DELETE /projects/api/{id}/members/{user_guid}` | remove a member; your own guid leaves |
 | `POST /projects/api/conversations/{conversation_id}/move` | `project_id` (or null) and `confirm`; 409 with `widened`, `narrowed` and `shares_removed` when it needs confirming |

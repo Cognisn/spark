@@ -255,6 +255,77 @@ def test_a_conversation_in_a_project_is_shared_only_with_its_people(
     assert can_read(team.viewer, conv)
 
 
+def test_a_contributors_share_picker_offers_only_the_projects_people(
+    stack: Stack, admin: Person, team: Team, tree: Tree, model_id: str
+) -> None:
+    """PC9 in Chromium (wave 33): a Contributor's share picker for their own conversation in
+    the project offers the project's people, matched by warden id, and not an outsider who
+    shares a display name with one of them."""
+    from tests.live.cdp import DESKTOP, chromium_session, click, sign_in
+
+    # An outsider whose display name is the Contributor's (the local part of the address).
+    twin = invite_and_accept(
+        stack, admin, f"{team.contributor.email.split('@')[0]}@example.org", "user"
+    )
+    try:
+        people = team.contributor.browser.get(f"/projects/api/{tree.top}/people")
+        found = ok(people)["people"]
+        assert {p["id"] for p in found} == {
+            team.owner.warden_id,
+            team.contributor.warden_id,
+            team.viewer.warden_id,
+        }, found
+        assert twin.warden_id not in {p["id"] for p in found}
+        assert not twin.browser.get(f"/projects/api/{tree.top}/people").is_success
+
+        # The people search itself does find the outsider: only the project limit hides them.
+        raw = ok(team.contributor.browser.get(f"/conversations/api/people?q={twin.email[:6]}"))
+        assert twin.warden_id in {p["id"] for p in raw}, raw
+
+        conv = new_conversation(team.contributor, model_id, "Picker view", project_id=tree.middle)
+        shots = stack.sandbox / "browser" / stack.run / "people-read"
+        shots.mkdir(parents=True, exist_ok=True)
+        port = int(stack.state["ports"]["web"]) + 61
+        with chromium_session(port, shots) as chrome:
+            page = chrome.page()
+            page.size(*DESKTOP)
+            sign_in(page, team.contributor.browser, "light")
+            page.navigate(f"{stack.base_url}/chat/{conv}")
+            page.wait("!!document.getElementById('btn-share')", 60, "the share button")
+            click(page, "#btn-share")
+            page.wait("document.getElementById('shareModal').classList.contains('show')", 30)
+            term = team.owner.email.split("@")[0].split("-")[0][:3]
+            twin_term = team.contributor.email.split("@")[0][:6]
+            for label, query in (("project-person", term), ("same-name", twin_term)):
+                page.evaluate(
+                    "(() => { document.getElementById('share-results').innerHTML = '';"
+                    " const i = document.getElementById('share-search');"
+                    f" i.value = {query!r}; i.dispatchEvent(new Event('input', {{bubbles: true}})); }})()"
+                )
+                page.wait(
+                    "document.querySelectorAll('#share-results .share-person, "
+                    "#share-results .form-text').length > 0",
+                    30,
+                    f"results for {label}",
+                )
+                shown = page.evaluate(
+                    "[...document.querySelectorAll('#share-results .share-person')]"
+                    ".map(e => e.dataset.id)"
+                )
+                if label == "project-person":
+                    assert team.owner.warden_id in shown, shown
+                else:
+                    assert twin.warden_id not in shown, shown
+                    assert team.contributor.warden_id not in shown  # never the caller
+                page.screenshot(shots / f"picker-{label}.png")
+            note = page.evaluate("document.getElementById('share-project-note').textContent")
+            assert "only with people who have access to the project" in note, note
+            assert "Spark tells you" not in note
+            assert not page.errors(), page.errors()
+    finally:
+        twin.browser.close()
+
+
 # -- moves ----------------------------------------------------------------------------------
 
 
