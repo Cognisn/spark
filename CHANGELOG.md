@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc70] - 2026-11-27
+
 ### Added
 
 - **Refresh one MCP server's tools without a restart.** When an MCP server is upgraded its tools may change, but Spark kept the list it first discovered. A **Refresh tools** button beside each enabled server on the MCP servers page (and `POST /settings/mcp/api/{server_name}/tools/refresh`) lists that server's tools again, reconnecting it first if it has dropped, and shows the tools added, removed and changed by name. Only that server's entries are replaced, so the model sees the new tools on its next turn and other servers are untouched. A server that fails or times out keeps its old list and the error is shown. The route has the same guard as the other MCP settings routes (`spark.settings.instance` on a server) and is audited in server mode as `spark.mcp.tools.refreshed`, with the server and counts only. Stored tool permissions for a removed tool are kept. Spark does not yet act on a server's `tools/list_changed` notification, as conduit does not deliver it.
