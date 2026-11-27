@@ -25,8 +25,9 @@ function sendMessageWithSSE(conversationId, message, attachmentIds) {
     btn.setAttribute('aria-label', 'Stop the response');
     btn.onclick = cancelCurrentRequest;
 
-    // Show typing indicator
+    // Show the working indicator ("Thinking...") at once
     startStreamingMessage();
+    chatWorking().begin();
 
     const params = new URLSearchParams({
         message: message,
@@ -51,6 +52,7 @@ function openChatStream(url) {
 
     // The sender was removed from the conversation: their turn is cancelled.
     currentEventSource.addEventListener('removed', () => {
+        settleStreamingMessage();
         closeStream();
         if (window.SparkSharing) SparkSharing._onEvent('removed', {});
     });
@@ -120,6 +122,7 @@ function openChatStream(url) {
 
     currentEventSource.addEventListener('compaction_status', (e) => {
         const data = JSON.parse(e.data);
+        chatWorking().compaction(data.status === 'start');
         if (data.status === 'start') {
             appendSystemMessage('Context compaction in progress...');
         } else if (data.status === 'complete') {
@@ -164,6 +167,7 @@ function openChatStream(url) {
         const data = JSON.parse(e.data);
         if (window.SparkBudget) SparkBudget.show(data);
         appendTextMessage('error', data.message || 'Your monthly credits on this connection are used.');
+        settleStreamingMessage();
         closeStream();
     });
 
@@ -173,6 +177,7 @@ function openChatStream(url) {
 
     currentEventSource.addEventListener('complete', (e) => {
         finaliseStreamingToolGroup();
+        settleStreamingMessage();
         closeStream();
     });
 
@@ -183,17 +188,19 @@ function openChatStream(url) {
             const data = JSON.parse(e.data);
             appendTextMessage('error', data.message || 'An error occurred.');
         } catch {
-            // EventSource native error (connection lost)
-            if (currentEventSource && currentEventSource.readyState === EventSource.CLOSED) {
-                appendTextMessage('error', 'Connection lost.');
-            }
+            // EventSource native error (connection lost): the stream is closed below rather
+            // than left to reconnect, which would send the message again, so the page says so
+            // instead of leaving a turn that looks as if it were still working
+            if (currentEventSource) appendTextMessage('error', 'Connection lost.');
         }
+        settleStreamingMessage();
         closeStream();
     });
 
     // Handle native EventSource errors (connection failures)
     currentEventSource.onerror = () => {
-        if (isRequestCancelled) return;
+        // A server-sent error event ends the stream first: nothing is left to look at
+        if (isRequestCancelled || !currentEventSource) return;
         if (currentEventSource.readyState === EventSource.CLOSED) {
             // Refused before it started (another participant's turn, a read-only role,
             // a model the sender may not use): the page says why and nothing was sent.
@@ -206,6 +213,16 @@ function openChatStream(url) {
             }
         }
     };
+}
+
+/**
+ * A turn that ends without a final reply (an error, a removal, tool results only) leaves
+ * no empty bubble behind: text that arrived is kept, and the rest is removed.
+ */
+function settleStreamingMessage() {
+    if (!streamingMessageDiv) return;
+    if (accumulatedContent.trim()) finaliseStreamingMessage(accumulatedContent);
+    else removeStreamingMessage();
 }
 
 /**
@@ -247,6 +264,8 @@ function closeStream() {
     }
     currentStreamId = null;
     accumulatedContent = '';
+    // The turn is over, however it ended (finished, stopped or failed)
+    chatWorking().end();
 
     const btn = document.getElementById('btn-send');
     if (btn) {

@@ -201,6 +201,16 @@
         document.getElementById('debate-status').textContent = text;
     }
 
+    // The working indicator beside the status badge: who is preparing a turn, and which
+    // tool they are using. It goes when the stream ends, however it ends.
+    const working = window.SparkWorking
+        ? SparkWorking.create(document.getElementById('debate-status').parentNode, {
+            after: document.getElementById('debate-status'), className: 'working-inline',
+        })
+        : { begin() {}, start() {}, finish() {}, tool() {}, toolDone() {}, end() {} };
+    const SIDE_NAMES = { judge: 'The judge', pro: 'Pro', con: 'Against' };
+    function sideName(role) { return SIDE_NAMES[role] || 'A speaker'; }
+
     function showResume() {
         document.getElementById('debate-resume').classList.remove('d-none');
     }
@@ -256,6 +266,7 @@
 
     function openStream() {
         evtSource = new EventSource(`/stream/debate?conversation_id=${cid}`);
+        working.begin();
         const handlers = {
             stream_start: d => { streamId = d.stream_id; },
             debate_state: d => setStatus(`State: ${d.state}, round ${d.round}`),
@@ -265,14 +276,27 @@
                 speakTurn('judge', d.text);
             },
             debater_turn_start: d => {
+                working.start(`turn:${d.role}`, `${sideName(d.role)} is preparing round ${d.round}`);
                 addBlock(d.role, 'text-muted small', '', `Preparing round ${d.round} argument...`);
                 startToolGroup(d.role);
                 document.getElementById(`${d.role}-cancel`).classList.remove('d-none');
             },
-            agent_tool_call: d => addToolCall(d.role, d.tool_name),
-            agent_tool_result: d => completeToolCall(d.role, d.tool_name, d.result, d.status),
-            floor: d => setFloor(d.role === 'none' ? null : d.role),
+            agent_tool_call: d => {
+                working.tool(`${d.role}:${d.tool_name}`, d.tool_name, d.params);
+                addToolCall(d.role, d.tool_name);
+            },
+            agent_tool_result: d => {
+                working.toolDone(`${d.role}:${d.tool_name}`);
+                completeToolCall(d.role, d.tool_name, d.result, d.status);
+            },
+            floor: d => {
+                setFloor(d.role === 'none' ? null : d.role);
+                // The judge has no turn of its own to announce: the floor says who is speaking
+                if (d.role === 'judge') working.start('floor', 'The judge is considering');
+                else working.finish('floor');
+            },
             argument: d => {
+                working.finish(`turn:${d.role}`);
                 closeToolGroup(d.role);
                 addBlock(d.role, '', `Round ${d.round}`, d.text);
                 document.getElementById(`${d.role}-cancel`).classList.add('d-none');
@@ -280,17 +304,20 @@
             },
             exhibits: d => addExhibits(d.role, d.items),
             turn_failed: d => {
+                working.finish(`turn:${d.role}`);
                 addBlock(d.role || 'judge', 'text-danger', 'Turn failed', d.error || '');
                 document.getElementById('debate-retry').classList.remove('d-none');
             },
             complete: () => {
+                working.end();
                 setFloor(null);
                 qaMode = true;
                 setStatus('Debate concluded, ask the judge about the ruling');
                 evtSource.close();
             },
-            cancelled: () => { setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
+            cancelled: () => { working.end(); setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
             budget_exceeded: d => {
+                working.end();
                 // The speaker holding the floor finished; the next turn waits for the budget.
                 setFloor(null);
                 if (window.SparkBudget) SparkBudget.show(d);
@@ -298,11 +325,11 @@
                 showResume();
                 evtSource.close();
             },
-            error: d => { setFloor(null); addBlock('judge', 'text-danger', 'Error', d.error || ''); evtSource.close(); },
+            error: d => { working.end(); setFloor(null); addBlock('judge', 'text-danger', 'Error', d.error || ''); evtSource.close(); },
         };
         Object.entries(handlers).forEach(([type, fn]) =>
             evtSource.addEventListener(type, e => fn(e.data ? JSON.parse(e.data) : {})));
-        evtSource.onerror = () => { setStatus('Disconnected'); showResume(); evtSource.close(); };
+        evtSource.onerror = () => { working.end(); setStatus('Disconnected'); showResume(); evtSource.close(); };
     }
 
     document.getElementById('debate-resume').addEventListener('click', () => {
