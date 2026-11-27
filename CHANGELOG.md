@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Images in replies are shown differently.** A picture in a reply is shown inline only when it comes from SPARK itself or is a PNG, JPEG, GIF or WebP data URL. Any other image is shown as its alt text and the host it names. For an https image that text is a button (reachable by keyboard, in light and dark) which loads that one image when the reader clicks it or presses Enter or Space; nothing is fetched before then. Images over http or a protocol-relative address cannot be loaded. The same rule applies on every page that shows Markdown, including a reply still streaming in. Audio, video, picture and track elements, and poster and background images, are no longer shown in replies. New browser tests in `tests/test_markdown_sanitise.py` cover each case.
+
 ## [0.3.0rc68] - 2026-11-27
 
 ### Changed
