@@ -106,9 +106,10 @@ const out = {
     bodyNew: p.memberBody(null, 'contributor', 'all_conversations', 'abc'),
   },
   picker: [
-    p.pickerPeople([{id: 'w1', name: 'A', email: 'a@example.com'}, {id: 'w2', name: 'B', email: 'b@example.com'}], {people: [{name: 'a'}]}).map(x => x.id),
+    p.pickerPeople([{id: 'w1', name: 'A', email: 'a@example.com'}, {id: 'w2', name: 'B', email: 'b@example.com'}], {people: [{id: 'W1', name: 'Someone else'}]}).map(x => x.id),
     p.pickerPeople([{id: 'w1', name: 'A', email: 'a@example.com'}], null).map(x => x.id),
     p.pickerPeople([{id: 'w1', name: 'A', email: 'a@example.com'}], {people: null}).map(x => x.id),
+    p.pickerPeople([{id: 'w1', name: 'Sam'}, {id: 'w2', name: 'Sam'}], {people: [{id: 'w2', name: 'Sam'}]}).map(x => x.id),
   ],
   size: [p.size(0), p.size(1536), p.size(5 * 1024 * 1024)],
 };
@@ -332,7 +333,8 @@ class TestSharePicker:
     def test_under_a_project_only_its_people_are_offered(self, node: dict[str, Any]) -> None:
         assert node["picker"][0] == ["w1"]
         assert node["picker"][1] == ["w1"]  # not in a project: everyone
-        assert node["picker"][2] == ["w1"]  # people not known to this user: the API decides
+        assert node["picker"][3] == ["w2"]  # a same-name non-member is not offered
+        assert node["picker"][2] == ["w1"]  # the read failed: the API refuses outsiders
 
 
 class TestStatic:

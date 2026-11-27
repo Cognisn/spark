@@ -38,7 +38,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from spark.mcp_integration import oauth
 from spark.mcp_integration import servers as mcp_servers
-from spark.mcp_integration.manager import MCPClient, MCPManager, MCPServerConfig, run_on
+from spark.mcp_integration.manager import (
+    MCPClient,
+    MCPManager,
+    MCPServerConfig,
+    RefreshResult,
+    run_on,
+)
 from spark.mcp_integration.servers import STDIO_REFUSED, ServerEntryError
 
 logger = logging.getLogger(__name__)
@@ -829,6 +835,55 @@ async def get_server_tools(request: Request, server_name: str) -> JSONResponse:
     ]
 
     return JSONResponse({"name": server_name, "tools": server_tools})
+
+
+@router.post("/api/{server_name}/tools/refresh")
+async def refresh_server_tools(request: Request, server_name: str) -> JSONResponse:
+    """Re-list one server's tools, reconnecting it first if it dropped.
+
+    Answers the new list and what changed by name (``added``, ``removed``,
+    ``changed``). A server that fails or times out keeps its old list and answers 502
+    with the error. Guarded as the other management routes are; audited in server
+    mode (the server and counts only). Only this process's manager is refreshed.
+    """
+    manager = getattr(request.app.state, "mcp_manager", None)
+    if not isinstance(manager, MCPManager) or server_name not in manager.servers:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    result = await manager.refresh_server(server_name)
+    failed = result.error is not None
+    await _audit_refresh(request, server_name, result)
+    body: dict[str, Any] = {
+        "name": server_name,
+        "status": "failed" if failed else "ok",
+        "tools": [
+            {"name": t.get("name", ""), "description": t.get("description", "")}
+            for t in result.tools
+        ],
+        "added": result.added,
+        "removed": result.removed,
+        "changed": result.changed,
+    }
+    if failed:
+        body["error"] = result.error
+    return JSONResponse(body, status_code=502 if failed else 200)
+
+
+async def _audit_refresh(request: Request, server_name: str, result: RefreshResult) -> None:
+    from spark.identity import audit
+
+    await audit.emit_request(
+        request,
+        audit.MCP_TOOLS_REFRESHED,
+        "failure" if result.error is not None else "success",
+        resource_type="mcp_server",
+        resource_id=server_name,
+        details={
+            "server": server_name,
+            "added": len(result.added),
+            "removed": len(result.removed),
+            "changed": len(result.changed),
+        },
+    )
 
 
 @router.post("/api/toggle")

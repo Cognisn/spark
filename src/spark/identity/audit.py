@@ -144,6 +144,7 @@ MCP_TOOL_REFUSED: Final = "spark.mcp.tool.refused"
 MCP_OAUTH_SIGNED_IN: Final = "spark.mcp.oauth.signed_in"
 MCP_OAUTH_SIGNED_OUT: Final = "spark.mcp.oauth.signed_out"
 MCP_OAUTH_REFRESH_FAILED: Final = "spark.mcp.oauth.refresh_failed"
+MCP_TOOLS_REFRESHED: Final = "spark.mcp.tools.refreshed"
 BUNDLE_IMPORTED: Final = "spark.bundle.imported"
 MAIL_TEST_SENT: Final = "spark.mail.test_sent"
 CONVERSATION_SHARED: Final = "spark.conversation.shared"
@@ -219,6 +220,9 @@ ACTIONS: Final[Mapping[str, ActionDef]] = {
     ),
     MCP_OAUTH_REFRESH_FAILED: ActionDef(
         Severity.WARNING, "MCP server {resource_id} needs a new OAuth sign-in"
+    ),
+    MCP_TOOLS_REFRESHED: ActionDef(
+        Severity.NOTICE, "{actor} refreshed the tools of MCP server {resource_id}: {outcome}"
     ),
     BUNDLE_IMPORTED: ActionDef(
         Severity.NOTICE, "{actor} imported a user bundle for user {resource_id}: {outcome}"

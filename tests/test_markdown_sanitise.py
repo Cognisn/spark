@@ -195,6 +195,16 @@ x = 1
 <p id="chat-messages" name="getElementById">clobber</p>
 <button data-spark-copy="x" data-extra="1" onclick="pwn('button')">fake</button>
 
+Images: ![remote https](https://img.example.com/a.png) and ![remote http](http://img.example.com/b.png)
+and ![proto](//img.example.com/c.png) and [![linked](https://img.example.com/d.png)](https://example.com/page)
+and <img src="https://img.example.com/e.png" srcset="https://img.example.com/f.png 2x" alt="raw">
+and ![own pic](/static/own.png) and ![data pic](data:image/png;base64,iVBORw0KGgo=)
+and ![svg data](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=) and ![no src]()
+
+<video src="https://img.example.com/v.mp4" poster="https://img.example.com/p.png"></video>
+<table background="https://img.example.com/bg.png"><tr><td>cell</td></tr></table>
+<span data-spark-image="https://img.example.com/forged.png" class="md-remote-image" role="button">forged</span>
+
 End of report.
 """
 
@@ -215,6 +225,26 @@ window.mermaid = {
 };
 window.bootstrap = { Modal: class { constructor() {} show() {} hide() {}
   static getInstance() { return null; } static getOrCreateInstance() { return new this(); } } };
+// Every image the page itself asks for goes through this: recorded, and answered with
+// a pixel so nothing leaves the machine. (Images parsed from markup are not recorded;
+// the checks below look for those in the DOM and in the browser's resource timings.)
+window.__imageLoads = [];
+(() => {
+  const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  const real = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+  Object.defineProperty(HTMLImageElement.prototype, 'src', { configurable: true,
+    get() { return real.get.call(this); },
+    set(v) {
+      if (this.ownerDocument === document) { window.__imageLoads.push(String(v)); v = PIXEL; }
+      real.set.call(this, v);
+    } });
+  const setAttr = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if (this instanceof HTMLImageElement && this.ownerDocument === document
+        && String(name).toLowerCase() === 'src') { window.__imageLoads.push(String(value)); value = PIXEL; }
+    return setAttr.call(this, name, value);
+  };
+})();
 window.__routes = {};
 window.fetch = async (url) => {
   const key = Object.keys(window.__routes).find(k => String(url).startsWith(k));
@@ -238,12 +268,14 @@ window.__autoStub = () => {
 CHECKS = """<script>
 const REPLY = __REPLY__;
 const BAD_TAGS = new Set(['script', 'style', 'iframe', 'frame', 'object', 'embed', 'form',
-  'svg', 'math', 'link', 'meta', 'base', 'textarea', 'select', 'template']);
+  'svg', 'math', 'link', 'meta', 'base', 'textarea', 'select', 'template', 'video', 'audio',
+  'source', 'track', 'picture']);
+const OWN_IMAGE = /^(?![a-z][a-z0-9+.-]*:)(?![\\\\/]{2})|^data:image\\/(png|jpeg|gif|webp)[;,]/i;
 const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'xlink:href', 'data']);
 function inspect(roots) {
   const bad = [];
   const out = { h2: 0, tables: 0, links: [], copy: 0, code: 0, hljs: 0, mermaid: 0,
-    mermaidProcessed: 0, ticks: 0, ticksDisabled: 0, text: '' };
+    mermaidProcessed: 0, ticks: 0, ticksDisabled: 0, text: '', imgs: [], placeholders: [] };
   for (const root of roots) {
     out.text += root.textContent;
     out.h2 += root.querySelectorAll('h2').length;
@@ -255,6 +287,15 @@ function inspect(roots) {
     out.mermaidProcessed += root.querySelectorAll('.mermaid[data-processed]').length;
     out.ticks += root.querySelectorAll('input').length;
     out.ticksDisabled += root.querySelectorAll('input[type=checkbox][disabled]').length;
+    root.querySelectorAll('img').forEach(img => {
+      const src = img.getAttribute('src') || '';
+      out.imgs.push({ src, alt: img.getAttribute('alt') });
+      if (!OWN_IMAGE.test(src)) bad.push('img:' + src);
+    });
+    root.querySelectorAll('.md-remote-image').forEach(el => out.placeholders.push({
+      text: el.textContent, loadable: el.hasAttribute('data-spark-image'),
+      role: el.getAttribute('role'), tabindex: el.getAttribute('tabindex'),
+      inLink: !!el.closest('a'), tag: el.tagName.toLowerCase() }));
     root.querySelectorAll('a').forEach(a => out.links.push({
       href: a.getAttribute('href'), target: a.getAttribute('target'), rel: a.getAttribute('rel') }));
     root.querySelectorAll('*').forEach(el => {
@@ -266,7 +307,10 @@ function inspect(roots) {
         const value = a.value.replace(/[\\s\\u0000-\\u001f]/g, '').toLowerCase();
         if (name.startsWith('on')) bad.push('attr:' + name);
         if (name === 'style' || name === 'id' || name === 'name') bad.push('attr:' + name);
-        if (name.startsWith('data-') && !['data-spark-copy', 'data-processed', 'data-highlighted'].includes(name))
+        if (['srcset', 'poster', 'background'].includes(name)) bad.push('attr:' + name);
+        if (name === 'data-spark-image' && !el.classList.contains('md-remote-image'))
+          bad.push('forged:' + name);
+        if (name.startsWith('data-') && !['data-spark-copy', 'data-processed', 'data-highlighted', 'data-spark-image'].includes(name))
           bad.push('attr:' + name);
         if (URL_ATTRS.has(name) && value.startsWith('javascript:')) bad.push('url:' + name);
       }
@@ -292,6 +336,45 @@ function chunks(text, size) {
 async function finish(surface, roots, extra) {
   await pause(600);  // let any handler that survived (onerror and the like) fire
   const result = inspect(roots);
+  result.imgLoadsBefore = window.__imageLoads.slice();
+  result.imgRequests = performance.getEntriesByType('resource')
+    .filter(e => e.initiatorType === 'img' && !e.name.startsWith('data:')
+      && !e.name.startsWith(location.origin)).map(e => e.name);
+  const holder = roots.find(r => r.querySelector('[data-spark-image]'));
+  if (holder) {
+    const find = word => [...holder.querySelectorAll('[data-spark-image]')]
+      .find(p => p.textContent.includes(word));
+    const step = {};
+    const click = el => el.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }));
+    click(find('remote https'));
+    await pause(100);
+    step.afterClick = window.__imageLoads.slice();
+    step.imgsAfterClick = holder.querySelectorAll('img[alt="remote https"]').length;
+    step.placeholdersAfterClick = holder.querySelectorAll('[data-spark-image]').length;
+    const forged = document.createElement('span');
+    forged.className = 'md-remote-image';
+    forged.setAttribute('data-spark-image', 'http://img.example.com/forged.png');
+    holder.appendChild(forged);
+    click(forged);
+    const odd = document.createElement('span');
+    odd.className = 'md-remote-image';
+    odd.setAttribute('data-spark-image', 'javascript:pwn("odd")');
+    holder.appendChild(odd);
+    click(odd);
+    await pause(100);
+    step.afterForged = window.__imageLoads.slice();
+    step.linkedClickAllowed = click(find('linked'));  // false: the link did not follow
+    await pause(100);
+    find('raw').dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    await pause(100);
+    step.afterKeys = window.__imageLoads.slice();
+    holder.querySelectorAll('.md-remote-image:not([data-spark-image])').forEach(el => el.click());
+    step.afterBlockedClicks = window.__imageLoads.slice();
+    step.pwnedByClicks = window.__pwned.slice();
+    result.click = step;
+  }
   const button = roots.map(r => r.querySelector('.code-block-wrapper button[data-spark-copy]'))
     .find(Boolean);
   if (button) {
@@ -337,10 +420,25 @@ for (const partial of chunks(REPLY, 17)) {
   if (same(whole) !== same(piecewise)) differ.push(partial.length);
 }
 finaliseStreamingMessage(REPLY);
+// A loaded image stays loaded while the reply goes on streaming into its element.
+const keep = document.createElement('div');
+document.body.appendChild(keep);
+const first = '![kept](https://img.example.com/k.png)';
+SparkMarkdown.renderInto(keep, first);
+const keptBefore = keep.querySelectorAll('img').length;
+keep.querySelector('[data-spark-image]').dispatchEvent(
+  new MouseEvent('click', { bubbles: true, cancelable: true }));
+SparkMarkdown.renderInto(keep, first + '\\n\\nand more');
+const keptAfter = keep.querySelectorAll('img[alt="kept"]').length;
+const keptPlaceholders = keep.querySelectorAll('[data-spark-image]').length;
+const keptLoads = window.__imageLoads.slice();
+window.__imageLoads.length = 0;
+keep.remove();
 const roots = [...document.querySelectorAll('#chat-messages .markdown-content')];
 await until(() => document.querySelectorAll('.mermaid[data-processed]').length >= 3, 3000);
 await finish('chat', roots, { stepBad: [...new Set(stepBad)], bubbles: roots.length, differ,
-  highlighted: window.__highlighted });
+  highlighted: window.__highlighted,
+  kept: { keptBefore, keptAfter, keptPlaceholders, keptLoads } });
 """,
     },
     "live": {
@@ -695,3 +793,81 @@ class TestInABrowser:
     def test_the_skills_viewer_shows_the_source_as_text(self, results: dict[str, Any]) -> None:
         got = results["skills"]
         assert "<script>pwn('script')</script>" in got["text"]
+
+
+@browser
+@pytest.mark.timeout(RUN_BUDGET_S + 60)
+class TestImages:
+    """Images in a reply: the reader's browser fetches only from SPARK or from data."""
+
+    @pytest.mark.parametrize("surface", MARKDOWN_SURFACES)
+    def test_nothing_remote_is_fetched_before_a_click(
+        self, results: dict[str, Any], surface: str
+    ) -> None:
+        got = results[surface]
+        assert got["imgLoadsBefore"] == []
+        assert got["imgRequests"] == []
+        assert not any("example.com" in img["src"] for img in got["imgs"])
+
+    @pytest.mark.parametrize("surface", MARKDOWN_SURFACES)
+    def test_own_and_data_images_still_show(self, results: dict[str, Any], surface: str) -> None:
+        sources = {img["alt"]: img["src"] for img in results[surface]["imgs"]}
+        assert sources["own pic"] == "/static/own.png"
+        assert sources["data pic"].startswith("data:image/png;base64,")
+        assert "svg data" not in sources  # an SVG in a data URL is not shown inline
+
+    @pytest.mark.parametrize("surface", MARKDOWN_SURFACES)
+    def test_other_images_become_text_naming_alt_and_host(
+        self, results: dict[str, Any], surface: str
+    ) -> None:
+        got = results[surface]["placeholders"]
+
+        def one(alt: str) -> dict[str, Any]:
+            matches = [i for i in got if i["text"].strip().startswith(alt + " (")]
+            assert matches and all(m == matches[0] for m in matches)  # one per rendering
+            return matches[0]
+
+        for alt in ("remote https", "linked", "raw"):
+            item = one(alt)
+            assert "img.example.com" in item["text"]
+            assert item["loadable"] and item["role"] == "button" and item["tabindex"] == "0"
+        for alt in ("remote http", "proto"):
+            item = one(alt)
+            assert "img.example.com" in item["text"]
+            assert not item["loadable"] and item["role"] is None
+        assert not one("svg data")["loadable"]
+        assert one("linked")["inLink"] is True
+        copies = sum(1 for item in got if item["text"].startswith("remote https ("))
+        assert sum(1 for item in got if item["loadable"]) == 3 * copies
+
+    @pytest.mark.parametrize("surface", MARKDOWN_SURFACES)
+    def test_a_click_loads_that_one_image_over_https_and_nothing_else(
+        self, results: dict[str, Any], surface: str
+    ) -> None:
+        step = results[surface]["click"]
+        assert step["afterClick"] == ["https://img.example.com/a.png"]
+        assert step["imgsAfterClick"] == 1
+        assert step["placeholdersAfterClick"] == 2
+        # a forged placeholder pointing at http, or at a script, loads nothing
+        assert step["afterForged"] == step["afterClick"]
+        assert step["pwnedByClicks"] == []
+        # clicking text that offers no load changes nothing
+        assert step["afterBlockedClicks"] == step["afterKeys"]
+
+    @pytest.mark.parametrize("surface", MARKDOWN_SURFACES)
+    def test_the_keyboard_loads_an_image_and_a_linked_image_does_not_follow_its_link(
+        self, results: dict[str, Any], surface: str
+    ) -> None:
+        step = results[surface]["click"]
+        assert step["linkedClickAllowed"] is False
+        assert step["afterKeys"] == [
+            "https://img.example.com/a.png",
+            "https://img.example.com/d.png",
+            "https://img.example.com/e.png",
+        ]
+
+    def test_a_loaded_image_survives_the_stream_going_on(self, results: dict[str, Any]) -> None:
+        kept = results["chat"]["kept"]
+        assert kept["keptBefore"] == 0
+        assert kept["keptAfter"] == 1 and kept["keptPlaceholders"] == 0
+        assert kept["keptLoads"] == ["https://img.example.com/k.png"]

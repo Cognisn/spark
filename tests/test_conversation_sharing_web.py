@@ -113,14 +113,17 @@ class Person:
     warden_id: str
 
 
-# Each signed-in person gets a documentation address; the pool wraps rather than runs out.
-_ADDRESSES = itertools.cycle(range(10, 250))
+# One address per signed-in browser, from the three documentation ranges, so each is distinct
+# (and audited as its own); the pool wraps rather than runs out in a long run.
+_ADDRESSES = itertools.cycle(
+    [f"{net}.{host}" for net in ("192.0.2", "198.51.100", "203.0.113") for host in range(10, 250)]
+)
 
 
 def person(client: TestClient, email: str, *roles: str) -> Person:
     """A signed-in browser of its own, from its own documentation address (audited)."""
     warden_id = make_user(client, email, *roles)
-    browser = TestClient(client.app, base_url=PUBLIC, client=(f"192.0.2.{next(_ADDRESSES)}", 50000))
+    browser = TestClient(client.app, base_url=PUBLIC, client=(next(_ADDRESSES), 50000))
     browser.portal = client.portal  # type: ignore[attr-defined]
     assert sign_in(browser, email).status_code == 303
     guid = str(browser.get("/auth/session", headers=FETCH).json()["user_guid"])

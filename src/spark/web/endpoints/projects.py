@@ -543,6 +543,37 @@ async def list_members(request: Request, project_id: int) -> JSONResponse:
     return JSONResponse({"members": await _members_view(request, access)}, headers=_NO_STORE)
 
 
+@router.get("/api/{project_id}/people")
+async def list_people(request: Request, project_id: int) -> JSONResponse:
+    """Who has a project's tree: its owner and every member, for anyone who may view it.
+
+    The share picker limits a conversation in the project to these people (PC9). Each
+    entry names the warden user id the people search returns, the display name and the
+    initials; no role, scope or email. A sub-project answers for its top-level project.
+    """
+    if not is_server():
+        return not_found()
+    access = await _access(request, project_id, ProjectNeed.VIEW)
+    if not isinstance(access, ProjectAccess):
+        return access
+    db = database(request)
+    guids = await members_db.people(db, access.user_guid, access.id)
+    names = await _names(request, guids)
+    found: list[dict[str, str]] = []
+    for guid in guids:
+        warden_id = await user_identities.warden_user_for(db, guid)
+        if warden_id is None:
+            continue
+        found.append(
+            {
+                "id": warden_id,
+                "name": names[guid]["name"],
+                "initials": names[guid]["initials"],
+            }
+        )
+    return JSONResponse({"people": found}, headers=_NO_STORE)
+
+
 def _role_of(value: Any) -> ProjectRole | None:
     try:
         role = ProjectRole(str(value))

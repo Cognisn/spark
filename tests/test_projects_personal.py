@@ -82,6 +82,7 @@ def test_projects_work_without_sharing(personal: TestClient, tmp_path: Path) -> 
 
     # Sharing, members and transfer are server mode only.
     assert c.get(f"/projects/api/{pid}/members").status_code == 404
+    assert c.get(f"/projects/api/{pid}/people").status_code == 404
     assert (
         c.post(
             f"/projects/api/{pid}/members",

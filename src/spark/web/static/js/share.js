@@ -416,9 +416,9 @@
             const note = document.getElementById('share-project-note');
             if (note) {
                 note.hidden = !limit;
-                note.textContent = limit && limit.people
+                note.textContent = limit
                     ? 'This conversation is in a project: you can share it only with people who have access to the project.'
-                    : (limit ? 'This conversation is in a project: it can be shared only with people who have access to the project. Spark tells you if someone does not.' : '');
+                    : '';
             }
             const known = new Set(state.members.map(m => m.name));
             if (!people.length) { box.innerHTML = '<div class="form-text">No one found.</div>'; return; }

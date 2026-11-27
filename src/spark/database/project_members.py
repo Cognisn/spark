@@ -96,6 +96,20 @@ async def members(db: Executor, actor_guid: str, project_id: int) -> list[Row]:
     )
 
 
+async def people(db: Executor, actor_guid: str, project_id: int) -> list[str]:
+    """The guids of everyone who has a project's tree: its owner first, then each member
+    by when they were added. Anyone who may view the project (an owner, contributor or
+    viewer) may read it; it carries no role and no scope (PC9: the share picker's limit)."""
+    access = await require_project(db, actor_guid, project_id, ProjectNeed.VIEW)
+    owner = await db.fetch_value("SELECT user_guid FROM projects WHERE id = ?", (access.root_id,))
+    rows = await db.fetch_all(
+        """SELECT user_guid FROM project_members WHERE project_id = ?
+            ORDER BY added_at, user_guid""",
+        (access.root_id,),
+    )
+    return [str(owner)] + [str(r["user_guid"]) for r in rows if str(r["user_guid"]) != str(owner)]
+
+
 async def share(
     db: Executor,
     actor_guid: str,

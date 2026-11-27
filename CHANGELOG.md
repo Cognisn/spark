@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The administrator's file limits apply in server mode.** `files.quota_mb` and `files.max_upload_mb` were stored when an administrator changed them on the Settings page but ignored: the file area read the start-up settings and so always used 1024 MB and 50 MB. In server mode it now reads both from the instance settings at each check, so uploads, chat attachments, project resources (charged to the owner), project transfers and bundle imports see a change at once, without a restart. Personal mode still reads `config.yaml`. `docs/configuration.md` says where each limit is set in each mode, and the live transfer-over-quota case is no longer an expected failure.
 
+## [0.3.0rc71] - 2026-11-27
+
+### Changed
+
+- **A Contributor's share picker is limited to the project's people too.** A new read, `GET /projects/api/{id}/people`, lists a top-level project's owner and members (warden user id, display name and initials; no role, scope or email) for anyone who may view the project, in server mode only; a sub-project answers for its top-level project, and anyone without access, or personal mode, gets 404. The share picker for a conversation in a project now filters the people search by that id for the owner and a Contributor alike, so a same-name person outside the project is never offered, and the "Spark tells you if someone does not" note is gone. The owner-only members list is unchanged, and the server's refusal stays as the guard.
+
+## [0.3.0rc70] - 2026-11-27
+
+### Added
+
+- **Refresh one MCP server's tools without a restart.** When an MCP server is upgraded its tools may change, but Spark kept the list it first discovered. A **Refresh tools** button beside each enabled server on the MCP servers page (and `POST /settings/mcp/api/{server_name}/tools/refresh`) lists that server's tools again, reconnecting it first if it has dropped, and shows the tools added, removed and changed by name. Only that server's entries are replaced, so the model sees the new tools on its next turn and other servers are untouched. A server that fails or times out keeps its old list and the error is shown. The route has the same guard as the other MCP settings routes (`spark.settings.instance` on a server) and is audited in server mode as `spark.mcp.tools.refreshed`, with the server and counts only. Stored tool permissions for a removed tool are kept. Spark does not yet act on a server's `tools/list_changed` notification, as conduit does not deliver it.
+
+## [0.3.0rc69] - 2026-11-27
+
+### Changed
+
+- **Images in replies are shown differently.** A picture in a reply is shown inline only when it comes from SPARK itself or is a PNG, JPEG, GIF or WebP data URL. Any other image is shown as its alt text and the host it names. For an https image that text is a button (reachable by keyboard, in light and dark) which loads that one image when the reader clicks it or presses Enter or Space; nothing is fetched before then. Images over http or a protocol-relative address cannot be loaded. The same rule applies on every page that shows Markdown, including a reply still streaming in. Audio, video, picture and track elements, and poster and background images, are no longer shown in replies. New browser tests in `tests/test_markdown_sanitise.py` cover each case.
+
 ## [0.3.0rc68] - 2026-11-27
 
 ### Changed
