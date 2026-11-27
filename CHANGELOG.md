@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc68] - 2026-11-27
+
 ### Changed
 
 - **The live suite opens the chat page as it is served.** The stand-in for `configureMarked` that the live browser cases installed (`CHAT_PAGE_SHIM`) and the strict expected failure for the chat page are gone now that the page starts up; the served-chat-page case runs as an ordinary test, and the coverage registry and `docs/live-integration-coverage.md` no longer say it waits on a fix.
