@@ -36,9 +36,9 @@
     "semantic_hash": "1a6c404f511688b5eaa5a81320228dda"
   },
   "deploy/live/model_stub.py": {
-    "mtime": 1795034688.5783186,
-    "seen": 1795040012.2242208,
-    "ast_hash": "9217bc00e10fb906b7a51b1ca9356768",
+    "mtime": 1795735003.3437893,
+    "seen": 1795752736.2717588,
+    "ast_hash": "a7bc7be1af985af54d707c2b3b179733",
     "semantic_hash": ""
   },
   "deploy/live/set_secret.py": {
@@ -1476,9 +1476,9 @@
     "semantic_hash": ""
   },
   "tests/live/conftest.py": {
-    "mtime": 1795071287.4214048,
-    "seen": 1795077435.312192,
-    "ast_hash": "ed165707089e8b6131320cfa8e2fcdba",
+    "mtime": 1795735003.3461726,
+    "seen": 1795752736.2717588,
+    "ast_hash": "a471c0d27133944134ae7bd96af9d5c8",
     "semantic_hash": ""
   },
   "tests/live/personal_export.py": {
@@ -2772,9 +2772,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1795701911.369605,
-    "seen": 1795728229.5268137,
-    "ast_hash": "aac70b2abe18fae12cabc63355ee6a27",
+    "mtime": 1795749030.874913,
+    "seen": 1795752736.2717588,
+    "ast_hash": "c04af43f80f638b4363f4ed798515409",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2988,9 +2988,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795701911.369605,
-    "seen": 1795728229.5268137,
-    "ast_hash": "4b1724c911ddc6c076486f3de3e2eb38",
+    "mtime": 1795749030.8739133,
+    "seen": 1795752736.2717588,
+    "ast_hash": "8d4a5d152543974ecc2333275ba00a2c",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3342,9 +3342,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/templates/chat.html": {
-    "mtime": 1795701704.137668,
-    "seen": 1795728229.5268137,
-    "ast_hash": "474ccc257677f6234555a55311af13ac",
+    "mtime": 1795741502.5173001,
+    "seen": 1795752736.2723641,
+    "ast_hash": "6380b6b8fced21fc3c42f3d26931f756",
     "semantic_hash": ""
   },
   "src/spark/web/templates/conversations.html": {
@@ -3690,9 +3690,9 @@
     "semantic_hash": ""
   },
   "deploy/live/RUNBOOK.md": {
-    "mtime": 1795071287.41862,
-    "seen": 1795077435.312598,
-    "ast_hash": "e9e6e4a814b18071f8338ce7aa24743a",
+    "mtime": 1795735003.3425856,
+    "seen": 1795752736.2717588,
+    "ast_hash": "b5f3ee9675540115e0c4794e80038c0d",
     "semantic_hash": ""
   },
   "docs/connections.md": {
@@ -5343,6 +5343,84 @@
     "mtime": 1795701704.137668,
     "seen": 1795728229.5268137,
     "ast_hash": "f6499b81041712bb67735021c28f6196",
+    "semantic_hash": ""
+  },
+  "tests/live/cdp.py": {
+    "mtime": 1795748904.9232323,
+    "seen": 1795752736.2717588,
+    "ast_hash": "b699f5272daa5f6d71f4c950f4f02843",
+    "semantic_hash": ""
+  },
+  "tests/live/coverage.py": {
+    "mtime": 1795748904.9242313,
+    "seen": 1795752736.2717588,
+    "ast_hash": "78f8bfcbb6c3df06285fcc943e48326e",
+    "semantic_hash": ""
+  },
+  "tests/live/live_helpers.py": {
+    "mtime": 1795735003.3472204,
+    "seen": 1795752736.2717588,
+    "ast_hash": "c24eb5f1b5134c3d9ec6b026cef77572",
+    "semantic_hash": ""
+  },
+  "tests/live/personal_app.py": {
+    "mtime": 1795735003.3475997,
+    "seen": 1795752736.2717588,
+    "ast_hash": "6f45c107877ef27ad829bc51e4815083",
+    "semantic_hash": ""
+  },
+  "tests/live/test_charts_live.py": {
+    "mtime": 1795748904.9245806,
+    "seen": 1795752736.2717588,
+    "ast_hash": "151c380b1746dc93adf185a10c64e4a7",
+    "semantic_hash": ""
+  },
+  "tests/live/test_coverage_registry.py": {
+    "mtime": 1795735003.3475997,
+    "seen": 1795752736.2717588,
+    "ast_hash": "03a342ae4b3ddbc5ede717b3cdeb8b28",
+    "semantic_hash": ""
+  },
+  "tests/live/test_model_stub.py": {
+    "mtime": 1795735003.349022,
+    "seen": 1795752736.2717588,
+    "ast_hash": "07639ddc9a137ebefcae488f01783efc",
+    "semantic_hash": ""
+  },
+  "tests/live/test_personal_live.py": {
+    "mtime": 1795735003.3496144,
+    "seen": 1795752736.2717588,
+    "ast_hash": "faa56649270fe289d3545e61a8dfaabd",
+    "semantic_hash": ""
+  },
+  "tests/live/test_projects_live.py": {
+    "mtime": 1795735003.3496144,
+    "seen": 1795752736.2717588,
+    "ast_hash": "6f4e0bdef74e7ca32a2fc7eb6b8eff66",
+    "semantic_hash": ""
+  },
+  "tests/live/test_screens_live.py": {
+    "mtime": 1795748904.925575,
+    "seen": 1795752736.2717588,
+    "ast_hash": "bfaecaf762070a998e15ed295293c788",
+    "semantic_hash": ""
+  },
+  "tests/live/test_skills_live.py": {
+    "mtime": 1795735003.3513122,
+    "seen": 1795752736.2717588,
+    "ast_hash": "902571a34660f7ccee4c2dcadab7fa46",
+    "semantic_hash": ""
+  },
+  "tests/test_chat_page_browser.py": {
+    "mtime": 1795748904.926238,
+    "seen": 1795752736.2717588,
+    "ast_hash": "b8939c82e5771af748a627c232b31101",
+    "semantic_hash": ""
+  },
+  "docs/live-integration-coverage.md": {
+    "mtime": 1795748904.9222353,
+    "seen": 1795752736.2717588,
+    "ast_hash": "a8e3b4d8b9360cf39f665234c33b7f5c",
     "semantic_hash": ""
   }
 }
