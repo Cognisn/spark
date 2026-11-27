@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Conversation text is smaller and in proportion.** Markdown headings in a reply had no size of their own and took the page's largest defaults (a first heading at 2.5rem, a second at 2rem), which made replies read as oversized. Replies, user messages, shared, debate and panel conversations now share one type scale, set by `--chat-*` variables in `spark.css`: body text stays at 0.875rem with a line height of 1.45, headings run 1.375, 1.2, 1.05 and 0.9375rem, table cells are 0.8125rem with tighter padding, and paragraphs sit 0.625rem apart, so more of a reply fits on screen. Every size is in `rem`, so it follows the browser's text size and zoom. A browser test reads the computed sizes in light and dark, on a desktop and a phone, and at doubled text size.
+
 ## [0.3.0rc72] - 2026-11-27
 
 ### Fixed
