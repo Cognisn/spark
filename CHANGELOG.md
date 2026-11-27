@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc75] - 2026-11-28
+
 ### Added
 
 - **The chat shows that the AI is working.** From the moment a message is sent, "Thinking..." with a gentle animation stands in the reply's place and gives way to the reply when its text starts. Under it, a one-line status follows what the turn is doing: "Searching the web", "Reading report.pdf" (a file's name only, for the tools that read one), "Creating a chart", "Working with an agent", "Compacting the conversation", or "Running a tool: <name>" for an MCP or other tool without a friendly name, with the time spent on a step added after a few seconds. The reasoning box is unchanged and the indicator steps aside while it shows. The line is a polite live region (the clock is hidden from a screen reader), the dots stand still under reduced motion, and it never shows a tool's input or result. It clears when the turn ends, is stopped or fails. Debate and panel show the same line beside their status: who is preparing a turn, and which tool they are using. Friendly names live in one table in `working_status.js`; styles are in `chat_status.css`.
