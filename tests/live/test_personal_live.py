@@ -54,10 +54,11 @@ def _chat(
     stack: Stack, browser: Browser, conv: int, text: str
 ) -> tuple[dict[str, Any], str | None]:
     """A turn on the personal app: the first request the stub received and the tool
-    result passed back, if the model called a tool."""
+    result passed back, if the model called a tool. The app's config.yaml turns
+    Auto-approve Tools on, so no permission prompt is answered."""
     marker = f"personal-{time.time_ns()}"
     since = time.time()
-    events = browser.chat(conv, f"{text} {marker}", approve="once")
+    events = browser.chat(conv, f"{text} {marker}")
     assert named(events, "complete"), [(e.name, e.data) for e in events][-5:]
     sent = [r for r in chats_since(stack, since) if marker in r["user"]]
     assert sent, "the personal turn never reached the stub"

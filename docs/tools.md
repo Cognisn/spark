@@ -359,12 +359,14 @@ Conversation-level permissions are checked first, then global permissions. When 
 | agents | spawn_agent, list_provider_models |
 | core | get_current_datetime, get_tool_documentation |
 
-To auto-approve all tools without prompting:
+To let a tool's first use run without prompting (**Auto-approve Tools** on the Settings page; an administrator's instance setting in server mode, for every user):
 
 ```yaml
 tool_permissions:
   auto_approve: true
 ```
+
+A tool the user has denied stays denied, `run_command` and `send_email` still prompt while their `require_approval` is on, and creating or updating a skill always prompts. The setting is read at each tool call, so a change applies on the next call.
 
 ## Per-Conversation Tool Control
 

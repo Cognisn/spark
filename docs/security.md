@@ -76,14 +76,22 @@ Approving a tool with "Always Allow" also approves all tools in the same categor
 
 ### Auto-Approve Mode
 
-To skip all permission prompts:
+To let a tool's first use in a conversation run without the permission dialogue:
 
 ```yaml
 tool_permissions:
   auto_approve: true
 ```
 
-This is convenient for trusted environments but removes the permission safety net.
+The setting is **Auto-approve Tools** on the Settings page. In server mode it is an instance setting: only an administrator can change it, and it applies to every user of the instance. It is read at each tool call, so a change applies on the next call without a restart. An auto-approved call is not stored as a permission, so switching the setting off asks again.
+
+What still asks or refuses while it is on:
+
+- A tool the user has denied, for the conversation or globally, stays denied.
+- `run_command` and `send_email` ask every time while their `require_approval` is on.
+- Creating or updating a skill (`create_skill`, `update_skill`) always asks.
+
+This is convenient for trusted environments but removes most of the permission safety net.
 
 ### Action Tool Permissions
 

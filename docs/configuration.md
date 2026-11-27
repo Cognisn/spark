@@ -207,8 +207,13 @@ See [Security](security.md) for details.
 
 ```yaml
 tool_permissions:
-  auto_approve: false            # If true, skip permission prompts for all tools
+  auto_approve: false            # If true, a tool's first use runs without asking
 ```
+
+With `auto_approve` on, the first use of a tool in a conversation runs without the permission dialogue, for every user of the instance. Nothing is stored, so switching it off asks again. A tool the user has denied (for the conversation or globally) stays denied, `run_command` and `send_email` still ask while their `require_approval` is on, and creating or updating a skill always asks.
+
+- **Server mode:** an instance setting; only an administrator can change it (Settings, Security), and the change applies on the next tool call of every user.
+- **Personal mode:** saved to `config.yaml`; the change applies on the next tool call.
 
 ### Embedded Tools
 
