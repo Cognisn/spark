@@ -82,7 +82,10 @@ PROBE = r"""
 (function () {
   const MODE = '__MODE__';
   const out = { errors: [], mode: MODE };
-  window.addEventListener('error', e => out.errors.push(String(e.message)));
+  // The browser's own note that a resize needed another frame is not a fault of the page.
+  window.addEventListener('error', e => {
+    if (!String(e.message).startsWith('ResizeObserver loop')) out.errors.push(String(e.message));
+  });
   window.addEventListener('unhandledrejection', e => out.errors.push(String(e.reason)));
   function wait(check, ms) {
     return new Promise(resolve => {
