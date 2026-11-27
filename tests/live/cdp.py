@@ -31,11 +31,6 @@ from tests.test_preview_renderers import chromium, stop_browser
 DESKTOP = (1400, 900)
 PHONE = (390, 844)
 
-#: Stands in for the function the served chat page still calls at start-up but no
-#: script defines since 0.3.0rc56 (Skuld question 94, decision 260). Remove it with the
-#: strict xfail in test_screens_live.py once the page is fixed.
-CHAT_PAGE_SHIM = "window.configureMarked = window.configureMarked || function () {};"
-
 
 class CdpError(AssertionError):
     pass
@@ -216,11 +211,6 @@ def click(page: Page, selector: str) -> None:
         "if (!e) return false; e.click(); return true; })()"
     )
     assert found, f"nothing matches {selector}"
-
-
-def shim_chat_page(page: Page) -> None:
-    """Install :data:`CHAT_PAGE_SHIM` before every document the page loads."""
-    page.send("Page.addScriptToEvaluateOnNewDocument", {"source": CHAT_PAGE_SHIM})
 
 
 def saved(downloads: Path, name: str, timeout: float = 60) -> Path:

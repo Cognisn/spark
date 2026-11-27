@@ -438,9 +438,9 @@ CASES: tuple[Case, ...] = (
         "PCV-5.00",
         "projects-charts",
         "scope 5",
-        "PC16, PC20, Q94",
+        "PC16, PC20",
         SCREENS + "test_the_served_chat_page_starts_without_a_script_error",
-        "The served chat page starts without a script error (strict xfail until Q94 is fixed).",
+        "The served chat page starts without a script error and draws the chart card.",
     ),
     Case(
         "PCV-5.01",

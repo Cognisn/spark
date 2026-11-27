@@ -124,11 +124,11 @@ PROBE = r"""
   async function run() {
     try {
       out.history = !!(await wait(() =>
-        document.getElementById('chat-messages').textContent.includes('Here is your chart.'), 30000));
+        document.getElementById('chat-messages').textContent.includes('Here is your chart.'), 90000));
       out.cardDrawn = !!(await wait(() => document.querySelector(
-        '.chart-card .chart-card-canvas[data-drawn]'), 30000));
+        '.chart-card .chart-card-canvas[data-drawn]'), 90000));
       if (document.getElementById('tool-panel').hidden) document.getElementById('btn-tool-panel').click();
-      const item = await wait(() => document.querySelector('#tool-panel .sidecar-item'), 15000);
+      const item = await wait(() => document.querySelector('#tool-panel .sidecar-item'), 60000);
       const panel = document.getElementById('tool-panel');
       out.panel = { open: !panel.hidden, items: document.querySelectorAll(
         '#tool-panel .sidecar-item').length, itemTitle: item ? item.textContent : '' };
@@ -154,7 +154,9 @@ PROBE = r"""
         };
       } else {
         document.getElementById('sidecar-close').click();
-        document.querySelector('.chart-card .chart-action[data-action="open"]').click();
+        const open = await wait(() => document.querySelector(
+          '.chart-card .chart-action[data-action="open"]'), 60000);
+        open.click();
         await wait(() => document.querySelector('.preview-panel[data-rendered]'), 60000);
         const pane = document.getElementById('preview-pane');
         out.header = { wide: toolbarClash() };

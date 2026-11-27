@@ -9,9 +9,8 @@ breadcrumbs and the right-hand panel, and the skills page. Each must start witho
 script error, show its parts, and at phone width fit the screen without sideways
 scrolling. Screenshots are kept in the sandbox for the session summary.
 
-The served chat page fails at start-up on 0.3.0rc65 (Skuld question 94): one case
-opens it unmodified and is a strict xfail; the screen checks open it with
-:data:`tests.live.cdp.CHAT_PAGE_SHIM` (decision 260).
+One case opens the served chat page as it is and asserts it starts without a script
+error and draws the conversation's chart card.
 """
 
 from __future__ import annotations
@@ -27,10 +26,6 @@ from tests.live.live_helpers import add_resource, create_project, new_conversati
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(1500)]
 
-CHAT_QUESTION = (
-    "Skuld question 94: chat.html calls configureMarked(), which no script defines since "
-    "wave 28, so the served chat page stops at start-up and draws no conversation"
-)
 BAR = {
     "type": "bar",
     "data": {"columns": ["Bed", "Plants"], "rows": [["North", 12], ["South", 18], ["East", 7]]},
@@ -87,7 +82,6 @@ def _shots(stack: Stack) -> Path:
     return stack.sandbox / "browser" / stack.run / "screens"
 
 
-@pytest.mark.xfail(strict=True, reason=CHAT_QUESTION)
 def test_the_served_chat_page_starts_without_a_script_error(stack: Stack, scene: Scene) -> None:
     """PC20, PC16: the chat page as web serves it starts without an uncaught error and
     draws the conversation's chart card."""
@@ -106,7 +100,7 @@ def test_the_served_chat_page_starts_without_a_script_error(stack: Stack, scene:
 def test_the_screens_in_both_themes_at_desktop_and_phone_width(stack: Stack, scene: Scene) -> None:
     """PC2 to PC4, PC16, PC21: every screen starts cleanly, shows its parts and fits a
     phone's width, in both themes."""
-    from tests.live.cdp import DESKTOP, PHONE, chromium_session, shim_chat_page, sign_in
+    from tests.live.cdp import DESKTOP, PHONE, chromium_session, sign_in
 
     port = int(stack.state["ports"]["web"]) + 62
     shots = _shots(stack)
@@ -159,7 +153,6 @@ def test_the_screens_in_both_themes_at_desktop_and_phone_width(stack: Stack, sce
                     page = chrome.page()
                     page.size(*size)
                     sign_in(page, person.browser, theme)
-                    shim_chat_page(page)  # only the chat page needs it (question 94)
                     for name, _who, path, ready in person_screens:
                         page.navigate(stack.base_url + path)
                         page.wait(
