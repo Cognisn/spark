@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0rc73] - 2026-11-28
+
 ### Fixed
 
 - **Auto-approve Tools now does what it says.** The instance setting `tool_permissions.auto_approve` was saved from the Settings page but read by nothing, so every first use of a tool in a conversation still waited for the permission dialogue. When it is on, a tool's first use now runs without the dialogue, for that call only (nothing is stored, so switching it off asks again). A tool the user has denied, for the conversation or globally, stays denied; `run_command` and `send_email` still ask while their `require_approval` is on; and creating or updating a skill always asks. MCP tools take the same check. The setting is read at each check, from `config.yaml` in personal mode and from the administrator's instance setting in server mode, where it applies to every user and only an administrator can change it; a change applies on the next tool call without a restart. The toggle's help text says what it does and what still asks, and `docs/security.md`, `docs/tools.md` and `docs/configuration.md` describe it. Debate, panel and autonomous actions are unchanged: they never show the dialogue. The live suite, which turns the setting on, no longer answers a first prompt it no longer gets.
