@@ -672,6 +672,20 @@ function appendApprovalCard(toolName, params, toolUseId) {
 let streamingMessageDiv = null;
 let streamingWrapperDiv = null;
 
+// The working indicator and its status line (working_status.js): "Thinking..." from the
+// moment a message is sent, and under it what the turn is doing, cleared when it ends.
+let _workingIndicator = null;
+function chatWorking() {
+    if (!_workingIndicator && window.SparkWorking) {
+        _workingIndicator = SparkWorking.create(document.getElementById('chat-messages'), { keepLast: true });
+    }
+    // Without the script the chat works as before, with no indicator
+    return _workingIndicator || {
+        begin() {}, tool() {}, toolDone() {}, agent() {}, agentDone() {}, compaction() {},
+        stepAside() {}, keepLast() {}, end() {}, active() { return false; },
+    };
+}
+
 function removeStreamingMessage() {
     if (streamingWrapperDiv) {
         collapseStreamingReasoning();
@@ -694,13 +708,12 @@ function startStreamingMessage() {
     streamingWrapperDiv.className = 'chat-message-wrapper assistant';
 
     streamingMessageDiv = document.createElement('div');
-    streamingMessageDiv.className = 'chat-message assistant';
+    // The bubble waits, empty and out of sight, until the reply's text starts: the working
+    // indicator stands in for it until then
+    streamingMessageDiv.className = 'chat-message assistant awaiting-reply';
     streamingMessageDiv.innerHTML = `
         ${_buildMessageHeader('assistant')}
         <div class="markdown-content"></div>
-        <div class="streaming-indicator">
-            <div class="dot-pulse"><span></span><span></span><span></span></div>
-        </div>
     `;
 
     streamingWrapperDiv.appendChild(streamingMessageDiv);
@@ -712,6 +725,8 @@ function updateStreamingMessage(content) {
     if (!streamingMessageDiv) startStreamingMessage();
     // The answer has started: the reasoning above it collapses
     collapseStreamingReasoning();
+    streamingMessageDiv.classList.remove('awaiting-reply');
+    chatWorking().stepAside();
     const md = streamingMessageDiv.querySelector('.markdown-content');
     // Block by block: only the blocks that changed are parsed and sanitised again
     renderMarkdownInto(md, content);
@@ -722,6 +737,7 @@ function updateStreamingMessage(content) {
 function finaliseStreamingMessage(content) {
     if (!streamingMessageDiv) startStreamingMessage();
     collapseStreamingReasoning();
+    streamingMessageDiv.classList.remove('awaiting-reply');
     const md = streamingMessageDiv.querySelector('.markdown-content');
     md.innerHTML = renderMarkdown(content);
     highlightCodeBlocks(md);
@@ -821,6 +837,8 @@ function addStreamingReasoning(text) {
     }
     const body = box.querySelector('.thought-body');
     body.textContent = body.textContent ? `${body.textContent}\n\n${text}` : text;
+    // The reasoning box says it is thinking: the indicator steps aside while it shows
+    chatWorking().stepAside();
     scrollToBottom();
 }
 
@@ -842,6 +860,7 @@ let _streamingToolStatuses = [];
 function appendStreamingToolStart(toolName, params, toolUseId) {
     _streamingToolCount++;
     _streamingToolStatuses.push('running');
+    chatWorking().tool(toolUseId, toolName, params);
 
     // The Tools section expands while a tool runs, and the panel's button shows a dot
     // (a document shown opens the preview pane instead)
@@ -853,6 +872,7 @@ function appendStreamingToolStart(toolName, params, toolUseId) {
 }
 
 function updateStreamingToolComplete(toolUseId, toolName, result, status, inspection) {
+    chatWorking().toolDone(toolUseId);
     const panelItemId = _streamingToolIds[toolUseId];
     if (panelItemId) {
         updateToolPanelItem(panelItemId, status, result, inspection);
@@ -942,6 +962,7 @@ function copyBubble(btn) {
 
 function scrollToBottom() {
     const container = document.getElementById('chat-messages');
+    chatWorking().keepLast();
     requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight;
     });
@@ -1237,6 +1258,7 @@ function toggleAgentPanelItem(itemId) {
 }
 
 function appendStreamingAgentStart(agentName, agentId, task, modelId) {
+    chatWorking().agent(agentId);
     // The Agents section expands while an agent runs, and the panel's button shows a dot
     if (window.SparkSidecar) SparkSidecar.running('agents');
 
@@ -1293,6 +1315,7 @@ function updateStreamingAgentToolResult(agentId, toolName, result, status, inspe
 }
 
 function updateStreamingAgentComplete(agentId, agentName, status, result) {
+    chatWorking().agentDone(agentId);
     const itemId = 'ap-' + agentId.replace(/[^a-zA-Z0-9]/g, '-');
     const item = document.getElementById(itemId);
     if (!item) return;

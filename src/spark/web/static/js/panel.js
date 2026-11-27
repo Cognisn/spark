@@ -246,6 +246,14 @@
         document.getElementById('panel-status').textContent = text;
     }
 
+    // The working indicator beside the status badge: who is preparing a contribution, and
+    // which tool they are using. It goes when the stream ends, however it ends.
+    const working = window.SparkWorking
+        ? SparkWorking.create(document.getElementById('panel-status').parentNode, {
+            after: document.getElementById('panel-status'), className: 'working-inline',
+        })
+        : { begin() {}, start() {}, finish() {}, tool() {}, toolDone() {}, end() {} };
+
     function showResume() {
         document.getElementById('panel-resume').classList.remove('d-none');
     }
@@ -355,6 +363,7 @@
 
     function openStream() {
         evtSource = new EventSource(`/stream/panel?conversation_id=${cid}`);
+        working.begin();
         const handlers = {
             stream_start: d => { streamId = d.stream_id; },
             panel_state: d => setStatus(`State: ${d.state}, round ${d.round}`),
@@ -364,14 +373,27 @@
                 speakTurn('moderator', d.text);
             },
             panellist_turn_start: d => {
+                working.start(`turn:${d.role}`, `${d.name || displayName(d.role)} is preparing round ${d.round}`);
                 addMuted(`${d.name} is preparing a round ${d.round} contribution...`);
                 startToolGroup(d.role);
                 document.getElementById('panel-cancel').classList.remove('d-none');
             },
-            agent_tool_call: d => addToolCall(d.role, d.tool_name),
-            agent_tool_result: d => completeToolCall(d.role, d.tool_name, d.result, d.status),
-            floor: d => setFloor(d.role === 'none' ? null : d.role),
+            agent_tool_call: d => {
+                working.tool(`${d.role}:${d.tool_name}`, d.tool_name, d.params);
+                addToolCall(d.role, d.tool_name);
+            },
+            agent_tool_result: d => {
+                working.toolDone(`${d.role}:${d.tool_name}`);
+                completeToolCall(d.role, d.tool_name, d.result, d.status);
+            },
+            floor: d => {
+                setFloor(d.role === 'none' ? null : d.role);
+                // The moderator has no turn of its own to announce: the floor says who is speaking
+                if (d.role === 'moderator') working.start('floor', 'The moderator is considering');
+                else working.finish('floor');
+            },
             contribution: d => {
+                working.finish(`turn:${d.role}`);
                 closeToolGroup(d.role);
                 addCard(d.role, `${d.name || displayName(d.role)} — round ${d.round}`, d.text);
                 document.getElementById('panel-cancel').classList.add('d-none');
@@ -379,15 +401,18 @@
             },
             exhibits: d => addExhibits(d.items),
             human_turn: d => {
+                working.end();
                 document.getElementById('panel-cancel').classList.add('d-none');
                 enterHumanMode(d);
                 evtSource.close();
             },
             turn_failed: d => {
+                working.finish(`turn:${d.role}`);
                 addCard(d.role || 'moderator', 'Turn failed', d.error || '', { cls: 'text-danger' });
                 document.getElementById('panel-retry').classList.remove('d-none');
             },
             complete: () => {
+                working.end();
                 setFloor(null);
                 document.getElementById('panel-cancel').classList.add('d-none');
                 if (!humanPending) {
@@ -396,8 +421,9 @@
                 }
                 evtSource.close();
             },
-            cancelled: () => { setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
+            cancelled: () => { working.end(); setFloor(null); setStatus('Paused'); showResume(); evtSource.close(); },
             budget_exceeded: d => {
+                working.end();
                 // The panellist holding the floor finished; the next turn waits for the budget.
                 setFloor(null);
                 document.getElementById('panel-cancel').classList.add('d-none');
@@ -407,6 +433,7 @@
                 evtSource.close();
             },
             error: d => {
+                working.end();
                 setFloor(null);
                 addCard('moderator', 'Error', d.error || '', { cls: 'text-danger' });
                 evtSource.close();
@@ -415,6 +442,7 @@
         Object.entries(handlers).forEach(([type, fn]) =>
             evtSource.addEventListener(type, e => fn(e.data ? JSON.parse(e.data) : {})));
         evtSource.onerror = () => {
+            working.end();
             if (humanPending) { evtSource.close(); return; }
             setStatus('Disconnected'); showResume(); evtSource.close();
         };
