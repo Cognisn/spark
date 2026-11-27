@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine, Iterable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar
 
 from spark.mcp_integration.client import MCPClient, MCPServerConfig, StdioRefused
@@ -39,12 +40,33 @@ __all__ = [
     "MCPManager",
     "MCPServerConfig",
     "MCPToolRefused",
+    "RefreshResult",
     "StdioRefused",
     "UNSCOPED",
     "run_on",
 ]
 
 T = TypeVar("T")
+
+#: Seconds a refresh waits for one server to list its tools.
+REFRESH_TIMEOUT: float = 5.0
+
+
+@dataclass
+class RefreshResult:
+    """The outcome of refreshing one server's tools.
+
+    ``tools`` is the server's list after the refresh (the old list when ``error`` is
+    set); ``added``, ``removed`` and ``changed`` name tools whose presence, description
+    or input schema differ from the list before.
+    """
+
+    server: str
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    changed: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 class MCPToolRefused(PermissionError):
@@ -343,6 +365,62 @@ class MCPManager:
 
         self._tools_cache = tools
         return tools
+
+    async def refresh_server(self, name: str) -> RefreshResult:
+        """Re-list one server's tools, replacing only its entries in the cache.
+
+        A dropped server is reconnected first. Other servers are neither listed nor
+        reconnected. A server that fails or times out keeps its old list and the
+        result carries the error. Raises ``KeyError`` for an unknown server.
+        """
+        return await run_on(self._loop, self._refresh_server(name))
+
+    async def _refresh_server(self, name: str) -> RefreshResult:
+        client = self._clients.get(name)
+        if client is None:
+            raise KeyError(name)
+        if self._tools_cache is None:
+            await self._discover()
+        cache = self._tools_cache or []
+        before = [t for t in cache if t.get("server") == name]
+        result = RefreshResult(server=name, tools=list(before))
+        try:
+            if not client.connected and not await client.connect():
+                result.error = "The server could not be reached."
+                return result
+            fresh = await asyncio.wait_for(client.list_tools(), timeout=REFRESH_TIMEOUT)
+        except TimeoutError:
+            result.error = "The server timed out listing its tools."
+            return result
+        except Exception as e:  # noqa: BLE001 - a failing server keeps its old list
+            logger.warning("Failed to refresh tools from %s: %s", name, e)
+            result.error = f"The server failed to list its tools: {e}"
+            return result
+        old = {str(t.get("name")): t for t in before}
+        new = {str(t.get("name")): t for t in fresh}
+        result.added = sorted(set(new) - set(old))
+        result.removed = sorted(set(old) - set(new))
+        result.changed = sorted(
+            n
+            for n in set(old) & set(new)
+            if (old[n].get("description"), old[n].get("inputSchema"))
+            != (new[n].get("description"), new[n].get("inputSchema"))
+        )
+        result.tools = list(fresh)
+        # Rebuild in server order so the others keep their place; one assignment, no await.
+        merged: list[dict[str, Any]] = []
+        placed = False
+        for tool in self._tools_cache or []:
+            if tool.get("server") == name:
+                if not placed:
+                    merged.extend(fresh)
+                    placed = True
+            else:
+                merged.append(tool)
+        if not placed:
+            merged.extend(fresh)
+        self._tools_cache = merged
+        return result
 
     async def list_all_tools(self, *, permissions: Scope = UNSCOPED) -> list[dict[str, Any]]:
         """The tools of the connected servers a caller with ``permissions`` may use."""

@@ -302,6 +302,10 @@ One server's configuration, for editing.
 
 The tools a server offers.
 
+### POST /settings/mcp/api/{server_name}/tools/refresh
+
+Re-list one server's tools, reconnecting it first if it has dropped. Answers `{"name", "status": "ok", "tools", "added", "removed", "changed"}`, the three change lists being tool names. A server that fails or times out keeps its old tools and answers 502 with `"status": "failed"` and an `error`; an unknown server answers 404. On a server this needs `spark.settings.instance` and is audited as `spark.mcp.tools.refreshed`.
+
 ### GET /settings/mcp/api/roles
 
 The roles a server can be granted to (server mode's editor).

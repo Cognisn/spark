@@ -1143,8 +1143,10 @@ async function loadMCPServers() {
                         ${s.command ? ' · ' + escapeHtml(s.command) : ''}
                     </div>
                     ${_mcpOAuthNote(s)}
+                    ${_mcpRefreshNote(s.name)}
                 </div>
                 <div class="d-flex align-items-center gap-1">
+                    ${s.enabled !== false ? `<button class="btn btn-app-ghost btn-sm" id="mcp-refresh-${escapeHtml(s.name)}" onclick="refreshMCPServerTools('${escapeHtml(s.name)}')" title="Refresh tools" aria-label="Refresh tools of ${escapeHtml(s.name)}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i><span class="ms-1">Refresh tools</span></button>` : ''}
                     ${_mcpOAuthButtons(s)}
                     <button class="btn btn-app-ghost btn-sm" onclick="editMCPServer('${escapeHtml(s.name)}')" title="Edit" aria-label="Edit">
                         <i class="bi bi-pencil" aria-hidden="true"></i>
@@ -1336,6 +1338,48 @@ async function saveMCPServer() {
     } catch (err) {
         AppToast.danger('Error', 'Network error.');
     }
+}
+
+// What the last refresh of each server changed, kept across list reloads.
+const _mcpRefreshNotes = {};
+
+function _mcpRefreshNote(name) {
+    const note = _mcpRefreshNotes[name];
+    if (!note) return '';
+    const colour = note.failed ? 'var(--app-danger)' : 'var(--app-text-secondary)';
+    return `<div class="mcp-refresh-note" role="status" style="font-size:0.75rem; color:${colour}; margin-top:0.125rem;">${escapeHtml(note.text)}</div>`;
+}
+
+function _mcpRefreshSummary(r) {
+    const parts = [];
+    if (r.added.length) parts.push('Added: ' + r.added.join(', '));
+    if (r.removed.length) parts.push('Removed: ' + r.removed.join(', '));
+    if (r.changed.length) parts.push('Changed: ' + r.changed.join(', '));
+    const count = `${r.tools.length} tool${r.tools.length !== 1 ? 's' : ''}`;
+    return parts.length ? `${count}. ${parts.join('. ')}.` : `${count}. No changes.`;
+}
+
+async function refreshMCPServerTools(name) {
+    const button = document.getElementById('mcp-refresh-' + name);
+    if (button) button.disabled = true;
+    try {
+        const resp = await fetch(`/settings/mcp/api/${encodeURIComponent(name)}/tools/refresh`, {method: 'POST'});
+        const result = await resp.json();
+        if (resp.ok && result.status === 'ok') {
+            _mcpRefreshNotes[name] = {failed: false, text: _mcpRefreshSummary(result)};
+            AppToast.success('Tools refreshed', `"${name}": ${_mcpRefreshSummary(result)}`);
+        } else {
+            const why = result.error || 'The refresh failed.';
+            _mcpRefreshNotes[name] = {failed: true, text: `Refresh failed, the old tools are kept. ${why}`};
+            AppToast.danger('Refresh failed', why);
+        }
+    } catch (err) {
+        _mcpRefreshNotes[name] = {failed: true, text: 'Refresh failed: network error.'};
+        AppToast.danger('Error', 'Network error.');
+    }
+    await loadMCPServers();
+    const again = document.getElementById('mcp-refresh-' + name);
+    if (again) again.focus();
 }
 
 async function showMCPServerTools(name) {
