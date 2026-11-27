@@ -77,5 +77,5 @@ This page is generated from the registry in `tests/live/coverage.py` with `pytho
 | PCV-3.03 | scope 3 | PC21 | personal | Personal mode offers the three built-in skills and loads one. | `test_personal_live.py::test_personal_mode_offers_the_built_in_skills` |
 | PCV-4.01 | scope 4 | PC21 | server | The three built-in skills are offered to every user and load. | `test_skills_live.py::test_the_built_in_skills_are_offered_and_load` |
 | PCV-4.02 | scope 4 | PC21 | server | An administrator switches a built-in skill off for everyone and on again. | `test_skills_live.py::test_an_administrator_switches_a_built_in_skill_off_and_on_for_everyone` |
-| PCV-5.00 | scope 5 | PC16, PC20, Q94 | server | The served chat page starts without a script error (strict xfail until Q94 is fixed). | `test_screens_live.py::test_the_served_chat_page_starts_without_a_script_error` |
+| PCV-5.00 | scope 5 | PC16, PC20 | server | The served chat page starts without a script error and draws the chart card. | `test_screens_live.py::test_the_served_chat_page_starts_without_a_script_error` |
 | PCV-5.01 | scope 5 | PC4, PC16 | server | The projects, chat and skills screens draw in both themes at desktop and phone width. | `test_screens_live.py::test_the_screens_in_both_themes_at_desktop_and_phone_width` |

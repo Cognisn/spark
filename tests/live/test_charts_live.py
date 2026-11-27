@@ -262,7 +262,7 @@ def test_charts_draw_in_the_message_and_the_pane_and_save_as_files(
     Match theme; Save as SVG carries the title; Download data saves the CSV."""
     from PIL import Image
 
-    from tests.live.cdp import DESKTOP, chromium_session, click, saved, shim_chat_page, sign_in
+    from tests.live.cdp import DESKTOP, chromium_session, click, saved, sign_in
 
     port = int(stack.state["ports"]["web"]) + 60
     url = f"{stack.base_url}/chat/{drawn.conversation}"
@@ -273,7 +273,6 @@ def test_charts_draw_in_the_message_and_the_pane_and_save_as_files(
             page = chrome.page()
             page.size(*DESKTOP)
             sign_in(page, drawn.owner.browser, theme)
-            shim_chat_page(page)  # Skuld question 94, decision 260
             page.navigate(url)
             page.wait(
                 f"document.documentElement.getAttribute('data-bs-theme') === '{theme}'",
