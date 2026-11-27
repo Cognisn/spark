@@ -214,8 +214,14 @@ When an MCP server connects, Spark:
 The tool cache is refreshed when:
 
 - A server reconnects
-- You click **Refresh** in the MCP server settings
+- You click **Refresh tools** beside a server in the MCP server settings
 - The cache is explicitly invalidated
+
+### Refreshing one server's tools
+
+When a server is upgraded its tools may change. **Refresh tools** (beside each enabled server in the MCP server settings) lists that server's tools again, reconnecting it first if it has dropped, and shows what changed by name: added, removed and changed (a different description or input schema). Only that server's entries are replaced; other servers are not listed or reconnected, and the model sees the new tools on its next turn with no restart. If the server fails or does not answer within five seconds, its old tools are kept and the error is shown.
+
+Permissions already granted for a tool that has been removed are kept, since they are keyed by tool name and are harmless while no tool has that name. On a server, refreshing needs the same permission as editing MCP servers (`spark.settings.instance`) and is recorded in the audit trail as `spark.mcp.tools.refreshed`, with the server name and counts only. A refresh updates the process that handles it; Spark does not yet act on a server's `tools/list_changed` notification, because the MCP client library it uses does not deliver it.
 
 ## Tool Execution
 
@@ -242,7 +248,7 @@ MCP tool execution respects the server's configured timeout, which applies to co
 ### Tools not appearing
 
 - Verify the server is connected (green status indicator in Settings)
-- Click **Refresh** to re-discover tools
+- Click **Refresh tools** beside the server to re-discover its tools
 - Check that the server actually exposes tools via `list_tools()`
 
 ### SSL errors
