@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/static/css/sidecar.css">
 <link rel="stylesheet" href="/static/css/projects.css">
 <link rel="stylesheet" href="/static/css/chat_status.css">
+<link rel="stylesheet" href="/static/css/tool_permission.css">
 <style>
     .attachment-chips, #attach-pending { display: flex; flex-wrap: wrap; gap: 0.375rem; }
     .attachment-chips { margin-top: 0.5rem; }
@@ -461,31 +462,64 @@
 </div>
 
 <!-- Tool permission modal -->
-<div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static">
+<div class="modal fade" id="permissionModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"
+     role="alertdialog" aria-labelledby="permission-title" aria-describedby="permission-details">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-exclamation me-2"></i>Tool Permission</h5></div>
-            <div class="modal-body">
-                <p id="permission-message"></p>
-                <div id="permission-details" style="font-size: 0.8125rem; color: var(--app-text-secondary);"></div>
+            <div class="tp-body">
+                <p class="tp-title" id="permission-title"><i class="bi bi-shield-exclamation" aria-hidden="true"></i><span class="tp-tool" id="permission-tool">A tool wants to run</span></p>
+                <span class="tp-sr" id="permission-message"></span>
+                <div class="tp-summary" id="permission-details"></div>
             </div>
-            <div class="modal-footer d-flex flex-wrap gap-2 justify-content-end">
-                <button class="btn btn-app-ghost btn-sm" onclick="respondPermission('denied')" title="Block this tool call">
-                    <i class="bi bi-x-circle me-1"></i>Deny
-                </button>
-                <button class="btn btn-app-outline btn-sm" onclick="respondPermission('once')" title="Allow this single call only">
-                    <i class="bi bi-check me-1"></i>Approve Once
-                </button>
-                <button class="btn btn-app-primary btn-sm" onclick="respondPermission('allowed')" title="Allow this tool for the rest of this conversation">
-                    <i class="bi bi-check-lg me-1"></i>Always (Conversation)
-                </button>
-                <button class="btn btn-app-primary btn-sm" onclick="respondPermission('allowed_global')" title="Allow this tool in all conversations">
-                    <i class="bi bi-check-all me-1"></i>Always (Global)
-                </button>
+            <div class="tp-actions">
+                <button type="button" class="btn btn-app-ghost" id="permission-deny" onclick="respondPermission('denied')"
+                        title="Block this tool call" aria-label="Deny" aria-describedby="permission-d-denied">Deny
+                    <span class="tp-sr" id="permission-d-denied">Block this tool call.</span></button>
+                <button type="button" class="btn btn-app-outline" onclick="respondPermission('once')"
+                        title="Allow this single call only" aria-label="Approve once" aria-describedby="permission-d-once">Once
+                    <span class="tp-sr" id="permission-d-once">Allow this single call only.</span></button>
+                <button type="button" class="btn btn-app-outline" onclick="respondPermission('allowed')"
+                        title="Allow this tool for the rest of this conversation" aria-label="Always allow in this conversation" aria-describedby="permission-d-allowed">This chat
+                    <span class="tp-sr" id="permission-d-allowed">Allow this tool for the rest of this conversation.</span></button>
+                <button type="button" class="btn btn-app-primary" onclick="respondPermission('allowed_global')"
+                        title="Allow this tool in all conversations" aria-label="Always allow in all conversations" aria-describedby="permission-d-global">Always
+                    <span class="tp-sr" id="permission-d-global">Allow this tool in all conversations.</span></button>
             </div>
         </div>
     </div>
 </div>
+<script>
+(function () {
+    // The permission dialogue's own behaviour. The prompt's text is filled by showPermissionPrompt
+    // (chat.js) and the permission_request handler (sse-client.js) into #permission-message; the
+    // tool line is taken from it so both stay as they are.
+    const el = document.getElementById('permissionModal');
+    const message = document.getElementById('permission-message');
+    new MutationObserver(() => {
+        const m = /"([^"]*)"/.exec(message.textContent);
+        document.getElementById('permission-tool').textContent = (m ? m[1] : 'A tool') + ' wants to run';
+    }).observe(message, { childList: true, characterData: true, subtree: true });
+    // Initial focus is on Deny, so a stray Enter or space never grants anything.
+    // (Bootstrap sets role="dialog" as it opens, so the alert role is put back then.)
+    el.addEventListener('show.bs.modal', () => queueMicrotask(() => el.setAttribute('role', 'alertdialog')));
+    el.addEventListener('shown.bs.modal', () => {
+        el.setAttribute('role', 'alertdialog');
+        document.getElementById('permission-deny').focus();
+    });
+    // Escape is Deny. Bootstrap's own Escape is off: it would hide the dialogue without
+    // answering the request.
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            respondPermission('denied');
+        }
+    });
+    // Once answered, focus goes back to the message box (not while the dialogue is being re-shown).
+    el.addEventListener('hidden.bs.modal', () => {
+        if (!el._sparkWanted) document.getElementById('chat-input')?.focus();
+    });
+})();
+</script>
 {% if sharing and my_role == 'owner' %}{% include "_share_dialog.html" %}{% endif %}
 {% if not my_role or my_role == 'owner' %}{% with move_prefix='conv-move', move_modal='convMoveModal', move_title='Move conversation' %}{% include "_project_move_dialog.html" %}{% endwith %}{% endif %}
 {% endblock %}

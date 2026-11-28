@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The tool permission dialogue is compact.** It is a small modal with no header bar: one line saying which tool wants to run, a short monospace summary of the call (three lines at most), and one row of four equal buttons, Deny, Once, This chat and Always, in place of the tall dialogue whose long labels wrapped onto two rows. The four choices and the responses they send (denied, once, allowed, allowed_global) are unchanged. Each button keeps its full accessible name (Deny, Approve once, Always allow in this conversation, Always allow in all conversations), a tooltip and a hidden description. The dialogue is announced as an alert, starts with focus on Deny, keeps Tab inside it in the order Deny, Once, This chat, Always, treats Escape as Deny and returns focus to the message box when it closes. It fits a 390 px screen without horizontal scroll or a second row of buttons. Its styles are in `static/css/tool_permission.css`.
+
 ## [0.3.0rc77] - 2026-11-28
 
 ### Fixed
