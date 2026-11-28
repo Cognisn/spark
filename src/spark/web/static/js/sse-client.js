@@ -117,7 +117,7 @@ function openChatStream(url) {
             `The tool "${data.tool_name}" is requesting permission to execute.`;
         document.getElementById('permission-details').textContent =
             JSON.stringify(data.params || {}, null, 2);
-        new bootstrap.Modal(document.getElementById('permissionModal')).show();
+        sparkShowDialog('permissionModal');
     });
 
     currentEventSource.addEventListener('compaction_status', (e) => {
