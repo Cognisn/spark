@@ -1170,9 +1170,9 @@
     "semantic_hash": "c6f61eb60205d87e0a4ab90e5a706be2"
   },
   "src/spark/web/endpoints/chat.py": {
-    "mtime": 1795528742.8229003,
-    "seen": 1795569972.8526113,
-    "ast_hash": "7653f282107c04ba4aef25f32f2ef7d2",
+    "mtime": 1795843631.1788814,
+    "seen": 1795857000.5922008,
+    "ast_hash": "490031ab7bcf3923ead522f9a30639be",
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/conversations.py": {
@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/streaming.py": {
-    "mtime": 1795583851.8237286,
-    "seen": 1795605802.0385897,
-    "ast_hash": "4ebd156a4ad9a596229f4490ca8ace4f",
+    "mtime": 1795843631.180519,
+    "seen": 1795857000.5922008,
+    "ast_hash": "e3e20e81eda49cbe1ae2cb6ce60da0da",
     "semantic_hash": ""
   },
   "src/spark/web/endpoints/usage.py": {
@@ -1278,10 +1278,10 @@
     "semantic_hash": "ea98dccf18865c148424c480f25a7d1a"
   },
   "src/spark/web/interactions.py": {
-    "mtime": 1793658631.8244166,
-    "seen": 1794786212.600967,
-    "ast_hash": "b099577224bf6f27f92f33edefdd6159",
-    "semantic_hash": "b099577224bf6f27f92f33edefdd6159"
+    "mtime": 1795843631.180519,
+    "seen": 1795857000.5922008,
+    "ast_hash": "93fdf497b07135dfad2aac601960fba1",
+    "semantic_hash": ""
   },
   "src/spark/web/menu.py": {
     "mtime": 1795587566.1904707,
@@ -1344,9 +1344,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/static/js/chat.js": {
-    "mtime": 1795820386.7142172,
-    "seen": 1795825385.1901538,
-    "ast_hash": "91928293b442668c285a98b80f383cde",
+    "mtime": 1795853149.8259113,
+    "seen": 1795857000.5922008,
+    "ast_hash": "49071575cc796445b5ca0b73cc6d8fed",
     "semantic_hash": ""
   },
   "src/spark/web/static/js/copy.js": {
@@ -1386,9 +1386,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/static/js/sse-client.js": {
-    "mtime": 1795820386.716251,
-    "seen": 1795825385.1901538,
-    "ast_hash": "428f852ebca3c35fc479316a33340186",
+    "mtime": 1795853149.8280509,
+    "seen": 1795857000.5922008,
+    "ast_hash": "c3d178b6f83095a09b97ca659225a2da",
     "semantic_hash": ""
   },
   "src/spark/web/static/js/ui.js": {
@@ -2772,9 +2772,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1795820406.8710394,
-    "seen": 1795825385.1906834,
-    "ast_hash": "1627fe8affcc5125134e6f08e38935a2",
+    "mtime": 1795853157.4337704,
+    "seen": 1795857000.5922008,
+    "ast_hash": "ed81045343581b27a6a9e1eaa26ef981",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2820,15 +2820,15 @@
     "semantic_hash": "a2872c1510dd8624e7f3b72957c6a08d"
   },
   "docs/api-reference.md": {
-    "mtime": 1795761874.0227423,
-    "seen": 1795787870.4640226,
-    "ast_hash": "b957a58c276aa0def2c5a1cb2202f7d9",
+    "mtime": 1795843631.176764,
+    "seen": 1795857000.5922008,
+    "ast_hash": "4845e3e4a6b3ed6696c1b1da04d75a86",
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1795503414.6354618,
-    "seen": 1795505979.413299,
-    "ast_hash": "4b5924f01da678ccb3cdf9043802b0be",
+    "mtime": 1795843631.176764,
+    "seen": 1795857000.5922008,
+    "ast_hash": "368b0d162ea2c7969f4737b2193e808b",
     "semantic_hash": ""
   },
   "docs/auto-update.md": {
@@ -2988,9 +2988,9 @@
     "semantic_hash": "4de009412d83575c16d793c2c8b20b19"
   },
   "src/spark/_version.txt": {
-    "mtime": 1795820406.8710394,
-    "seen": 1795825385.1906834,
-    "ast_hash": "1ab56f0290657e1306f4cf5234d2a68c",
+    "mtime": 1795853157.4315162,
+    "seen": 1795857000.5922008,
+    "ast_hash": "4b44aba872f2dcd73b0f762de9f9bda6",
     "semantic_hash": ""
   },
   "src/spark/resources/skills/skill-creator/SKILL.md": {
@@ -3348,9 +3348,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/templates/conversations.html": {
-    "mtime": 1795701704.137668,
-    "seen": 1795728229.5268137,
-    "ast_hash": "4f2a4c97b689f05273b8f010a6bd170a",
+    "mtime": 1795843631.1866314,
+    "seen": 1795857000.5926147,
+    "ast_hash": "74f7572fe179ce485fbfcb6667cf1527",
     "semantic_hash": ""
   },
   "src/spark/web/templates/debate.html": {
@@ -4230,9 +4230,9 @@
     "semantic_hash": ""
   },
   "src/spark/database/conversation_members.py": {
-    "mtime": 1795651688.2929244,
-    "seen": 1795659478.7336612,
-    "ast_hash": "9ae94f579b17bc25268091b7cbe5ec03",
+    "mtime": 1795843631.176764,
+    "seen": 1795857000.5918643,
+    "ast_hash": "6dccdc3161771078ecffe93f01e5d604",
     "semantic_hash": ""
   },
   "src/spark/migrations/versions/conversation_sharing.py": {
@@ -4242,9 +4242,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/live.py": {
-    "mtime": 1795528742.8254604,
-    "seen": 1795569972.8526113,
-    "ast_hash": "3fec9930cfb46e5e84e290a18d92ab4f",
+    "mtime": 1795843631.180519,
+    "seen": 1795857000.5922008,
+    "ast_hash": "1ec7c3a49741139739ff3d66c213f203",
     "semantic_hash": ""
   },
   "src/spark/web/static/js/audit.js": {
@@ -4260,9 +4260,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/static/js/share.js": {
-    "mtime": 1795765491.7103393,
-    "seen": 1795787870.4640226,
-    "ast_hash": "17e7fe0c7f729548c252fabb768f6c31",
+    "mtime": 1795843631.1852014,
+    "seen": 1795857000.5922008,
+    "ast_hash": "8a38c9946b7dc1b0a94d638772ea7d20",
     "semantic_hash": ""
   },
   "src/spark/web/static/js/webauthn.js": {
@@ -4560,9 +4560,9 @@
     "semantic_hash": ""
   },
   "tests/test_preview_frontend.py": {
-    "mtime": 1795651352.9037154,
-    "seen": 1795659478.734032,
-    "ast_hash": "64a2c911c59e93ca8f828c18fdf35068",
+    "mtime": 1795843631.188998,
+    "seen": 1795857000.5922008,
+    "ast_hash": "37efbf1e8c2666f874bc554fa5dbfc6b",
     "semantic_hash": ""
   },
   "tests/test_preview_guard.py": {
@@ -5136,9 +5136,9 @@
     "semantic_hash": ""
   },
   "tests/test_sidecar_frontend.py": {
-    "mtime": 1795676404.6509702,
-    "seen": 1795695979.6207209,
-    "ast_hash": "a29be8963f5d23832a251465dbc261ab",
+    "mtime": 1795843631.191124,
+    "seen": 1795857000.5922008,
+    "ast_hash": "ed27528743f005cad0186e0993fe3bcf",
     "semantic_hash": ""
   },
   "src/spark/resources/tool_docs/create_project.md": {
@@ -5172,9 +5172,9 @@
     "semantic_hash": ""
   },
   "src/spark/web/static/js/projects.js": {
-    "mtime": 1795765491.7089443,
-    "seen": 1795787870.4640226,
-    "ast_hash": "dca9b5f85a5c42f1fb0e7749510a68d6",
+    "mtime": 1795843631.1825686,
+    "seen": 1795857000.5922008,
+    "ast_hash": "53ec3109894070703786e8518e01e409",
     "semantic_hash": ""
   },
   "tests/test_builtin_skills.py": {
@@ -5412,9 +5412,9 @@
     "semantic_hash": ""
   },
   "tests/test_chat_page_browser.py": {
-    "mtime": 1795748904.926238,
-    "seen": 1795752736.2717588,
-    "ast_hash": "b8939c82e5771af748a627c232b31101",
+    "mtime": 1795843631.188998,
+    "seen": 1795857000.5922008,
+    "ast_hash": "5c99b653bbd8c98c51ba98a712f9571c",
     "semantic_hash": ""
   },
   "docs/live-integration-coverage.md": {
@@ -5466,9 +5466,39 @@
     "semantic_hash": ""
   },
   "tests/test_working_status_browser.py": {
-    "mtime": 1795820386.7203164,
-    "seen": 1795825385.1906834,
-    "ast_hash": "b99d7cc9eba17827c97be897aa0732cc",
+    "mtime": 1795843631.191124,
+    "seen": 1795857000.5922008,
+    "ast_hash": "d9c7c9245b1c39ce48b8aba7bdfe77b1",
+    "semantic_hash": ""
+  },
+  "tests/test_background_turn_record.py": {
+    "mtime": 1795843631.1866314,
+    "seen": 1795857000.5922008,
+    "ast_hash": "ca4435a0f887d79761048faec010796f",
+    "semantic_hash": ""
+  },
+  "tests/test_background_turns_browser.py": {
+    "mtime": 1795843631.1866314,
+    "seen": 1795857000.5922008,
+    "ast_hash": "f1409449b70bedf5ee53f0c0e1287e3a",
+    "semantic_hash": ""
+  },
+  "tests/test_background_turns_marker.py": {
+    "mtime": 1795843631.1866314,
+    "seen": 1795857000.5922008,
+    "ast_hash": "d898bf98fbc8be31970d066d022b4cd2",
+    "semantic_hash": ""
+  },
+  "tests/test_background_turns_web.py": {
+    "mtime": 1795843631.188998,
+    "seen": 1795857000.5922008,
+    "ast_hash": "ec45b7c6055b086776c75972af7b0f3b",
+    "semantic_hash": ""
+  },
+  "tests/test_prompt_dialog_browser.py": {
+    "mtime": 1795853149.8280509,
+    "seen": 1795857000.5922008,
+    "ast_hash": "bc3298aae0db7ca4194385c0dc6b5433",
     "semantic_hash": ""
   }
 }
