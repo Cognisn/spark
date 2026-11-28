@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tool permission or agent model approval dialog always closes once it is answered.** Bootstrap ignores a request to hide a dialog while it is still fading in, so a dialog answered in its first moments, or closed because the prompt was answered on another page, could stay open. Each dialog now keeps one instance and carries out what was last asked of it when its fade ends. A browser test answers and closes each dialog in the same tick it is shown.
+
 ## [0.3.0rc76] - 2026-11-28
 
 ### Added

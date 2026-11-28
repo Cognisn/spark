@@ -1012,6 +1012,32 @@ function _turnTarget(streamId) {
     return { stream_id: sid || '', conversation_id: typeof conversationId !== 'undefined' ? conversationId : 0 };
 }
 
+// Prompt dialogs (tool permission, agent model approval). Bootstrap ignores show() and
+// hide() while a dialog's fade is running, so a dialog answered or closed from another
+// page in its first moments would stay open. One Modal instance serves each dialog and the
+// last request wins: what was asked for during a fade is carried out when the fade ends.
+function sparkShowDialog(id) {
+    const el = document.getElementById(id);
+    if (!el._sparkWired) {
+        el._sparkWired = true;
+        el.addEventListener('shown.bs.modal', () => {
+            if (!el._sparkWanted) bootstrap.Modal.getOrCreateInstance(el).hide();
+        });
+        el.addEventListener('hidden.bs.modal', () => {
+            if (el._sparkWanted) bootstrap.Modal.getOrCreateInstance(el).show();
+        });
+    }
+    el._sparkWanted = true;
+    bootstrap.Modal.getOrCreateInstance(el).show();
+}
+
+function sparkHideDialog(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el._sparkWanted = false;
+    bootstrap.Modal.getInstance(el)?.hide();
+}
+
 // Agent model approval handling
 let _pendingAgentModelRequestId = null;
 let _pendingAgentModelStreamId = null;
@@ -1044,7 +1070,7 @@ function showAgentModelApproval(data) {
         select.appendChild(opt);
     });
 
-    new bootstrap.Modal(document.getElementById('agentModelModal')).show();
+    sparkShowDialog('agentModelModal');
 }
 
 async function approveAgentModel() {
@@ -1066,7 +1092,7 @@ async function approveAgentModel() {
     }
     _pendingAgentModelRequestId = null;
     _pendingAgentModelStreamId = null;
-    bootstrap.Modal.getInstance(document.getElementById('agentModelModal'))?.hide();
+    sparkHideDialog('agentModelModal');
 }
 
 // Permission handling
@@ -1082,7 +1108,7 @@ function showPermissionPrompt(data) {
     const params = data.params;
     document.getElementById('permission-details').textContent =
         typeof params === 'string' ? params : JSON.stringify(params || {}, null, 2);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionModal')).show();
+    sparkShowDialog('permissionModal');
 }
 
 // A prompt was answered (on any page) or ended: its dialog closes on every page
@@ -1090,12 +1116,12 @@ function closePrompt(requestId) {
     if (requestId && pendingPermissionRequestId === requestId) {
         pendingPermissionRequestId = null;
         pendingPermissionStreamId = null;
-        bootstrap.Modal.getInstance(document.getElementById('permissionModal'))?.hide();
+        sparkHideDialog('permissionModal');
     }
     if (requestId && _pendingAgentModelRequestId === requestId) {
         _pendingAgentModelRequestId = null;
         _pendingAgentModelStreamId = null;
-        bootstrap.Modal.getInstance(document.getElementById('agentModelModal'))?.hide();
+        sparkHideDialog('agentModelModal');
     }
 }
 
@@ -1117,7 +1143,7 @@ async function respondPermission(decision) {
         pendingPermissionRequestId = null;
         pendingPermissionStreamId = null;
     }
-    bootstrap.Modal.getInstance(document.getElementById('permissionModal'))?.hide();
+    sparkHideDialog('permissionModal');
 }
 
 async function cancelAgent(agentId, btnEl) {
