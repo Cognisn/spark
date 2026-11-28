@@ -400,8 +400,10 @@ def test_chat_js_keeps_the_event_contract() -> None:
 
 def test_the_live_channel_refreshes_the_panel() -> None:
     share = (JS / "share.js").read_text(encoding="utf-8")
-    watched = re.search(r"\[('ready'[^\]]+)\]\s*\.forEach", share)
+    # The live view's events are listed once (LIVE_EVENTS) and each one is listened to.
+    watched = re.search(r"const LIVE_EVENTS = \[\s*('ready'[^\]]+)\]", share)
     assert watched and "'artefacts_changed'" in watched.group(1)
+    assert "LIVE_EVENTS.forEach(kind => source.addEventListener(kind" in share
     renamed = share[share.index("kind === 'artefacts_changed'") :]
     assert "SparkSidecar.refresh()" in renamed.split("return;")[0]
     # A tool that ended (anyone's turn) may have made an artefact.
