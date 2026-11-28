@@ -304,10 +304,11 @@ class TurnRecord:
             self._send("prompt_closed", {"request_id": request_id, "stream_id": self.stream_id})
 
     def answer(self, kind: str, request_id: str, value: str) -> bool:
-        """Answer a prompt of this turn (the first answer wins). False if it is not one."""
+        """Answer a prompt of this turn (the first answer wins). False if it is not one: an
+        id of another turn, or of another kind (each kind waits in its own registry)."""
         with self._lock:
             prompt = self._prompts.get(request_id)
-        if prompt is None or prompt["kind"] != kind:
+        if prompt is None:
             return False
         events_name, answers_name = _PROMPT_STATE[kind]
         event = _state_dict(self._app, events_name).get(request_id)
