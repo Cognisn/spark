@@ -21,6 +21,23 @@ Events (``event``, ``data``):
 * ``turn_finished``: ``status``: the page reloads the history, the durable record;
 * ``members_changed``, ``member_removed`` (``user_guid``), ``conversation_deleted``.
 
+Private events go only to one person's pages (``publish(..., to=guid)``), for the
+sender of the running turn:
+
+* ``prompt``: a held tool permission prompt or agent model approval (``kind``,
+  ``request_id``, ``stream_id`` and what its dialog shows); ``prompt_closed``
+  (``request_id``): answered or ended, so every page closes its dialog;
+* ``turn_state``: the running turn for a page that has just attached (``stream_id``,
+  ``started_at``, ``activity``, ``agents``, ``prompts``), then ``turn_text``: its
+  reply text so far, split as a delta is;
+* ``agent``: ``phase`` (``start`` or ``end``), ``agent_id``, ``agent_name``;
+  ``compaction``: ``phase``.
+
+Control messages (:meth:`LiveBus.publish_control`) never reach a page: they go to the
+turn on whichever replica runs it (:attr:`TurnHandle.control`), and only when they
+name its sender and, if they name one, its stream: ``answer``, ``cancel``,
+``presence`` (a page of the sender's is open) and ``sync`` (send a page the turn).
+
 A notification that is missed (a reconnect) loses at most part of a live stream,
 never a message: ``turn_finished`` and a reload bring the history back.
 
@@ -58,6 +75,10 @@ CHANNEL = "spark_conversation"
 DELTA_INTERVAL = 0.2
 MAX_PAYLOAD = 7000  # bytes; PostgreSQL refuses a NOTIFY payload of 8000 or more
 APPLICATION_NAME = "spark-conversation-listener"
+# The envelope kind of a control message (never handed to a page).
+_CONTROL = "ctl"
+# Events whose text is split across notifications when too large for one.
+_SPLIT = frozenset({"delta", "turn_text"})
 
 Connect = Callable[[str], Awaitable[Any]]
 
@@ -95,12 +116,15 @@ class Subscription:
 
 @dataclass(eq=False)
 class TurnHandle:
-    """A turn running on this replica, so a removal can cancel it."""
+    """A turn running on this replica, so a removal can cancel it and control messages
+    (answers, cancels, presence) reach it; ``control`` is called on the event loop."""
 
     conversation_id: int
     user_guid: str
     cancel: Callable[[str], None]
     removed: threading.Event = field(default_factory=threading.Event)
+    stream_id: str = ""
+    control: Callable[[str, dict[str, Any]], None] | None = None
 
 
 async def _default_connect(url: str) -> Any:
@@ -181,35 +205,80 @@ class LiveBus:
             del self._turns[handle.conversation_id]
         self._maybe_stop()
 
+    def turn(self, conversation_id: int) -> TurnHandle | None:
+        """The turn running in ``conversation_id`` on this replica, if any."""
+        return self._turns.get(conversation_id)
+
+    def turns_of(self, user_guid: str) -> list[int]:
+        """The conversations where a turn of ``user_guid`` runs on this replica."""
+        return sorted(c for c, h in self._turns.items() if h.user_guid == user_guid)
+
     # -- Publishing ----------------------------------------------------------------------------
 
-    async def publish(self, conversation_id: int, event: str, data: dict[str, Any]) -> None:
-        """Send one event to every page watching ``conversation_id``, on every replica.
+    async def publish(
+        self, conversation_id: int, event: str, data: dict[str, Any], *, to: str | None = None
+    ) -> None:
+        """Send one event to every page watching ``conversation_id``, on every replica, or
+        with ``to`` only to that person's pages.
 
-        A delta too large for one notification is split into several. Never raises:
-        a lost event costs part of a live view, never a message.
+        A delta (or turn text) too large for one notification is split into several.
+        Never raises: a lost event costs part of a live view, never a message.
         """
         events = [data]
-        if event == "delta" and len(json.dumps(data).encode("utf-8")) > MAX_PAYLOAD:
+        if event in _SPLIT and len(json.dumps(data).encode("utf-8")) > MAX_PAYLOAD:
             events = [{**data, "text": piece} for piece in split_text(str(data.get("text", "")))]
         for item in events:
-            envelope = {"c": conversation_id, "e": event, "d": item, "r": self.replica_id}
-            try:
-                if self.distributed:
-                    assert self._notify is not None
-                    await self._notify(json.dumps(envelope, separators=(",", ":")))
-                else:
-                    self.deliver(envelope)
-            except Exception:  # noqa: BLE001 - a live view never breaks a turn
-                logger.warning("Live update for conversation %s not sent", conversation_id)
+            envelope: dict[str, Any] = {
+                "c": conversation_id,
+                "e": event,
+                "d": item,
+                "r": self.replica_id,
+            }
+            if to is not None:
+                envelope["u"] = to
+            await self._send(conversation_id, envelope)
+
+    async def publish_control(self, conversation_id: int, event: str, data: dict[str, Any]) -> None:
+        """Send a control message to the turn running in ``conversation_id``, wherever it
+        runs. ``data`` names the sender (``user_guid``) and may name the turn
+        (``stream_id``); the caller has checked the request's user holds that turn.
+        Never raises."""
+        envelope = {
+            "c": conversation_id,
+            "e": event,
+            "d": data,
+            "r": self.replica_id,
+            "k": _CONTROL,
+        }
+        await self._send(conversation_id, envelope)
+
+    async def _send(self, conversation_id: int, envelope: dict[str, Any]) -> None:
+        try:
+            if self.distributed:
+                assert self._notify is not None
+                await self._notify(json.dumps(envelope, separators=(",", ":")))
+            else:
+                self.deliver(envelope)
+        except Exception:  # noqa: BLE001 - a live view never breaks a turn
+            logger.warning("Live update for conversation %s not sent", conversation_id)
 
     def deliver(self, envelope: dict[str, Any]) -> None:
-        """Hand one received event to this replica's subscribers (and act on removals)."""
+        """Hand one received event to this replica's subscribers (and act on removals), or
+        a control message to the turn it names."""
         try:
             conversation_id = int(envelope["c"])
             event = str(envelope["e"])
             data = dict(envelope.get("d") or {})
         except (KeyError, TypeError, ValueError):
+            return
+        if envelope.get("k") == _CONTROL:
+            self._control(conversation_id, event, data)
+            return
+        target = envelope.get("u")
+        if target is not None:
+            for sub in list(self._subs.get(conversation_id, ())):
+                if sub.user_guid == str(target):
+                    sub.queue.put_nowait({"event": event, "data": data})
             return
         if event == "member_removed":
             removed = str(data.get("user_guid", ""))
@@ -225,6 +294,22 @@ class LiveBus:
                 self._close(sub, "deleted")
                 continue
             sub.queue.put_nowait({"event": event, "data": data})
+
+    def _control(self, conversation_id: int, event: str, data: dict[str, Any]) -> None:
+        """Act on a control message for the turn running here: only one that names the
+        turn's own sender, and (when it names one) the turn's own stream."""
+        turn = self._turns.get(conversation_id)
+        if turn is None or turn.control is None:
+            return
+        if str(data.get("user_guid", "")) != turn.user_guid:
+            return
+        stream_id = data.get("stream_id")
+        if stream_id and str(stream_id) != turn.stream_id:
+            return
+        try:
+            turn.control(event, data)
+        except Exception:  # noqa: BLE001 - a bad message never breaks a turn
+            logger.warning("Control message %s for conversation %s failed", event, conversation_id)
 
     def _close(self, sub: Subscription, reason: str) -> None:
         sub.reason = reason

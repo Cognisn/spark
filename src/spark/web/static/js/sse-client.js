@@ -192,6 +192,11 @@ function openChatStream(url) {
             // than left to reconnect, which would send the message again, so the page says so
             // instead of leaving a turn that looks as if it were still working
             if (currentEventSource) appendTextMessage('error', 'Connection lost.');
+            settleStreamingMessage();
+            closeStream();
+            // The turn runs on without this stream: the live view attaches to it again
+            if (window.SparkSharing && SparkSharing.reattach) SparkSharing.reattach();
+            return;
         }
         settleStreamingMessage();
         closeStream();
@@ -236,7 +241,11 @@ function cancelCurrentRequest() {
             fetch('/stream/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stream_id: currentStreamId }),
+                // The conversation lets a replica that does not run the turn pass it on
+                body: JSON.stringify({
+                    stream_id: currentStreamId,
+                    conversation_id: typeof conversationId !== 'undefined' ? conversationId : 0,
+                }),
             }).catch(() => {});
         } catch (e) {
             // Best-effort

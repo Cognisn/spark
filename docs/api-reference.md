@@ -126,7 +126,19 @@ The owner hands the conversation to a member (`{"user_guid": "..."}`) or to a pe
 
 ### GET /stream/conversation?conversation_id=
 
-Server-sent events for everyone viewing a conversation: `ready` (with the running `turn`, if any), `turn_started` (`user_guid`, `name`, `stream_id`), `delta` (`seq`, `text`), `tool` (`phase` `start`, `end` or `approval`, `tool_name`), `turn_finished`, `members_changed`, `member_removed`; the stream ends with `removed` when the caller loses access and `deleted` when the conversation is deleted.
+Server-sent events for everyone viewing a conversation, in both modes (personal mode on the app's own process): `ready` (`me`, the caller's guid, and the running `turn`, if any: `user_guid`, `name`, `stream_id`, `started_at`), `turn_started` (`user_guid`, `name`, `stream_id`), `delta` (`seq`, `text`), `tool` (`phase` `start`, `end` or `approval`, `tool_name`), `turn_finished` (`status`, `user_guid`, `stream_id`), `members_changed`, `member_removed`; the stream ends with `removed` when the caller loses access and `deleted` when the conversation is deleted.
+
+When the running turn is the caller's own (they came back to the conversation, or it runs in another tab), these follow to the caller's pages only:
+
+- `turn_state`: `stream_id`, `started_at`, `activity` (`kind` `thinking`, `tool` with `tool_name`, or `compaction`), `agents` (`agent_id`, `agent_name`) and `prompts` (the held prompts, as `prompt` gives them), then `turn_text` (`stream_id`, `text`: the reply since the last tool started);
+- `prompt`: a held tool permission prompt (`kind` `permission`, `request_id`, `stream_id`, `tool_name`, `params`) or agent model approval (`kind` `agent_model`, with `agent_name`, `task`, `suggested_model`, `available_models`, `justification`); `prompt_closed` (`request_id`) when it is answered or ends;
+- `agent` (`phase` `start` or `end`, `agent_id`, `agent_name`) and `compaction` (`phase`).
+
+A held prompt waits 10 minutes while no page of the sender's has the conversation open, and 120 seconds from the moment one is; then a tool permission is denied and an agent model approval takes the suggested model. A turn runs to its own end however long no page is open.
+
+### GET /stream/running
+
+The conversations where a turn of the caller's is running: `{"conversations": [12]}` (the working marker of the Conversations page and the projects tree).
 
 ## Chat
 
@@ -156,7 +168,7 @@ Get message history for a conversation.
 
 ### POST /chat/{conversation_id}/api/send
 
-Send a message without streaming. Body: `{"message": "...", "attachments": [12, 13]}`; `attachments` is optional, follows the same rules as on `GET /stream/chat`, and may stand without a message. In a shared conversation a read-only member is answered `403`, a sender who may not use the conversation's model `403`, and a send while another participant's turn runs `409` with `{"error": "Waiting for <name>'s turn to finish", "holder": {...}}`; `GET /stream/chat` answers the same way before it streams.
+Send a message without streaming. Body: `{"message": "...", "attachments": [12, 13]}`; `attachments` is optional, follows the same rules as on `GET /stream/chat`, and may stand without a message. In a shared conversation a read-only member is answered `403`, a sender who may not use the conversation's model `403`, and a send while another participant's turn runs `409` with `{"error": "Waiting for <name>'s turn to finish", "holder": {...}}`; `GET /stream/chat` answers the same way before it streams. In personal mode a send while an earlier one in the same conversation is still being answered is refused with `409` too.
 
 ### GET /chat/{conversation_id}/api/export
 
@@ -199,7 +211,7 @@ SSE endpoint for streaming chat responses.
 | `complete` | `{"content": "...", "usage": {...}, "tool_calls": [...]}` | Response complete |
 | `error` | `{"message": "..."}` | Error occurred |
 
-### POST /stream/permission/respond
+### POST /chat/permission/respond
 
 Respond to a tool permission request.
 
@@ -207,11 +219,17 @@ Respond to a tool permission request.
 ```json
 {
   "request_id": "abc12345",
-  "decision": "allowed"
+  "decision": "allowed",
+  "stream_id": "<the turn's stream id>",
+  "conversation_id": 12
 }
 ```
 
-`decision` is one of: `allowed` (always allow), `once` (allow this time), or `denied`.
+`decision` is one of: `allowed` (always allow), `once` (allow this time), or `denied`. `stream_id` and `conversation_id` let a server with several replicas pass the answer to the replica running the turn; there, an id that is not the caller's running turn answers `404`. `POST /chat/agent/model-approve` (`request_id`, `model_id`) and `POST /chat/agent/cancel` (`agent_id`) take the same two fields.
+
+### POST /stream/cancel
+
+Stop a running turn and every agent of it, from any of the sender's pages: `{"stream_id": "...", "conversation_id": 12}`. On a server another user's turn, or one that has ended, answers `404`.
 
 ## Settings
 

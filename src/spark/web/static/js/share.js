@@ -1,15 +1,20 @@
 /**
- * Spark: shared conversations on the chat page (server mode).
+ * Spark: shared conversations on the chat page (server mode), and the live view of the
+ * conversation (both modes).
  *
  * window.SparkSharing knows the signed-in user's role in the conversation, its
  * people and their colours, and who holds the turn. It
  *   - labels each message with its sender's name, initials and colour, and an
  *     assistant reply with whose turn it answered (chat.js asks it);
  *   - keeps the composer closed while the user may not send (read-only, a model
- *     they may not use) or while another participant's turn runs;
- *   - follows the conversation live (GET /stream/conversation): another person's
- *     turn streams in as it happens and the history reloads when it ends; a
- *     removal or deletion closes the page's view at once;
+ *     they may not use), while another participant's turn runs, or while a turn of
+ *     the user's own runs that this page did not start;
+ *   - follows the conversation live (GET /stream/conversation), in both modes:
+ *     another person's turn streams in as it happens and the history reloads when
+ *     it ends; a turn of the user's own that this page did not start (they came
+ *     back to it, or it runs in another tab) is handed to SparkTurnAttach (chat.js),
+ *     with its held prompts; on returning to the tab the view is opened again if it
+ *     was lost; a removal or deletion closes the page's view at once;
  *   - drives the Share dialog for the owner: people picker, roles, removal and
  *     transfer.
  */
@@ -112,12 +117,15 @@
         const waiting = document.getElementById('turn-waiting');
         if (!input || !button) return;
         const ownStream = typeof currentStreamId !== 'undefined' && currentStreamId;
-        const otherTurn = state.turn && state.turn.user_guid !== state.me && !ownStream;
+        const attached = !!(window.SparkTurnAttach && SparkTurnAttach.attached());
+        const otherTurn = state.turn && state.turn.user_guid !== state.me && !ownStream && !attached;
         let reason = null;
         if (!state.maySend) reason = state.refusal || 'You have read-only access to this conversation.';
+        else if (attached) reason = 'Spark is still answering your message. Stop it to send another.';
         else if (otherTurn) reason = `Waiting for ${state.turn.name}'s turn to finish`;
         input.disabled = !!reason;
-        if (!ownStream) button.disabled = !!reason;
+        // While a turn of the user's own runs the button is its Stop
+        if (!ownStream && !attached) button.disabled = !!reason;
         input.placeholder = reason || 'Type a message...';
         if (waiting) {
             waiting.textContent = reason || '';
@@ -193,18 +201,67 @@
         return wrapper;
     }
 
+    function streaming() {
+        return typeof isRequestInProgress === 'function' && isRequestInProgress();
+    }
+
+    /** The event belongs to this page's own stream (the turn it started). */
     function isMine(data) {
-        return typeof currentStreamId !== 'undefined' && currentStreamId && data.stream_id === currentStreamId;
+        if (typeof currentStreamId !== 'undefined' && currentStreamId && data.stream_id === currentStreamId) return true;
+        // A page has one stream, and one turn at a time runs: the user's own turn while
+        // this page streams is this page's (its stream id may not have arrived yet)
+        return !!state.me && data.user_guid === state.me && streaming();
+    }
+
+    /** A turn of the user's own that this page did not start. */
+    function isOwnElsewhere(data) {
+        return !!state.me && data.user_guid === state.me && !isMine(data);
+    }
+
+    function attach() {
+        return window.SparkTurnAttach || null;
+    }
+
+    /** A live event of the turn this page attached to (deltas and tools name no sender). */
+    function forAttached(data) {
+        const a = attach();
+        return !!a && a.attached() && !!data.stream_id && data.stream_id === a.streamId();
     }
 
     function onEvent(kind, data) {
         if (kind === 'ready') {
+            if (data.me) state.me = data.me;
             state.turn = data.turn || null;
+            if (state.turn && isOwnElsewhere(state.turn) && attach()) attach().attach(state.turn);
+            else if (!state.turn && attach() && attach().attached()) {
+                // The turn ended while the view was away: the history has the reply
+                attach().detach();
+                if (typeof loadChatHistory === 'function') loadChatHistory(state.conversationId);
+            }
             setComposer();
+            return;
+        }
+        // The user's own turn, for this page when it did not start it.
+        if (kind === 'turn_state' || kind === 'turn_text' || kind === 'agent' || kind === 'compaction') {
+            if (isMine(data) || streaming() || !attach()) return;
+            if (kind === 'turn_state') attach().state(data);
+            else if (kind === 'turn_text') attach().text(data);
+            else if (kind === 'agent') attach().agent(data);
+            else attach().compaction(data);
+            return;
+        }
+        if (kind === 'prompt') {
+            // The page that started the turn has it from its own stream already
+            if (!streaming() && attach()) attach().prompt(data);
+            return;
+        }
+        if (kind === 'prompt_closed') {
+            if (typeof closePrompt === 'function') closePrompt(data.request_id);
             return;
         }
         if (kind === 'turn_started') {
             state.turn = { user_guid: data.user_guid, name: data.name, stream_id: data.stream_id };
+            if (isOwnElsewhere(data) && attach()) attach().attach(data);
             setComposer();
             if (!isMine(data) && data.user_guid !== state.me) {
                 state.liveText = '';
@@ -214,6 +271,7 @@
             return;
         }
         if (kind === 'delta') {
+            if (forAttached(data)) { attach().text(data); return; }
             if (isMine(data) || !state.turn || state.turn.user_guid === state.me) return;
             state.liveText += data.text || '';
             const bubble = liveBubble(state.turn.name);
@@ -231,6 +289,10 @@
         if (kind === 'tool') {
             // A tool that ended may have made an artefact, whoever's turn it is.
             if (data.phase === 'end' && window.SparkSidecar) SparkSidecar.refresh();
+            if (forAttached(data)) {
+                attach().tool(data);
+                return;
+            }
             if (isMine(data) || !state.turn || state.turn.user_guid === state.me) return;
             // A document shown in another member's turn opens in this viewer's pane too.
             if (data.phase === 'end' && data.card && window.SparkPreview) {
@@ -247,10 +309,17 @@
             return;
         }
         if (kind === 'turn_finished') {
-            const mine = isMine(data) || data.user_guid === state.me;
+            const mine = isMine(data);
+            const ownElsewhere = isOwnElsewhere(data);
             state.turn = null;
             if (state.liveBubble) { state.liveBubble.remove(); state.liveBubble = null; }
             state.liveText = '';
+            // The page that started the turn has its final reply from its own stream; a
+            // page that attached to it (or follows another person's) reloads the history
+            if (ownElsewhere && attach() && attach().finished(data)) {
+                setComposer();
+                return;
+            }
             setComposer();
             if (!mine && typeof loadChatHistory === 'function') loadChatHistory(state.conversationId);
             return;
@@ -280,23 +349,43 @@
         }
     }
 
+    const LIVE_EVENTS = [
+        'ready', 'turn_started', 'delta', 'tool', 'turn_finished', 'artefacts_changed',
+        'members_changed', 'member_removed', 'removed', 'deleted',
+        'prompt', 'prompt_closed', 'turn_state', 'turn_text', 'agent', 'compaction',
+    ];
+
     function watch() {
-        if (!state.enabled || state.watch || !window.EventSource) return;
+        if (state.watch || !window.EventSource || !state.conversationId) return;
         const source = new EventSource(`/stream/conversation?conversation_id=${state.conversationId}`);
-        ['ready', 'turn_started', 'delta', 'tool', 'turn_finished', 'artefacts_changed', 'members_changed', 'member_removed', 'removed', 'deleted']
-            .forEach(kind => source.addEventListener(kind, e => {
-                let data = {};
-                try { data = JSON.parse(e.data || '{}'); } catch (err) { data = {}; }
-                onEvent(kind, data);
-            }));
+        LIVE_EVENTS.forEach(kind => source.addEventListener(kind, e => {
+            let data = {};
+            try { data = JSON.parse(e.data || '{}'); } catch (err) { data = {}; }
+            onEvent(kind, data);
+        }));
         source.onerror = () => {
-            // The browser reconnects by itself; a refused reconnect means access is gone.
+            // The browser reconnects by itself; a refused reconnect means access is gone
+            // (server mode), or the view is opened again on returning to the tab.
             if (source.readyState === EventSource.CLOSED) {
-                state.watch = null;
-                refresh();
+                if (state.watch === source) state.watch = null;
+                if (state.enabled) refresh();
             }
         };
         state.watch = source;
+    }
+
+    /** Open the live view again (a lost connection): its ready event attaches to a turn. */
+    function reattach() {
+        if (state.watch) { state.watch.close(); state.watch = null; }
+        watch();
+    }
+
+    function onVisible() {
+        if (document.visibilityState !== 'visible') return;
+        if (!state.watch || state.watch.readyState === EventSource.CLOSED) {
+            state.watch = null;
+            watch();
+        }
     }
 
     // -- The Share dialog -------------------------------------------------------------
@@ -456,15 +545,18 @@
         const input = document.getElementById('share-search');
         if (input) input.addEventListener('input', () => search(input.value));
         setHeader();
-        if (!state.enabled) return;
-        await refresh();
+        if (state.enabled) await refresh();
+        // Both modes follow the conversation live: a turn of the user's own that runs on
+        // (they came back to it) is attached to as soon as the view is ready.
         watch();
+        document.addEventListener('visibilitychange', onVisible);
     }
 
     window.SparkSharing = {
         init,
         mine: () => ({ user_guid: state.me }),
         refresh,
+        reattach,
         headerFor,
         bubbleClass,
         setComposer,

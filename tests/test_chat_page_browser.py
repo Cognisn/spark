@@ -176,12 +176,34 @@ PROBE = r"""
 """
 
 
+def quiet_live_view(handler: BaseHTTPRequestHandler, closing: threading.Event) -> None:
+    """The conversation's live view (``GET /stream/conversation``) as a chat page opens it,
+    in both modes: ready with no turn running, then quiet until the harness closes.
+
+    The harness forwards a request to the test client and waits for the whole answer,
+    which an endless event stream never gives, so this one is answered here.
+    """
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/event-stream")
+    handler.send_header("Cache-Control", "no-cache")
+    handler.end_headers()
+    try:
+        handler.wfile.write(b'retry: 600000\n\nevent: ready\ndata: {"turn": null}\n\n')
+        handler.wfile.flush()
+        while not closing.wait(0.5):
+            handler.wfile.write(b": quiet\n\n")
+            handler.wfile.flush()
+    except OSError:
+        return None
+
+
 class ServedChat:
     """The real application, signed in, behind a small server a browser can open."""
 
     def __init__(self, client: TestClient, conversation: int, theme: str, mode: str) -> None:
         self.reported = threading.Event()
         self.report: dict[str, Any] = {}
+        self.closing = threading.Event()
         lock = threading.Lock()
         # The saved theme wins over the browser's copy (ui.js), so the settings answer it.
         INSTANCE_SETTINGS["interface.theme"] = theme
@@ -209,6 +231,9 @@ class ServedChat:
                 self._send(204, b"", "text/plain")
 
             def do_GET(self) -> None:  # noqa: N802
+                if self.path.split("?")[0] == "/stream/conversation":
+                    quiet_live_view(self, served.closing)
+                    return
                 with lock:
                     answer = client.get(self.path, follow_redirects=False)
                 kind = answer.headers.get("content-type", "application/octet-stream")
@@ -226,6 +251,7 @@ class ServedChat:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self) -> None:
+        self.closing.set()
         self.server.shutdown()
         self.server.server_close()
 

@@ -149,9 +149,16 @@ class TestSandbox:
 
 class TestLiveViewers:
     def _observe(self, data: dict[str, Any], conversation_id: int = 4) -> list[Any]:
-        turn = SimpleNamespace(_lock=threading.Lock(), _events=[], conversation_id=conversation_id)
+        turn = SimpleNamespace(
+            _lock=threading.Lock(),
+            _events=[],
+            conversation_id=conversation_id,
+            record=SimpleNamespace(activity={}),
+        )
         RunningTurn.observe(turn, "tool_result", data)  # type: ignore[arg-type]
-        return turn._events
+        # A tool event goes to every viewer (no private target)
+        assert all(to is None for _, _, to in turn._events)
+        return [(event, payload) for event, payload, _ in turn._events]
 
     def test_the_card_travels_with_the_tool_event(self) -> None:
         card = Card(9, 4, "a.pdf", "A", "application/pdf", "pdf", 10)

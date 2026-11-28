@@ -119,10 +119,13 @@ async function loadChatHistory(conversationId) {
                     <i class="bi bi-chat-dots" style="font-size: 2.5rem;"></i>
                     <p class="mt-2">Start the conversation by sending a message.</p>
                 </div>`;
+            if (window.SparkTurnAttach) SparkTurnAttach.redraw();
             return;
         }
 
         messages.forEach(msg => appendMessage(msg));
+        // A turn this page attached to keeps its reply so far and its status under the history
+        if (window.SparkTurnAttach) SparkTurnAttach.redraw();
         _loadingHistory = false;
         if (window.SparkPreview) SparkPreview.endHistory();
         scrollToBottom();
@@ -977,6 +980,9 @@ function handleKeydown(event) {
 
 function handleSubmit(event) {
     event.preventDefault();
+    // A turn of the user's own is still running here (started on another page): the
+    // composer waits for it, or for Stop
+    if (window.SparkTurnAttach && SparkTurnAttach.attached()) return;
     const input = document.getElementById('chat-input');
     const message = input.value.trim();
     const attach = window.SparkAttachments;
@@ -998,11 +1004,21 @@ function handleSubmit(event) {
 
 // showInfoModal() and showSettingsModal() are defined in the chat template
 
+// The turn a prompt or cancel belongs to: this page's own stream, or the turn it attached
+// to. Sent with each answer, so the replica running the turn can be found from any other.
+function _turnTarget(streamId) {
+    const sid = streamId || (typeof currentStreamId !== 'undefined' && currentStreamId)
+        || (window.SparkTurnAttach ? SparkTurnAttach.streamId() : null);
+    return { stream_id: sid || '', conversation_id: typeof conversationId !== 'undefined' ? conversationId : 0 };
+}
+
 // Agent model approval handling
 let _pendingAgentModelRequestId = null;
+let _pendingAgentModelStreamId = null;
 
 function showAgentModelApproval(data) {
     _pendingAgentModelRequestId = data.request_id;
+    _pendingAgentModelStreamId = data.stream_id || null;
     document.getElementById('agent-model-message').textContent =
         `Agent "${data.agent_name}" wants to use the following model:`;
     document.getElementById('agent-model-task').textContent = data.task;
@@ -1042,16 +1058,47 @@ async function approveAgentModel() {
             body: JSON.stringify({
                 request_id: _pendingAgentModelRequestId,
                 model_id: modelId,
+                ..._turnTarget(_pendingAgentModelStreamId),
             }),
         });
     } catch (err) {
         console.error('Failed to send agent model approval:', err);
     }
     _pendingAgentModelRequestId = null;
+    _pendingAgentModelStreamId = null;
     bootstrap.Modal.getInstance(document.getElementById('agentModelModal'))?.hide();
 }
 
 // Permission handling
+let pendingPermissionStreamId = null;
+
+// A held tool permission prompt of the user's own turn, offered on a page that did not
+// start the turn (it came back to the conversation, or another tab)
+function showPermissionPrompt(data) {
+    pendingPermissionRequestId = data.request_id;
+    pendingPermissionStreamId = data.stream_id || null;
+    document.getElementById('permission-message').textContent =
+        `The tool "${data.tool_name}" is requesting permission to execute.`;
+    const params = data.params;
+    document.getElementById('permission-details').textContent =
+        typeof params === 'string' ? params : JSON.stringify(params || {}, null, 2);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionModal')).show();
+}
+
+// A prompt was answered (on any page) or ended: its dialog closes on every page
+function closePrompt(requestId) {
+    if (requestId && pendingPermissionRequestId === requestId) {
+        pendingPermissionRequestId = null;
+        pendingPermissionStreamId = null;
+        bootstrap.Modal.getInstance(document.getElementById('permissionModal'))?.hide();
+    }
+    if (requestId && _pendingAgentModelRequestId === requestId) {
+        _pendingAgentModelRequestId = null;
+        _pendingAgentModelStreamId = null;
+        bootstrap.Modal.getInstance(document.getElementById('agentModelModal'))?.hide();
+    }
+}
+
 async function respondPermission(decision) {
     if (pendingPermissionRequestId) {
         try {
@@ -1061,12 +1108,14 @@ async function respondPermission(decision) {
                 body: JSON.stringify({
                     request_id: pendingPermissionRequestId,
                     decision: decision,
+                    ..._turnTarget(pendingPermissionStreamId),
                 }),
             });
         } catch (err) {
             console.error('Failed to send permission response:', err);
         }
         pendingPermissionRequestId = null;
+        pendingPermissionStreamId = null;
     }
     bootstrap.Modal.getInstance(document.getElementById('permissionModal'))?.hide();
 }
@@ -1081,7 +1130,7 @@ async function cancelAgent(agentId, btnEl) {
         await fetch('/chat/agent/cancel', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_id: agentId }),
+            body: JSON.stringify({ agent_id: agentId, ..._turnTarget() }),
         });
     } catch (err) {
         console.error('Failed to cancel agent:', err);
@@ -1388,3 +1437,165 @@ async function loadAgentHistory(conversationId) {
         });
     } catch (err) { /* Non-critical */ }
 }
+
+
+/* ==========================================================================
+   8. An attached turn: the user's own turn, followed from a page that did not start it
+   ========================================================================== */
+
+/**
+ * A turn of the user's own keeps running when its page leaves. A page of theirs that
+ * opens the conversation while it runs (they came back, or another tab) attaches to it:
+ * the working status and the reply so far continue here, its held prompts are offered,
+ * the composer waits and Stop stops the turn, wherever it runs. When the turn ends the
+ * history reloads. share.js feeds it the conversation's live events.
+ */
+const SparkTurnAttach = (function () {
+    let turn = null; // { streamId, text }
+
+    function _button(stop) {
+        const btn = document.getElementById('btn-send');
+        if (!btn) return;
+        if (stop) {
+            btn.innerHTML = '<i class="bi bi-stop-circle" aria-hidden="true"></i>';
+            btn.title = 'Stop';
+            btn.setAttribute('aria-label', 'Stop the response');
+            btn.onclick = (e) => { if (e) e.preventDefault(); stop_(); };
+            btn.disabled = false;
+        } else {
+            btn.innerHTML = '<i class="bi bi-send" aria-hidden="true"></i>';
+            btn.title = 'Send';
+            btn.setAttribute('aria-label', 'Send');
+            btn.onclick = null;
+        }
+    }
+
+    function _composer() {
+        if (window.SparkSharing) SparkSharing.setComposer();
+    }
+
+    function attached() { return !!turn; }
+    function streamId() { return turn ? turn.streamId : null; }
+    function _ours(data) { return !!turn && (!data.stream_id || data.stream_id === turn.streamId); }
+
+    function attach(info) {
+        if (!info || !info.stream_id) return;
+        if (turn && turn.streamId === info.stream_id) return;
+        if (turn) detach();
+        turn = { streamId: info.stream_id, text: '' };
+        clearEmptyState();
+        startStreamingMessage();
+        chatWorking().begin();
+        _button(true);
+        _composer();
+    }
+
+    function _render() {
+        if (!turn) return;
+        if (turn.text) updateStreamingMessage(turn.text);
+    }
+
+    // The history was drawn again (the page's first load can finish after the attach):
+    // the reply so far and the status go back under it
+    function redraw() {
+        if (!turn) return;
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+        clearEmptyState();
+        if (streamingWrapperDiv && !container.contains(streamingWrapperDiv)) {
+            container.appendChild(streamingWrapperDiv);
+        }
+        scrollToBottom();
+    }
+
+    // The turn's state, sent to a page that has just attached
+    function state(data) {
+        attach({ stream_id: data.stream_id });
+        if (!_ours(data)) return;
+        // The reply so far follows in turn_text; what the turn is doing now shows above it
+        turn.text = '';
+        const activity = data.activity || {};
+        // Its agents first: the status line shows the step that started last, the turn's own
+        (data.agents || []).forEach(a => chatWorking().agent(a.agent_id));
+        if (activity.kind === 'tool') chatWorking().tool(`attached:${activity.tool_name}`, activity.tool_name || '', {});
+        if (activity.kind === 'compaction') chatWorking().compaction(true);
+        (data.prompts || []).forEach(prompt);
+    }
+
+    function text(data) {
+        if (!_ours(data)) return;
+        turn.text += data.text || '';
+        _render();
+    }
+
+    function tool(data) {
+        if (!_ours(data)) return;
+        const id = data.tool_use_id || `attached:${data.tool_name}`;
+        if (data.phase === 'start') {
+            // The text before a tool call stays in its own bubble, as on the sending page
+            if (turn.text.trim()) finaliseStreamingMessage(turn.text);
+            else removeStreamingMessage();
+            turn.text = '';
+            chatWorking().toolDone(`attached:${data.tool_name}`);
+            chatWorking().tool(id, data.tool_name || '', {});
+        } else if (data.phase === 'end') {
+            chatWorking().toolDone(id);
+            chatWorking().toolDone(`attached:${data.tool_name}`);
+        }
+    }
+
+    function agent(data) {
+        if (!_ours(data)) return;
+        if (data.phase === 'start') chatWorking().agent(data.agent_id);
+        else chatWorking().agentDone(data.agent_id);
+    }
+
+    function compaction(data) {
+        if (!_ours(data)) return;
+        chatWorking().compaction(data.phase === 'start');
+    }
+
+    function prompt(data) {
+        if (!data || !data.request_id) return;
+        if (data.kind === 'agent_model') showAgentModelApproval(data);
+        else showPermissionPrompt(data);
+    }
+
+    function finished(data) {
+        if (!_ours(data)) return false;
+        detach();
+        if (typeof loadChatHistory === 'function') loadChatHistory(conversationId);
+        return true;
+    }
+
+    function detach() {
+        if (!turn) return;
+        turn = null;
+        chatWorking().end();
+        removeStreamingMessage();
+        _button(false);
+        _composer();
+    }
+
+    async function stop_() {
+        if (!turn) return;
+        const btn = document.getElementById('btn-send');
+        if (btn) btn.disabled = true;
+        try {
+            await fetch('/stream/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(_turnTarget(turn.streamId)),
+            });
+        } catch (err) {
+            if (btn) btn.disabled = false;
+        }
+        // The turn's end (turn_finished) settles the page
+    }
+
+    return {
+        attach, attached, streamId, state, text, tool, agent, compaction, prompt, finished, detach, redraw,
+        stop: stop_,
+    };
+})();
+window.SparkTurnAttach = SparkTurnAttach;

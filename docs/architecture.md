@@ -592,6 +592,19 @@ flowchart LR
   the user whose turn raised it and releases it when it ends; on a server an id that
   is not the caller's live one answers 404 and changes nothing. Personal mode answers
   every id, unknown ones with 200, as before.
+- A turn outlives its page. Its prompts, agents and cancel token live in a
+  `spark.web.interactions.TurnRecord` from its start until it ends, however it ends,
+  not as long as the stream that started it. A page of the sender's that opens the
+  conversation while the turn runs (`GET /stream/conversation`, both modes) is told
+  the turn is its own and sent its state, its reply so far and its held prompts,
+  privately (`LiveBus.publish(..., to=guid)`); it answers the prompts and can stop
+  the turn. A held prompt waits 10 minutes while no page of the sender's is open and
+  120 seconds once one is (a watching page reports its presence every 10 seconds).
+  On a server with several replicas an answer or a stop that reaches a replica not
+  running the turn is checked against the turn lease (`conversation_turns`) and sent
+  on as a control message (`LiveBus.publish_control`) that only the replica running
+  the turn acts on and no page sees. Personal mode takes the same one-turn lock on
+  its own process.
 - Role gates (server mode; personal mode's local operator holds every permission):
   creating, editing, toggling, running now and AI-creating actions need
   `spark.actions` (`require_permission`), while listing, reading and deleting one's own
