@@ -214,17 +214,12 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
     # token budget, exactly as on the stream.
     permissions = request_permissions(request)
     roles = request_roles(request)
-    from spark.core.cancellation import CancellationToken
-    from spark.web.endpoints.streaming import LocalTurn, RunningTurn, TurnRefused
+    from spark.web.endpoints.streaming import RunningTurn, TurnRefused
 
     try:
-        # One turn at a time (CS29): the lock is given back when the turn ends, even if
-        # this request is gone by then. Personal mode's turns run as before.
-        turn: RunningTurn | LocalTurn = (
-            await RunningTurn.start(request, conversation_id, user_guid)
-            if is_server()
-            else LocalTurn(CancellationToken())
-        )
+        # One turn at a time (CS29), in both modes: the lock is given back when the turn
+        # ends, even if this request is gone by then.
+        turn = await RunningTurn.start(request, conversation_id, user_guid)
         work = asyncio.get_running_loop().run_in_executor(
             None,
             lambda: conv_mgr.send_message(
@@ -261,12 +256,9 @@ async def send_message(request: Request, conversation_id: int) -> JSONResponse:
 
 
 def _status_of(work: asyncio.Future[Any]) -> str:
-    if work.cancelled():
-        return "cancelled"
-    if work.exception() is not None:
-        return "failed"
-    result = work.result()
-    return str(result.get("status", "ok")) if isinstance(result, dict) else "ok"
+    from spark.web.endpoints.streaming import status_of
+
+    return status_of(work)
 
 
 async def refuse_send(request: Request, conversation_id: int, reason: str) -> None:
@@ -805,20 +797,64 @@ async def _export_response(request: Request, access: ConversationAccess):  # typ
 # -- Permission ---------------------------------------------------------------
 
 
+async def _remote_turn(request: Request, data: dict[str, Any]) -> tuple[int, str] | None:
+    """For an answer or cancel naming a turn this replica does not run: the turn's
+    conversation and stream when the request's user holds it (server mode), else None."""
+    from spark.web.endpoints.streaming import turn_is_callers
+
+    if not is_server():
+        return None
+    try:
+        conversation_id = int(data.get("conversation_id") or 0)
+    except (TypeError, ValueError):
+        return None
+    stream_id = str(data.get("stream_id") or "")
+    if not await turn_is_callers(request, conversation_id, stream_id):
+        return None
+    return conversation_id, stream_id
+
+
+async def _send_answer(request: Request, data: dict[str, Any], kind: str, value: str) -> bool:
+    """Send an answer to the replica running the turn; False if the caller holds no such turn."""
+    from spark.web.live import bus_for
+
+    target = await _remote_turn(request, data)
+    if target is None:
+        return False
+    conversation_id, stream_id = target
+    await bus_for(request.app).publish_control(
+        conversation_id,
+        "answer",
+        {
+            "user_guid": current_user_guid(request),
+            "stream_id": stream_id,
+            "kind": kind,
+            "request_id": str(data.get("request_id") or ""),
+            "value": value,
+        },
+    )
+    return True
+
+
 @router.post("/agent/model-approve")
 async def approve_agent_model(request: Request) -> JSONResponse:
     """API: respond to an agent model approval request.
 
-    Signals the streaming thread that is waiting for the user to approve or
-    override the model selected for a sub-agent.
+    Signals the turn that is waiting for the user to approve or override the model
+    selected for a sub-agent, on this replica or (naming the turn's conversation and
+    stream) on the one running it.
     """
     data = await request.json()
     request_id = data.get("request_id")
     model_id = data.get("model_id", "")
-    if not interactions.belongs_to_caller(request, interactions.AGENT_MODEL, request_id):
+    local = interactions.belongs_to_caller(request, interactions.AGENT_MODEL, request_id)
+    if not local and await _remote_turn(request, data) is None:
         return not_found()
     if refused := offered_models.not_offered(request, model_id):
         return refused
+    if not local:
+        await _send_answer(request, data, interactions.AGENT_MODEL, str(model_id))
+        return JSONResponse({"status": "ok"})
 
     events = getattr(request.app.state, "agent_model_events", {})
     responses = getattr(request.app.state, "agent_model_responses", {})
@@ -837,12 +873,15 @@ async def approve_agent_model(request: Request) -> JSONResponse:
 async def permission_respond(request: Request) -> JSONResponse:
     """API: respond to a tool permission request.
 
-    Signals the streaming thread that's waiting for this permission decision.
+    Signals the turn waiting for this permission decision, on this replica or (naming
+    the turn's conversation and stream) on the one running it.
     """
     data = await request.json()
     request_id = data.get("request_id")
     decision = data.get("decision", "denied")  # once | allowed | denied
     if not interactions.belongs_to_caller(request, interactions.PERMISSION, request_id):
+        if await _send_answer(request, data, interactions.PERMISSION, str(decision)):
+            return JSONResponse({"status": "ok"})
         return not_found()
 
     # Signal the waiting thread
@@ -861,7 +900,8 @@ async def permission_respond(request: Request) -> JSONResponse:
 
 @router.post("/agent/cancel")
 async def cancel_agent(request: Request) -> JSONResponse:
-    """API: cancel a running sub-agent.
+    """API: cancel a running sub-agent, on this replica or (naming the turn's
+    conversation and stream) on the one running it.
 
     Idempotent in personal mode: unknown ids return 200. A server answers 404
     for an id that is not the signed-in user's live agent.
@@ -869,7 +909,22 @@ async def cancel_agent(request: Request) -> JSONResponse:
     data = await request.json()
     agent_id = data.get("agent_id", "")
     if not interactions.belongs_to_caller(request, interactions.AGENT, agent_id):
-        return not_found()
+        from spark.web.live import bus_for
+
+        target = await _remote_turn(request, data)
+        if target is None or not agent_id:
+            return not_found()
+        conversation_id, stream_id = target
+        await bus_for(request.app).publish_control(
+            conversation_id,
+            "cancel",
+            {
+                "user_guid": current_user_guid(request),
+                "stream_id": stream_id,
+                "agent_id": str(agent_id),
+            },
+        )
+        return JSONResponse({"status": "ok"})
     tokens = getattr(request.app.state, "agent_cancel_tokens", {})
     tok = tokens.get(agent_id)
     if tok is not None:

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Moving to another conversation no longer stops or loses a running turn.** A turn, its tool calls and its agents run on when the page that started them goes, and coming back picks the turn up again, in personal mode and on a server: the working status and the reply so far continue, the composer waits (with Stop in place of Send), and the history reloads when the turn ends. A tool permission prompt or agent model approval raised while the page was away is held with the turn and offered on return, to every page of the sender's with the conversation open (and only to the sender), and closes everywhere once answered; it waits 10 minutes while no page is open and 120 seconds once one is. Stop works from any of the sender's pages and stops the turn's agents too. The Conversations page and the projects tree mark a conversation where a turn of yours is running. On a server with several replicas an answer or a stop reaches the replica running the turn. In personal mode a second message in the same conversation while one is still being answered is refused, as on a server. Debate and panel runs are not covered yet.
+
 ## [0.3.0rc75] - 2026-11-28
 
 ### Added

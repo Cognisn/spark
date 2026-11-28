@@ -35,6 +35,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_chat_page_browser import chat_client  # noqa: F401  (a module fixture)
+from tests.test_chat_page_browser import quiet_live_view
 from tests.test_preview_renderers import BROWSER, stop_browser
 
 RUN_BUDGET_S = 240
@@ -378,6 +379,7 @@ class Served:
         self.reported = threading.Event()
         self.report: dict[str, Any] = {}
         self.connections: dict[str, int] = {}
+        self.closing = threading.Event()
         lock = threading.Lock()
         served = self
         self.path = path
@@ -431,6 +433,9 @@ class Served:
                         return
                     self._stream(CHAT[name])
                     return
+                if parsed.path == "/stream/conversation":
+                    quiet_live_view(self, served.closing)
+                    return
                 if parsed.path == "/stream/debate":
                     self._stream(DEBATE)
                     return
@@ -459,6 +464,7 @@ class Served:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self) -> None:
+        self.closing.set()
         self.server.shutdown()
         self.server.server_close()
 

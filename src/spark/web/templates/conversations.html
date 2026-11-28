@@ -4,6 +4,7 @@
 
 {% block head %}
 <link rel="stylesheet" href="/static/css/projects.css">
+<link rel="stylesheet" href="/static/css/chat_status.css">
 {% endblock %}
 
 {% block content %}
@@ -248,7 +249,7 @@ async function loadShared() {
                     <i class="bi ${isFav ? 'bi-star-fill' : 'bi-star'}" aria-hidden="true"></i>
                 </button>
                 <a href="${href}" class="flex-grow-1 text-decoration-none">
-                    <div style="font-weight: 600; color: var(--app-text-primary);">
+                    <div style="font-weight: 600; color: var(--app-text-primary);" data-conversation-id="${c.id}">
                         <i class="bi bi-people-fill me-1" style="color: var(--app-accent);" aria-label="Shared"></i>${escapeHtml(c.name)}${isNew}
                     </div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
@@ -262,6 +263,7 @@ async function loadShared() {
                 <a href="${href}" class="ms-1" style="color: var(--app-text-muted);" aria-label="Open conversation"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
             </div>`;
         }).join('');
+        if (window.SparkProjects && SparkProjects.showWorking) SparkProjects.showWorking();
     } catch (err) {
         section.hidden = true;
     }
@@ -329,7 +331,7 @@ async function loadConversations() {
                     <i class="bi ${starIcon}" aria-hidden="true"></i>
                 </button>
                 <a href="${href}" class="flex-grow-1 text-decoration-none" style="cursor: pointer;">
-                    <div style="font-weight: 600; color: var(--app-text-primary);">${c.is_shared ? '<i class="bi bi-people-fill me-1" style="color: var(--app-accent);" title="Shared" aria-label="Shared"></i>' : ''}${escapeHtml(c.name)}${typeBadge}</div>
+                    <div style="font-weight: 600; color: var(--app-text-primary);" data-conversation-id="${c.id}">${c.is_shared ? '<i class="bi bi-people-fill me-1" style="color: var(--app-accent);" title="Shared" aria-label="Shared"></i>' : ''}${escapeHtml(c.name)}${typeBadge}</div>
                     <div style="font-size: 0.8125rem; color: var(--app-text-muted);">
                         ${c.model_id || 'No model'} &middot; ${c.total_tokens || 0} tokens
                         ${c.message_count ? ` &middot; ${c.message_count} messages` : ''}
@@ -341,6 +343,8 @@ async function loadConversations() {
                 <a href="${href}" class="ms-1" style="color: var(--app-text-muted);" aria-label="Open conversation"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
             </div>`;
         }).join('');
+        // A conversation where a turn of the user's is running carries the working marker
+        if (window.SparkProjects && SparkProjects.showWorking) SparkProjects.showWorking();
     } catch (err) {
         document.getElementById('conversation-list').innerHTML =
             `<div class="alert-app alert-app-danger">Failed to load conversations.</div>`;

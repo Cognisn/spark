@@ -44,6 +44,7 @@ __all__ = [
     "members",
     "release_turn",
     "remove_member",
+    "running_turns",
     "set_favourite",
     "share",
     "shared_with",
@@ -410,6 +411,23 @@ async def release_turn(db: Executor, conversation_id: int, stream_id: str) -> No
         "DELETE FROM conversation_turns WHERE conversation_id = ? AND stream_id = ?",
         (conversation_id, stream_id),
     )
+
+
+async def running_turns(
+    db: Executor, user_guid: str, *, stale_after: float = STALE_AFTER_SECONDS
+) -> list[int]:
+    """The conversations where a turn of ``user_guid`` is running (a lease not gone
+    stale), among those the user may read."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = (now - timedelta(seconds=stale_after)).isoformat(sep=" ")
+    rows = await db.fetch_all(
+        f"""SELECT conversation_id FROM conversation_turns
+            WHERE user_guid = ? AND heartbeat_at >= ?
+              AND conversation_id IN ({READABLE_CONVERSATIONS})
+            ORDER BY conversation_id""",
+        (user_guid, cutoff, user_guid),
+    )
+    return [int(row["conversation_id"]) for row in rows]
 
 
 async def current_turn(db: Executor, user_guid: str, conversation_id: int) -> Row | None:

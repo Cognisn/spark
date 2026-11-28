@@ -284,10 +284,22 @@
         return found.filter(p => ids.has(String(p.id || '').toLowerCase()));
     }
 
+    // -- The working marker: a conversation where a turn of the user's is running ------
+
+    const WORKING_MARK = '<span class="turn-working-marker" role="img" aria-label="Spark is working on a reply" title="Spark is working on a reply"></span>';
+
+    /** The conversation ids in GET /stream/running's answer, as a set of numbers. */
+    function workingIds(body) {
+        const list = body && Array.isArray(body.conversations) ? body.conversations : [];
+        const asId = v => ((typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) ? Number(v) : NaN);
+        return new Set(list.map(asId).filter(Number.isInteger));
+    }
+
     const logic = {
         MAX_DEPTH, esc, size, roleLabel, scopeLabel, loadOpen, saveOpen, treeHtml, visibleItems,
         navigate, sections, canRemoveResource, refusal, uploadMessage, moveWarning,
-        deleteSummary, deleteModes, breadcrumbsHtml, memberBody, pickerPeople,
+        deleteSummary, deleteModes, breadcrumbsHtml, memberBody, pickerPeople, workingIds,
+        WORKING_MARK,
     };
 
     // -- The page part -----------------------------------------------------------------
@@ -349,6 +361,7 @@
 
             function draw(focusIndex) {
                 host.innerHTML = treeHtml(data, open, {});
+                if (win.SparkProjects.showWorking) win.SparkProjects.showWorking();
                 const empty = $('projects-empty');
                 if (empty) empty.hidden = !!(data.owned.length || data.shared.length);
                 const rows = host.querySelectorAll('[role="treeitem"]');
@@ -836,7 +849,36 @@
             return { people: (members.body.people || []).map(m => ({ id: m.id, name: m.name })) };
         };
 
-        const start = () => { initTree(); initNewProject(); initPage(); initChatHeader(); };
+        // The working marker ---------------------------------------------------------
+
+        function initWorkingMarker() {
+            if (!$('projects-tree') && !$('conversation-list') && !$('shared-list')) return;
+            let ids = new Set();
+            // Marks each conversation in the tree, and each row of the Conversations page
+            // (data-conversation-id), where a turn of the user's is running.
+            function show() {
+                doc.querySelectorAll('[data-kind="conversation"][data-id] > a.project-tree-link, [data-conversation-id]')
+                    .forEach(el => {
+                        const id = Number(el.dataset.conversationId || el.parentElement.dataset.id);
+                        const mark = el.querySelector(':scope > .turn-working-marker');
+                        if (ids.has(id) && !mark) el.insertAdjacentHTML('beforeend', WORKING_MARK);
+                        else if (!ids.has(id) && mark) mark.remove();
+                    });
+            }
+            async function refresh() {
+                const res = await call('GET', '/stream/running');
+                if (!res.ok) return;
+                ids = workingIds(res.body);
+                show();
+            }
+            win.SparkProjects.showWorking = show;
+            win.SparkProjects.markWorking = refresh;
+            refresh();
+            win.setInterval(() => { if (doc.visibilityState === 'visible') refresh(); }, 15000);
+            doc.addEventListener('visibilitychange', () => { if (doc.visibilityState === 'visible') refresh(); });
+        }
+
+        const start = () => { initTree(); initNewProject(); initPage(); initChatHeader(); initWorkingMarker(); };
         if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', start); else start();
     }
 
